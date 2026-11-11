@@ -16,8 +16,9 @@ import { ClientVisibleError, getClientIp, getRequestContext } from '@cossackfram
 import { ANONYMOUS, hasPermission, isCmsError, isNetworkAdmin, PERMISSIONS, type Principal } from '@cossackframework/cms';
 import { MAIN_SITE, networkSite, randomToken, RESET_REQUESTS, sha256Hex, type ApiToken, type CmsHost, type CmsMember, type SecurityStatus as AccountSecurity } from '@cossackframework/cms/server';
 import { renderSVG } from 'uqr';
-import { currentCms, networkFor, siteUrl, type CmsBindings } from './cms/index';
+import { currentCms, networkFor, type CmsBindings } from './cms/index';
 import { handoffSite, pendingSite } from './cms/handoff';
+import { mailOrigin } from './cms/seo';
 
 const SESSION_COOKIE = 'session_id';
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
@@ -313,14 +314,8 @@ async function replaceUnconfirmed(host: CmsHost, email: string, network: boolean
  */
 export function linkOrigin(): string | null {
   const c = getRequestContext();
-  const bindings = c?.env as CmsBindings | undefined;
-  const site = c?.get('site') as { id: string; host?: string } | undefined;
-  const own = bindings ? (site && site.id !== MAIN_SITE ? siteUrl(bindings, site as never) : bindings.APP_URL) : env('APP_URL', '');
-  if (own) return own.replace(/\/+$/, '');
-  if (!c) return null;
-  const url = new URL(c.req.url);
-  const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) || url.hostname.endsWith('.localhost');
-  return local ? url.origin : null;
+  if (!c) return env('APP_URL', '').replace(/\/+$/, '') || null;
+  return mailOrigin(c);
 }
 
 // --- Profile updates -------------------------------------------------------
@@ -718,6 +713,22 @@ async function sendVerification(host: CmsHost, userId: string, email: string, na
  * Open a confirmation link: the token is spent, and the account becomes active, or keeps
  * waiting for an administrator's approval (`pending`). Null for an unknown or expired link.
  */
+/**
+ * The email of the account a sign-in or confirmation link is for, read without spending the
+ * link: its page shows it, so someone opening a link another person sent sees whose account
+ * it would sign them into. Null for a link that is not valid.
+ */
+export async function linkAccountEmail(kind: 'magic' | 'verify', token: string): Promise<string | null> {
+  if (!/^[A-Za-z0-9_-]{20,128}$/.test(token)) return null;
+  const host = cms();
+  const found = await host.cache.get<{ user: string }>(`${kind}:${await sha256Hex(token)}`).catch(() => undefined);
+  if (!found?.user) return null;
+  const user = await host.users.get(found.user).catch(() => null);
+  if (user?.email) return user.email;
+  const account = await host.accounts.get(found.user).catch(() => null);
+  return account?.email ?? null;
+}
+
 export async function verifyEmail(token: string): Promise<{ user: string; pending: boolean; site?: string } | null> {
   if (!/^[A-Za-z0-9_-]{20,128}$/.test(token)) return null;
   const key = `verify:${await sha256Hex(token)}`;

@@ -233,12 +233,20 @@ export function providedPoints(manifest: CmsPluginManifest): ExtensionPoint[] {
 const LIST_FIELDS = ['hooks', 'commands'] as const;
 
 /** Problems with a manifest's CMS fields. Empty when it can be hosted. */
+/**
+ * Names no plugin may take: the host's own owners (`cms/…` and `app/…` resources, `cms:…`
+ * permissions, `system:` principals) and the framework's. A plugin named like one would hold
+ * their permissions as its own, such as assigning a role whose permissions are all `cms:…`.
+ */
+export const RESERVED_PLUGIN_NAMES: ReadonlySet<string> = new Set(['cms', 'app', 'core', 'system', 'cossack', 'framework']);
+
 export function manifestProblems(manifest: unknown): string[] {
     const problems: string[] = [];
     if (manifest === null || typeof manifest !== 'object' || Array.isArray(manifest)) return ['The manifest must be an object.'];
     const value = manifest as CmsPluginManifest;
     if (value.schemaVersion !== 1) problems.push('schemaVersion must be 1.');
     if (typeof value.name !== 'string' || !OWNER_NAME.test(value.name) || value.name.length > 64) problems.push('name must be a plugin name.');
+    else if (RESERVED_PLUGIN_NAMES.has(value.name)) problems.push(`name ${value.name} is reserved.`);
     if (typeof value.version !== 'string' || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(value.version)) problems.push('version must be a semantic version.');
     for (const key of Object.keys(value)) if (!KNOWN_FIELDS.has(key)) problems.push(`${key} is not a manifest field.`);
     // Lists are read item by item below; one of another shape would throw instead of being reported, and the host would not start.

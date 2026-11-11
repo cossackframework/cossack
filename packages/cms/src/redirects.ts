@@ -51,7 +51,8 @@ export function redirectProblems(input: RedirectInput): string[] {
     if (status !== 410) {
         if (!(PATH.test(target) || URL_TARGET.test(target)) || (target.includes('*') && !(prefix && target.endsWith('/*') && !target.slice(0, -2).includes('*')))) {
             problems.push('The target is a path such as /new-page or a full URL; a prefix target can end in /*.');
-        } else if (redirectPath(target) === source) problems.push('The target is the source.');
+        } else if (/^\/[/\\]/.test(target)) problems.push('The target is a path on this site, such as /new-page, or a full URL.');
+        else if (redirectPath(target) === source) problems.push('The target is the source.');
     }
     if (typeof input.note === 'string' && input.note.length > 200) problems.push('The note can be at most 200 characters.');
     return problems;

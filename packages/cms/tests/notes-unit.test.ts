@@ -76,6 +76,10 @@ describe('note emails', () => {
         const reply = noteMail({ author: 'Eve', title: '  ', body: 'Added one.', quote: '', url: 'https://example.com/x', reply: true, site: '' });
         expect(reply.subject).toBe('Eve replied to a note on “an entry”');
         expect(reply.text).not.toContain('On “');
+        // Without the site's configured address there is no link, never one from the request's Host.
+        const unlinked = noteMail({ author: 'Eve', title: 'Post', body: 'Hi', quote: '', url: '', reply: false, site: '' });
+        expect(unlinked.text).not.toContain('http');
+        expect(unlinked.text).toContain('Open the entry in the dashboard to see its notes.');
     });
 });
 

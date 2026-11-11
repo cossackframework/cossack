@@ -23,7 +23,7 @@ import { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
 import { checkCapabilityRequirements, type CapabilityUse, type RuntimeName } from './runtime-capabilities.js';
 import { extractPageOptionsFromAst, isHttpHandlerModule } from './page-inspection.js';
 import { readBuildBindingNames } from './build-bindings.js';
-import { classifyRoute, filePathToHttpRoute, filePathToRoutePath } from './route-ids.js';
+import { filePathToRoutePath } from './route-ids.js';
 import { validateMarkdownFrontmatter, isValidatedMarkdownFrontmatter } from './markdown-frontmatter.js';
 import { describeUncoveredClientOutput, uncoveredClientOutput, type StaticAssetRouteFact } from './static-asset-routing.js';
 import { checkReservedPaths, type ReservedPathDiagnostic } from './reserved-paths.js';
@@ -187,7 +187,8 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
     let line: number | undefined;
     if (file.endsWith('.ts')) {
       const source = readFileSync(file, 'utf8');
-      if (classifyRoute(filePathToHttpRoute(key)) === 'api' && await isHttpHandlerModule(source)) return {};
+      // Functional handlers serve any path (/feed.xml, /webhooks/x), and need no page transport.
+      if (await isHttpHandlerModule(source)) return {};
       const facts = await extractPageOptionsFromAst(source);
       if (facts?.method !== 'ast' || !facts.options) return {
         parseError: !!(facts && 'parseError' in facts && facts.parseError),

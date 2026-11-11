@@ -19,7 +19,7 @@ export const PLUGINS_DIRECTORY = 'src/plugins';
 export const PLUGINS_STATE = '.cossack/plugins.json';
 export const PLUGIN_NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 /** Names owned by Cossack recipes. */
-export const RESERVED_PLUGIN_NAMES = new Set(['cms', 'cossack', 'core', 'framework', 'app']);
+export const RESERVED_PLUGIN_NAMES = new Set(['cms', 'cossack', 'core', 'framework', 'app', 'system']);
 
 const MAX_FILES = 2_000;
 const MAX_FILE_BYTES = 1_048_576;
@@ -70,12 +70,14 @@ export async function readPluginDirectory(directory) {
   const packageJson = await readJsonFile(path.join(root, 'package.json'), MAX_MANIFEST_BYTES, 'package.json');
   const manifestPath = packageJson?.[PLUGIN_PACKAGE_FIELD]?.plugin ?? PLUGIN_MANIFEST_DEFAULT;
   if (typeof manifestPath !== 'string' || !safeRelative(manifestPath)) throw new PluginError('COSSACK_PLUGIN_MANIFEST_INVALID', 'package.json#cossack.plugin must name a manifest file inside the package.');
-  const manifest = await readJsonFile(path.join(root, manifestPath), MAX_MANIFEST_BYTES, manifestPath);
+  const manifest = await readJsonFile(await insidePackage(root, manifestPath), MAX_MANIFEST_BYTES, manifestPath);
   const sourceRoot = manifest?.source ?? 'plugin';
   checkManifest(manifest, packageJson);
   const files = new Map();
   let total = 0;
-  const base = path.join(root, sourceRoot);
+  // The source folder (and every folder on the way to it) must be the package's own, not a link
+  // to somewhere else on this machine: realpath it and keep it inside the package.
+  const base = await insidePackage(root, sourceRoot);
   const walk = async (directoryPath, prefix) => {
     let entries;
     try { entries = await fs.readdir(directoryPath, { withFileTypes: true }); }
@@ -95,6 +97,19 @@ export async function readPluginDirectory(directory) {
   };
   await walk(base, '');
   return finishPackage(packageJson, manifest, files);
+}
+
+/** `relative` resolved through any links, refused unless it stays inside the package `root` (already real). */
+async function insidePackage(root, relative) {
+  const target = path.join(root, relative);
+  let real;
+  try { real = await fs.realpath(target); }
+  catch (error) { if (error.code === 'ENOENT') return target; throw error; }
+  const within = path.relative(root, real);
+  if (within === '' ? relative !== '' && relative !== '.' : within.startsWith('..') || path.isAbsolute(within)) {
+    throw new PluginError('COSSACK_PLUGIN_SOURCE_UNSAFE', `${relative} leads outside the plugin package.`);
+  }
+  return real;
 }
 
 /** Read a plugin from an npm tarball (`npm pack` output) in memory. */
@@ -371,11 +386,28 @@ async function resolvePluginSource(root, source, options) {
   return { plugin, record: { type: 'npm', spec: packageName } };
 }
 
+/**
+ * How to start pnpm with `args`. Node refuses to spawn a `.cmd` shim without a shell on Windows
+ * (EINVAL), so there it runs pnpm's own entry when pnpm started this process, and otherwise
+ * `pnpm.cmd` through the shell with arguments that need no quoting.
+ */
+export function pnpmInvocation(args, { platform = process.platform, env = process.env, execPath = process.execPath } = {}) {
+  if (platform !== 'win32') return { command: 'pnpm', args: [...args], shell: false };
+  const entry = String(env.npm_execpath ?? '');
+  const entryName = entry.split(/[\\/]/).at(-1)?.toLowerCase() ?? '';
+  if (entry && entryName.startsWith('pnpm') && !/\.(?:cmd|bat|ps1)$/i.test(entryName)) {
+    return /\.[cm]?js$/i.test(entryName) ? { command: execPath, args: [entry, ...args], shell: false } : { command: entry, args: [...args], shell: false };
+  }
+  const unsafe = args.find(argument => !/^[\w@./:=+~-]+$/.test(argument));
+  if (unsafe !== undefined) throw new PluginError('COSSACK_PLUGIN_INSTALL_FAILED', `Refusing to pass ${JSON.stringify(unsafe)} to pnpm through the Windows shell. Install the package yourself, then re-run.`);
+  return { command: 'pnpm.cmd', args: [...args], shell: true };
+}
+
 /** Install without lifecycle scripts, so the package never runs during installation. */
 function installPackage(spec, cwd) {
   return new Promise((resolve, reject) => {
-    const command = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
-    const child = spawn(command, ['add', '--save-dev', '--ignore-scripts', spec], { cwd, stdio: ['ignore', 'inherit', 'inherit'] });
+    const invocation = pnpmInvocation(['add', '--save-dev', '--ignore-scripts', spec]);
+    const child = spawn(invocation.command, invocation.args, { cwd, shell: invocation.shell, windowsHide: true, stdio: ['ignore', 'inherit', 'inherit'] });
     child.once('error', error => reject(new PluginError('COSSACK_PLUGIN_INSTALL_FAILED', `pnpm could not start: ${error.message}`)));
     child.once('exit', code => code === 0 ? resolve() : reject(new PluginError('COSSACK_PLUGIN_INSTALL_FAILED', `pnpm add ${spec} failed with exit code ${code}.`)));
   });

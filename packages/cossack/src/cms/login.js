@@ -27,7 +27,7 @@ export async function loginCommand({ flags, env = process.env, cwd = process.cwd
     const email = flags.email || env.CMS_EMAIL || await ask({ type: 'text', message: 'Email' });
     const password = env.CMS_PASSWORD || await ask({ type: 'password', message: 'Password' });
     if (!email || !password) throw coded('COSSACK_CMS_CREDENTIALS_REQUIRED', 'Pass --email and set CMS_PASSWORD (or run in a terminal to be asked).');
-    assertCredentialTarget(url, { source: target.source, credential: 'CMS_PASSWORD', fromEnvironment: Boolean(env.CMS_PASSWORD) });
+    assertCredentialTarget(url, { source: target.source, credential: 'CMS_PASSWORD', fromEnvironment: Boolean(env.CMS_PASSWORD), allowHttp: target.allowHttp });
     const session = createClient({ url, site, fetch });
     const sameOrigin = { origin: session.origin, 'sec-fetch-site': 'same-origin' };
     let code = flags.code;
@@ -53,6 +53,9 @@ export async function loginCommand({ flags, env = process.env, cwd = process.cwd
     token = created.data.token;
     // The session did its job; the application password signs in from now on.
     await session.request('DELETE', '/api/auth/session', { cookie }).catch(() => undefined);
+  } else {
+    // A typed token still goes only where the address was confirmed, and never over plain HTTP.
+    assertCredentialTarget(url, { source: target.source, credential: '--token', allowHttp: target.allowHttp });
   }
   const me = (await createClient({ url, site, token, fetch }).request('GET', '/api/cms/me')).data;
   name ||= `application password ${tokenId(token) ?? ''}`.trim();
@@ -64,15 +67,23 @@ export async function loginCommand({ flags, env = process.env, cwd = process.cwd
 }
 
 export async function logoutCommand({ flags, env = process.env, cwd = process.cwd(), out = () => {}, fetch = globalThis.fetch }) {
-  const target = await resolveTarget({ flags, env, cwd });
+  // Forgetting a stored login sends nothing, so it works for any address; revoking sends the
+  // password, so only where it may go.
+  const target = await resolveTarget({ flags, env, cwd, needToken: false });
+  if (!target.token) throw coded('COSSACK_CMS_LOGIN_REQUIRED', `Not signed in to ${target.url}${target.site ? ` (site ${target.site})` : ''}.`);
   const id = tokenId(target.token);
   let revoked = false;
-  if (id) {
+  let kept;
+  try { assertCredentialTarget(target.url, { source: target.source, credential: 'COSSACK_CMS_TOKEN', fromEnvironment: Boolean(env.COSSACK_CMS_TOKEN), allowHttp: target.allowHttp }); }
+  catch (error) { kept = error; }
+  if (id && !kept) {
     try { await createClient({ ...target, fetch }).request('DELETE', `/api/cms/me/tokens/${id}`); revoked = true; }
     catch (error) { if (!(error instanceof CmsApiError)) throw error; }
   }
   const forgotten = target.login ? Boolean(await forgetLogin(target.key, env)) : false;
+  if (kept && !forgotten) throw kept;
   out(`${revoked ? 'Revoked the application password and signed' : 'Signed'} out of ${target.url}${target.site ? ` (site ${target.site})` : ''}.`);
+  if (kept) out(`The application password was not revoked: ${kept.message} Revoke it in the dashboard under your profile.`);
   return { url: target.url, site: target.site ?? null, revoked, forgotten };
 }
 

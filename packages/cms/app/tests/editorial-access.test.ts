@@ -7,7 +7,7 @@ import { totpCode, totpStep } from '@cossackframework/auth';
 import { ANONYMOUS, contentModule, createCMS, defineResource, field, systemPrincipal, userPrincipal, type CmsHost } from '../../src/server/index';
 import { live, romedbService } from '../../tests/helpers';
 import { editorView, entryValues, saveEntry } from '../src/cms/content';
-import { draftEntry } from '../src/cms/site-editing';
+import { draftEntry, draftMedia } from '../src/cms/site-editing';
 import { entryUpdate } from '../src/cms/manage';
 import { EntryRoom, requireEntryEditor } from '../src/cms/collab/room';
 import { GET as readNotes } from '../src/pages/api/cms/content/[collection]/[entry]/notes';
@@ -72,6 +72,17 @@ describe.skipIf(!live)('editorial access', () => {
         const preview = await draftEntry(cms, cms.collection('posts'), record, values);
         expect(preview.locked).toBeNull();
         expect(JSON.stringify(preview.content)).toContain('Members body');
+    });
+
+    it('opens the Live Edit media chooser only to the entry\'s editor, or to an appearance manager without an entry', async () => {
+        const reader = userPrincipal('reader', ['subscriber'], []);
+        const designer = userPrincipal('designer', ['designer'], ['cms:appearance']);
+        // A draft the client forged without a collection is not a pass to the library.
+        expect(await draftMedia(cms, { collection: '', id: '' }, '', reader)).toBeNull();
+        expect(await draftMedia(cms, { collection: '', id: '' }, '', designer)).toEqual([]);
+        expect(await draftMedia(cms, { collection: 'posts', id: 'member' }, '', reader)).toBeNull();
+        expect(await draftMedia(cms, { collection: 'posts', id: 'member' }, '', editor)).toEqual([]);
+        expect(await draftMedia(cms, { collection: '', id: '' }, '', ANONYMOUS)).toBeNull();
     });
 
     it('keeps a confirmed authenticator when another setup starts', async () => {

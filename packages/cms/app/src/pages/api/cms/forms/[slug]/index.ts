@@ -5,7 +5,7 @@ import { renderMarkdown, type LoadedForm } from '@cossackframework/cms/server';
 import { getClientIp } from '@cossackframework/core';
 import { apiError, cappedRequest } from '../../../../../cms/content-api';
 import { messageHtml, type FormResult } from '../../../../../cms/site-forms';
-import { siteOrigin } from '../../../../../cms/seo';
+import { mailOrigin } from '../../../../../cms/seo';
 
 /**
  * A form for headless sites: `GET /api/cms/forms/contact` answers its inputs (name, label,
@@ -130,9 +130,11 @@ export const POST = async (c: Context) => {
         return (await verifier.verify({ token: meta.token, ...(ip && /^[a-fA-F0-9:.]{1,64}$/.test(ip) ? { remoteIP: ip } : {}) })).success;
     } : undefined;
     const started = Number(meta.started);
+    // Links in the confirmation and its emails only from an address the site set (see mailOrigin).
+    const origin = mailOrigin(c);
     try {
         const { confirmation, submission } = await cms.forms.submit(form.ref.id, values, {
-            principal: c.get('principal'), page, origin: siteOrigin(c),
+            principal: c.get('principal'), page, ...(origin ? { origin } : {}),
             ...(ip ? { ip } : {}), ...(c.req.header('user-agent') ? { userAgent: c.req.header('user-agent') } : {}), ...(c.req.header('referer') ? { referrer: c.req.header('referer') } : {}),
             ...(meta.trap ? { trap: meta.trap } : {}), ...(Number.isFinite(started) && started > 0 ? { startedAt: started } : {}), ...(botCheck ? { botCheck } : {}),
         });

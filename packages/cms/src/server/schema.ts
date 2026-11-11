@@ -2,7 +2,8 @@
  * Schema planner. Reads the live catalog through INFO, diffs it against resource
  * declarations and plans additive DDL; renames, backfills, tightened constraints and
  * drops are explicit versioned steps. Each step is one atomic batch sent with
- * `ifSequence` from the planning read, recorded in the relational migration ledger.
+ * the next schema generation (or, before host step 11, `ifSequence` from the planning read), recorded
+ * in the relational migration ledger.
  */
 import { indexedRowPaths, rowIndexPath, rowsSearchable } from '../field-groups';
 import { ClientError, compareVersions, encodeValue, type RomeDB, type Statement, type Value } from '@cossackframework/romedb';
@@ -71,6 +72,8 @@ export interface Catalog {
     readonly engineVersion: string;
     readonly tables: ReadonlyMap<string, CatalogTable>;
     readonly ledger: LedgerState;
+    /** The last schema generation, or null before host step 11 made the table. */
+    readonly generation: number | null;
 }
 
 export interface PlannedStep {
@@ -197,34 +200,57 @@ function indexPath(path: string): string {
     return path.split('.').map(part => part === '*' ? part : quote(part)).join('.');
 }
 
-/** Read the catalog in one snapshot sequence. Retries when a write lands between the reads. */
+/** The tables and their models, in a form two reads can be compared by. */
+function tableList(info: { tables?: { name: string; model: string }[] }): string {
+    return JSON.stringify((info.tables ?? []).map(table => [table.name, table.model]).sort((a, b) => a[0]!.localeCompare(b[0]!)));
+}
+
+/**
+ * Read the catalog. The table definitions may take several reads; each one repeats the table
+ * list and the migration ledger, and the catalog is consistent when they match the first read's.
+ * Every schema change commits ledger rows in the same batch, so writes to other rows, which land
+ * all the time on a busy site, do not make the read start over. A schema change does.
+ */
 export async function readCatalog(db: RomeDB, collections: readonly string[], options: { signal?: AbortSignal } = {}): Promise<Catalog> {
     for (let attempt = 0; attempt < 5; attempt++) {
         const first = await db.read([{ rql: 'INFO FOR DB' }], options);
         const info = first.results[0]!.rows[0]![0] as { tables?: { name: string; model: string }[] };
         const names = new Map((info.tables ?? []).map(table => [table.name, table.model]));
+        const listed = tableList(info);
         const wanted = collections.filter(name => names.get(name) === 'document');
-        const statements: Statement[] = wanted.map(name => ({ rql: `INFO FOR TABLE ${name}` }));
         const ledgerQueries = names.has('cms_migrations') && names.has('cms_schema_state');
-        if (ledgerQueries) {
-            statements.push({ rql: "SELECT kind, resource, version FROM cms_migrations WHERE kind IN ('host', 'explicit') ORDER BY kind, resource, version" });
-            statements.push({ rql: 'SELECT resource, declaration_hash FROM cms_schema_state ORDER BY resource' });
+        const generations = names.has('cms_schema_generations');
+        const ledgerStatements: Statement[] = ledgerQueries ? [
+            { rql: "SELECT kind, resource, version FROM cms_migrations WHERE kind IN ('host', 'explicit') ORDER BY kind, resource, version" },
+            { rql: 'SELECT resource, declaration_hash FROM cms_schema_state ORDER BY resource' },
+            ...(generations ? [{ rql: 'SELECT max(id) FROM cms_schema_generations' }] : []),
+        ] : [];
+        const fixed = 1 + ledgerStatements.length;
+        const tableStatements: Statement[] = wanted.map(name => ({ rql: `INFO FOR TABLE ${name}` }));
+        const chunks: Statement[][] = [];
+        for (let offset = 0; offset < tableStatements.length || chunks.length === 0; offset += 30 - fixed) {
+            chunks.push([{ rql: 'INFO FOR DB' }, ...ledgerStatements, ...tableStatements.slice(offset, offset + 30 - fixed)]);
         }
         const tables = new Map<string, CatalogTable>();
         for (const [name, model] of names) tables.set(name, { name, model });
         const ledger: LedgerState = { host: new Set(), explicit: new Map(), hashes: new Map() };
+        let ledgerSeen: string | undefined;
+        let generation: number | null = null;
         let consistent = true;
-        for (let offset = 0; offset < statements.length; offset += 30) {
-            const chunk = statements.slice(offset, offset + 30);
+        let sequence = first.sequence;
+        for (const chunk of chunks) {
             const result = await db.read(chunk, { ...options, afterSequence: first.sequence });
-            if (result.sequence !== first.sequence) { consistent = false; break; }
-            chunk.forEach((statement, index) => {
-                const rows = result.results[index]!.rows;
-                if (statement.rql.startsWith('INFO FOR TABLE ')) {
-                    const table = rows[0]![0] as unknown as CatalogTable;
-                    tables.set(table.name, table);
-                } else if (statement.rql.includes('FROM cms_migrations')) {
-                    for (const [kind, resource, version] of rows) {
+            sequence = result.sequence;
+            const rows = (index: number) => result.results[index]!.rows;
+            const ledgerRows = JSON.stringify(ledgerStatements.map((_, index) => rows(1 + index)), (_key, value) => typeof value === 'bigint' ? `${value}n` : value);
+            if (result.sequence !== first.sequence) {
+                // Something was written since: go on only if it was not the schema.
+                if (tableList(rows(0)[0]![0] as { tables?: { name: string; model: string }[] }) !== listed || (ledgerSeen !== undefined && ledgerRows !== ledgerSeen)) { consistent = false; break; }
+            }
+            if (ledgerSeen === undefined) {
+                ledgerSeen = ledgerRows;
+                if (ledgerQueries) {
+                    for (const [kind, resource, version] of rows(1)) {
                         if (kind === 'host') ledger.host.add(Number(version));
                         else {
                             const set = ledger.explicit.get(resource as string) ?? new Set<number>();
@@ -232,17 +258,24 @@ export async function readCatalog(db: RomeDB, collections: readonly string[], op
                             ledger.explicit.set(resource as string, set);
                         }
                     }
-                } else for (const [resource, hash] of rows) ledger.hashes.set(resource as string, hash as string);
-            });
+                    for (const [resource, hash] of rows(2)) ledger.hashes.set(resource as string, hash as string);
+                    if (generations) generation = Number(rows(3)[0]?.[0] ?? 0);
+                }
+            } else if (ledgerRows !== ledgerSeen) { consistent = false; break; }
+            for (let index = fixed; index < chunk.length; index++) {
+                const table = rows(index)[0]![0] as unknown as CatalogTable;
+                tables.set(table.name, table);
+            }
         }
         if (!consistent) continue;
         // A ledger with steps this build does not have belongs to another build: planning against it would be wrong.
         const unknown = unknownHostSteps(ledger.host);
         if (unknown.length) throw new CmsError('CMS_SCHEMA_MISMATCH', hostSchemaMismatch(unknown));
         const details = await db.preflight(options);
-        return { sequence: first.sequence, engineVersion: details.engineVersion!, tables, ledger };
+        // The schema is as read up to the last read, so migrations guard on that sequence.
+        return { sequence, engineVersion: details.engineVersion!, tables, ledger, generation };
     }
-    throw new Error('The database kept changing while the schema was read; retry the migration.');
+    throw new Error('The database schema kept changing while it was read; retry the migration.');
 }
 
 /** Plan host tables, then each resource in ID order. Pure: the same inputs give the same RomeQL. */
@@ -369,20 +402,27 @@ export async function migrate(db: RomeDB, resources: readonly Resource[], option
         const catalog = await readCatalog(db, resources.map(resource => resource.storage), options);
         const plan = await planSchema(resources, catalog);
         let sequence = plan.sequence;
+        let generation = catalog.generation;
         let conflict = false;
         const steps = options.only ? plan.steps.filter(step => step.resource === null || options.only!.includes(step.resource)) : plan.steps;
         const last = new Map(steps.filter(step => step.resource).map(step => [step.resource!, step]));
         for (const step of steps) {
             try {
                 const attached = step.resource && last.get(step.resource) === step ? options.attach?.(step.resource) ?? [] : [];
-                const result = await db.write([...step.statements, ...ledgerStatements(step, plan.engineVersion, now()), ...attached], {
-                    afterSequence: sequence, ifSequence: sequence, kind: 'cms.migration', signal: options.signal,
+                // With the generations table, the batch takes the next generation: another migration
+                // since the plan holds it, and the batch rolls back. Without it (a database before host
+                // step 11), any write since the plan does.
+                const at = now();
+                const claim: Statement[] = generation === null ? [] : [{ rql: 'INSERT INTO cms_schema_generations (id, at) VALUES ($generation, $at)', params: { $generation: generation + 1, $at: at } }];
+                const result = await db.write([...step.statements, ...ledgerStatements(step, plan.engineVersion, at), ...claim, ...attached], {
+                    afterSequence: sequence, ...(generation === null ? { ifSequence: sequence } : {}), kind: 'cms.migration', signal: options.signal,
                     workLimits: { rowsRead: 1_000_000, rowMutations: 100_000, vmSteps: 10_000_000 },
                 });
                 sequence = result.sequence;
+                if (generation !== null) generation++;
                 applied.push(step);
             } catch (error) {
-                if (error instanceof ClientError && error.outcome === 'rolled-back' && isSequenceConflict(error)) { conflict = true; break; }
+                if (error instanceof ClientError && error.outcome === 'rolled-back' && (isSequenceConflict(error) || isGenerationClash(error))) { conflict = true; break; }
                 const code = error instanceof ClientError ? error.code : (error as Error).name;
                 return { applied, failed: { step, code, message: (error as Error).message }, blocked: plan.blocked, warnings: plan.warnings, replans };
             }
@@ -390,6 +430,18 @@ export async function migrate(db: RomeDB, resources: readonly Resource[], option
         if (!conflict) return { applied, blocked: plan.blocked, warnings: plan.warnings, replans };
         if (++replans > (options.maxReplans ?? 3)) throw new Error('Schema migration kept conflicting with other writes; retry later.');
     }
+}
+
+/**
+ * For a schema change made outside `migrate` (dropping a collection's or a form's table): take the
+ * next generation, so a migration planned before it collides and plans again.
+ */
+export function nextGenerationStatement(at: number): Statement {
+    return { rql: 'INSERT INTO cms_schema_generations (id, at) SELECT coalesce(max(id), 0) + 1, $at FROM cms_schema_generations', params: { $at: at } };
+}
+
+function isGenerationClash(error: ClientError): boolean {
+    return error.code === 'RDB_CONSTRAINT' && error.message.includes('cms_schema_generations');
 }
 
 function isSequenceConflict(error: ClientError): boolean {

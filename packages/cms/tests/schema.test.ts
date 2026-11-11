@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createCMS, defineResource, field, HOST_STEPS, planSchema, readCatalog, resolveResource, type ResourceDeclaration } from '../src/server/index';
+import { createRomeDB, MemoryPendingWriteStore } from '@cossackframework/romedb';
 import { romedbService, live } from './helpers';
 
 const tickets = defineResource({
@@ -82,24 +83,73 @@ describe.skipIf(!live)('schema planner and migration ledger', () => {
         } finally { await a.stop(); await b.stop(); }
     }, 30_000);
 
-    it('re-plans when another write lands between planning and applying', async () => {
+    it('reads the catalog while other rows are written between its reads, and starts over for a schema change', async () => {
+        const fresh = await service.fresh();
+        try {
+            expect((await createCMS({ db: fresh.db, resources: [tickets] }).migrate()).failed).toBeUndefined();
+            const writer = fresh.db;
+            let noise = 0;
+            let ledgerChanges = 0;
+            const reading = (change: 'rows' | 'table-once') => createRomeDB({
+                url: fresh.url, token: fresh.token, pending: new MemoryPendingWriteStore(),
+                fetch: async (input, init) => {
+                    if (String(input).endsWith('/read') && String(init?.body).includes('INFO FOR TABLE')) {
+                        if (change === 'rows') {
+                            noise++;
+                            await writer.write([{ rql: `INSERT INTO cms_audit (id, actor, action, resource, record_id, at) VALUES ('noise-${noise}', 'x', 'noise', 'x', 'x', 0)` }]);
+                        } else if (ledgerChanges++ === 0) {
+                            await writer.write([{ rql: 'CREATE TABLE noise_table (id TEXT PRIMARY KEY)' }]);
+                        }
+                    }
+                    return fetch(input, init);
+                },
+            });
+            // A write before every table read: the old check started over each time and gave up.
+            const busy = await readCatalog(reading('rows'), ['r__app__tickets']);
+            expect(busy.tables.get('r__app__tickets')).toBeDefined();
+            expect(noise).toBeGreaterThan(0);
+            // A new table between reads is a schema change: the catalog is read again and holds it.
+            const changed = await readCatalog(reading('table-once'), ['r__app__tickets']);
+            expect(ledgerChanges).toBeGreaterThan(1);
+            expect(changed.tables.has('noise_table')).toBe(true);
+        } finally {
+            await fresh.stop();
+        }
+    }, 60_000);
+
+    it('applies through writes to other rows, and re-plans when another schema change lands between planning and applying', async () => {
         const other = service.database();
         let interfered = false;
-        const db = service.database({
+        let noise = 0;
+        const notes = defineResource({ name: 'notes', fields: { text: field.string() } });
+        const comments = defineResource({ name: 'remarks', fields: { text: field.string() } });
+        const interfering = (change: 'rows' | 'schema') => service.database({
             fetch: async (input, init) => {
-                if (!interfered && String(input).endsWith('/query') && String(init?.body).includes('r__app__notes')) {
-                    interfered = true;
-                    await other.write([{ rql: "INSERT INTO cms_audit (id, actor, action, resource, record_id, at) VALUES ('noise', 'x', 'noise', 'x', 'x', 0)" }]);
+                const body = String(init?.body);
+                if (String(input).endsWith('/query') && (body.includes('r__app__notes') || body.includes('r__app__remarks'))) {
+                    if (change === 'rows') {
+                        // Before every migration write: a busy site.
+                        noise++;
+                        await other.write([{ rql: `INSERT INTO cms_audit (id, actor, action, resource, record_id, at) VALUES ('noise-${noise}', 'x', 'noise', 'x', 'x', 0)` }]);
+                    } else if (!interfered) {
+                        interfered = true;
+                        await other.write([{ rql: 'CREATE TABLE schema_noise (id TEXT PRIMARY KEY)' }, { rql: 'INSERT INTO cms_schema_generations (id, at) SELECT coalesce(max(id), 0) + 1, 0 FROM cms_schema_generations' }]);
+                    }
                 }
                 return fetch(input, init);
             },
         });
-        const notes = defineResource({ name: 'notes', fields: { text: field.string() } });
-        const report = await createCMS({ db, resources: [tickets, notes] }).migrate();
+        const busy = await createCMS({ db: interfering('rows'), resources: [tickets, notes] }).migrate();
+        expect(noise).toBeGreaterThan(0);
+        expect(busy.replans).toBe(0);
+        expect(busy.failed).toBeUndefined();
+        expect(busy.applied.map(step => step.resource)).toEqual(['app/notes']);
+
+        const report = await createCMS({ db: interfering('schema'), resources: [tickets, notes, comments] }).migrate();
         expect(interfered).toBe(true);
         expect(report.replans).toBe(1);
         expect(report.failed).toBeUndefined();
-        expect(report.applied.map(step => step.resource)).toEqual(['app/notes']);
+        expect(report.applied.map(step => step.resource)).toEqual(['app/remarks']);
     });
 
     it('adds optional fields additively and blocks changes that need explicit steps', async () => {

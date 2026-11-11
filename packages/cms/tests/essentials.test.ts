@@ -199,6 +199,11 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         await expect(cms.redirects.save({ source: '/retired', target: '/x' })).rejects.toMatchObject({ code: 'CMS_CONFLICT' });
         const external = await cms.redirects.save({ source: '/shop/*', target: 'https://shop.example.com/*', status: 302 });
         expect(await cms.redirects.match('/shop/boots')).toMatchObject({ location: 'https://shop.example.com/boots' });
+        // A prefix moved to the root never builds a protocol-relative location from the rest.
+        await cms.redirects.save({ source: '/moved/*', target: '/*' });
+        expect(await cms.redirects.match('/moved/about')).toMatchObject({ location: '/about' });
+        expect(await cms.redirects.match('/moved//evil.example')).toMatchObject({ location: '/evil.example' });
+        expect(await cms.redirects.match('/moved/\\evil.example')).toMatchObject({ location: '/evil.example' });
         await cms.redirects.hit(external.id);
         expect(await cms.redirects.get(external.id)).toMatchObject({ hits: 1, lastHitAt: clock });
         expect((await cms.redirects.list({ search: 'campaign' })).items.map(item => item.source)).toEqual(['/retired']);
@@ -476,6 +481,12 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         await cms.settings.update('indexnow', { enabled: false }, { principal: admin });
         // Sitemap entries carry what the news and hreflang sitemaps need.
         expect((await cms.sitemapEntries('posts')).find(entry => entry.url === '/posts/ping-me')).toMatchObject({ id: draft.id, title: 'Ping me', translationGroup: null, publishedAt: expect.any(Number) });
+        // Search engines can't open protected or members-only entries, so their URLs stay out.
+        await cms.resource('cms/posts').create({ title: 'Locked', slug: 'locked-story', status: 'published', password: 'secret' }, { principal: admin });
+        await cms.resource('cms/posts').create({ title: 'Members', slug: 'members-story', status: 'published', membersOnly: true }, { principal: admin });
+        const listed = (await cms.sitemapEntries('posts')).map(entry => entry.url);
+        expect(listed).toContain('/posts/ping-me');
+        expect(listed.filter(url => url.endsWith('locked-story') || url.endsWith('members-story'))).toEqual([]);
     });
 
     it('counts crawler visits and missing pages', async () => {

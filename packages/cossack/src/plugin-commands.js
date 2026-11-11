@@ -7,7 +7,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { findProjectRoot } from './fs-utils.js';
 import { commandFailure, writeResult } from './output.js';
-import { assertCredentialTarget } from './cms/client.js';
+import { assertCredentialTarget, httpAllowed } from './cms/client.js';
 
 const NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 
@@ -34,7 +34,7 @@ Runs in the application as a signed-in dashboard user${command.permission ? ` wi
 Set CMS_PASSWORD; the email comes from --email or CMS_EMAIL, the application from --url or APP_URL.
 
 Options:
-${[...options, '  --url <url>  Application URL.', '  --email <email>  Dashboard user.', '  --json  Emit versioned JSON.', '  --help  Show this help.'].join('\n')}`;
+${[...options, '  --url <url>  Application URL.', '  --email <email>  Dashboard user.', '  --allow-http  Allow plain HTTP to a development host (or COSSACK_CMS_ALLOW_HTTP=1).', '  --json  Emit versioned JSON.', '  --help  Show this help.'].join('\n')}`;
 }
 
 export async function runPluginCommand(raw, rest, found) {
@@ -58,7 +58,7 @@ export async function runPluginCommand(raw, rest, found) {
   try {
     origin = new URL(url).origin;
     const source = parsed.url !== undefined || process.env.APP_URL ? 'flag' : 'project';
-    assertCredentialTarget(origin, { source, credential: 'CMS_PASSWORD' });
+    assertCredentialTarget(origin, { source, credential: 'CMS_PASSWORD', allowHttp: httpAllowed({ 'allow-http': parsed.allowHttp }, process.env) });
   } catch (error) {
     return commandFailure(ctx, label, error?.code ?? 'COSSACK_CMS_URL_INVALID', error?.code ? error.message : `${url} is not a URL.`);
   }
@@ -93,6 +93,7 @@ function parseOptions(argv, command) {
   const problems = [];
   let url;
   let email;
+  let allowHttp = false;
   const options = command.options ?? {};
   for (let index = 0; index < argv.length; index++) {
     const argument = argv[index];
@@ -101,6 +102,8 @@ function parseOptions(argv, command) {
     const take = () => inline ?? argv[++index];
     if (flag === 'url') { url = take(); continue; }
     if (flag === 'email') { email = take(); continue; }
+    // The CLI's own flag, as on every `cossack cms` command: plain HTTP to a development host.
+    if (flag === 'allow-http' && inline === undefined) { allowHttp = true; continue; }
     const rule = options[flag];
     if (!rule) { problems.push(`--${flag} is not an option of ${command.name}.`); continue; }
     if (rule.type === 'boolean') { values[flag] = inline === undefined ? true : inline === 'true'; continue; }
@@ -112,7 +115,7 @@ function parseOptions(argv, command) {
     } else values[flag] = value;
   }
   for (const [name, rule] of Object.entries(options)) if (rule.required && values[name] === undefined) problems.push(`--${name} is required.`);
-  return { values, problems, url, email };
+  return { values, problems, url, email, allowHttp };
 }
 
 async function readEnvironment(root) {

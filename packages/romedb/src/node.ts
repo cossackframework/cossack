@@ -18,6 +18,13 @@ const TEMPORARY = '.tmp';
 const CORRUPT = '.corrupt';
 /** A temporary body older than this was left by a crash between its write and its link. */
 const STALE_TEMPORARY_MS = 60 * 60_000;
+/**
+ * A saved name that does not decode and is younger than this may be a body still being written
+ * (the no-hard-link fallback writes in place), so `list` leaves it for a later run.
+ */
+const FRESH_MS = 30_000;
+/** Windows reports no POSIX permission bits (every file is 0o666, or 0o444) and cannot flush a folder. */
+const windows = () => process.platform === 'win32';
 /** `link` failures meaning the filesystem has no hard links (exFAT, some FUSE and SMB mounts). */
 const NO_HARD_LINKS = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS', 'EXDEV', 'EACCES']);
 const FILE_FLAGS = constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW ?? 0);
@@ -31,7 +38,8 @@ export class CorruptPendingWriteError extends Error {
 }
 
 /**
- * One private file per pending write, mode 0600. The body is written and flushed under a temporary
+ * One private file per pending write, mode 0600 (on Windows, where files carry no POSIX mode,
+ * the folder's access list protects them). The body is written and flushed under a temporary
  * name and then hard-linked into place, so a saved name never holds a partial body and an existing
  * one is never replaced. On a filesystem without hard links the body is written straight to its
  * exclusive name instead. `list` sets aside files that do not decode, so one bad file cannot stop
@@ -92,7 +100,7 @@ export class FilePendingWriteStore implements PendingWriteStore {
             // A second link is the temporary body of a put between its link and unlink, or of one
             // that crashed there: the saved name is complete either way.
             const linked = stat.nlink === 1 || (stat.nlink === 2 && await this.#linkedTemporary(id, stat));
-            if (!stat.isFile() || !linked || (stat.mode & 0o077) !== 0 || (typeof process.getuid === 'function' && stat.uid !== process.getuid()) || stat.size > MAX_FILE) {
+            if (!stat.isFile() || !linked || (!windows() && (stat.mode & 0o077) !== 0) || (typeof process.getuid === 'function' && stat.uid !== process.getuid()) || stat.size > MAX_FILE) {
                 throw new Error('pending write requires a private bounded regular file');
             }
             const text = await handle.readFile('utf8');
@@ -137,8 +145,14 @@ export class FilePendingWriteStore implements PendingWriteStore {
                 const write = await this.get(name.slice(0, -5));
                 if (write) writes.push(write);
             } catch (error) {
-                // Kept beside the others under a name nothing reads, for an operator to inspect.
-                if (error instanceof CorruptPendingWriteError) await fs.rename(path.join(this.#directory, name), path.join(this.#directory, `${name}${CORRUPT}`)).catch(() => {});
+                if (error instanceof CorruptPendingWriteError) {
+                    const file = path.join(this.#directory, name);
+                    const stat = await fs.lstat(file).catch(() => undefined);
+                    // Possibly a body still being written: neither set aside nor reported yet.
+                    if (!stat || Date.now() - stat.mtimeMs < FRESH_MS) continue;
+                    // Kept beside the others under a name nothing reads, for an operator to inspect.
+                    await fs.rename(file, `${file}${CORRUPT}`).catch(() => {});
+                }
                 // Either way it is reported: set aside, or (failing the ownership checks) left in place.
                 unreadable.push(name.slice(0, -5));
             }
@@ -165,6 +179,7 @@ export class FilePendingWriteStore implements PendingWriteStore {
     }
 
     async #syncDirectory(): Promise<void> {
+        if (windows()) return;
         const directory = await fs.open(this.#directory, constants.O_RDONLY | (constants.O_DIRECTORY ?? 0));
         try { await directory.sync(); }
         finally { await directory.close(); }

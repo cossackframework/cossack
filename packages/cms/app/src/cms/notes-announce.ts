@@ -8,8 +8,11 @@ import { noteMail, type Note } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
 
 export interface NoteContext {
-    /** The site's origin, for the link to the entry's notes. */
-    readonly origin: string;
+    /**
+     * The site's configured origin, for the link to the entry's notes (`mailOrigin`): null without
+     * one, when emails carry no link and webhooks a path, never an address the request named.
+     */
+    readonly origin: string | null;
     /** The entry's dashboard route (`posts`, `app.tickets`). */
     readonly route: string;
     /** The collection's name, for webhooks; null for a plugin's resource, which webhooks do not cover. */
@@ -21,7 +24,8 @@ export interface NoteContext {
 
 export async function announceNote(cms: CmsHost, change: { readonly kind: 'created' | 'resolved'; readonly note: Note }, context: NoteContext): Promise<void> {
     const { note } = change;
-    const url = `${context.origin}/dashboard/content/${context.route}/${note.recordId}?notes=open`;
+    const path = `/dashboard/content/${context.route}/${note.recordId}?notes=open`;
+    const url = context.origin ? `${context.origin}${path}` : path;
     const event = change.kind === 'created' ? 'note.created' : 'note.resolved';
     if (context.collection && await cms.webhooks.wants([event], context.collection).catch(() => false)) {
         await cms.webhooks.enqueue({
@@ -33,7 +37,7 @@ export async function announceNote(cms: CmsHost, change: { readonly kind: 'creat
     const people = await cms.users.getMany(await cms.notes.mentioned(note.id));
     if (!people.size) return;
     const site = String((await cms.settings.get('general.siteTitle').catch(() => '')) ?? '');
-    const message = noteMail({ author: context.author, title: context.title, body: note.body, quote: note.quote, url, reply: note.parentId !== null, site });
+    const message = noteMail({ author: context.author, title: context.title, body: note.body, quote: note.quote, url: context.origin ? url : '', reply: note.parentId !== null, site });
     for (const person of people.values()) {
         if (person.status !== 'active' || !person.email) continue;
         await cms.mail.send({ kind: 'note', to: person.email, from: cms.mailFrom, subject: message.subject, text: message.text }).catch(error => console.warn(`[cms] the note email to ${person.email} failed`, error));

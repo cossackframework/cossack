@@ -5,6 +5,7 @@
  */
 import { ANONYMOUS, ARTICLE_TYPES, authorUrl } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
+import { isMembersOnly, isProtected } from './site';
 
 const PER_FILE = 1000;
 
@@ -65,7 +66,8 @@ async function newsUrls(cms: CmsHost): Promise<SitemapUrl[]> {
     const urls: SitemapUrl[] = [];
     for (const collection of collections) {
         const page = await cms.resource(`cms/${collection.name}`).list({ where: { status: 'published', publishedAt: { gte: since } }, order: { field: 'publishedAt', direction: 'desc' }, limit: 100 }, { principal: ANONYMOUS }).catch(() => ({ records: [] }));
-        const records = page.records.filter(record => !(record.seo as { noindex?: boolean } | null)?.noindex);
+        // As in the other sitemaps: protected and members-only entries, and their titles, stay out.
+        const records = page.records.filter(record => !(record.seo as { noindex?: boolean } | null)?.noindex && !isProtected(record) && !isMembersOnly(record));
         const found = await cms.entryUrls(collection, records);
         for (const record of records) {
             const url = found.get(record.id);

@@ -15,14 +15,47 @@ import type { SeoView } from './seo-head';
 import { entryAncestors as ancestors, isMembersOnly, isProtected, localePrefix } from './site';
 
 /**
- * The request's site address: APP_URL for the main site, an added site's own domain (see
- * `siteUrl`), otherwise the request's origin.
+ * The site's own configured address: APP_URL for the main site, an added site's domain (see
+ * `siteUrl`). Without APP_URL, a request on the added site's own host gives its scheme and port,
+ * which `siteUrl` can only guess.
  */
-export function siteOrigin(c: Context): string {
+function configuredOrigin(c: Context): string | undefined {
     const bindings = c.env as CmsBindings | undefined;
     const site = c.get?.('site' as never) as Pick<NetworkSite, 'id' | 'host'> | undefined;
-    const configured = site && site.id !== MAIN_SITE && bindings ? siteUrl(bindings, site) : (bindings?.APP_URL || env('APP_URL', ''));
-    return (configured || new URL(c.req.url).origin).replace(/\/+$/, '');
+    const app = bindings?.APP_URL || env('APP_URL', '');
+    if (site && site.id !== MAIN_SITE && bindings) {
+        if (!app && site.host) {
+            const url = new URL(c.req.url);
+            if (url.host === site.host || url.hostname === site.host) return url.origin;
+        }
+        return siteUrl(bindings, site);
+    }
+    return app || undefined;
+}
+
+/** Whether the request names this machine, where its Host header is the developer's own. */
+function localRequest(c: Context): boolean {
+    const { hostname } = new URL(c.req.url);
+    return ['localhost', '127.0.0.1', '[::1]'].includes(hostname) || hostname.endsWith('.localhost');
+}
+
+/**
+ * The request's site address for pages it renders (canonical URLs, sitemaps, previews): the
+ * configured address, otherwise the request's origin.
+ */
+export function siteOrigin(c: Context): string {
+    return (configuredOrigin(c) || new URL(c.req.url).origin).replace(/\/+$/, '');
+}
+
+/**
+ * The site address for links that leave the request, in email: the configured address, or the
+ * request's origin only on this machine. Elsewhere the Host header is the client's to choose, so
+ * a link built from it could send a reader to someone else's site; null then, and no link.
+ */
+export function mailOrigin(c: Context): string | null {
+    const configured = configuredOrigin(c);
+    if (configured) return configured.replace(/\/+$/, '');
+    return localRequest(c) ? new URL(c.req.url).origin : null;
 }
 
 function absolute(origin: string, url: string): string {

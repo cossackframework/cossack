@@ -2,8 +2,14 @@
  * Stripe as the payments provider: Checkout Sessions over its REST API (form-encoded, no SDK),
  * and webhooks verified with the signing secret (HMAC-SHA256 over `t.payload`, five minutes of
  * tolerance). The events the CMS relays: a completed checkout (pending while its payment is
- * on its way, completed or failed when it arrives), a succeeded or failed payment, a
- * subscription change or end, a refund. Others answer 200 and are not relayed.
+ * on its way, completed or failed when it arrives), a succeeded or failed payment, a paid or
+ * failed invoice (a subscription's payments), a subscription change or end, a refund. Others
+ * answer 200 and are not relayed.
+ *
+ * Which event completes a payment (`completes`, what `payment.completed` fires for) rests on
+ * documented fields only: a paid checkout, and a paid invoice unless it is the first invoice
+ * (`billing_reason: subscription_create`) of a subscription a CMS checkout made, which that
+ * checkout already completed. A payment intent repeats one of those, so it never completes.
  */
 import { CmsError } from '../errors';
 import type { PaymentEvent } from '../hooks';
@@ -11,7 +17,7 @@ import { checkCheckout, type Checkout, type CheckoutInput, type PaymentsProvider
 import { sha256Hex, timingSafeEqual } from './tokens';
 
 export const STRIPE_API = 'https://api.stripe.com';
-/** The metadata key that marks a payment a checkout made. */
+/** The metadata key that marks a payment or subscription a CMS checkout made. */
 const CHECKOUT_MARK = 'cms_checkout';
 /** How old a webhook's timestamp may be. */
 export const STRIPE_TOLERANCE_MS = 5 * 60_000;
@@ -29,6 +35,7 @@ const TYPES: { readonly [stripe: string]: PaymentEvent['type'] } = {
     // A completed checkout whose payment is still on its way (a bank transfer, SEPA) is pending until one of the async events says how it went.
     'checkout.session.completed': 'checkout.completed', 'checkout.session.async_payment_succeeded': 'checkout.completed', 'checkout.session.async_payment_failed': 'payment.failed',
     'payment_intent.succeeded': 'payment.succeeded', 'payment_intent.payment_failed': 'payment.failed',
+    'invoice.paid': 'payment.succeeded', 'invoice.payment_failed': 'payment.failed',
     'customer.subscription.created': 'subscription.updated', 'customer.subscription.updated': 'subscription.updated', 'customer.subscription.deleted': 'subscription.cancelled',
     'charge.refunded': 'refund',
 };
@@ -37,6 +44,18 @@ export function stripePayments(options: StripePaymentsOptions): PaymentsProvider
     const api = (options.api ?? STRIPE_API).replace(/\/$/, '');
     const fetcher = options.fetch ?? globalThis.fetch;
     const now = options.now ?? Date.now;
+    /** The metadata of an invoice's subscription, or nothing when Stripe does not answer. */
+    const invoiceMetadata = async (id: string): Promise<Record<string, unknown> | undefined> => {
+        if (!/^in_[A-Za-z0-9]{1,200}$/.test(id)) return undefined;
+        try {
+            const response = await fetcher(`${api}/v1/invoices/${id}`, { headers: { authorization: `Bearer ${options.secretKey}` } });
+            if (!response.ok) return undefined;
+            const data = await response.json() as { parent?: { subscription_details?: { metadata?: Record<string, unknown> } }; subscription_details?: { metadata?: Record<string, unknown> } };
+            return data.parent?.subscription_details?.metadata ?? data.subscription_details?.metadata;
+        } catch {
+            return undefined;
+        }
+    };
     return {
         name: 'stripe',
         async checkout(raw: CheckoutInput): Promise<Checkout> {
@@ -48,9 +67,9 @@ export function stripePayments(options: StripePaymentsOptions): PaymentsProvider
             if (input.customerEmail) form.set('customer_email', input.customerEmail);
             if (input.reference) form.set('client_reference_id', input.reference);
             // The session's metadata stays on the session: the payment and subscription it makes carry their own copy,
-            // with the reference, so their later events (payments, refunds, renewals) name the order too.
-            // A checkout's payment is also marked as one, so its own events do not count it twice.
-            const carried = { ...(input.metadata ?? {}), ...(input.reference ? { reference: input.reference } : {}), ...(input.mode === 'subscription' ? {} : { [CHECKOUT_MARK]: '1' }) };
+            // with the reference, so their later events (payments, invoices, refunds) name the order too.
+            // Both are marked as a checkout's, so the first invoice of its subscription is not counted twice.
+            const carried = { ...(input.metadata ?? {}), ...(input.reference ? { reference: input.reference } : {}), [CHECKOUT_MARK]: '1' };
             for (const [key, value] of Object.entries(carried)) form.set(input.mode === 'subscription' ? `subscription_data[metadata][${key}]` : `payment_intent_data[metadata][${key}]`, value);
             if (input.priceId) { form.set('line_items[0][price]', input.priceId); form.set('line_items[0][quantity]', '1'); }
             else {
@@ -81,15 +100,26 @@ export function stripePayments(options: StripePaymentsOptions): PaymentsProvider
             const mapped = TYPES[event.type];
             if (!mapped) return null;
             const type: PaymentEvent['type'] = event.type === 'checkout.session.completed' && object.payment_status === 'unpaid' ? 'checkout.pending' : mapped;
-            const given = object.metadata && typeof object.metadata === 'object' ? object.metadata as Record<string, unknown> : {};
+            const invoice = event.type.startsWith('invoice.');
+            // An invoice has no metadata of its own for a subscription: its subscription's copy is in
+            // `parent.subscription_details` (`subscription_details` before Stripe's 2025 API versions).
+            const subscription = (object.parent as { subscription_details?: { metadata?: unknown } } | undefined)?.subscription_details ?? (object.subscription_details as { metadata?: unknown } | undefined);
+            let given = (invoice ? subscription?.metadata : object.metadata) as Record<string, unknown> | undefined;
+            // A refunded subscription payment's charge has no metadata; its invoice's subscription has the order's.
+            if (event.type === 'charge.refunded' && !Object.keys(given ?? {}).length && typeof object.invoice === 'string') given = await invoiceMetadata(object.invoice);
+            given = given && typeof given === 'object' ? given : {};
             const metadata = Object.fromEntries(Object.entries(given).filter(([key, value]) => typeof value === 'string' && key !== CHECKOUT_MARK)) as Record<string, string>;
-            const fromCheckout = event.type.startsWith('checkout.') || given[CHECKOUT_MARK] === '1';
-            // A refund's amount is what was refunded, not the charge it came from.
+            const marked = given[CHECKOUT_MARK] === '1';
+            const fromCheckout = event.type.startsWith('checkout.') || marked;
+            const completes = (type === 'checkout.completed')
+                || (event.type === 'invoice.paid' && !(object.billing_reason === 'subscription_create' && marked));
+            // A refund's amount is what was refunded, not the charge it came from; an invoice's is what was paid.
             const amount = event.type === 'charge.refunded' ? (typeof object.amount_refunded === 'number' ? object.amount_refunded : null)
+                : invoice ? (typeof object.amount_paid === 'number' && event.type === 'invoice.paid' ? object.amount_paid : typeof object.amount_due === 'number' ? object.amount_due : null)
                 : typeof object.amount_total === 'number' ? object.amount_total : typeof object.amount === 'number' ? object.amount : typeof object.amount_received === 'number' ? object.amount_received : null;
             return {
                 eventId: `payment:stripe:${event.id}`, topic: 'payment.event', at: now(), provider: 'stripe', type, providerType: event.type,
-                checkoutId: typeof object.id === 'string' && event.type.startsWith('checkout.') ? object.id : null, fromCheckout,
+                checkoutId: typeof object.id === 'string' && event.type.startsWith('checkout.') ? object.id : null, fromCheckout, completes,
                 reference: typeof object.client_reference_id === 'string' ? object.client_reference_id : metadata.reference ?? null,
                 customerEmail: typeof object.customer_email === 'string' ? object.customer_email : (object.customer_details as { email?: string } | undefined)?.email ?? null,
                 amount, currency: typeof object.currency === 'string' ? object.currency.toUpperCase() : null, metadata, object,

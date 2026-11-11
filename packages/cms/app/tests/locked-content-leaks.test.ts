@@ -80,8 +80,27 @@ describe('locked entries stay locked outside their page', () => {
         const page = await list(member, { 'filter[price]': '49' });
         expect(calls.at(-1)).not.toHaveProperty('membersOnly');
         expect(page.items.map(item => item.id)).toEqual(['a']);
+        // The count is of what the reader may open: the other role's entry adds nothing to it.
+        expect(page).toMatchObject({ total: 1, pages: 1 });
         // Those who edit the collection see everything.
         await list({ kind: 'user', id: 'e1', roles: ['editor'], permissions: ['cms/*'] }, { 'filter[price]': '49' });
         expect(calls.at(-1)).not.toHaveProperty('password');
+        expect(page).not.toHaveProperty('truncated');
+    });
+
+    it('says when a filter on withheld fields read only the first 1,000 matches', async () => {
+        const offsets: number[] = [];
+        const fields = { ...resource.fields, price: { kind: 'number', index: true } };
+        // Every batch is full and says more follow: the scan stops after 1,000 and says so.
+        const shop = { ...host([]), resourceById: () => ({ ...resource, fields }),
+            resource: () => ({ list: async (options: { offset: number; limit: number }) => {
+                offsets.push(options.offset);
+                return { records: Array.from({ length: options.limit }, (_, index) => record(`r${options.offset + index}`, { price: 49 })), more: true };
+            }, count: async () => 5000, canUpdate: () => false }) } as unknown as CmsHost;
+        const member = { kind: 'user', id: 'u1', roles: ['subscriber'], permissions: [] };
+        const page = await entriesList({ get: (key: string) => key === 'cms' ? shop : member } as unknown as Context, 'posts', { 'filter[price]': '49', perPage: '100', page: '40' });
+        expect(offsets).toHaveLength(10);
+        expect(page).toMatchObject({ truncated: true, total: 1000, pages: 10, page: 10 });
+        expect(page.items).toHaveLength(100);
     });
 });

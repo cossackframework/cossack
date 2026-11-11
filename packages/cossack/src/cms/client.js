@@ -75,17 +75,23 @@ export async function projectUrl(cwd) {
 export function isLocalAddress(url) {
   let host;
   try { host = new URL(url).hostname.toLowerCase().replace(/^\[|\]$/g, ''); } catch { return false; }
-  return host === 'localhost' || host.endsWith('.localhost') || host === '::1' || /^127(?:\.\d{1,3}){3}$/.test(host);
+  return host === 'localhost' || host.endsWith('.localhost') || host === '::1' || host === '0.0.0.0' || /^127(?:\.\d{1,3}){3}$/.test(host);
+}
+
+/** Whether plain HTTP to another machine was allowed: `--allow-http` or `COSSACK_CMS_ALLOW_HTTP=1`. */
+export function httpAllowed(flags = {}, env = process.env) {
+  return flags['allow-http'] === true || env.COSSACK_CMS_ALLOW_HTTP === '1';
 }
 
 /**
- * Refuse sending credentials where they could leak: over plain HTTP to another machine, or
- * from the shell environment to an address that only the current folder's `.env` named. A
- * cloned project could set `APP_URL` to any host; `--url` or `COSSACK_CMS_URL` confirms it.
+ * Refuse sending credentials where they could leak: over plain HTTP to another machine (unless
+ * `allowHttp`, for development hosts such as `myapp.test` or a LAN address), or from the shell
+ * environment to an address that only the current folder's `.env` named. A cloned project could
+ * set `APP_URL` to any host; `--url` or `COSSACK_CMS_URL` confirms it.
  */
-export function assertCredentialTarget(url, { source, credential, fromEnvironment = true }) {
-  if (new URL(url).protocol !== 'https:' && !isLocalAddress(url)) {
-    throw Object.assign(new Error(`${new URL(url).origin} is plain HTTP. Use an https:// address; credentials are not sent unencrypted.`), { code: 'COSSACK_CMS_URL_INSECURE' });
+export function assertCredentialTarget(url, { source, credential, fromEnvironment = true, allowHttp = false }) {
+  if (new URL(url).protocol !== 'https:' && !isLocalAddress(url) && !allowHttp) {
+    throw Object.assign(new Error(`${new URL(url).origin} is plain HTTP. Use an https:// address; credentials are not sent unencrypted. For a development host, pass --allow-http (or set COSSACK_CMS_ALLOW_HTTP=1).`), { code: 'COSSACK_CMS_URL_INSECURE' });
   }
   if (source === 'project' && fromEnvironment && !isLocalAddress(url)) {
     throw Object.assign(new Error(`${credential} is not sent to ${new URL(url).origin}, which only this folder's .env names. Pass --url ${new URL(url).origin} (or set COSSACK_CMS_URL) to confirm.`), { code: 'COSSACK_CMS_URL_UNCONFIRMED' });
@@ -117,8 +123,9 @@ export async function resolveTarget({ flags = {}, env = process.env, cwd = proce
   const login = stored(site === 'main' ? undefined : site) ?? stored(undefined);
   const token = env.COSSACK_CMS_TOKEN || login?.token;
   if (needToken && !token) throw Object.assign(new Error(`Not signed in to ${url}${site ? ` (site ${site})` : ''}. Run cossack cms login --url ${url}${site ? ` --site ${site}` : ''}, or set COSSACK_CMS_TOKEN.`), { code: 'COSSACK_CMS_LOGIN_REQUIRED' });
-  if (needToken) assertCredentialTarget(url, { source, credential: 'COSSACK_CMS_TOKEN', fromEnvironment: Boolean(env.COSSACK_CMS_TOKEN) });
-  return { url, source, site: site === 'main' ? undefined : site, token, login: login ?? null, key: loginKey(url, site === 'main' ? undefined : site) };
+  const allowHttp = httpAllowed(flags, env);
+  if (needToken) assertCredentialTarget(url, { source, credential: 'COSSACK_CMS_TOKEN', fromEnvironment: Boolean(env.COSSACK_CMS_TOKEN), allowHttp });
+  return { url, source, allowHttp, site: site === 'main' ? undefined : site, token, login: login ?? null, key: loginKey(url, site === 'main' ? undefined : site) };
 }
 
 /** The ID an application password carries in front of its secret, for revoking it. */

@@ -192,10 +192,11 @@ export class CmsSites {
         return this.#many(result.results[0]!.rows.map(row => row[0] as string));
     }
 
-    /** Forget a site and its domains, once its database and media are gone. */
+    /** Forget a site, its domains and its members' memberships, once its database and media are gone. */
     async remove(id: string): Promise<void> {
         await this.#db.write([
             { rql: 'DELETE FROM cms_site_domains WHERE site_id = $id', params: { $id: id } },
+            { rql: 'DELETE FROM cms_memberships WHERE site_id = $id', params: { $id: id } },
             { rql: 'DELETE FROM cms_session_sites WHERE site_id = $id', params: { $id: id } },
             { rql: 'DELETE FROM cms_handoffs WHERE site_id = $id', params: { $id: id } },
             { rql: 'DELETE FROM cms_sites WHERE id = $id', params: { $id: id } },

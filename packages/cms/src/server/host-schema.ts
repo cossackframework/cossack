@@ -25,7 +25,7 @@ export const HOST_TABLES = [
     'cms_preview_tokens', 'cms_autosaves', 'cms_file_variants', 'cms_redirects', 'cms_api_tokens', 'cms_webhooks', 'cms_webhook_deliveries',
     'cms_comments', 'cms_user_security', 'cms_passkeys', 'cms_auth_challenges', 'cms_areas', 'cms_form_sends', 'cms_form_mail', 'cms_form_results', 'cms_crawler_visits', 'cms_not_found', 'cms_cache',
     'cms_accounts', 'cms_sites', 'cms_site_domains', 'cms_handoffs', 'cms_session_sites', 'cms_memberships', 'cms_network', 'cossack_jobs', 'cossack_notifications',
-    'cms_drafts', 'cms_notes', 'cms_note_mentions', 'cms_schedules', 'cms_automations', 'cms_registrations', 'cms_search', 'cms_attempts',
+    'cms_drafts', 'cms_notes', 'cms_note_mentions', 'cms_schedules', 'cms_automations', 'cms_registrations', 'cms_search', 'cms_attempts', 'cms_schema_generations',
 ] as const;
 
 export const HOST_STEPS: readonly HostStep[] = [{
@@ -273,6 +273,13 @@ export const HOST_STEPS: readonly HostStep[] = [{
     statements: [
         // The user who saved or switched on an automation: it runs with their permissions, so it sends only what they may read.
         { rql: 'ALTER TABLE cms_automations ADD COLUMN author TEXT' },
+    ],
+}, {
+    version: 11,
+    description: 'Schema changes take the next generation',
+    statements: [
+        // Every migration batch inserts the next generation, so two that planned from the same schema collide here and one replans; writes to other rows do not hold migrations up.
+        { rql: 'CREATE TABLE cms_schema_generations (id INTEGER PRIMARY KEY, at INTEGER NOT NULL)' },
     ],
 }];
 

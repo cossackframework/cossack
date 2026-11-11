@@ -171,6 +171,30 @@ describe.skipIf(!live)('content, taxonomies, settings, users and media', () => {
         expect(await other.settings.get('general.siteTitle')).toBe('The Daily');
     });
 
+    it('pages through more users than one read takes, past rows that are not users', async () => {
+        const now = Date.now();
+        // 250 users, plus a row whose ID no user can have: paging goes on past both.
+        const rows = [...Array.from({ length: 250 }, (_, index) => `bulk-${String(index).padStart(3, '0')}`), 'bulk-100 odd'];
+        const inserts = rows.map((id, index) => ({
+            rql: "INSERT INTO cms_users (id, email, name, status, created_at, updated_at) VALUES ($id, $email, $name, 'active', $at, $at)",
+            params: { $id: id, $email: `bulk${index}@example.com`, $name: `Bulk ${index}`, $at: now },
+        }));
+        for (let start = 0; start < inserts.length; start += 32) await cms.db.write(inserts.slice(start, start + 32));
+        const seen: string[] = [];
+        let pages = 0;
+        for (let after: string | null = null; ; pages++) {
+            const page = await cms.users.after(after, 500);
+            expect(page.users.length).toBeLessThanOrEqual(200);
+            seen.push(...page.users.map(user => user.id));
+            if (page.next === null) break;
+            after = page.next;
+        }
+        expect(pages).toBeGreaterThan(0);
+        expect(seen.filter(id => id.startsWith('bulk-'))).toHaveLength(250);
+        expect(new Set(seen).size).toBe(seen.length);
+        await cms.db.write([{ rql: "DELETE FROM cms_users WHERE id LIKE 'bulk-%'", params: {} }]);
+    });
+
     it('lists, searches and deletes users and roles, and resets passwords once', async () => {
         const users = cms.users;
         const created = await users.create({ email: 'Grace@Example.com', name: 'Grace Hopper', password: 'first password', roles: ['subscriber'] });
@@ -181,8 +205,9 @@ describe.skipIf(!live)('content, taxonomies, settings, users and media', () => {
         // Going through every user pages by ID, with no offset cap.
         const all = (await users.list({ limit: 100 })).items.map(user => user.id).sort();
         const first = await users.after(null, 2);
-        const rest = await users.after(first[first.length - 1]!.id, 100);
-        expect([...first, ...rest].map(user => user.id)).toEqual(all);
+        const rest = await users.after(first.next, 100);
+        expect(rest.next).toBeNull();
+        expect([...first.users, ...rest.users].map(user => user.id)).toEqual(all);
         await expect(users.update(created.id, { email: 'editor@example.com' })).rejects.toMatchObject({ code: 'CMS_CONFLICT' });
         await users.update(created.id, { name: 'Grace B. Hopper', avatar: 'https://example.com/a.png' });
         expect(await users.get(created.id)).toMatchObject({ name: 'Grace B. Hopper', avatar: 'https://example.com/a.png' });

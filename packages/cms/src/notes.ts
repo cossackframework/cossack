@@ -204,7 +204,7 @@ export function notePlainText(body: string): string {
 }
 
 /** The email to someone a note names: a new note on an entry, or a reply in their thread. */
-export function noteMail(input: { readonly author: string; readonly title: string; readonly body: string; readonly quote: string; readonly url: string; readonly reply: boolean; readonly site: string }): { subject: string; text: string } {
+export function noteMail(input: { readonly author: string; readonly title: string; readonly body: string; readonly quote: string; /** Empty when the site has no address to link to. */ readonly url: string; readonly reply: boolean; readonly site: string }): { subject: string; text: string } {
     const title = input.title.trim() || 'an entry';
     const subject = `${input.author} ${input.reply ? 'replied to a note on' : 'left you a note on'} “${title}”`.replace(/[\r\n]+/g, ' ').slice(0, 300);
     const lines = [
@@ -213,7 +213,8 @@ export function noteMail(input: { readonly author: string; readonly title: strin
         ...(input.quote ? [`On “${input.quote}”:`, ''] : []),
         notePlainText(input.body),
         '',
-        `Open the entry's notes: ${input.url}`,
+        // Without a link (no configured address), the reader is told where to look instead.
+        input.url ? `Open the entry's notes: ${input.url}` : 'Open the entry in the dashboard to see its notes.',
     ];
     return { subject, text: lines.join('\n') };
 }

@@ -91,7 +91,7 @@ export class CmsRedirects {
         const row = exact.results[0]!.rows[0];
         if (row) {
             const redirect = redirectOf(row);
-            return { redirect, location: redirect.status === 410 ? null : redirect.target };
+            return { redirect, location: redirect.status === 410 ? null : siteLocation(redirect.target) };
         }
         let best: Redirect | undefined;
         for (const rule of await this.#prefixRules()) {
@@ -100,9 +100,11 @@ export class CmsRedirects {
         }
         if (!best) return null;
         if (best.status === 410) return { redirect: best, location: null };
-        const rest = clean.slice(best.source.length - 2).replace(/^\//, '');
+        // The rest never starts a new authority: `/blog//evil.com` or `/blog/\\evil.com` with a `/*`
+        // target would otherwise send the browser to `//evil.com`.
+        const rest = clean.slice(best.source.length - 2).replace(/^[/\\]+/, '');
         const location = best.target.endsWith('/*') ? `${best.target.slice(0, -2)}${rest ? `/${rest}` : ''}` || '/' : best.target;
-        return { redirect: best, location };
+        return { redirect: best, location: siteLocation(location) };
     }
 
     /** Count a use of a redirect. */
@@ -172,4 +174,9 @@ function redirectOf(row: readonly Value[]): Redirect {
 function strip(statement: { rql: string; params: { [key: string]: Value | undefined } }): Statement {
     const params = Object.fromEntries(Object.entries(statement.params).filter(([name, value]) => value !== undefined && new RegExp(`\\${name}(?![A-Za-z0-9_])`).test(statement.rql))) as { [key: string]: Value };
     return Object.keys(params).length ? { rql: statement.rql, params } : { rql: statement.rql };
+}
+
+/** A redirect location that stays on this site when it is a path: `//host` and `/\\host` become `/host`. */
+function siteLocation(location: string): string {
+    return location.startsWith('/') ? location.replace(/^[/\\]+/, '/') : location;
 }

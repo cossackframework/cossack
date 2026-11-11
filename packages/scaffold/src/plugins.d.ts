@@ -85,6 +85,8 @@ export declare class PluginError extends Error {
 export declare function unrestrictedWarning(name: string): string;
 export declare function validatePluginManifest(manifest: unknown, packageJson?: { version?: string }): string[];
 export declare function readPluginDirectory(directory: string): Promise<PluginPackage>;
+/** How to start pnpm with `args` on this platform; Windows needs pnpm's own entry or the shell. */
+export declare function pnpmInvocation(args: readonly string[], options?: { platform?: string; env?: Record<string, string | undefined>; execPath?: string }): { command: string; args: string[]; shell: boolean };
 export declare function readPluginTarball(file: string): Promise<PluginPackage>;
 export declare function renderPlugin(plugin: PluginPackage): Map<string, { content: Buffer; capability: string }>;
 export declare function readPluginState(projectDir: string): Promise<PluginState>;

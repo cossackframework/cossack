@@ -421,8 +421,9 @@ export default class SitePath extends Cossack {
     async searchDraftMedia(search: string) {
         const cms = this.c.get('cms');
         const draft = this.draft;
-        if (!draft || (draft.collection && !await editableRecord(cms, draft.collection, draft.id, this.c.get('principal')))) return;
-        this.draft = { ...draft, chooser: { ...draft.chooser, search, items: await draftMedia(cms, search, this.c.get('principal'), draft.chooser.kind) } };
+        if (!draft) return;
+        const items = await draftMedia(cms, draft, search, this.c.get('principal'), draft.chooser.kind);
+        if (items) this.draft = { ...draft, chooser: { ...draft.chooser, search, items } };
     }
 
     /** A document's blocks changed: keep them, let the layout preview the areas, and render the entry again for a pattern it shows. */

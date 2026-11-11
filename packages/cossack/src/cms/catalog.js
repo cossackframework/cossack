@@ -4,7 +4,7 @@
  * go with every command.
  */
 
-const COMMON = ['url', 'site'];
+const COMMON = ['url', 'site', 'allow-http'];
 const PAGED = ['q', 'page', 'per-page'];
 const str = (description, extra = {}) => ({ type: 'string', description, ...extra });
 const bool = (description, extra = {}) => ({ type: 'boolean', description, repeated: 'last', ...extra });
@@ -13,6 +13,7 @@ const bool = (description, extra = {}) => ({ type: 'boolean', description, repea
 export const CMS_FLAGS = {
   url: str('The CMS address, such as https://example.com (default: COSSACK_CMS_URL, the project\'s APP_URL, or the current login).'),
   site: str('A site of the network, by ID; main for the main site (default: COSSACK_CMS_SITE, or the login\'s site).'),
+  'allow-http': bool('Send credentials over plain HTTP to a machine other than this one, such as a .test host or a LAN address in development (default: COSSACK_CMS_ALLOW_HTTP=1).'),
   email: str('The account\'s email (login; default: CMS_EMAIL, or a prompt).'),
   code: str('The second-factor code from an authenticator app (login).'),
   token: str('Store an existing application password instead of signing in (login).'),

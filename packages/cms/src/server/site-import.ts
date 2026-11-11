@@ -36,7 +36,7 @@ export interface SiteImportOptions {
 }
 
 /** Tables the site keeps its own of: the schema's ledgers, and pending work that would run again. */
-const KEPT_TABLES: ReadonlySet<string> = new Set(['cms_migrations', 'cms_schema_state', 'cms_outbox', 'cms_webhook_deliveries', 'cossack_jobs']);
+const KEPT_TABLES: ReadonlySet<string> = new Set(['cms_migrations', 'cms_schema_state', 'cms_schema_generations', 'cms_outbox', 'cms_webhook_deliveries', 'cossack_jobs']);
 const HOST: ReadonlySet<string> = new Set(HOST_TABLES);
 /** The `cms_network` key that marks an import in progress, so a retry may replace what it wrote. */
 const IMPORT_KEY = 'import';
@@ -467,9 +467,9 @@ const truncated = (wanted: string) => new CmsError('CMS_VALIDATION', `The export
 async function allUsers(host: CmsHost): Promise<CmsUser[]> {
     const users: CmsUser[] = [];
     for (let after: string | null = null; ;) {
-        const page = await host.users.after(after, 500);
-        users.push(...page);
-        if (page.length < 500) return users;
-        after = page[page.length - 1]!.id;
+        const page = await host.users.after(after, 200);
+        users.push(...page.users);
+        if (page.next === null) return users;
+        after = page.next;
     }
 }

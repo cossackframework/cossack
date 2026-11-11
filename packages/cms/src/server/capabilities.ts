@@ -7,7 +7,7 @@
  */
 import { CmsError } from '../errors';
 import type { PluginJobEvent } from '../hooks';
-import type { CmsPluginManifest } from '../manifest';
+import { RESERVED_PLUGIN_NAMES, type CmsPluginManifest } from '../manifest';
 import { mediaUrl, type MediaKind } from '../media';
 import { systemPrincipal, type Principal } from '../permissions';
 import type { CmsCache } from './cache';
@@ -255,7 +255,8 @@ export function pluginCapabilities(host: CapabilityHost): PluginCapabilities {
     });
     const assignable = async (): Promise<Set<string>> => {
         const roles = await host.users.roles({ limit: 100 });
-        const own = (permission: string) => permission.startsWith(`${name}:`) || permission.startsWith(`${name}/`);
+        // A reserved name never owns permissions: the manifest check refuses it, and this does not rely on that.
+        const own = (permission: string) => !RESERVED_PLUGIN_NAMES.has(name) && (permission.startsWith(`${name}:`) || permission.startsWith(`${name}/`));
         return new Set(roles.filter(role => role.permissions.every(own)).map(role => role.id));
     };
     const users: PluginUsers = {

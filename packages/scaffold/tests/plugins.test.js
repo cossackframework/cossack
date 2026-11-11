@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  addPlugin, listPlugins, readPluginDirectory, readPluginState, readPluginTarball, removePlugin, satisfies, upgradePlugin, validatePluginManifest,
+  addPlugin, listPlugins, pnpmInvocation, readPluginDirectory, readPluginState, readPluginTarball, removePlugin, satisfies, upgradePlugin, validatePluginManifest,
 } from '../src/plugins.js';
 
 const temporary = [];
@@ -217,7 +217,35 @@ describe('plugin recipes', () => {
     await expect(readPluginDirectory(linked)).rejects.toMatchObject({ code: 'COSSACK_PLUGIN_SOURCE_UNSAFE' });
     const shadow = await pluginPackage('1.0.0', { 'plugin/plugin.json': '{}' });
     await expect(addPlugin(await project(), shadow)).rejects.toMatchObject({ code: 'COSSACK_PLUGIN_SOURCE_UNSAFE' });
+    // A source folder, or a folder on the way to it, that links out of the package.
+    const outside = await tempDir('cossack-plugin-outside-');
+    await writeFiles(outside, { 'secret.txt': 'private\n', 'plugin/server.ts': 'export const hooks = [];\n' });
+    const rootLink = await pluginPackage();
+    await fs.rm(path.join(rootLink, 'plugin'), { recursive: true });
+    await fs.symlink(outside, path.join(rootLink, 'plugin'));
+    await expect(readPluginDirectory(rootLink)).rejects.toMatchObject({ code: 'COSSACK_PLUGIN_SOURCE_UNSAFE' });
+    const parentLink = await pluginPackage('1.0.0', {}, { source: 'src/plugin' });
+    await fs.symlink(outside, path.join(parentLink, 'src'));
+    await expect(readPluginDirectory(parentLink)).rejects.toMatchObject({ code: 'COSSACK_PLUGIN_SOURCE_UNSAFE' });
+    const manifestLink = await pluginPackage();
+    await fs.rm(path.join(manifestLink, 'cossack-plugin.json'));
+    await fs.symlink(path.join(outside, 'secret.txt'), path.join(manifestLink, 'cossack-plugin.json'));
+    await expect(readPluginDirectory(manifestLink)).rejects.toMatchObject({ code: 'COSSACK_PLUGIN_SOURCE_UNSAFE' });
     const mismatch = await pluginPackage('1.0.0', { 'package.json': JSON.stringify({ name: '@acme/support-desk', version: '2.0.0' }) });
     await expect(readPluginDirectory(mismatch)).rejects.toMatchObject({ code: 'COSSACK_PLUGIN_MANIFEST_INVALID' });
+  });
+});
+
+describe('pnpm invocation', () => {
+  const args = ['add', '--save-dev', '--ignore-scripts', '@acme/support-desk'];
+  it('runs pnpm directly outside Windows', () => {
+    expect(pnpmInvocation(args, { platform: 'linux', env: {} })).toEqual({ command: 'pnpm', args, shell: false });
+  });
+  it('never spawns the pnpm.cmd shim without a shell on Windows', () => {
+    expect(pnpmInvocation(args, { platform: 'win32', env: { npm_execpath: 'C:\\pnpm\\bin\\pnpm.cjs' }, execPath: 'C:\\node.exe' }))
+      .toEqual({ command: 'C:\\node.exe', args: ['C:\\pnpm\\bin\\pnpm.cjs', ...args], shell: false });
+    expect(pnpmInvocation(args, { platform: 'win32', env: {} })).toEqual({ command: 'pnpm.cmd', args, shell: true });
+    expect(pnpmInvocation(args, { platform: 'win32', env: { npm_execpath: 'C:\\pnpm\\pnpm.cmd' } })).toEqual({ command: 'pnpm.cmd', args, shell: true });
+    expect(() => pnpmInvocation(['add', 'pkg&calc'], { platform: 'win32', env: {} })).toThrow(/Windows shell/);
   });
 });

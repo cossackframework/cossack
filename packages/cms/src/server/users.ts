@@ -70,6 +70,9 @@ export function containsPattern(text: string): string {
 /** The request user: a member whose account is active, with the principal it acts as. */
 export type CmsMember = CmsUser & { readonly principal: Principal };
 
+/** The most users one `getMany` reads, and so the page size of `after`. */
+const USERS_PER_READ = 200;
+
 export class CmsUsers {
     readonly #db: RomeDB;
     readonly #accounts: CmsAccounts;
@@ -149,7 +152,7 @@ export class CmsUsers {
 
     /** Users by ID in one read. Missing IDs are absent from the map. */
     async getMany(ids: readonly string[]): Promise<Map<string, CmsUser>> {
-        const wanted = [...new Set(ids.filter(id => ID.test(id)))].slice(0, 200);
+        const wanted = [...new Set(ids.filter(id => ID.test(id)))].slice(0, USERS_PER_READ);
         if (!wanted.length) return new Map();
         const list = inList('u', wanted);
         const result = await this.#db.read([
@@ -199,15 +202,23 @@ export class CmsUsers {
         return id ? this.get(id) : null;
     }
 
-    /** Every user, by ID, a page after the last ID of the one before: for work that goes through them all. */
-    async after(after: string | null, limit = 100): Promise<CmsUser[]> {
+    /**
+     * Every user, by ID, a page after the cursor of the one before: for work that goes through them
+     * all. `next` is the last ID read (null once there are no more), so a page whose rows don't all
+     * resolve to a user still moves on.
+     */
+    async after(after: string | null, limit = 100): Promise<{ users: CmsUser[]; next: string | null }> {
+        const size = Math.min(Math.max(limit, 1), USERS_PER_READ);
         const result = await this.#db.read([{
             rql: `SELECT id FROM cms_users${after === null ? '' : ' WHERE id > $after'} ORDER BY id LIMIT $limit`,
-            params: { ...(after === null ? {} : { $after: after }), $limit: Math.min(Math.max(limit, 1), 500) },
+            params: { ...(after === null ? {} : { $after: after }), $limit: size },
         }]);
         const ids = result.results[0]!.rows.map(row => row[0] as string);
         const users = await this.getMany(ids);
-        return ids.map(id => users.get(id)).filter((user): user is CmsUser => user !== undefined);
+        return {
+            users: ids.map(id => users.get(id)).filter((user): user is CmsUser => user !== undefined),
+            next: ids.length === size ? ids[ids.length - 1]! : null,
+        };
     }
 
     /** Newest first. `search` matches name or email; `role` limits to one role ID. */

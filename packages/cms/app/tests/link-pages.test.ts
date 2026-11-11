@@ -10,6 +10,7 @@ vi.mock('../src/auth', () => ({
     beginTwoFactor: async () => null,
     consumeMagicLink: async () => { spent.magic++; return 'user-1'; },
     verifyEmail: async () => { spent.verify++; return { user: 'user-1', pending: false }; },
+    linkAccountEmail: async (_kind: string, token: string) => token.startsWith('a') ? 'ada@example.com' : null,
     authSessions: { create: async () => ({ headers: new Headers({ 'set-cookie': 'session=1' }) }) },
 }));
 vi.mock('../src/cms/index', () => ({ networkFor: () => ({}), siteUrl: () => undefined }));
@@ -35,10 +36,25 @@ describe('email link pages', () => {
             expect(spent[kind]).toBe(0);
             expect(c.headers.size).toBe(0);
             expect(page.token).toBe(TOKEN);
+            // The page names the account the link is for before anyone presses the button.
+            expect(page.email).toBe('ada@example.com');
+            expect(page.failed).toBe(false);
             await (page[action] as (token: string) => Promise<void>).call(page, TOKEN);
             expect(spent[kind]).toBe(1);
             expect(c.headers.get('set-cookie')).toBe('session=1');
             expect(page.redirect).toHaveBeenCalled();
+        }
+    });
+
+    it('say a link is not valid, without naming anyone, when it is for no account', async () => {
+        for (const Page of [MagicLinkPage, VerifyPage]) {
+            const page = new (Page as unknown as new () => Record<string, unknown>)();
+            const c = context();
+            c.req.query = (name: string) => name === 'token' ? 'b'.repeat(40) : undefined;
+            Object.defineProperty(page, 'c', { value: c, configurable: true });
+            await (page.init as () => Promise<void>).call(page);
+            expect(page.failed).toBe(true);
+            expect(page.email).toBe('');
         }
     });
 });

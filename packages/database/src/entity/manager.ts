@@ -107,7 +107,12 @@ export class ModelManager<T extends BaseEntity> {
   async deleteAll(options: DeleteOptions = {}): Promise<QueryResult> {
     if (!options.force) {
       const column = this.deleteDateColumn();
-      if (column) return this.updateAll({ [column.propertyName]: new Date() } as Partial<EntityShape<T>>);
+      // Only live rows: an already deleted row keeps the date it was deleted on.
+      if (column) {
+        return new MutationQueryBuilder(this.orm, this.metadata, "update",
+          [{ [column.propertyName]: new Date() } as Partial<EntityShape<T>>],
+          { [column.propertyName]: IsNull() } as FindWhere<T>).execute();
+      }
     }
     return new MutationQueryBuilder(this.orm, this.metadata, "delete", undefined, undefined, undefined, { all: true }).execute();
   }

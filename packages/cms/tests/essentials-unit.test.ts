@@ -290,6 +290,9 @@ describe('essentials helpers', () => {
         expect(redirectProblems({ source: '/a', target: '/b/*' })).toHaveLength(1);
         expect(redirectProblems({ source: '/gone', target: '', status: 410 })).toEqual([]);
         expect(redirectProblems({ source: '/a', target: 'javascript:alert(1)' })).toHaveLength(1);
+        // A target starting a new authority leaves the site.
+        expect(redirectProblems({ source: '/a', target: '//evil.example' })).toHaveLength(1);
+        expect(redirectProblems({ source: '/a', target: '/\\evil.example' })).toHaveLength(1);
         expect(webhookUrlProblem('https://hooks.example.com/build')).toBeUndefined();
         expect(webhookUrlProblem('http://localhost:8787/hook')).toBeDefined();
         expect(webhookUrlProblem('http://localhost:8787/hook', { local: true })).toBeUndefined();

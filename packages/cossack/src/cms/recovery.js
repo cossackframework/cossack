@@ -16,15 +16,15 @@ async function terminalAsk({ type, message }) {
 }
 
 export async function passwordResetCommand({ flags, env = process.env, cwd = process.cwd(), out = () => {}, ask = terminalAsk, fetch = globalThis.fetch }) {
-  const { url, site, source } = await resolveTarget({ flags, env, cwd, needToken: false });
+  const { url, site, source, allowHttp } = await resolveTarget({ flags, env, cwd, needToken: false });
   const email = flags.email || env.CMS_EMAIL || await ask({ type: 'text', message: 'Email of the account' });
   if (!email) throw coded('COSSACK_CMS_EMAIL_REQUIRED', 'Pass --email with the account\'s email address.');
   // A code from the shell goes only to a confirmed address; the project's own code goes to its own APP_URL.
   const shellCode = env.CMS_RECOVERY_CODE;
-  if (shellCode) assertCredentialTarget(url, { source, credential: 'CMS_RECOVERY_CODE' });
+  if (shellCode) assertCredentialTarget(url, { source, credential: 'CMS_RECOVERY_CODE', allowHttp });
   const code = shellCode || await projectEnv(cwd, 'CMS_RECOVERY_CODE') || await ask({ type: 'password', message: 'Recovery code (CMS_RECOVERY_CODE)' });
   if (!code) throw coded('COSSACK_CMS_RECOVERY_CODE_REQUIRED', 'Set CMS_RECOVERY_CODE to the code in the site\'s environment (or run in a terminal to be asked).');
-  assertCredentialTarget(url, { source, credential: 'CMS_RECOVERY_CODE', fromEnvironment: false });
+  assertCredentialTarget(url, { source, credential: 'CMS_RECOVERY_CODE', fromEnvironment: false, allowHttp });
   // The recovery code goes in the authorization header; the client sends no stored password.
   const client = createClient({ url, site, fetch });
   const { data } = await client.request('POST', '/api/cms/recovery', { headers: { authorization: `Bearer ${code}` }, body: { email, secondFactors: flags['second-factors'] === true } });

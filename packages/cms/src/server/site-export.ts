@@ -18,6 +18,8 @@ export const EXPORT_SKIPPED_TABLES: ReadonlySet<string> = new Set([
     'cms_accounts', 'cms_sites', 'cms_site_domains', 'cms_memberships', 'cms_network',
     // The search index is built from the entries; an import rebuilds it.
     'cms_search',
+    // Each database counts its own schema changes.
+    'cms_schema_generations',
 ]);
 
 /** Columns exported as null: webhook signing secrets. */

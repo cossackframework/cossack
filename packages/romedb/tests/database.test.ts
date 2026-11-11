@@ -199,6 +199,30 @@ describe('RomeDB binding', () => {
         expect(await pending.list()).toHaveLength(5);
     });
 
+    it('reports writes set aside on every page of a recovery', async () => {
+        const memory = new MemoryPendingWriteStore();
+        // Writes for another database are passed over, so recovery reads every page.
+        const OTHER = 'http://127.0.0.1:4322/v1/database';
+        const remote = await connect({ url: OTHER, token: 't', fetch: (async () => json(details(REQUIRED_ENGINE_VERSION))) as typeof globalThis.fetch });
+        await remote.info();
+        for (let i = 0; i < 3; i++) await memory.put(`w-${i}`, { request: remote.prepareWrite([{ sql: 'SELECT 1' }], { requestId: `w-${i}` }), savedAt: i });
+        let pages = 0;
+        let latest: string[] = [];
+        // Like the file store: each list reports only what it set aside itself.
+        const pending: PendingWriteStore = {
+            durability: memory.durability,
+            put: (id, write) => memory.put(id, write),
+            get: id => memory.get(id),
+            delete: id => memory.delete(id),
+            list: async options => { pages++; latest = [`bad-${pages}`]; return memory.list(options); },
+            unreadable: () => latest,
+        };
+        const db = createRomeDB({ url: LOCAL, token: 't', pending, fetch: service().fetch, sleep: noSleep });
+        const report = await db.recoverPending({ limit: 1 });
+        expect(pages).toBeGreaterThan(1);
+        expect(report.unreadable).toEqual(Array.from({ length: pages }, (_, i) => `bad-${i + 1}`));
+    });
+
     it('retries reads under backpressure only', async () => {
         const fake = service({ onRead: attempt => attempt === 1 ? json({ error: 'busy' }, 503) : json({ error: { code: 'RDB_SYNTAX', message: 'bad' } }, 400) });
         const db = createRomeDB({ url: LOCAL, token: 't', pending: new MemoryPendingWriteStore(), fetch: fake.fetch, sleep: noSleep });
@@ -258,6 +282,7 @@ describe('pending write stores', () => {
         await store.put('good', { request: remote.prepareWrite([{ sql: 'SELECT 1' }], { requestId: 'good' }), savedAt: 1 });
         // A crash mid-write in an older release left half a body behind, and one left a temporary body.
         await writeFile(path.join(folder, 'torn.json'), '{"version":1,"sav', { mode: 0o600 });
+        await utimes(path.join(folder, 'torn.json'), new Date(0), new Date(0));
         const temporary = path.join(folder, '.x.abc.tmp');
         await writeFile(temporary, '{}', { mode: 0o600 });
         await utimes(temporary, new Date(0), new Date(0));
@@ -274,9 +299,45 @@ describe('pending write stores', () => {
         await store.put('good', { request: remote.prepareWrite([{ sql: 'SELECT 1' }], { requestId: 'good' }), savedAt: 1 });
         await writeFile(path.join(folder, 'open.json'), '{}', { mode: 0o644 });
         await writeFile(path.join(folder, 'torn.json'), '{"ver', { mode: 0o600 });
+        await utimes(path.join(folder, 'torn.json'), new Date(0), new Date(0));
         expect((await store.list()).map(write => write.savedAt)).toEqual([1]);
         expect([...store.unreadable()].sort()).toEqual(['open', 'torn']);
         expect((await readdir(folder)).sort()).toEqual(['good.json', 'open.json', 'torn.json.corrupt']);
+    });
+
+    it('file store leaves a body that may still be being written', async () => {
+        const directory = await mkdtemp(path.join(os.tmpdir(), 'romedb-pending-'));
+        directories.push(directory);
+        const folder = path.join(directory, 'pending');
+        const store = new FilePendingWriteStore(folder);
+        await store.list();
+        // Without hard links a body is written in place: a list in the middle sees half of it.
+        await writeFile(path.join(folder, 'writing.json'), '{"ver', { mode: 0o600 });
+        expect(await store.list()).toEqual([]);
+        expect(store.unreadable()).toEqual([]);
+        expect(await readdir(folder)).toEqual(['writing.json']);
+    });
+
+    it('file store on Windows skips the POSIX mode check and the folder flush', async () => {
+        const directory = await mkdtemp(path.join(os.tmpdir(), 'romedb-pending-'));
+        directories.push(directory);
+        const folder = path.join(directory, 'pending');
+        const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+        Object.defineProperty(process, 'platform', { value: 'win32' });
+        const open = vi.spyOn(fsPromises, 'open');
+        try {
+            const store = new FilePendingWriteStore(folder);
+            const remote = await connect({ url: LOCAL, token: 't', fetch: service().fetch });
+            await store.put('a', { request: remote.prepareWrite([{ sql: 'SELECT 1' }], { requestId: 'a' }), savedAt: 1 });
+            // Windows reports every file as 0o666.
+            await fsPromises.chmod(path.join(folder, 'a.json'), 0o644);
+            expect((await store.get('a'))!.savedAt).toBe(1);
+            await store.delete('a');
+            expect(open.mock.calls.some(([file]) => file === folder)).toBe(false);
+        } finally {
+            open.mockRestore();
+            Object.defineProperty(process, 'platform', platform);
+        }
     });
 
     it('file store reads a write whose temporary body is still linked', async () => {

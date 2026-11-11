@@ -13,6 +13,8 @@ import { formatTable } from '../src/cms/output.js';
 import { cmsDiagnostics } from '../src/cms/catalog.js';
 import { mimeType } from '../src/cms/mime.js';
 import { assertCredentialTarget, isLocalAddress, resolveTarget } from '../src/cms/client.js';
+import { loginCommand, logoutCommand } from '../src/cms/login.js';
+import { readLogins, rememberLogin } from '../src/cms/logins.js';
 
 const TOKEN = `cms_0123456789abcdef.${'s'.repeat(43)}`;
 const ME = { user: { id: 'u1', email: 'ada@example.com', name: 'Ada', roles: [{ id: 'admin', name: 'Administrator' }], permissions: ['*'], networkAdmin: true, account: 'network' }, token: { scope: 'write' }, network: { enabled: true, canAddSites: true, main: true } };
@@ -385,6 +387,35 @@ describe('cms helpers', () => {
       await expect(resolveTarget({ env, cwd: project })).rejects.toMatchObject({ code: 'COSSACK_CMS_URL_UNCONFIRMED' });
       await expect(resolveTarget({ env, cwd: project, flags: { url: 'https://evil.example' } })).resolves.toMatchObject({ url: 'https://evil.example', source: 'flag' });
       await expect(resolveTarget({ env: { ...env, COSSACK_CMS_URL: 'https://cms.example' }, cwd: project })).resolves.toMatchObject({ url: 'https://cms.example', source: 'env' });
+      // A pasted token is held to the same rule: the project's address alone is not confirmation.
+      const never = vi.fn();
+      await expect(loginCommand({ flags: { token: 'cms_aaaaaaaaaaaaaaaa.secret' }, env: { COSSACK_CONFIG_DIR: project }, cwd: project, fetch: never })).rejects.toMatchObject({ code: 'COSSACK_CMS_URL_UNCONFIRMED' });
+      await expect(loginCommand({ flags: { token: 'cms_aaaaaaaaaaaaaaaa.secret', url: 'http://cms.example' }, env: { COSSACK_CONFIG_DIR: project }, cwd: project, fetch: never })).rejects.toMatchObject({ code: 'COSSACK_CMS_URL_INSECURE' });
+      expect(never).not.toHaveBeenCalled();
     } finally { await fs.rm(project, { recursive: true, force: true }); }
+  });
+
+  it('sends credentials over plain HTTP to a development host only when allowed', async () => {
+    expect(isLocalAddress('http://0.0.0.0:5173')).toBe(true);
+    for (const url of ['http://myapp.test', 'http://192.168.1.20:3000', 'http://host.docker.internal:8787']) {
+      expect(() => assertCredentialTarget(url, { source: 'flag', credential: 'X' })).toThrow(expect.objectContaining({ code: 'COSSACK_CMS_URL_INSECURE' }));
+      expect(() => assertCredentialTarget(url, { source: 'flag', credential: 'X', allowHttp: true })).not.toThrow();
+    }
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-cms-http-'));
+    try {
+      const env = { COSSACK_CONFIG_DIR: home, COSSACK_CMS_TOKEN: 'cms_aaaaaaaaaaaaaaaa.secret' };
+      await expect(resolveTarget({ env, cwd: home, flags: { url: 'http://myapp.test' } })).rejects.toMatchObject({ code: 'COSSACK_CMS_URL_INSECURE' });
+      await expect(resolveTarget({ env, cwd: home, flags: { url: 'http://myapp.test', 'allow-http': true } })).resolves.toMatchObject({ url: 'http://myapp.test', allowHttp: true });
+      await expect(resolveTarget({ env: { ...env, COSSACK_CMS_ALLOW_HTTP: '1' }, cwd: home, flags: { url: 'http://myapp.test' } })).resolves.toMatchObject({ allowHttp: true });
+      // Logging out forgets a stored login it may not send to, without sending anything.
+      await rememberLogin({ url: 'http://myapp.test', token: 'cms_bbbbbbbbbbbbbbbb.secret', tokenId: 'bbbbbbbbbbbbbbbb', name: 'old', scope: 'write', email: 'ada@example.com', user: 'u1' }, { COSSACK_CONFIG_DIR: home });
+      const fetch = vi.fn();
+      const lines = [];
+      const result = await logoutCommand({ flags: { url: 'http://myapp.test' }, env: { COSSACK_CONFIG_DIR: home }, cwd: home, fetch, out: line => lines.push(line) });
+      expect(result).toMatchObject({ revoked: false, forgotten: true });
+      expect(fetch).not.toHaveBeenCalled();
+      expect(lines.join('\n')).toMatch(/not revoked/);
+      expect((await readLogins({ COSSACK_CONFIG_DIR: home })).logins).toEqual({});
+    } finally { await fs.rm(home, { recursive: true, force: true }); }
   });
 });

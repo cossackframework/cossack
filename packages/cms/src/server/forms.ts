@@ -28,7 +28,7 @@ import {
 import { hasPermission, PERMISSIONS, principalId, systemPrincipal, type Principal } from '../permissions';
 import type { RecordShape } from '../records';
 import { declarationHash, resolveResource, storageName, type Resource } from '../resource';
-import { migrate } from './schema';
+import { migrate, nextGenerationStatement } from './schema';
 import { sha256Hex } from './tokens';
 import { bound, type ResourceRepository } from './repository';
 import type { CmsHost } from './host';
@@ -199,6 +199,7 @@ export class CmsForms {
         await this.#host.db.write([
             ...(exists ? [{ rql: `DROP TABLE ${storage}` }] : []),
             { rql: 'DELETE FROM cms_schema_state WHERE resource = $id', params: { $id: id } },
+            nextGenerationStatement(this.#host.now()),
         ], { kind: 'cms.migration' });
         this.#resources.delete(id);
         this.#synced.delete(id);

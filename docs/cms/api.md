@@ -48,6 +48,13 @@ stores a password made in the dashboard instead. `cossack cms logout` revokes an
 `COSSACK_CMS_URL` and `COSSACK_CMS_TOKEN` alone are enough in CI. A read-only password lists
 and reads; writes answer 403.
 
+Credentials go only over HTTPS, or plain HTTP to this machine (`localhost`, `*.localhost`,
+`127.x`, `::1`, `0.0.0.0`). For another development host, such as `myapp.test` or a LAN address,
+pass `--allow-http` or set `COSSACK_CMS_ALLOW_HTTP=1`. A password, token or recovery code from
+the shell goes to an address only the project's `.env` names once `--url` or `COSSACK_CMS_URL`
+confirms it. `cossack cms logout` forgets a stored login even where it may not send the
+password to revoke it.
+
 ## Locked out: recovery mode
 
 An administrator who forgot the password normally uses *Forgot password*, which needs a site
@@ -198,7 +205,7 @@ application password. A CMS refusal answers `{ error, code, fields? }` with its 
 | `GET /me/tokens`, `POST /me/tokens` `{ name, scope, expiresInDays? }`, `DELETE /me/tokens/<id>` | Application passwords; `POST` needs a session (a password cannot make one) and answers the token once; `expiresInDays` (1 to 3650) ends it on its own. |
 | `GET /collections`, `GET /schema/<collection>`, `GET /taxonomies` | Content types with fields; a JSON Schema; taxonomies. |
 | `GET /search?q=&collection=&locale=&page=&perPage=` | The site's search, as visitors get it: `{ items: [{ collection, id, title, url, snippet }], page, next, loose }`. Every word is required, and the last one is a prefix from two characters (`walr` finds walrus); `loose` is true when nothing had them all and the items have some. Titles rank above the same word in the text. A snippet is plain parts, `{ text, match }`, cut by RomeDB. No total: `next` says another page follows. The site's search box asks it for suggestions (`perPage=5`). |
-| `GET /content/<collection>` | Entries: `status`, `q`, `term`, `locale`, `filter[field]`, `page`, `perPage`, `format=html`. With `q`, the first `perPage` matches, without entries locked to the reader (protected, or members-only for a visitor). |
+| `GET /content/<collection>` | Entries: `status`, `q`, `term`, `locale`, `filter[field]`, `page`, `perPage`, `format=html`. With `q`, the first `perPage` matches, without entries locked to the reader (protected, or members-only for a visitor). A filter or `sort` on a field locked entries withhold lists only entries the reader may open; for a signed-in reader who can't edit the collection, it reads at most 1,000 matches, and when there were more the answer has `truncated: true` and its `total` and `pages` cover only those. |
 | `POST /content/<collection>` | Create. |
 | `GET /content/<collection>/<id\|slug>` | One entry (`?preview=<token>` for a preview link). |
 | `GET /content/<collection>/<id\|slug>/blocks/<blockId>` | One block of the entry by its ID (set under Style → Advanced → Block ID), nested blocks and blocks embedded in rich text included, with the field it sits in. |

@@ -32,7 +32,7 @@ import { collabEditors } from '../rich-text-field';
 import type { CollabTransport, StepsResult } from '../rich-text.client';
 import { richTextSchema } from '../rich-text-schema';
 import { announceNote } from '../notes-announce';
-import { siteOrigin } from '../seo';
+import { mailOrigin } from '../seo';
 import { avatarStack, type Someone } from './presence';
 
 const PEER = /^[A-Za-z0-9_-]{8,64}$/;
@@ -549,7 +549,7 @@ export class EntryRoom extends Cossack {
         const tell = (change: NoteChange) => this.broadcastEvent('note', change);
         // Webhooks and emails follow on their own; the tab is answered first.
         const announce = (kind: 'created' | 'resolved', note: Note) => void announceNote(cms, { kind, note }, {
-            origin: siteOrigin(this.c), route: this.c.req.param('collection') ?? '', collection: this.resourceId.startsWith('cms/') ? this.resourceId.slice(4) : null,
+            origin: mailOrigin(this.c), route: this.c.req.param('collection') ?? '', collection: this.resourceId.startsWith('cms/') ? this.resourceId.slice(4) : null,
             title: String(this.values[this.view?.titleField ?? 'title'] ?? ''), author: this.people.get(principal.id)?.name ?? principal.id,
         }).catch(error => console.warn('[cms] a note could not be announced', error));
         const current = (id: string) => {

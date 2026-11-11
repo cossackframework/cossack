@@ -302,8 +302,11 @@ export class RomeDB {
         let attempts = 0;
         let scanned = 0;
         let after: PendingCursor | undefined;
+        // Each list reports what it could not read; a write set aside on one page is gone from the next.
+        const unreadable = new Set<string>();
         while (attempts < limit && scanned < limit * 20) {
             const page = await this.pending.list({ limit, ...(after ? { after } : {}) });
+            for (const id of this.pending.unreadable?.() ?? []) unreadable.add(id);
             if (!page.length) break;
             for (const write of page) {
                 scanned++;
@@ -323,7 +326,7 @@ export class RomeDB {
             }
             if (page.length < limit) break;
         }
-        report.unreadable.push(...(this.pending.unreadable?.() ?? []));
+        report.unreadable.push(...unreadable);
         return report;
     }
 

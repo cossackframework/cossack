@@ -24,10 +24,10 @@ export function romedbService() {
             return db;
         },
         /** A separate fresh service, for comparing plans across databases. */
-        async fresh(): Promise<{ db: RomeDB; stop(): Promise<void> }> {
+        async fresh(): Promise<{ db: RomeDB; url: string; token: string; stop(): Promise<void> }> {
             const other = await startRomeDBService();
             const db = createRomeDB({ url: other.url, token: other.token, pending: new MemoryPendingWriteStore() });
-            return { db, stop: async () => { await db.close(); await other.stop(); } };
+            return { db, url: other.url, token: other.token, stop: async () => { await db.close(); await other.stop(); } };
         },
     };
 }

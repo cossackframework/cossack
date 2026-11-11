@@ -115,6 +115,17 @@ describe("soft delete", () => {
     expect(await Document.count(undefined, { withDeleted: true })).toBe(0);
   }));
 
+  it("deleteAll() leaves rows already deleted with the date they were deleted on", () => setup(async () => {
+    await Document.delete({ title: "one" });
+    const before = (await Document.findOne({ where: { title: "one" }, withDeleted: true }))!.deletedAt!;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect((await Document.deleteAll()).meta.rowsAffected).toBe(2);
+    const after = (await Document.findOne({ where: { title: "one" }, withDeleted: true }))!.deletedAt!;
+    expect(after.getTime()).toBe(before.getTime());
+    const two = (await Document.findOne({ where: { title: "two" }, withDeleted: true }))!.deletedAt!;
+    expect(two.getTime()).toBeGreaterThan(before.getTime());
+  }));
+
   it("entity.remove() soft-deletes, entity.restore() brings it back, remove({ force }) deletes", () => setup(async () => {
     const document = (await Document.findOne({ where: { title: "one" } }))!;
     await document.remove();

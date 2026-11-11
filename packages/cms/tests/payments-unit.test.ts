@@ -59,13 +59,39 @@ describe('payments', () => {
         expect(await relay('checkout.session.completed', { id: 'cs_2', payment_status: 'unpaid', client_reference_id: 'order-10' })).toMatchObject({ type: 'checkout.pending', reference: 'order-10' });
         expect(await relay('checkout.session.async_payment_succeeded', { id: 'cs_2', payment_status: 'paid', client_reference_id: 'order-10' })).toMatchObject({ type: 'checkout.completed', checkoutId: 'cs_2' });
         expect(await relay('checkout.session.async_payment_failed', { id: 'cs_2', payment_status: 'unpaid', client_reference_id: 'order-10' })).toMatchObject({ type: 'payment.failed' });
-        // The checkout's own payment repeats it: payment.completed comes from the checkout alone, a payment without one counts.
+        // The checkout's own payment repeats it: payment.completed comes from the checkout alone.
         const paid = await relay('payment_intent.succeeded', { id: 'pi_1', amount_received: 1250, currency: 'eur', metadata: { reference: 'order-10', cms_checkout: '1' } });
-        expect(paid).toMatchObject({ type: 'payment.succeeded', fromCheckout: true, reference: 'order-10', metadata: { reference: 'order-10' } });
+        expect(paid).toMatchObject({ type: 'payment.succeeded', fromCheckout: true, completes: false, reference: 'order-10', metadata: { reference: 'order-10' } });
         expect(paid!.metadata).not.toHaveProperty('cms_checkout');
-        const renewal = await relay('payment_intent.succeeded', { id: 'pi_2', amount_received: 900, currency: 'eur', metadata: {} });
         const completed = await relay('checkout.session.completed', { id: 'cs_3', payment_status: 'paid' });
-        expect([completed, paid, renewal].map(event => paymentCompleted(event!))).toEqual([true, false, true]);
+        const subscription = { metadata: { reference: 'sub-order', plan: 'pro', cms_checkout: '1' } };
+        // A subscription checkout's first invoice is the checkout's payment, told by billing_reason and the subscription's mark.
+        const firstInvoice = await relay('invoice.paid', { id: 'in_1', billing_reason: 'subscription_create', amount_paid: 900, currency: 'eur', customer_email: 'ada@example.com', parent: { subscription_details: subscription } });
+        expect(firstInvoice).toMatchObject({ type: 'payment.succeeded', fromCheckout: true, completes: false, reference: 'sub-order', metadata: { reference: 'sub-order', plan: 'pro' }, amount: 900, customerEmail: 'ada@example.com' });
+        // A renewal names the order through its subscription (older API versions put it at the top level).
+        const renewal = await relay('invoice.paid', { id: 'in_2', billing_reason: 'subscription_cycle', amount_paid: 900, currency: 'eur', subscription_details: subscription });
+        expect(renewal).toMatchObject({ type: 'payment.succeeded', completes: true, reference: 'sub-order', amount: 900 });
+        // A subscription made outside a CMS checkout completes with its first invoice.
+        const outside = await relay('invoice.paid', { id: 'in_3', billing_reason: 'subscription_create', amount_paid: 500, currency: 'eur', parent: { subscription_details: { metadata: {} } } });
+        expect(outside).toMatchObject({ fromCheckout: false, completes: true });
+        // The payment intents of invoices repeat them, whatever Stripe calls them.
+        const invoiceIntent = await relay('payment_intent.succeeded', { id: 'pi_3', amount_received: 900, currency: 'eur', metadata: {}, description: 'Subscription update' });
+        expect(invoiceIntent).toMatchObject({ completes: false });
+        expect([completed, paid, firstInvoice, renewal, outside, invoiceIntent].map(event => paymentCompleted(event!))).toEqual([true, false, false, true, true, false]);
+        expect(await relay('invoice.payment_failed', { id: 'in_4', billing_reason: 'subscription_cycle', amount_due: 900, currency: 'eur', parent: { subscription_details: subscription } })).toMatchObject({ type: 'payment.failed', completes: false, reference: 'sub-order', amount: 900 });
         expect(await relay('charge.refunded', { id: 'ch_1', amount: 10000, amount_refunded: 1000, currency: 'usd', metadata: { reference: 'order-9' } })).toMatchObject({ type: 'refund', amount: 1000, reference: 'order-9' });
+    });
+
+    it('names a refunded subscription payment\'s order from its invoice', async () => {
+        const now = Date.parse('2026-11-07T12:00:00Z');
+        const asked: string[] = [];
+        const stripe = stripePayments({ secretKey: 'sk', webhookSecret: 'whsec_test', api: 'https://stripe.test', now: () => now, fetch: (async (url: string | URL | Request) => {
+            asked.push(String(url));
+            return Response.json({ id: 'in_9', parent: { subscription_details: { metadata: { reference: 'sub-order', cms_checkout: '1' } } } });
+        }) as typeof fetch });
+        const body = JSON.stringify({ id: 'evt_r', type: 'charge.refunded', created: Math.floor(now / 1000), data: { object: { id: 'ch_9', amount_refunded: 900, currency: 'eur', metadata: {}, invoice: 'in_9' } } });
+        const event = await stripe.webhook(new Request('https://shop.test/x', { method: 'POST', headers: { 'stripe-signature': await sign('whsec_test', Math.floor(now / 1000), body) }, body }));
+        expect(asked).toEqual(['https://stripe.test/v1/invoices/in_9']);
+        expect(event).toMatchObject({ type: 'refund', reference: 'sub-order', metadata: { reference: 'sub-order' }, fromCheckout: true, completes: false, amount: 900 });
     });
 });

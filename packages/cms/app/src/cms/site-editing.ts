@@ -185,7 +185,13 @@ export function saveDraft(cms: CmsHost, draft: Pick<SiteDraft, 'collection' | 'i
     return saveEntry(cms, draft.collection, draft.id, values, 'update', draft.rev, principal);
 }
 
-/** Files for the media chooser of a signed-in editor. */
-export function draftMedia(cms: CmsHost, search: string, principal: Principal, kind = '') {
-    return principal.kind === 'user' ? findMedia(cms, search, kind) : Promise.resolve([]);
+/**
+ * Files for the media chooser of the draft's editor: someone who may edit the entry, or for a
+ * frame-only draft (areas and patterns), someone who may change the site's appearance. The draft
+ * comes from the page's state, which the client sends back, so it is checked here, not trusted.
+ */
+export async function draftMedia(cms: CmsHost, draft: Pick<SiteDraft, 'collection' | 'id'>, search: string, principal: Principal, kind = '') {
+    if (principal.kind !== 'user') return null;
+    const allowed = draft.collection ? Boolean(await editableRecord(cms, draft.collection, draft.id, principal)) : hasPermission(principal, PERMISSIONS.manageAppearance);
+    return allowed ? findMedia(cms, search, kind) : null;
 }

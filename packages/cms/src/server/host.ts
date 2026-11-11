@@ -28,7 +28,7 @@ import { AVATAR_TYPES, mediaUrl } from '../media';
 import { canonicalJson, declarationHash, resolveResource, type Resource, type ResourceAction, type ResourceDeclaration } from '../resource';
 import { Outbox, type OutboxOptions } from './outbox';
 import { ResourceRepository, type FieldFilter, type ListOptions, type OperationContext } from './repository';
-import { migrate, planSchema, readCatalog, type MigrationReport, type SchemaPlan } from './schema';
+import { migrate, nextGenerationStatement, planSchema, readCatalog, type MigrationReport, type SchemaPlan } from './schema';
 import { FileService, type CmsFile, type FileServiceOptions, type ImageSettings, LIBRARY_KEYS } from './files';
 import { CmsCache } from './cache';
 import { imageWidths } from '../images';
@@ -814,8 +814,14 @@ export class CmsHost {
         await this.assertActive(resource);
         const taxonomy = collection.permalink === 'category' ? collection.taxonomies?.[0] : undefined;
         const image = resource.fields.featuredImage?.media ? 'featuredImage' : undefined;
+        // Search engines send no password or session: protected and members-only entries stay out, as in feeds and search.
+        const conditions = [
+            ...(collection.publishable === false ? [] : [`"status" = 'published'`]),
+            ...(resource.fields.password ? [`("password" IS NULL OR "password" = '')`] : []),
+            ...(resource.fields.membersOnly ? ['NOT coalesce("membersOnly", false)'] : []),
+        ];
         const result = await this.db.read([{
-            rql: `SELECT id, "slug", "parent", "locale", "seo", "_updatedAt", "_createdAt", "_owner", ${taxonomy ? `"${taxonomy}"` : 'NULL'}, ${image ? `"${image}"` : 'NULL'}, "title", "translationGroup", ${collection.publishable === false ? 'NULL' : '"publishedAt"'} FROM ${resource.storage}${collection.publishable === false ? '' : ` WHERE "status" = 'published'`} ORDER BY "_createdAt", record::id(id) LIMIT ${limit} OFFSET ${offset}`,
+            rql: `SELECT id, "slug", "parent", "locale", "seo", "_updatedAt", "_createdAt", "_owner", ${taxonomy ? `"${taxonomy}"` : 'NULL'}, ${image ? `"${image}"` : 'NULL'}, "title", "translationGroup", ${collection.publishable === false ? 'NULL' : '"publishedAt"'} FROM ${resource.storage}${conditions.length ? ` WHERE ${conditions.join(' AND ')}` : ''} ORDER BY "_createdAt", record::id(id) LIMIT ${limit} OFFSET ${offset}`,
         }], { workLimits: this.readLimits });
         const records = result.results[0]!.rows.map(([id, slug, parent, locale, seo, updatedAt, createdAt, owner, terms, picture, title, translationGroup, publishedAt]) => Object.freeze({
             id: String((id as { key: unknown }).key), rev: 0, slug, parent: parent && typeof parent === 'object' && 'key' in parent ? String((parent as { key: unknown }).key) : null,
@@ -1572,6 +1578,7 @@ export class CmsHost {
             { rql: 'DELETE FROM cms_collections WHERE name = $name', params: { $name: name } },
             { rql: 'DELETE FROM cms_schema_state WHERE resource = $id', params: { $id: id } },
             { rql: `DELETE FROM ${SITE_SEARCH.collection} WHERE collection = $name`, params: { $name: name } },
+            nextGenerationStatement(this.#now()),
         ], { kind: 'cms.collections' });
         // The groups attached to it stay, for other targets, without it.
         for (const group of groupsForTarget(this.#groups, { kind: 'collection', name })) await this.fieldGroups.put(withTarget(group, { kind: 'collection', name }, false), principal);
@@ -2656,10 +2663,7 @@ function requestMetadata(context: unknown): { ip?: string; userAgent?: string } 
     return { ...(ip ? { ip } : {}), ...(userAgent ? { userAgent } : {}) };
 }
 
-/**
- * Whether a payment event completes a payment, once per payment: a paid checkout, or a payment
- * no checkout made (a renewal, a direct charge). A checkout's own payment repeats its checkout.
- */
+/** Whether a payment event completes a payment, once per payment: what its provider says in `completes`. */
 export function paymentCompleted(event: PaymentEvent): boolean {
-    return event.type === 'checkout.completed' || (event.type === 'payment.succeeded' && !event.fromCheckout);
+    return event.completes;
 }

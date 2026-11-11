@@ -107,11 +107,15 @@ export interface PaymentEvent {
     /** The provider's own event type, such as `checkout.session.completed`. */
     readonly providerType: string;
     readonly checkoutId: string | null;
-    /**
-     * Whether this event's payment belongs to a checkout. Its `payment.succeeded` then repeats
-     * the checkout's `checkout.completed`: a handler counting completed orders takes one of them.
-     */
+    /** Whether this event's payment or subscription was made by a CMS checkout. */
     readonly fromCheckout: boolean;
+    /**
+     * Whether this event completes a payment: a paid checkout, or a paid invoice (a subscription's
+     * renewal, or the first payment of a subscription no CMS checkout made). One payment has one
+     * completing event, so a handler counting completed orders counts these; `payment.completed`
+     * automations and webhooks fire for them. A payment intent's own events never complete.
+     */
+    readonly completes: boolean;
     /** The plugin's key for the order, as given to `checkout()`. */
     readonly reference: string | null;
     readonly customerEmail: string | null;

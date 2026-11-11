@@ -19,7 +19,7 @@ import { entryLock } from './site';
 import { findMedia, routeResource } from './content';
 import { siteUrl, type CmsBindings } from './index';
 import { announceNote } from './notes-announce';
-import { siteOrigin } from './seo';
+import { mailOrigin } from './seo';
 import type { CachePurgeEvent } from '@cossackframework/cms';
 import type { PurgeRecord } from '@cossackframework/cms/server';
 
@@ -189,7 +189,11 @@ export function collectionSchema(c: Context, name: string): object {
 
 // --- Entries -----------------------------------------------------------------
 
-export interface EntryPage { items: ApiEntry[]; page: number; pages: number; total: number }
+export interface EntryPage {
+    items: ApiEntry[]; page: number; pages: number; total: number;
+    /** Set when the list was cut short: a filter on withheld fields reads at most 1,000 matches, and counts and pages only those. */
+    truncated?: true;
+}
 
 /**
  * Entries of a collection. Visitors read published entries, newest first. Signed-in readers
@@ -261,17 +265,36 @@ export async function entriesList(c: Context, name: string, query: Query): Promi
         if (fields.password) where.password = { in: [null, ''] };
         if (fields.membersOnly && principal.kind !== 'user') where.membersOnly = { ne: true };
     }
+    if (lockedOut && principal.kind === 'user' && fields.membersOnly) {
+        // Members-only entries for other roles can't be left out by a condition, so the matches
+        // are read in pages and the ones the reader may open are counted and listed: page and
+        // total then agree with what is shown, and say nothing of the rest.
+        // The scan stops at LOCKED_SCAN_LIMIT matches; past it the list says it was cut short
+        // and its pages end where the scan did.
+        const open: RecordShape[] = [];
+        let truncated = false;
+        for (let offset = 0; ; offset += LOCKED_SCAN_BATCH) {
+            if (offset >= LOCKED_SCAN_LIMIT) { truncated = true; break; }
+            const batch = await repository.list({ where, order, limit: LOCKED_SCAN_BATCH, offset }, { principal });
+            open.push(...batch.records.filter(record => !entryLock(record, { editor: repository.canUpdate(record, principal), signedIn: true, roles: principal.roles })));
+            if (!batch.more && !batch.next) break;
+        }
+        const pages = Math.max(1, Math.ceil(open.length / perPage));
+        const shown = Math.min(page, pages);
+        const items = await apiEntries(cms, collection, open.slice((shown - 1) * perPage, shown * perPage), html, principal);
+        return { items: pickFields(items, query.fields), page: shown, pages, total: open.length, ...(truncated ? { truncated: true as const } : {}) };
+    }
     const [list, total] = await Promise.all([
         repository.list({ where, order, limit: perPage, offset: Math.min((page - 1) * perPage, 10_000) }, { principal }),
         repository.count({ where }, { principal }),
     ]);
-    // A signed-in reader still misses members-only entries for other roles.
-    const records = lockedOut && principal.kind === 'user'
-        ? list.records.filter(record => !entryLock(record, { editor: repository.canUpdate(record, principal), signedIn: true, roles: principal.roles }))
-        : list.records;
-    const items = await apiEntries(cms, collection, records, html, principal);
+    const items = await apiEntries(cms, collection, list.records, html, principal);
     return { items: pickFields(items, query.fields), page, pages: Math.max(1, Math.ceil(total / perPage)), total };
 }
+
+/** How many matches a filter on withheld fields reads for a signed-in reader who can't open every entry, and in what pages. */
+const LOCKED_SCAN_LIMIT = 1000;
+const LOCKED_SCAN_BATCH = 100;
 
 /** Conditions the API sets itself rather than from `filter[...]`. */
 const BASE_FILTERS = new Set(['status', 'locale']);
@@ -520,7 +543,7 @@ export async function noteAdd(c: Context, name: string, id: string, input: Body)
         ...(typeof input.parentId === 'string' ? { parentId: input.parentId } : { target: typeof input.target === 'string' ? input.target : 'entry', range: checkNoteRange(input.range), quote: typeof input.quote === 'string' ? input.quote : '' }),
     });
     const author = await cms.users.get(principal.id).catch(() => null);
-    void announceNote(cms, { kind: 'created', note }, { origin: siteOrigin(c), route: collection.name, collection: collection.name, title: recordTitle(record, cms.resourceById(resource).titleField), author: author?.name || author?.email || principal.id })
+    void announceNote(cms, { kind: 'created', note }, { origin: mailOrigin(c), route: collection.name, collection: collection.name, title: recordTitle(record, cms.resourceById(resource).titleField), author: author?.name || author?.email || principal.id })
         .catch(error => console.warn('[cms] a note could not be announced', error));
     return { note };
 }
@@ -554,7 +577,7 @@ export async function noteChange(c: Context, noteId: string, input: Body): Promi
         if (note.status === 'resolved') {
             const [owner, resourceName] = note.resource.split('/');
             const author = await cms.users.get(found.principal.id).catch(() => null);
-            void announceNote(cms, { kind: 'resolved', note }, { origin: siteOrigin(c), route: owner === 'cms' ? resourceName! : `${owner}.${resourceName}`, collection: owner === 'cms' ? resourceName! : null,
+            void announceNote(cms, { kind: 'resolved', note }, { origin: mailOrigin(c), route: owner === 'cms' ? resourceName! : `${owner}.${resourceName}`, collection: owner === 'cms' ? resourceName! : null,
                 title: recordTitle(found.record, cms.resourceById(note.resource).titleField), author: author?.name || author?.email || found.principal.id })
                 .catch(error => console.warn('[cms] a note could not be announced', error));
         }

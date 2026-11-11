@@ -83,6 +83,14 @@ describe.skipIf(!live)('automations', () => {
         await cms.outbox.dispatch({ limit: 20 });
         expect(sent).toEqual([]);
         expect((await cms.automations.get(copy.id))!.lastError).toContain('author');
+        // One that runs as nobody (saved before automations had authors) runs again once someone switches it on.
+        await cms.db.write([{ rql: 'UPDATE cms_automations SET author = NULL WHERE id = $id', params: { $id: copy.id } }]);
+        expect((await cms.automations.get(copy.id))!.author).toBeNull();
+        await cms.automations.setActive(copy.id, true, admin);
+        expect((await cms.automations.get(copy.id))!.author).toBe('system:automation tests');
+        await cms.resource('cms/staff').create({ title: 'Hedy', salary: '2' }, { principal: admin });
+        await cms.outbox.dispatch({ limit: 20 });
+        expect(sent).toEqual([expect.objectContaining({ text: 'Pay: 2.' })]);
         await cms.automations.delete(copy.id);
     });
 

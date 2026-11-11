@@ -18,6 +18,8 @@ const EMPTY: Form = { id: '', name: '', event: 'entry.published', collection: ''
 @Page({ transport: 'http', middlewares: [requireAny(PERMISSIONS.manageSettings)] })
 export default class AutomationsPage extends Cossack {
     @State() items: Automation[] = [];
+    /** Automations that run as nobody: saved before they had an author, or imported with one who is not on this site. */
+    @State() ownerless: string[] = [];
     @State() collections: { name: string; label: string }[] = [];
     @State() forms: { slug: string; title: string }[] = [];
     @State() form: Form = { ...EMPTY };
@@ -39,6 +41,10 @@ export default class AutomationsPage extends Cossack {
     async load(id: string) {
         const cms = this.c.get('cms');
         this.items = await cms.automations.list();
+        // Each runs as its author; one with no author who can still act is skipped until someone switches it on again.
+        const authors = [...new Set(this.items.map(item => item.author).filter((author): author is string => Boolean(author) && !author!.startsWith('system:')))];
+        const acting = new Set((await Promise.all(authors.map(async author => (await cms.users.principal(author).catch(() => null)) ? author : null))).filter(Boolean));
+        this.ownerless = this.items.filter(item => !item.author || (!item.author.startsWith('system:') && !acting.has(item.author))).map(item => item.id);
         const found = this.items.find(entry => entry.id === id);
         this.form = found ? { id: found.id, name: found.name, event: found.event, collection: found.conditions?.collection ?? '', form: found.conditions?.form ?? '',
             to: found.action.to ?? '', subject: found.action.subject ?? '', text: found.action.text ?? '', active: found.active } : { ...EMPTY };
@@ -98,8 +104,10 @@ export default class AutomationsPage extends Cossack {
                         <span><a href=${`/dashboard/tools/automations?id=${item.id}`} class="font-medium text-foreground hover:underline">${item.name}</a> ${component(Badge, { variant: item.active ? 'success' : 'secondary' }, item.active ? __('On') : __('Off'))}
                             <span class="block text-xs text-muted-foreground">${__(AUTOMATION_EVENT_LABELS[item.event])}${item.conditions?.collection ? ` · ${item.conditions.collection}` : ''}${item.conditions?.form ? ` · ${item.conditions.form}` : ''} → ${__('email')} ${item.action.to ?? ''}
                                 · ${item.runs} ${__('run(s)')}${item.lastRunAt ? ` · ${__('last')} ${shortDate(item.lastRunAt)}` : ''}</span>
+                            ${this.ownerless.includes(item.id) ? html`<span class="block text-xs text-destructive" data-testid="automation-ownerless">${__('Needs an owner: it runs as nobody, so it sends nothing. Switch it on again to run it as you.')}</span>` : null}
                             ${item.lastError ? html`<span class="block text-xs text-destructive">${item.lastError}</span>` : null}</span>
                         <span class="flex gap-2">
+                            ${this.ownerless.includes(item.id) && item.active ? html`<button type="button" class="text-xs text-foreground hover:underline bg-transparent border-none p-0 cursor-pointer" @click=${() => this.toggle(item.id, true)}>${__('Run as me')}</button>` : null}
                             <button type="button" class="text-xs text-foreground hover:underline bg-transparent border-none p-0 cursor-pointer" @click=${() => this.toggle(item.id, !item.active)}>${item.active ? __('Turn off') : __('Turn on')}</button>
                             <button type="button" class="text-xs text-destructive hover:underline bg-transparent border-none p-0 cursor-pointer" @click=${() => this.remove(item.id)}>${__('Delete')}</button></span>
                     </li>`)}</ul>` : html`<p class="px-4 py-6 text-sm text-muted-foreground">${__('No automations yet. Add one on the right.')}</p>`)}`)}

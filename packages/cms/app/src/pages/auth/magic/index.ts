@@ -2,13 +2,14 @@ import { Client, Cossack, Page, Server, State } from '@cossackframework/core';
 import { Alert, Button } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { setCookie } from 'hono/cookie';
-import { authSessions, beginTwoFactor, consumeMagicLink, SignInPasskeyError, TWO_FACTOR_COOKIE } from '../../../auth';
+import { authSessions, beginTwoFactor, consumeMagicLink, linkAccountEmail, SignInPasskeyError, TWO_FACTOR_COOKIE } from '../../../auth';
 
 /**
- * A sign-in link from the email. Opening it signs nobody in: a button does, so a link someone
- * else sent cannot sign this browser into their account, and a mail scanner fetching the link
- * does not spend it. Spent once, the link signs the account in, or starts the second factor's
- * step for an account with one, as a password does; a spent or expired link says so.
+ * A sign-in link from the email. Opening it signs nobody in: a button does, so a mail scanner
+ * fetching the link does not spend it. The button cannot tell whose link it is, though: someone
+ * pressing it on a link another person sent would be signed into that person's account, so the
+ * page names the account first. Spent once, the link signs the account in, or starts the second
+ * factor's step for an account with one, as a password does; a spent or expired link says so.
  */
 @Page({ transport: 'http' })
 export default class MagicLinkPage extends Cossack {
@@ -16,10 +17,14 @@ export default class MagicLinkPage extends Cossack {
     @State() failed = false;
     /** Why the link did not sign in, when it was valid: the account signs in with its passkey. */
     @State() message = '';
+    /** The account the link signs into, shown before the button. */
+    @State() email = '';
 
     async init() {
         this.token = (this.c.req.query('token') ?? '').trim();
-        if (!/^[A-Za-z0-9_-]{20,128}$/.test(this.token)) { this.failed = true; this.c.status(400); }
+        const email = await linkAccountEmail('magic', this.token);
+        if (!email) { this.failed = true; this.c.status(400); return; }
+        this.email = email;
     }
 
     @Client()
@@ -54,7 +59,7 @@ export default class MagicLinkPage extends Cossack {
             <h3 class="mb-3 text-xl font-semibold text-foreground">${__('Sign in')}</h3>
             ${this.failed ? component(Alert, { variant: 'destructive' }, this.message || __('This sign-in link is not valid any more. Ask for a new one from the sign-in page.')) : html`
                 <form class="space-y-4" @submit=${(event: Event) => this.submit(event)}>
-                    <p class="text-sm text-muted-foreground">${__('Continue to sign in with the link from your email.')}</p>
+                    <p class="text-sm text-muted-foreground">${__('Continue to sign in as')} <strong class="text-foreground">${this.email}</strong>. ${__('If this is not your account, close this page.')}</p>
                     ${component(Button, { type: 'submit', block: true }, __('Sign in'))}
                 </form>`}
             <p class="mt-6 text-center text-sm text-muted-foreground"><a href="/auth/login" class="text-primary font-medium hover:underline">${__('Back to sign in')}</a></p>
