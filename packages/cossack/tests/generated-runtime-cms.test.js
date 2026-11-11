@@ -491,6 +491,8 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       expect(jsonBounds.x - (await editTab.boundingBox()).x).toBeGreaterThan(100);
       const titleInput = page.getByPlaceholder('Add title');
       await titleInput.fill('Unsaved title');
+      // The editor mounts again on the room's document once the room is up; keep the one in the room.
+      await browserExpect(page.locator('[data-block-tree-item] .rich-text-surface[data-collab="on"]').first()).toBeVisible({ timeout: 20_000 });
       const richTextNode = await surface.elementHandle();
       await editTab.focus();
       await page.keyboard.press('End');

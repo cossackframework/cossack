@@ -42,6 +42,12 @@ interface BlockDialog { field: string; id: string; type: string; values: Record<
 /** A translation of the entry, or a language it has none in yet. */
 interface TranslationLink { code: string; label: string; id: string | null; title: string; status: string }
 
+/** Whether two field values are the same as JSON, as the room carries them. */
+function sameValue(a: unknown, b: unknown): boolean {
+    if (a === b) return true;
+    try { return JSON.stringify(a) === JSON.stringify(b); } catch { return false; }
+}
+
 /**
  * The entry editor for every collection and resource. A new entry is `/new`. The title drives
  * the slug until the slug is edited; the Publish box's status select and button set the status,
@@ -438,6 +444,9 @@ export default class EntryEditor extends Cossack {
             const field = this.fieldOf(name);
             if (!options.initial && !this.pending.accepts(field?.kind === 'blocks' ? `tree:${name}` : scalarKey(name))) continue;
             if (early.has(name)) continue;
+            // The same value keeps the editor's own: a new array of equal blocks would remount their
+            // rich text editors, and someone already typing would lose focus and cursor.
+            if (sameValue(values[name], value)) continue;
             // A shared rich text document is the editor's own; the items of a multiple field come as a value.
             values[name] = value;
             if (field?.kind === 'blocks') trees.push(name);

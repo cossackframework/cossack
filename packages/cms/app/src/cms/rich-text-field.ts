@@ -82,6 +82,10 @@ export class RichTextField extends Cossack {
     @ClientState() private linkOpen = false;
     @ClientState() private linkUrl = '';
     @ClientState() private linkNewTab = false;
+    /** Whether the editor takes part in the room, for the surface's `data-collab`. */
+    @ClientState() private shared = false;
+    /** Typing done before the room came up could not go to it: someone else changed the document first. */
+    @ClientState() private lostEarly = false;
     private handle?: RichTextHandle;
     private surface?: HTMLElement;
     /** The document the editor holds, as JSON: what it last emitted or was given. */
@@ -90,6 +94,8 @@ export class RichTextField extends Cossack {
     private heldValue: RichTextDoc | null | undefined;
     /** When the room's document could not be fetched: the editor runs alone until this time, then tries again. */
     private collabRetryAt = 0;
+    /** The document a lone editor (no room yet) started from, as JSON; what it holds differs once someone typed. */
+    private aloneFrom: string | undefined;
     /** A mount is under way (the editor loads, the room answers): no second one starts meanwhile. */
     private busy = false;
     /** The notes last placed, as JSON, so unchanged notes are not placed again on every render. */
@@ -127,6 +133,9 @@ export class RichTextField extends Cossack {
         this.busy = true;
         try {
             const { mountRichText } = await import('./rich-text.client');
+            // A lone editor that is mounted again on the room's document: what was typed before the room came up.
+            const early = this.handle && !this.handle.collab && this.aloneFrom !== undefined && this.held !== this.aloneFrom
+                ? { from: this.aloneFrom, doc: this.heldValue ?? null } : null;
             this.handle?.destroy();
             const labels = new Map(this.props.blocks.map(block => [block.name, block.label]));
             // In a room the document starts as the room holds it, at the room's version; when the room cannot be
@@ -149,9 +158,23 @@ export class RichTextField extends Cossack {
             if (collab) collabEditors.set(collab.path, this.handle);
             this.held = docKey(shared ? shared.doc : this.props.value);
             this.heldValue = shared ? shared.doc : this.props.value;
+            this.aloneFrom = collab ? undefined : this.held;
+            this.shared = Boolean(collab);
             this.ready = true;
             this.notesPlaced = '';
             this.placeNotes();
+            if (shared && early) {
+                // Typing done while the editor ran alone goes to the room as steps, unless someone
+                // changed the room's document meanwhile: then the room's stays, and the editor says so.
+                if (docKey(shared.doc) === early.from) {
+                    this.handle.setContent(early.doc);
+                    this.held = docKey(early.doc);
+                    this.heldValue = early.doc;
+                    this.props.onChange(early.doc ?? { type: 'doc', content: [] });
+                    return;
+                }
+                this.lostEarly = true;
+            }
             // The page's values follow the room's document.
             if (shared && docKey(shared.doc) !== docKey(this.props.value)) this.props.onChange(shared.doc ?? { type: 'doc', content: [] });
         } catch (error) {
@@ -279,7 +302,8 @@ export class RichTextField extends Cossack {
             </form>` : null}
             ${this.failed ? html`<p role="alert" class="px-4 py-3 text-sm text-destructive">${this.failed}</p>`
                 : this.ready ? null : html`<p class="px-4 py-3 text-sm text-muted-foreground">${__('Loading the editor…')}</p>`}
-            <div id=${this.props.id} class="rich-text-surface" ref=${(element: Element) => this.connect(element)}></div>
+            ${this.lostEarly ? html`<p role="status" class="px-4 py-2 text-xs text-muted-foreground">${__('Someone changed this text while the editor was connecting, so what you typed meanwhile was not kept.')}</p>` : null}
+            <div id=${this.props.id} class="rich-text-surface" data-collab=${this.shared ? 'on' : 'off'} ref=${(element: Element) => this.connect(element)}></div>
         </div>`;
     }
 }
