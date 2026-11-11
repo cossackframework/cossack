@@ -4,7 +4,7 @@ import type { RouterContext } from '../route-ids.js';
 import { readRpcRequest, RPC_JSON_REQUEST_MAX_BYTES } from './http.js';
 import { discardRequestBody } from '../request-body.js';
 import { withRuntimeRouteParams } from '../runtime-websocket.js';
-import { isTransportPath, TRANSPORT_GUARD_PATH } from '../transport-routes.js';
+import { isTransportPath, TRANSPORT_GUARD_PATH, TRANSPORT_TARGET_PATH } from '../transport-routes.js';
 import { checkPageRouteParams, checkRouteParams, resolveComponentRpcTarget, resolveServiceRpcTarget } from './rpc-target.js';
 import { realtimeOwnerMiddlewares, resolveRealtimeConnection } from './realtime-target.js';
 
@@ -40,6 +40,7 @@ export function checkSseRouteParams(
 export function protectTransport(ctx: RouterContext): MiddlewareHandler {
     return async (c, next) => {
         let componentPath: string | undefined;
+        let targetPath: string | undefined;
         let ownerMiddlewares: MiddlewareHandler[] = [];
         let guarded: Context = c;
         if (c.req.method === 'POST') {
@@ -68,6 +69,7 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
                     const target = resolveServiceRpcTarget(ctx, body);
                     if (!target) return c.json({ error: 'Invalid service target', code: 'COSSACK_RPC_REQUEST_INVALID', requestId }, 400);
                     componentPath = target.pagePath;
+                    targetPath = target.ownerPath;
                     guarded = withRuntimeRouteParams(c, target.params);
                 } else {
                     const resolved = resolveComponentRpcTarget(ctx, body);
@@ -75,6 +77,7 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
                         if (resolved.error === 'params') return c.json({ error: 'Invalid route params', code: 'COSSACK_RPC_REQUEST_INVALID', requestId }, 400);
                     } else {
                         componentPath = resolved.target.guardPath;
+                        targetPath = resolved.target.componentPath;
                         guarded = withRuntimeRouteParams(c, resolved.target.params);
                     }
                 }
@@ -108,12 +111,15 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
                 return c.text(resolved.message, 400);
             }
             componentPath = resolved.target.guardPath;
+            targetPath = resolved.target.owner.kind === 'component' ? resolved.target.pagePath : resolved.target.owner.id;
             ownerMiddlewares = realtimeOwnerMiddlewares(resolved.target.owner);
             guarded = withRuntimeRouteParams(c, resolved.target.params);
         }
         if (!componentPath) return c.json({ error: 'Invalid component ID' }, 400);
         // Layout guards see /crpc as the path; this names the page whose guards run.
         guarded.set(TRANSPORT_GUARD_PATH, componentPath);
+        // ...and this names the file whose code runs: a layout's action runs under the client's page.
+        guarded.set(TRANSPORT_TARGET_PATH, targetPath ?? componentPath);
         // A realtime component's own guards run after its page's guards.
         const middlewares = [...ctx.getMiddlewares?.(componentPath) ?? [], ...ownerMiddlewares];
         // Preserve short-circuit responses and after-next headers without

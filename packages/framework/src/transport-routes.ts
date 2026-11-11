@@ -4,6 +4,6 @@
  * Node adapter use the same paths as the router; see that module.
  */
 export {
-  RESERVED_TRANSPORT_PATHS, TRANSPORT_GUARD_PATH, TRANSPORT_ROUTES, findReservedTransportPath, isTransportPath, transportGuardPath, transportPath,
+  RESERVED_TRANSPORT_PATHS, TRANSPORT_GUARD_PATH, TRANSPORT_ROUTES, TRANSPORT_TARGET_PATH, findReservedTransportPath, isTransportPath, transportGuardPath, transportPath, transportTargetPath,
   type ReservedTransportPath, type TransportRouteName,
 } from '@cossackframework/core/transport-routes';

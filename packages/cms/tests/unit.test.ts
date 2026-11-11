@@ -200,7 +200,7 @@ describe('plugin manifests', () => {
             .toEqual(['extra is not a manifest field.', 'hooks: cms.resource.after-commit is version 1, not 2.', 'permissions.network: not a host is not a host name.', 'permissions.define: other:x must be named desk:<name>.']);
         expect(manifestProblems({ ...manifest, ui: { slots: { 'dashboard.footer': [] } } })).toEqual([expect.stringContaining('not a host slot')]);
         // The host's own names: a plugin named cms would own every cms:… permission.
-        for (const name of ['cms', 'app', 'core', 'system', 'form', 'editor']) expect(manifestProblems({ ...manifest, name })).toContain(`name ${name} is reserved.`);
+        for (const name of ['cms', 'app', 'core', 'system', 'form', 'editor', 'cms-comments', 'cms-cache', 'cms-automations']) expect(manifestProblems({ ...manifest, name })).toContain(`name ${name} is reserved.`);
         // A language pack lists the interface languages it translates.
         expect(manifestProblems({ ...manifest, translations: ['vi', 'pt-br'] })).toEqual([]);
         expect(manifestProblems({ ...manifest, translations: ['vi', 'vi'] })).toEqual([expect.stringContaining('translations lists')]);

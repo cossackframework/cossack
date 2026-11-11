@@ -60,8 +60,11 @@ The room writes its draft to the site's database a second after the last change 
 least every five seconds while changes keep coming), one row per entry in `cms_drafts`, with
 the rich text versions and the editors present. An instance that restarts, or a room that
 empties and reopens, starts from that draft when it is newer than the saved entry. The row is
-small enough for one RomeDB request (48 KB of values); a draft past that stays in memory
-alone, the editor warns, and a save of that size would fail as well.
+capped at what an entry can hold and still be saved: a save carries the values about 3.5 times
+(the fields, their search text, the revision and the event), so about 15 KB of values on a
+local RomeDB service (64 KiB requests) and about 255 KB on RomeDB Cloud (1 MiB requests). A
+draft past that stays in memory alone, the editor warns, and a save of that size is refused as
+too large.
 
 The per-user autosave still serves new entries, which have no room yet. For saved entries the
 shared draft replaces it, and the old autosave restore offer is gone.

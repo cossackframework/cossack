@@ -200,6 +200,9 @@ function indexPath(path: string): string {
     return path.split('.').map(part => part === '*' ? part : quote(part)).join('.');
 }
 
+/** Catalog reads before host step 11, when they must all see one sequence. */
+const PRE_GENERATION_ATTEMPTS = 25;
+
 /** The tables and their models, in a form two reads can be compared by. */
 function tableList(info: { tables?: { name: string; model: string }[] }): string {
     return JSON.stringify((info.tables ?? []).map(table => [table.name, table.model]).sort((a, b) => a[0]!.localeCompare(b[0]!)));
@@ -212,7 +215,11 @@ function tableList(info: { tables?: { name: string; model: string }[] }): string
  * all the time on a busy site, do not make the read start over. A schema change does.
  */
 export async function readCatalog(db: RomeDB, collections: readonly string[], options: { signal?: AbortSignal } = {}): Promise<Catalog> {
-    for (let attempt = 0; attempt < 5; attempt++) {
+    // Before host step 11, every read must see one sequence, which a busy site's other writes
+    // move: those reads get more attempts, a short random pause apart.
+    let attempts = 5;
+    for (let attempt = 0; attempt < attempts; attempt++) {
+        if (attempt > 0 && attempts > 5) await new Promise(resolve => setTimeout(resolve, 10 + Math.floor(Math.random() * 40 * Math.min(attempt, 5))));
         const first = await db.read([{ rql: 'INFO FOR DB' }], options);
         const info = first.results[0]!.rows[0]![0] as { tables?: { name: string; model: string }[] };
         const names = new Map((info.tables ?? []).map(table => [table.name, table.model]));
@@ -220,6 +227,7 @@ export async function readCatalog(db: RomeDB, collections: readonly string[], op
         const wanted = collections.filter(name => names.get(name) === 'document');
         const ledgerQueries = names.has('cms_migrations') && names.has('cms_schema_state');
         const generations = names.has('cms_schema_generations');
+        if (!generations) attempts = PRE_GENERATION_ATTEMPTS;
         const ledgerStatements: Statement[] = ledgerQueries ? [
             { rql: "SELECT kind, resource, version FROM cms_migrations WHERE kind IN ('host', 'explicit') ORDER BY kind, resource, version" },
             { rql: 'SELECT resource, declaration_hash FROM cms_schema_state ORDER BY resource' },

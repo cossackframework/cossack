@@ -125,12 +125,13 @@ describe.skipIf(!live)('schema planner and migration ledger', () => {
             await fresh.db.write([{ rql: 'DROP TABLE cms_schema_generations' }]);
             const writer = fresh.db;
             let noise = 0;
+            let written = 0;
             const reading = (times: number) => createRomeDB({
                 url: fresh.url, token: fresh.token, pending: new MemoryPendingWriteStore(),
                 fetch: async (input, init) => {
                     if (String(input).endsWith('/read') && String(init?.body).includes('INFO FOR TABLE') && noise < times) {
                         noise++;
-                        await writer.write([{ rql: `INSERT INTO cms_audit (id, actor, action, resource, record_id, at) VALUES ('old-${noise}', 'x', 'noise', 'x', 'x', 0)` }]);
+                        await writer.write([{ rql: `INSERT INTO cms_audit (id, actor, action, resource, record_id, at) VALUES ('old-${++written}', 'x', 'noise', 'x', 'x', 0)` }]);
                     }
                     return fetch(input, init);
                 },
@@ -141,6 +142,9 @@ describe.skipIf(!live)('schema planner and migration ledger', () => {
             expect(once.generation).toBeNull();
             const settled = await fresh.db.read([{ rql: 'SELECT 1' }]);
             expect(once.sequence).toBe(settled.sequence);
+            // A busy site's writes during ten reads still let a later attempt through.
+            noise = 0;
+            expect((await readCatalog(reading(10), ['r__app__tickets'])).generation).toBeNull();
         } finally {
             await fresh.stop();
         }

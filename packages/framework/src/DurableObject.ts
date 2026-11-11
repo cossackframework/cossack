@@ -64,7 +64,7 @@ export class AppDurableObject extends CossackDurableObject {
     }
 
     /** The owner this peer joined and the guard stack each of its operations runs again. */
-    private peerAuthorization(peer: SocketPeerAttachment): { owner: RealtimeOwner; middlewares: MiddlewareHandler[] } | undefined {
+    private peerAuthorization(peer: SocketPeerAttachment): { owner: RealtimeOwner; guardPath: string; middlewares: MiddlewareHandler[] } | undefined {
         const componentPath = peer.componentPath!;
         const pages = applicationRegistry.pages as Record<string, unknown>;
         const layouts = applicationRegistry.layouts as Record<string, unknown>;
@@ -97,7 +97,7 @@ export class AppDurableObject extends CossackDurableObject {
         const owners = applicationRegistry.owners ?? {};
         const plugins = new Set([...paths, componentPath].map(path => owners[path]).filter((owner): owner is string => typeof owner === 'string'));
         const gates = [...plugins].map(plugin => pluginActivityGate(plugin));
-        return { owner, middlewares: [...gates, ...middlewares, ...realtimeOwnerMiddlewares(owner)] };
+        return { owner, guardPath, middlewares: [...gates, ...middlewares, ...realtimeOwnerMiddlewares(owner)] };
     }
 
     protected override async authorizeWebSocketPeer(
@@ -116,6 +116,8 @@ export class AppDurableObject extends CossackDurableObject {
             env: this.env,
             params: request.params,
             locale: request.locale ?? 'en',
+            guardPath: authorization.guardPath,
+            targetPath: authorization.owner.id,
         };
         const originalUserId = (peer.user as { id?: unknown } | undefined)?.id;
         // The same user, and a scope that still resolves to this connection's

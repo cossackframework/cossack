@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { findPluginCommand, runPluginCommand } from '../src/plugin-commands.js';
+import { rememberLogin } from '../src/cms/logins.js';
 
 const roots = [];
 afterEach(async () => {
@@ -20,6 +21,9 @@ async function project() {
   await fs.writeFile(path.join(root, 'src/plugins/seo/plugin.json'), JSON.stringify({
     name: 'seo', commands: [{ name: 'reindex', description: 'Rebuild the index.', options: {} }],
   }));
+  // Never the developer's own stored logins.
+  vi.stubEnv('COSSACK_CONFIG_DIR', path.join(root, '.config'));
+  vi.stubEnv('COSSACK_CMS_TOKEN', '');
   return root;
 }
 
@@ -50,4 +54,44 @@ it('takes --allow-http, like cossack cms commands, for a plain-HTTP development 
     'POST http://myapp.test/api/cms/commands/seo/reindex',
     'DELETE http://myapp.test/api/auth/session',
   ]);
+});
+
+it('runs with the stored application password instead of a password sign-in', async () => {
+  const root = await project();
+  vi.stubEnv('CMS_EMAIL', '');
+  vi.stubEnv('CMS_PASSWORD', '');
+  vi.spyOn(console, 'log').mockImplementation(() => {});
+  await rememberLogin({ url: 'https://cms.example', token: 'cms_aaaaaaaaaaaaaaaa.secret', tokenId: 'aaaaaaaaaaaaaaaa', name: 'cli', scope: 'write', email: 'ada@example.com', user: 'u1' }, { COSSACK_CONFIG_DIR: path.join(root, '.config') });
+  const requests = [];
+  vi.stubGlobal('fetch', vi.fn(async (url, init) => {
+    requests.push(`${init.method} ${url} ${init.headers.authorization ?? ''}`.trim());
+    return new Response(JSON.stringify({ result: 'done' }), { status: 200 });
+  }));
+  const found = await findPluginCommand('seo:reindex', root);
+  expect(await runPluginCommand('seo:reindex', ['--url', 'https://cms.example'], found)).toBe(0);
+  expect(requests).toEqual(['POST https://cms.example/api/cms/commands/seo/reindex Bearer cms_aaaaaaaaaaaaaaaa.secret']);
+});
+
+it('says why a password sign-in was refused: the bot check or required two-step sign-in', async () => {
+  const root = await project();
+  vi.stubEnv('CMS_EMAIL', 'ada@example.com');
+  vi.stubEnv('CMS_PASSWORD', 'long password');
+  const errors = [];
+  vi.spyOn(console, 'error').mockImplementation((...line) => errors.push(line.join(' ')));
+  vi.spyOn(console, 'log').mockImplementation(() => {});
+  let answer = { status: 403, body: { error: 'Complete the check.', code: 'CMS_BOT_CHECK' } };
+  vi.stubGlobal('fetch', vi.fn(async (url, init) => {
+    if (init.method === 'POST' && String(url).endsWith('/api/auth/session')) {
+      return answer.status === 200 ? new Response('{}', { status: 200, headers: { 'set-cookie': 'session=1; Path=/' } }) : new Response(JSON.stringify(answer.body), { status: answer.status });
+    }
+    if (init.method === 'POST') return new Response(JSON.stringify({ error: 'Set up two-step sign-in.', code: 'CMS_SECOND_FACTOR_REQUIRED' }), { status: 403 });
+    return new Response(null, { status: 204 });
+  }));
+  const found = await findPluginCommand('seo:reindex', root);
+  expect(await runPluginCommand('seo:reindex', ['--url', 'https://cms.example'], found)).toBe(1);
+  expect(errors.join('\n')).toMatch(/checks sign-ins for bots.*--token or COSSACK_CMS_TOKEN/s);
+  errors.length = 0;
+  answer = { status: 200 };
+  expect(await runPluginCommand('seo:reindex', ['--url', 'https://cms.example'], found)).toBe(1);
+  expect(errors.join('\n')).toMatch(/requires two-step sign-in/);
 });

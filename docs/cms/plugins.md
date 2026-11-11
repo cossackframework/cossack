@@ -489,8 +489,10 @@ options and `{ principal, signal }` and returns JSON.
 CMS_PASSWORD=… cossack support-desk:close-all --reason "Spring cleaning" --email admin@example.com
 ```
 
-The CLI signs in to the running application (`--url` or `APP_URL`, `--email` or
-`CMS_EMAIL`, and `CMS_PASSWORD`) and runs the command as that user, so the handler's
+The CLI signs in to the running application (`--url` or `APP_URL`) with the application
+password from `cossack cms login` or `COSSACK_CMS_TOKEN`; without one it uses `--email` or
+`CMS_EMAIL` and `CMS_PASSWORD`, which a site with a bot check or required two-step sign-in
+refuses. It runs the command as that user, so the handler's
 repository calls are authorized like the dashboard's. The command needs the plugin active,
 the dashboard permission, and the command's own `permission` when it names one. The
 dashboard's entry lists can run commands too, through the `cms.dashboard.entry-actions`

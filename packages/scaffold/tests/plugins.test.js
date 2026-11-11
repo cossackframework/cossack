@@ -142,12 +142,19 @@ describe('plugin recipes', () => {
     await writeFiles(app, {
       'node_modules/plain/package.json': JSON.stringify({ name: 'plain', version: '1.0.0' }),
       'node_modules/broken/package.json': JSON.stringify({ name: 'broken', version: '1.0.0', cossack: { plugin: 'missing.json' } }),
+      // A manifest path out of the package, or a link out of it, is never read.
+      'node_modules/climber/package.json': JSON.stringify({ name: 'climber', version: '1.0.0', cossack: { plugin: '../../secret.json' } }),
+      'node_modules/linker/package.json': JSON.stringify({ name: 'linker', version: '1.0.0', cossack: { plugin: 'plugin.json' } }),
+      'secret.json': JSON.stringify({ name: 'secret-plugin' }),
       'node_modules/@acme/support-desk/index.js': 'throw new Error("must not run")',
     });
+    await fs.symlink(path.join(app, 'secret.json'), path.join(app, 'node_modules/linker/plugin.json'));
     let listing = await listPlugins(app);
     expect(listing.installed).toEqual([
       { package: '@acme/support-desk', version: '1.0.0', plugin: 'support-desk', rendered: false, problems: [] },
       expect.objectContaining({ package: 'broken', plugin: null }),
+      expect.objectContaining({ package: 'climber', plugin: null, problems: [expect.stringMatching(/inside the package/)] }),
+      expect.objectContaining({ package: 'linker', plugin: null, problems: [expect.stringMatching(/outside the plugin package/)] }),
     ]);
     const installs = [];
     await addPlugin(app, '@acme/support-desk', { install: async spec => { installs.push(spec); } });
@@ -212,6 +219,7 @@ describe('plugin recipes', () => {
   it('rejects unsafe or invalid packages', async () => {
     expect(validatePluginManifest({ schemaVersion: 1, name: 'cms', version: '1.0.0' })).toEqual(['name "cms" is reserved.']);
     expect(validatePluginManifest({ schemaVersion: 1, name: 'form', version: '1.0.0' })).toEqual(['name "form" is reserved.']);
+    expect(validatePluginManifest({ schemaVersion: 1, name: 'cms-comments', version: '1.0.0' })).toEqual(['name "cms-comments" is reserved.']);
     expect(validatePluginManifest({ schemaVersion: 2, name: 'Bad', version: 'x', source: '../up' })).toHaveLength(4);
     const linked = await pluginPackage();
     await fs.symlink('/etc/passwd', path.join(linked, 'plugin/passwd'));

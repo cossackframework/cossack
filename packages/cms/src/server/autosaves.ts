@@ -4,7 +4,7 @@
  */
 import type { RomeDB } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
-import { DRAFT_MAX_BYTES, requestBytes } from './drafts';
+import { checkDraftSize } from './drafts';
 
 const WRITE = { kind: 'cms.autosaves', retryConflicts: 5 } as const;
 const KEY = /^[A-Za-z0-9_-]{1,80}$/;
@@ -23,11 +23,11 @@ export class CmsAutosaves {
         this.#now = options.now ?? Date.now;
     }
 
-    /** Store the values, replacing the user's previous autosave of the entry. A RomeDB request takes 64 KiB, so at most DRAFT_MAX_BYTES of JSON, as a draft. */
+    /** Store the values, replacing the user's previous autosave of the entry, capped as a draft is. */
     async save(resource: string, recordId: string, userId: string, data: unknown): Promise<number> {
         check(recordId, userId);
         const json = JSON.stringify(data ?? null);
-        if (requestBytes(json) > DRAFT_MAX_BYTES) throw new CmsError('CMS_LIMIT', `The autosave is larger than ${DRAFT_MAX_BYTES / 1024} KB.`);
+        await checkDraftSize(this.#db, json, 'autosave');
         const at = this.#now();
         await this.#db.write([{
             rql: `INSERT INTO cms_autosaves (id, resource, record_id, user_id, data, at) VALUES ($id, $resource, $record, $user, $data, $at)

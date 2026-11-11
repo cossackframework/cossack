@@ -1,6 +1,7 @@
 import {
     ClientError,
     connect,
+    encodeValue,
     validatePrepared,
     type BatchResult,
     type Client,
@@ -124,6 +125,33 @@ export class EngineVersionError extends Error {
     }
 }
 
+/** Statements one request carries, locally and on Cloud. */
+export const MAX_STATEMENTS = 32;
+/** Request JSON a local service accepts; Cloud accepts `CLOUD_REQUEST_BYTES`. */
+export const LOCAL_REQUEST_BYTES = 65_536;
+export const CLOUD_REQUEST_BYTES = 1_048_576;
+
+/** A request over the database's size or statement limit. Nothing was sent. */
+export class RequestTooLargeError extends Error {
+    readonly cause: unknown;
+    constructor(cause: unknown) {
+        super(`The database request is too large: ${(cause as Error)?.message ?? cause}`);
+        this.name = 'RequestTooLargeError';
+        this.cause = cause;
+    }
+}
+
+/** About how many bytes these statements take in a request, as the client encodes them. */
+export function statementBytes(statements: readonly Statement[]): number {
+    const encoded = statements.map(statement => ({ sql: statement.rql, ...(statement.params ? { params: Object.fromEntries(Object.entries(statement.params).map(([key, value]) => [key, encodeValue(value)])) } : {}) }));
+    return new TextEncoder().encode(JSON.stringify(encoded)).length;
+}
+
+/** The client's refusal of a request over the size or statement limit, before sending it. */
+function tooLarge(error: unknown): error is RangeError {
+    return error instanceof RangeError && /request exceeds|1\.\.32 statements/.test(error.message);
+}
+
 /** A write was dispatched but its outcome is unknown. It stays saved for exact recovery. */
 export class UncertainWriteError extends Error {
     readonly requestId: string;
@@ -174,6 +202,11 @@ export class RomeDB {
         this.#now = options.now ?? Date.now;
     }
 
+    /** The most request JSON this database accepts: 1 MiB on Cloud, 64 KiB on a local service. */
+    async maxRequestBytes(): Promise<number> {
+        return cloud(await this.#connection()) ? CLOUD_REQUEST_BYTES : LOCAL_REQUEST_BYTES;
+    }
+
     /** Highest publication sequence this binding has confirmed. */
     async sequence(): Promise<number> {
         return (await this.#connection()).sequence;
@@ -198,6 +231,7 @@ export class RomeDB {
             try {
                 return await client.read(clientStatements(statements), call);
             } catch (error) {
+                if (tooLarge(error)) throw new RequestTooLargeError(error);
                 const delay = this.#retryDelay(error, attempt, options.signal);
                 if (delay === undefined) throw error;
                 await this.#sleep(delay, options.signal);
@@ -224,7 +258,13 @@ export class RomeDB {
     async #writeOnce(statements: Statement[], options: WriteCallOptions): Promise<BatchResult> {
         const client = await this.#connection();
         if (options.afterSequence === undefined && !client.sequenceKnown) await this.preflight(options);
-        const request = client.prepareWrite(clientStatements(statements), { ...options, workLimits: options.workLimits ?? this.#limits.write });
+        let request: PreparedWrite;
+        try {
+            request = client.prepareWrite(clientStatements(statements), { ...options, workLimits: options.workLimits ?? this.#limits.write });
+        } catch (error) {
+            if (tooLarge(error)) throw new RequestTooLargeError(error);
+            throw error;
+        }
         const id = preparedRequestId(request);
         await this.pending.put(id, { request, savedAt: this.#now(), ...(options.kind === undefined ? {} : { kind: options.kind }) });
         let lastError: unknown;

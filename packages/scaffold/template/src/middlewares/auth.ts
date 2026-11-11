@@ -1,5 +1,5 @@
 import { defineServerMiddleware } from '@cossackframework/core';
-import { isTransportPath, transportGuardPath } from '@cossackframework/core/transport-routes';
+import { isTransportPath, transportGuardPath, transportTargetPath } from '@cossackframework/core/transport-routes';
 import { createAuthorizer } from '@cossackframework/auth';
 import { auth, secondFactorRequired, setupRequired, type PublicUser } from '../auth';
 
@@ -17,14 +17,23 @@ const dashboardAuthorizer = createAuthorizer({
 /** The page where staff add the second factor that General settings require. */
 const SECOND_FACTOR_SETUP = /\/pages\/dashboard\/profile\/security\/index\.[jt]s$/;
 
+/**
+ * Whether a transport request runs the security page's own code under that page. A layout's
+ * action runs under the page the browser names, so the guard path alone does not say whose
+ * code runs: both paths must be the security page.
+ */
+function secondFactorSetupAction(c: { get: (key: any) => unknown }): boolean {
+    return SECOND_FACTOR_SETUP.test(transportGuardPath(c) ?? '') && SECOND_FACTOR_SETUP.test(transportTargetPath(c) ?? '');
+}
+
 // A layout guard also runs for the dashboard's RPC actions. The global path
 // guard below sees /crpc rather than the component's dashboard URL, so the
 // two-step requirement is enforced here too: until staff add a second factor,
-// only the security page's actions answer.
+// only the security page's own actions answer.
 export const requireDashboardUser = defineServerMiddleware(async (c, next) => {
     const user = c.get('user') as PublicUser | undefined;
     if (user && isTransportPath(c.req.path, 'rpc', 'upload', 'sse', 'websocket')
-        && !SECOND_FACTOR_SETUP.test(transportGuardPath(c) ?? '')
+        && !secondFactorSetupAction(c)
         && await secondFactorRequired(user).catch(() => true)) {
         return c.json({ error: 'This site requires two-step sign-in: set it up under Profile → Security first.', code: 'COSSACK_RPC_FORBIDDEN' }, 403);
     }
@@ -65,10 +74,13 @@ export const authGuard = defineServerMiddleware(async (c, next) => {
     if (path.startsWith('/dashboard') && !user) {
         return c.redirect(config('auth.redirectAfterLogout'));
     }
-    // When General settings require two-step sign-in, staff without it set it up first.
-    if (path.startsWith('/dashboard') && !path.startsWith('/dashboard/profile/security') && c.req.method === 'GET'
-        && await secondFactorRequired(user as PublicUser).catch(() => false)) {
-        return c.redirect('/dashboard/profile/security?required=1');
+    // When General settings require two-step sign-in, staff without it set it up first. That
+    // covers a page's form handlers too (POST, PUT, PATCH, DELETE), which answer at the page's URL.
+    if (path.startsWith('/dashboard') && !path.startsWith('/dashboard/profile/security')) {
+        const reading = c.req.method === 'GET' || c.req.method === 'HEAD';
+        if (await secondFactorRequired(user as PublicUser).catch(() => !reading)) {
+            return c.redirect('/dashboard/profile/security?required=1', reading ? 302 : 303);
+        }
     }
     await next();
 });

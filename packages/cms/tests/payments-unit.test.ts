@@ -95,7 +95,7 @@ describe('payments', () => {
         expect(event).toMatchObject({ type: 'refund', reference: 'sub-order', metadata: { reference: 'sub-order' }, fromCheckout: true, completes: false, amount: 900 });
     });
 
-    it('finds a refunded charge\'s invoice through its payment intent on basil API versions, and gives up on a slow answer', async () => {
+    it('finds a refunded charge\'s invoice through its payment intent on basil API versions, and fails on a slow answer so Stripe retries', async () => {
         const now = Date.parse('2026-11-07T12:00:00Z');
         const asked: string[] = [];
         let signals = 0;
@@ -115,6 +115,6 @@ describe('payments', () => {
         expect(asked).toEqual(['https://stripe.test/v1/invoice_payments?payment[type]=payment_intent&payment[payment_intent]=pi_7&limit=1', 'https://stripe.test/v1/invoices/in_7']);
         expect(signals).toBe(2);
         hang = true;
-        expect(await refund()).toMatchObject({ type: 'refund', reference: null });
+        await expect(refund()).rejects.toMatchObject({ code: 'CMS_UNAVAILABLE' });
     });
 });

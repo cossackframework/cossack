@@ -217,7 +217,11 @@ export const NETWORK_ACCOUNT_LOCKED = 'A network account: its name, email, passw
 export async function manageableHere(userId: string): Promise<boolean> {
   const host = cms();
   if (!host.siteAccounts) return true;
-  const principal = (getRequestContext()?.get('principal') as Principal | undefined) ?? ANONYMOUS;
+  const request = getRequestContext();
+  // The signed-in person's own account, read from the session: until they add a second factor
+  // that General settings require, their request principal is anonymous, yet adding one is theirs to do.
+  if ((request?.get('user') as PublicUser | undefined)?.id === userId) return true;
+  const principal = (request?.get('principal') as Principal | undefined) ?? ANONYMOUS;
   if (principal.kind === 'user' && (principal.id === userId || isNetworkAdmin(principal))) return true;
   return (await host.users.get(userId))?.account !== 'network';
 }

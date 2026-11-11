@@ -20,6 +20,8 @@ export const PLUGINS_STATE = '.cossack/plugins.json';
 export const PLUGIN_NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 /** Names owned by Cossack recipes. */
 export const RESERVED_PLUGIN_NAMES = new Set(['cms', 'cossack', 'core', 'framework', 'app', 'system', 'form', 'editor']);
+/** The CMS's own hook owners (cms-comments, cms-cache, ...) use this prefix. */
+export const RESERVED_PLUGIN_PREFIX = 'cms-';
 
 const MAX_FILES = 2_000;
 const MAX_FILE_BYTES = 1_048_576;
@@ -44,7 +46,7 @@ export function validatePluginManifest(manifest, packageJson) {
   if (manifest === null || typeof manifest !== 'object' || Array.isArray(manifest)) return ['The plugin manifest must be a JSON object.'];
   if (manifest.schemaVersion !== 1) problems.push('schemaVersion must be 1.');
   if (typeof manifest.name !== 'string' || !PLUGIN_NAME.test(manifest.name) || manifest.name.length > 64) problems.push('name must be 1-64 lowercase letters, digits and single hyphens.');
-  else if (RESERVED_PLUGIN_NAMES.has(manifest.name)) problems.push(`name "${manifest.name}" is reserved.`);
+  else if (RESERVED_PLUGIN_NAMES.has(manifest.name) || manifest.name.startsWith(RESERVED_PLUGIN_PREFIX)) problems.push(`name "${manifest.name}" is reserved.`);
   if (typeof manifest.version !== 'string' || !SEMVER.test(manifest.version)) problems.push('version must be a semantic version.');
   if (packageJson && packageJson.version !== manifest.version) problems.push(`version ${manifest.version} must match the package version ${packageJson.version}.`);
   if (manifest.source !== undefined && (typeof manifest.source !== 'string' || !safeRelative(manifest.source))) problems.push('source must be a relative directory inside the package.');
@@ -267,13 +269,18 @@ export async function listPlugins(projectDir) {
     } else candidates.push(entry.name);
   }
   for (const name of candidates.sort()) {
-    const packageJson = await readJsonFile(path.join(modules, name, 'package.json'), MAX_MANIFEST_BYTES, 'package.json').catch(() => null);
+    // The same containment as readPluginDirectory: package.json and the manifest it names are
+    // read only inside the package (pnpm links the package itself; links out of it are refused).
+    const packageRoot = await fs.realpath(path.join(modules, name)).catch(() => null);
+    if (!packageRoot) continue;
+    const packageJson = await insidePackage(packageRoot, 'package.json').then(file => readJsonFile(file, MAX_MANIFEST_BYTES, 'package.json')).catch(() => null);
     const field = packageJson?.[PLUGIN_PACKAGE_FIELD]?.plugin;
     if (typeof field !== 'string') continue;
     let plugin = null;
     let problems = [];
     try {
-      const manifest = await readJsonFile(path.join(modules, name, field), MAX_MANIFEST_BYTES, field);
+      if (!safeRelative(field)) throw new PluginError('COSSACK_PLUGIN_MANIFEST_INVALID', 'package.json#cossack.plugin must name a manifest file inside the package.');
+      const manifest = await readJsonFile(await insidePackage(packageRoot, field), MAX_MANIFEST_BYTES, field);
       problems = validatePluginManifest(manifest, packageJson);
       plugin = manifest?.name;
     } catch (error) { problems = [error.message]; }

@@ -38,6 +38,8 @@ machine (`--name` renames it; `--scope read` makes a read-only one; `--expires 9
 ninety days), ends the session and keeps
 the password in `~/.config/cossack/cms-logins.json`, readable by you alone. `--token cms_…`
 stores a password made in the dashboard instead. `cossack cms logout` revokes and forgets it.
+A site without its own login uses the address's network login; `logout --site` refuses to end
+that one, which every site shares, unless you pass `--network`.
 
 | Setting | Comes from, in order |
 | --- | --- |

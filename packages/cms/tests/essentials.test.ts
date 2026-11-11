@@ -340,6 +340,41 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         await cms.saveLanguages({ default: 'en', others: [] }, admin);
     });
 
+    it('copies a shared field to many long translations within the request limits, and refuses an entry too large to save', async () => {
+        clock += 1000;
+        await cms.saveCollection({ name: 'gizmos', label: 'Gizmos', singular: 'Gizmo', icon: 'box', path: 'gizmos', features: {},
+            fields: { price: field.integer({ nullable: true, translatable: false, label: 'Price' }), notes: field.text({ nullable: true, label: 'Notes' }) } }, admin);
+        expect((await cms.migrate()).failed).toBeUndefined();
+        const languages = ['fr', 'de', 'es', 'it', 'nl', 'pt', 'pl', 'sv'];
+        await cms.saveLanguages({ default: 'en', others: languages }, admin);
+        const gizmos = cms.resource('cms/gizmos');
+        const notes = 'A long note about the gizmo. '.repeat(250);
+        const gizmo = await gizmos.create({ title: 'Gizmo', price: 10, notes }, { principal: admin });
+        const translations = [];
+        for (const locale of languages) translations.push(await cms.translateEntry('gizmos', gizmo.id, locale, admin));
+        // Eight translations of about 7 KB each: one request could not carry their history rows.
+        const saved = await gizmos.update(gizmo.id, { price: 12 }, { principal: admin, expectedRevision: gizmo.rev });
+        expect(saved.price).toBe(12);
+        for (const translation of translations) expect(await gizmos.get(translation.id, { principal: admin })).toMatchObject({ price: 12, rev: translation.rev + 1, notes });
+        const audit = await cms.db.read([{ rql: "SELECT record_id, revision FROM cms_audit WHERE resource = 'cms/gizmos' AND action = 'update'" }]);
+        expect(audit.results[0]!.rows.map(row => row[0]).sort()).toEqual([gizmo.id, ...translations.map(translation => translation.id)].sort());
+        // An entry whose save would not fit one request is refused plainly.
+        await expect(gizmos.update(gizmo.id, { notes: 'x'.repeat(70_000) }, { principal: admin, expectedRevision: saved.rev })).rejects.toMatchObject({ code: 'CMS_LIMIT', message: expect.stringContaining('too large to save') });
+        await cms.saveLanguages({ default: 'en', others: [] }, admin);
+    });
+
+    it('keeps passwords and protected snapshots out of revisions for readers who cannot edit', async () => {
+        const posts = cms.resource('cms/posts');
+        const post = await posts.create({ title: 'Behind a password', password: 'hunter2' }, { principal: editor });
+        const reviewer: Principal = { kind: 'user', id: 'reviewer', roles: [], permissions: ['cms/posts:read'] };
+        await expect(posts.revisions(post.id, { principal: reviewer })).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
+        const open = await posts.update(post.id, { password: '' }, { principal: editor, expectedRevision: post.rev });
+        // The open revision reads; the protected one before it does not, for the reviewer alone.
+        expect((await posts.revisions(post.id, { principal: reviewer })).map(entry => entry.revision)).toEqual([open.rev]);
+        expect(await posts.revision(post.id, post.rev, { principal: reviewer })).toBeNull();
+        expect((await posts.revision(post.id, post.rev, { principal: editor }))!.data.password).toBe('hunter2');
+    });
+
     it('serves translations under language prefixes', async () => {
         const pages = cms.resource('cms/pages');
         const about = await pages.create({ title: 'About', status: 'published' }, { principal: editor });

@@ -490,7 +490,14 @@ async function essentials(origin, routeIds, diagnostics, { runtime, cloudflare =
   // Required two-step sign-in sends staff without it to set it up.
   const editorUser = 'dashboard/users/new/index.ts';
   await web.action(editorUser, 'create', ['Eve', 'eve@example.com', 'eve password 1', ['editor']]);
+  // An application password Eve holds from before the requirement stops working with it.
+  const eveUserId = (await (await web.request('/dashboard/users?search=eve')).text()).match(/\/dashboard\/users\/(?!new\b)([A-Za-z0-9_-]{8,})/)[1];
+  const earlier = await web.action('dashboard/users/[id]/index.ts', 'addToken', ['Before the rule', 'write', 30], { params: { id: eveUserId } });
+  expect(earlier.newToken).toMatch(/^cms_/);
   expect((await web.action(SETTINGS, 'saveAll', [{ document: { general: { requireTwoFactor: true } }, languages: null, permalinks: null, groups: {} }]))._cossack_return.error).toBe('');
+  const earlierUse = await fetch(`${origin}/api/cms/content/posts`, { headers: { authorization: `Bearer ${earlier.newToken}` } });
+  expect(earlierUse.status).toBe(403);
+  expect((await earlierUse.json()).code).toBe('CMS_SECOND_FACTOR_REQUIRED');
   const eve = browserless(origin, routeIds, diagnostics);
   await eve.action('auth/login/index.ts', 'login', [{ email: 'eve@example.com', password: 'eve password 1' }]);
   expect((await eve.request('/dashboard')).headers.get('location')).toBe('/dashboard/profile/security?required=1');
@@ -505,12 +512,26 @@ async function essentials(origin, routeIds, diagnostics, { runtime, cloudflare =
   const eveApi = await eve.request('/api/cms/me/tokens', { method: 'POST', headers: { 'content-type': 'application/json', origin }, body: JSON.stringify({ name: 'Skip it' }) });
   expect(eveApi.status).toBe(403);
   expect((await eveApi.json()).code).toBe('CMS_SECOND_FACTOR_REQUIRED');
+  // A dashboard page's form handler sends her to the security page too.
+  const evePost = await eve.post('/dashboard/plugins', { _row: 'grant:anything' });
+  expect([evePost.status, evePost.headers.get('location')]).toEqual([303, '/dashboard/profile/security?required=1']);
+  // The dashboard layout's own actions do not count as the security page's, whatever page the call names.
+  await expect(eve.action('dashboard/layout.ts', 'find', ['Needs'], { page: 'dashboard/profile/security/index.ts' })).rejects.toThrow(/answered 403/);
+  // On the site her session is anonymous: Live Edit opens nothing, and visitor endpoints answer as for anyone.
+  const SITE_PAGE = '(site)/[...path]/index.ts';
+  const liveEdit = { state: { editable: { collection: 'posts', id: pendingId } }, params: { path: 'needs-review' } };
+  expect((await eve.action(SITE_PAGE, 'startEditing', [], liveEdit)).draft ?? null).toBeNull();
+  expect((await eve.request('/api/cms/search?q=needs')).status).not.toBe(403);
   // JSON sign-in for tools answers Eve as it would anyone; the API stays closed to the session.
   const eveTool = await fetch(`${origin}/api/auth/session`, { method: 'POST', headers: { 'content-type': 'application/json', origin, 'sec-fetch-site': 'same-origin' }, body: JSON.stringify({ email: 'eve@example.com', password: 'eve password 1' }) });
   expect(eveTool.status).toBe(200);
   const toolCookie = eveTool.headers.getSetCookie().map(cookie => cookie.split(';')[0]).join('; ');
   expect((await fetch(`${origin}/api/cms/me/tokens`, { headers: { cookie: toolCookie } })).status).toBe(403);
   expect((await web.action(SETTINGS, 'saveAll', [{ document: { general: { requireTwoFactor: false } }, languages: null, permalinks: null, groups: {} }]))._cossack_return.error).toBe('');
+  // Without the requirement the same session edits on the site, and the earlier password works again.
+  expect((await eve.action(SITE_PAGE, 'startEditing', [], liveEdit)).draft).toBeTruthy();
+  expect((await fetch(`${origin}/api/cms/content/posts`, { headers: { authorization: `Bearer ${earlier.newToken}` } })).status).toBe(200);
+  await web.action('dashboard/users/[id]/index.ts', 'deleteToken', [earlier.tokens.find(entry => entry.name === 'Before the rule').id], { params: { id: eveUserId } });
 
   // An administrator issues an application password for Eve from her user screen; it acts as Eve.
   const eveId = (await (await web.request('/dashboard/users?search=eve')).text()).match(/\/dashboard\/users\/(?!new\b)([A-Za-z0-9_-]{8,})/)[1];

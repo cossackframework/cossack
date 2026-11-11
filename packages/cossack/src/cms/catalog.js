@@ -58,6 +58,7 @@ export const CMS_FLAGS = {
   tag: str('A cache tag to purge, such as cms:main:c:posts; repeat for several (cache purge).', { repeated: true }),
   path: str('A page to purge, by URL; repeat for several (cache purge).', { repeated: true }),
   yes: bool('Confirm a delete.', { aliases: ['y'] }),
+  network: bool('Log out of the address\'s network login, which every site of the network uses.'),
 };
 
 const WRITE = Object.freeze({ write: true });
@@ -72,7 +73,7 @@ const WRITE = Object.freeze({ write: true });
 export const CMS_COMMANDS = [
   { noun: 'login', verb: null, summary: 'Sign in and store an application password for this address (and site).', positionals: [], flags: ['email', 'code', 'token', 'name', 'scope', 'expires'] },
   { noun: 'import', verb: 'wxr', summary: 'Import a WordPress export (WXR): categories, tags, posts and pages, with redirects from old permalinks.', positionals: ['file'], flags: ['dry-run', 'posts', 'pages'] },
-  { noun: 'logout', verb: null, summary: 'Revoke the stored application password and forget the login.', positionals: [], flags: [] },
+  { noun: 'logout', verb: null, summary: 'Revoke the stored application password and forget the login.', positionals: [], flags: ['network'] },
   { noun: 'whoami', verb: null, summary: 'Who the stored password acts as, on which site.', positionals: [], flags: [] },
   { noun: 'password', verb: 'reset', summary: 'Recovery mode: a one-hour password reset link for an account, with the site\'s CMS_RECOVERY_CODE; no sign-in needed.', positionals: [], flags: ['email', 'second-factors'] },
   { noun: 'mcp', verb: null, summary: 'Print the MCP client configuration for this site: its URL and the stored password.', positionals: [], flags: ['format', 'name'] },

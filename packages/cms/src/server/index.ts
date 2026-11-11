@@ -30,7 +30,7 @@ export {
 export { cmsReconcilers } from './reconcile';
 export { CmsPreviews, type PreviewLink } from './previews';
 export { CmsAutosaves, type Autosave } from './autosaves';
-export { CmsDrafts, DRAFT_MAX_BYTES, EDITING_WINDOW, type Draft, type DraftInput } from './drafts';
+export { CmsDrafts, DRAFT_MAX_BYTES, draftMaxBytes, EDITING_WINDOW, type Draft, type DraftInput } from './drafts';
 export { CmsNotes, type NoteInput } from './notes';
 export { CmsRedirects } from './redirects';
 export { CmsApiTokens, API_TOKEN_LIMIT, type ApiToken, type ApiTokenScope } from './api-tokens';

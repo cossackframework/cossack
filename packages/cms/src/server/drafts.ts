@@ -1,16 +1,31 @@
 /**
  * Shared drafts: what an entry's room (every editor of the entry together) holds between saves,
  * one row per entry, so a restart or an evicted instance loses at most the room's write delay.
- * The row also names who is editing, for the entries list. A RomeDB request takes 64 KiB, so a
- * draft is capped well under that; an entry that large could not be saved either.
+ * The row also names who is editing, for the entries list. A draft is capped at what an entry
+ * can hold and still be saved (`draftMaxBytes`).
  */
-import type { RomeDB } from '@cossackframework/romedb';
+import { LOCAL_REQUEST_BYTES, type RomeDB } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
 
 const WRITE = { kind: 'cms.drafts', retryConflicts: 5 } as const;
 const KEY = /^[A-Za-z0-9_-]{1,80}$/;
-/** The draft's values as JSON, at most, in UTF-8 bytes as the request carries them. */
-export const DRAFT_MAX_BYTES = 48 * 1024;
+
+/**
+ * The most values, as JSON in UTF-8 bytes as a request carries them, that an entry can hold and
+ * still be saved in a request of this size: a save carries them about 3.5 times (the fields,
+ * their search text, the revision and the event), with room for the statements around them.
+ */
+export function draftMaxBytes(requestBytes: number): number {
+    return Math.floor((requestBytes - 4096) / 4);
+}
+/** The draft cap on a local RomeDB service (64 KiB requests); Cloud takes 1 MiB requests. */
+export const DRAFT_MAX_BYTES = draftMaxBytes(LOCAL_REQUEST_BYTES);
+
+/** The cap for this database, refused as `CMS_LIMIT` when over it. */
+export async function checkDraftSize(db: RomeDB, json: string, what: string): Promise<void> {
+    const limit = draftMaxBytes(await db.maxRequestBytes());
+    if (requestBytes(json) > limit) throw new CmsError('CMS_LIMIT', `The ${what} is larger than ${Math.floor(limit / 1024)} KB, the most an entry can hold and still be saved.`);
+}
 
 const encoder = new TextEncoder();
 
@@ -53,7 +68,7 @@ export class CmsDrafts {
         check(recordId);
         if (!Number.isSafeInteger(draft.baseRev) || draft.baseRev < 0) throw new CmsError('CMS_VALIDATION', 'baseRev must be a nonnegative integer.');
         const data = JSON.stringify(draft.values ?? {});
-        if (requestBytes(data) > DRAFT_MAX_BYTES) throw new CmsError('CMS_LIMIT', `The draft is larger than ${DRAFT_MAX_BYTES / 1024} KB.`);
+        await checkDraftSize(this.#db, data, 'draft');
         const at = this.#now();
         await this.#db.write([{
             rql: `INSERT INTO cms_drafts (id, resource, record_id, base_rev, data, logs, editors, editors_at, at) VALUES ($id, $resource, $record, $rev, $data, $logs, $editors, $at, $at)

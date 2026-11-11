@@ -67,7 +67,7 @@ import type { PaymentsProvider } from './payments';
 import type { PaymentEvent } from '../hooks';
 import { siteBindingScope, type BindingScopes } from '../bindings';
 import { CmsAutomations } from './automations';
-import { CmsComments } from './comments';
+import { CmsComments, collectionDeleted, collectionDeletedStatement } from './comments';
 import { CmsSecurity } from './security';
 import type { ImageTransformer } from './images';
 import { checkComment, COMMENT_STATUSES, type CommentShape, type CommentStatus } from '../comments';
@@ -590,6 +590,7 @@ export class CmsHost {
         }, { plugin: 'cms' });
         // A deleted entry takes its comments along; under its own name, so its retries are its alone.
         this.hooks.addAction(afterCommit, async event => { if (event.topic === 'resource.deleted') await this.comments.deleteForEntry(event.resource, event.id); }, { plugin: 'cms-comments' });
+        this.hooks.addAction(collectionDeleted, event => this.comments.deleteForResource(event.resource), { plugin: 'cms-comments' });
         // A saved form brings its submissions table up to date; a deleted one takes its table along.
         this.hooks.addAction(afterCommit, async event => {
             if (event.resource !== 'cms/forms') return;
@@ -972,8 +973,11 @@ export class CmsHost {
         }));
         if (!filtered || typeof filtered !== 'object' || !(COMMENT_STATUSES as readonly string[]).includes(filtered.status)) throw new CmsError('CMS_VALIDATION', 'A plugin returned an invalid comment.');
         const checked = checkComment(filtered, !user && settings['discussion.requireNameEmail']);
+        // The entry may have been deleted while plugins checked the comment: then the comment is not added.
+        const storage = this.resourceById(resource).storage;
         const comment = await this.comments.create({ id: uuidv7(), resource, recordId: record.id, parentId, userId: user?.id ?? null, ...checked,
-            status: filtered.status, ipHash, userAgent: context.userAgent?.slice(0, 300) ?? null });
+            status: filtered.status, ipHash, userAgent: context.userAgent?.slice(0, 300) ?? null },
+            { rql: `EXISTS (SELECT 1 FROM ${storage} WHERE id = type::record('${storage}', $commentEntry))`, params: { $commentEntry: record.id } });
         const url = (await this.entryUrls(collection, [record])).get(record.id) ?? null;
         return { comment, collection, entry: record, url };
     }
@@ -1575,18 +1579,22 @@ export class CmsHost {
         const referrers = this.resources.filter(resource => resource.id !== id && Object.values(resource.fields).some(field => field.kind === 'reference' && field.target === id));
         if (referrers.length) throw new CmsError('CMS_CONFLICT', `${referrers.map(resource => resource.label ?? resource.id).join(', ')} refer to this collection.`);
         const storage = this.resourceById(id).storage;
+        // The groups attached to it stay, for other targets, without it. First, so a failure
+        // leaves the collection there to delete again.
+        for (const group of groupsForTarget(this.#groups, { kind: 'collection', name })) await this.fieldGroups.put(withTarget(group, { kind: 'collection', name }, false), principal);
         const info = await this.db.read([{ rql: 'INFO FOR DB' }]);
         const exists = ((info.results[0]!.rows[0]![0] as { tables?: { name: string }[] }).tables ?? []).some(table => table.name === storage);
+        const at = this.#now();
         await this.db.write([
             ...(exists ? [{ rql: `DROP TABLE ${storage}` }] : []),
             { rql: 'DELETE FROM cms_collections WHERE name = $name', params: { $name: name } },
             { rql: 'DELETE FROM cms_schema_state WHERE resource = $id', params: { $id: id } },
             { rql: `DELETE FROM ${SITE_SEARCH.collection} WHERE collection = $name`, params: { $name: name } },
-            nextGenerationStatement(this.#now()),
+            // Its comments go from the outbox, which retries until they are gone.
+            collectionDeletedStatement(id, `collection.deleted:${id}:${uuidv7()}`, at),
+            nextGenerationStatement(at),
         ], { kind: 'cms.collections' });
-        await this.comments.deleteForResource(id);
-        // The groups attached to it stay, for other targets, without it.
-        for (const group of groupsForTarget(this.#groups, { kind: 'collection', name })) await this.fieldGroups.put(withTarget(group, { kind: 'collection', name }, false), principal);
+        this.outboxWritten();
         this.#activation = undefined;
         await this.ready({ force: true });
     }

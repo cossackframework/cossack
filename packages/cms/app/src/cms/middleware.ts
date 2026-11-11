@@ -107,18 +107,23 @@ function securityHeaders(c: Context, url: URL): void {
  * passwords may only read, and token requests skip the session's same-origin checks.
  */
 export const cmsPrincipal: MiddlewareHandler = async (c, next) => {
-    const session = (c.get('user') as { principal?: Principal } | undefined)?.principal;
-    c.set('principal', session ?? ANONYMOUS);
-    // Staff that General settings require to use two-step sign-in reach the API with their
-    // session only once they have a second factor; signing in and out stays open.
-    if (session && /^\/api(?:\/|$)/.test(c.req.path) && !c.req.path.startsWith('/api/auth/')
-        && await secondFactorRequired(c.get('user') as PublicUser).catch(() => true)) {
-        return c.json({ error: 'This site requires two-step sign-in: set it up under Profile → Security first.', code: 'CMS_SECOND_FACTOR_REQUIRED' }, 403);
+    const user = c.get('user') as PublicUser | undefined;
+    let session = user?.principal as Principal | undefined;
+    // Staff that General settings require to use two-step sign-in act with their session only
+    // once they have a second factor. Until then the session is anonymous everywhere (the site,
+    // Live Edit, previews, server methods), so no page has to repeat the check; signing in and
+    // out stays open, the rest of the API refuses, and the dashboard guards send them to set one up.
+    if (session && !c.req.path.startsWith('/api/auth/') && await secondFactorRequired(user!).catch(() => true)) {
+        if (API_PATH.test(c.req.path) && !VISITOR_API.test(c.req.path)) return secondFactorRefusal(c);
+        session = undefined;
     }
+    c.set('principal', session ?? ANONYMOUS);
     const header = c.req.header('authorization') ?? '';
-    if (!session && /^Bearer cms_/i.test(header) && (c.req.path === '/api' || c.req.path.startsWith('/api/'))) {
+    if (!user && /^Bearer cms_/i.test(header) && API_PATH.test(c.req.path)) {
         const token = await c.get('cms').tokenPrincipal(header.slice(7).trim()).catch(() => null);
         if (!token) return c.json({ error: 'The application password is not valid.', code: 'CMS_UNAUTHENTICATED' }, 401, { 'www-authenticate': 'Bearer' });
+        // An application password made before the requirement was turned on stops working too.
+        if (token.principal.kind === 'user' && await secondFactorRequired({ id: token.principal.id, principal: token.principal } as PublicUser).catch(() => true)) return secondFactorRefusal(c);
         if (token.scope === 'read' && c.req.path !== MCP_PATH && !['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) return c.json({ error: 'This application password can only read.', code: 'CMS_FORBIDDEN' }, 403);
         c.set('principal', token.principal);
         c.set('cms.token', true);
@@ -141,6 +146,15 @@ export const cmsPrincipal: MiddlewareHandler = async (c, next) => {
     }
     await next();
 };
+
+const API_PATH = /^\/api(?:\/|$)/;
+
+/** The API endpoints visitors use from the site (comments, forms, search, menus): staff still waiting to add a second factor use them as anyone does. */
+const VISITOR_API = /^\/api\/cms\/(?:comments|search|recovery|payments\/webhook|menus\/[^/]+|forms\/[^/]+)\/?$/;
+
+function secondFactorRefusal(c: Context) {
+    return c.json({ error: 'This site requires two-step sign-in: set it up under Profile → Security first.', code: 'CMS_SECOND_FACTOR_REQUIRED' }, 403);
+}
 
 /** Paths the holding page never covers: the dashboard, sign-in, the API, the framework's own routes, assets and media. */
 const HOLDING_EXEMPT = /^\/(?:dashboard|auth|api|crpc|sse|assets|media|_cossack|\.well-known|favicon\.ico|manifest\.webmanifest|robots\.txt)(?:\/|$)/;

@@ -48,14 +48,21 @@ export function stripePayments(options: StripePaymentsOptions): PaymentsProvider
     const api = (options.api ?? STRIPE_API).replace(/\/$/, '');
     const fetcher = options.fetch ?? globalThis.fetch;
     const now = options.now ?? Date.now;
-    /** A GET of Stripe's API, or nothing when it does not answer in time. */
+    /**
+     * A GET of Stripe's API; nothing when Stripe has no such object. When Stripe does not answer
+     * in time or fails, the webhook fails too (`CMS_UNAVAILABLE`), so Stripe sends it again
+     * instead of the event going out without the order it belongs to.
+     */
     const lookup = async <T>(path: string): Promise<T | undefined> => {
+        let response: Response;
         try {
-            const response = await fetcher(`${api}${path}`, { headers: { authorization: `Bearer ${options.secretKey}` }, signal: AbortSignal.timeout(options.lookupMs ?? STRIPE_LOOKUP_MS) });
-            return response.ok ? await response.json() as T : undefined;
-        } catch {
-            return undefined;
+            response = await fetcher(`${api}${path}`, { headers: { authorization: `Bearer ${options.secretKey}` }, signal: AbortSignal.timeout(options.lookupMs ?? STRIPE_LOOKUP_MS) });
+        } catch (error) {
+            throw new CmsError('CMS_UNAVAILABLE', `Stripe did not answer a lookup: ${(error as Error).message}`);
         }
+        if (response.status === 404) return undefined;
+        if (!response.ok) throw new CmsError('CMS_UNAVAILABLE', `Stripe answered a lookup with ${response.status}.`);
+        try { return await response.json() as T; } catch { throw new CmsError('CMS_UNAVAILABLE', 'Stripe answered a lookup with something other than JSON.'); }
     };
     /** The metadata of an invoice's subscription, or nothing when Stripe does not answer. */
     const invoiceMetadata = async (id: string): Promise<Record<string, unknown> | undefined> => {

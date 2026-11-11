@@ -239,6 +239,8 @@ const LIST_FIELDS = ['hooks', 'commands'] as const;
  * their permissions as its own, such as assigning a role whose permissions are all `cms:…`.
  */
 export const RESERVED_PLUGIN_NAMES: ReadonlySet<string> = new Set(['cms', 'app', 'core', 'system', 'form', 'editor', 'cossack', 'framework']);
+/** The host's own hook owners (`cms-comments`, `cms-cache`, `cms-automations`, `cms-search`): a plugin of that name would share their outbox retries. */
+export const RESERVED_PLUGIN_PREFIX = 'cms-';
 
 export function manifestProblems(manifest: unknown): string[] {
     const problems: string[] = [];
@@ -246,7 +248,7 @@ export function manifestProblems(manifest: unknown): string[] {
     const value = manifest as CmsPluginManifest;
     if (value.schemaVersion !== 1) problems.push('schemaVersion must be 1.');
     if (typeof value.name !== 'string' || !OWNER_NAME.test(value.name) || value.name.length > 64) problems.push('name must be a plugin name.');
-    else if (RESERVED_PLUGIN_NAMES.has(value.name)) problems.push(`name ${value.name} is reserved.`);
+    else if (RESERVED_PLUGIN_NAMES.has(value.name) || value.name.startsWith(RESERVED_PLUGIN_PREFIX)) problems.push(`name ${value.name} is reserved.`);
     if (typeof value.version !== 'string' || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(value.version)) problems.push('version must be a semantic version.');
     for (const key of Object.keys(value)) if (!KNOWN_FIELDS.has(key)) problems.push(`${key} is not a manifest field.`);
     // Lists are read item by item below; one of another shape would throw instead of being reported, and the host would not start.

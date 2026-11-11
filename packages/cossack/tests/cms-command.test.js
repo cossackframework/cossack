@@ -395,20 +395,44 @@ describe('cms helpers', () => {
     } finally { await fs.rm(project, { recursive: true, force: true }); }
   });
 
-  it('logs out of the stored login in use, not the shell token or the site slot', async () => {
+  it('logs out of the stored login in use, and ends a network login only with --network', async () => {
     const home = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-cms-logout-'));
     try {
       const config = { COSSACK_CONFIG_DIR: home };
-      // Only the address's network login exists; --site blog signs in with it.
+      // Only the address's network login exists; --site blog signs in with it, so logging out
+      // of blog alone would end every site's: that is refused without --network.
       await rememberLogin({ url: 'https://cms.example', token: 'cms_nnnnnnnnnnnnnnnn.secret', tokenId: 'nnnnnnnnnnnnnnnn', name: 'network', scope: 'write', email: 'ada@example.com', user: 'u1' }, config);
       const fetch = vi.fn(async () => new Response(null, { status: 204 }));
-      const result = await logoutCommand({ flags: { url: 'https://cms.example', site: 'blog' }, env: { ...config, COSSACK_CMS_TOKEN: 'cms_eeeeeeeeeeeeeeee.secret' }, cwd: home, fetch });
+      const env = { ...config, COSSACK_CMS_TOKEN: 'cms_eeeeeeeeeeeeeeee.secret' };
+      await expect(logoutCommand({ flags: { url: 'https://cms.example', site: 'blog' }, env, cwd: home, fetch })).rejects.toMatchObject({ code: 'COSSACK_CMS_NETWORK_LOGIN', message: expect.stringMatching(/--network/) });
+      expect(fetch).not.toHaveBeenCalled();
+      expect(Object.keys((await readLogins(config)).logins)).toHaveLength(1);
+      const result = await logoutCommand({ flags: { url: 'https://cms.example', site: 'blog', network: true }, env, cwd: home, fetch });
       expect(result).toMatchObject({ revoked: true, forgotten: true });
       expect(fetch).toHaveBeenCalledTimes(1);
       const [requested, init] = fetch.mock.calls[0];
       expect(String(requested)).toBe('https://cms.example/api/cms/me/tokens/nnnnnnnnnnnnnnnn');
+      // The stored login's password is revoked, not the shell's.
       expect(init.headers.get('authorization')).toBe('Bearer cms_nnnnnnnnnnnnnnnn.secret');
       expect((await readLogins(config)).logins).toEqual({});
+    } finally { await fs.rm(home, { recursive: true, force: true }); }
+  });
+
+  it('says why a password sign-in was refused', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-cms-login-refused-'));
+    try {
+      const env = { COSSACK_CONFIG_DIR: home, CMS_PASSWORD: 'long password' };
+      const answering = (status, body) => vi.fn(async () => new Response(JSON.stringify(body), { status }));
+      await expect(loginCommand({ flags: { url: 'https://cms.example', email: 'ada@example.com' }, env, cwd: home, fetch: answering(403, { error: 'Complete the check.', code: 'CMS_BOT_CHECK' }) }))
+        .rejects.toMatchObject({ code: 'COSSACK_CMS_BOT_CHECK', message: expect.stringMatching(/--token or COSSACK_CMS_TOKEN/) });
+      // Signed in, but the site requires a second factor before an application password.
+      const fetch = vi.fn(async (url, init) => init.method === 'POST' && String(url).endsWith('/api/auth/session')
+        ? new Response('{}', { status: 200, headers: { 'set-cookie': 'session=1; Path=/' } })
+        : init.method === 'POST' ? new Response(JSON.stringify({ error: 'Set it up first.', code: 'CMS_SECOND_FACTOR_REQUIRED' }), { status: 403 }) : new Response(null, { status: 204 }));
+      await expect(loginCommand({ flags: { url: 'https://cms.example', email: 'ada@example.com' }, env, cwd: home, fetch }))
+        .rejects.toMatchObject({ code: 'COSSACK_CMS_SECOND_FACTOR_REQUIRED' });
+      // The session it opened is closed again.
+      expect(fetch.mock.calls.at(-1)[1].method).toBe('DELETE');
     } finally { await fs.rm(home, { recursive: true, force: true }); }
   });
 

@@ -28,10 +28,11 @@ describe.skipIf(!live)('shared drafts', () => {
 
     it('refuses drafts a RomeDB request cannot carry, and bad entry IDs', async () => {
         await expect(cms.drafts.save('cms/posts', 'p2', { baseRev: 1, values: { body: 'x'.repeat(DRAFT_MAX_BYTES) }, versions: {}, editors: [] })).rejects.toMatchObject({ code: 'CMS_LIMIT' });
-        // Counted in UTF-8 bytes as the request carries them: 20 000 three-byte characters are 60 000 bytes.
-        await expect(cms.drafts.save('cms/posts', 'p2', { baseRev: 1, values: { body: '€'.repeat(20_000) }, versions: {}, editors: [] })).rejects.toMatchObject({ code: 'CMS_LIMIT' });
-        await expect(cms.autosaves.save('cms/posts', 'p2', 'alice', { body: '€'.repeat(20_000) })).rejects.toMatchObject({ code: 'CMS_LIMIT' });
-        await cms.drafts.save('cms/posts', 'p2', { baseRev: 1, values: { body: '€'.repeat(10_000) }, versions: {}, editors: [] });
+        // Counted in UTF-8 bytes as the request carries them: 6 000 three-byte characters are 18 000 bytes,
+        // over what an entry can hold and still be saved in a 64 KiB request.
+        await expect(cms.drafts.save('cms/posts', 'p2', { baseRev: 1, values: { body: '€'.repeat(6_000) }, versions: {}, editors: [] })).rejects.toMatchObject({ code: 'CMS_LIMIT' });
+        await expect(cms.autosaves.save('cms/posts', 'p2', 'alice', { body: '€'.repeat(6_000) })).rejects.toMatchObject({ code: 'CMS_LIMIT' });
+        await cms.drafts.save('cms/posts', 'p2', { baseRev: 1, values: { body: '€'.repeat(4_000) }, versions: {}, editors: [] });
         await expect(cms.drafts.save('cms/posts', 'p 2', { baseRev: 1, values: {}, versions: {}, editors: [] })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         await expect(cms.drafts.save('cms/posts', 'p2', { baseRev: -1, values: {}, versions: {}, editors: [] })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         await expect(cms.drafts.get('cms/posts', '../p2')).rejects.toMatchObject({ code: 'CMS_VALIDATION' });

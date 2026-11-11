@@ -5,7 +5,7 @@
  * zero-row edit writes nothing else. IDs are allocated before dispatch and the exact
  * request is saved for recovery.
  */
-import { ClientError, Float64, RecordId, UncertainWriteError, Vector, type Statement, type Value } from '@cossackframework/romedb';
+import { ClientError, Float64, MAX_STATEMENTS, RecordId, RequestTooLargeError, statementBytes, UncertainWriteError, Vector, type Statement, type Value } from '@cossackframework/romedb';
 import { LIBRARY_KEYS } from './files';
 import type { HookRegistry } from '@cossackframework/core/hooks';
 import { CmsError, isCmsError } from '../errors';
@@ -168,39 +168,49 @@ export class ResourceRepository {
     }
 
     async revisions(id: string, context: OperationContext, options: { limit?: number } = {}): Promise<RevisionShape[]> {
-        await this.#historyOf(id, context);
+        const editor = await this.#historyOf(id, context);
         const result = await this.#host.db.read([{
             rql: 'SELECT revision, at, actor, data FROM cms_revisions WHERE resource = $resource AND record_id = $key ORDER BY revision DESC LIMIT $limit',
             params: { $resource: this.resource.id, $key: id, $limit: options.limit ?? 50 },
         }], this.#readOptions(context));
-        return result.results[0]!.rows.map(([revision, at, actor, data]) => ({
-            revision: Number(revision), at: Number(at), actor: actor as string | null, data: this.#redact(JSON.parse(data as string) as RecordShape, context.principal),
-        }));
+        return result.results[0]!.rows.map(([revision, at, actor, data]) => this.#historyRow(revision, at, actor, data, editor, context.principal))
+            .filter((row): row is RevisionShape => row !== null);
     }
 
     /**
      * A record's history is editorial: earlier revisions hold drafts and passwords the
-     * published record does not show. Those who may change the record read it, and holders
-     * of the resource's read permission, who read its drafts anyway.
+     * published record does not show. Those who may change the record read all of it. Holders
+     * of the resource's read permission, who read its drafts anyway, read the history of an
+     * open record, without passwords or snapshots that were protected or members-only, as
+     * export and the API treat them. Answers whether the principal may change the record.
      */
-    async #historyOf(id: string, context: OperationContext): Promise<void> {
+    async #historyOf(id: string, context: OperationContext): Promise<boolean> {
         const record = await this.get(id, context);
         if (!record) throw new CmsError('CMS_NOT_FOUND', 'Record not found.');
-        if (!this.canUpdate(record, context.principal) && !hasPermission(context.principal, `${this.resource.id}:read`)) {
+        if (this.canUpdate(record, context.principal)) return true;
+        if (!hasPermission(context.principal, `${this.resource.id}:read`) || lockedRecord(record)) {
             throw new CmsError('CMS_FORBIDDEN', 'Only editors read this record\'s revisions.');
         }
+        return false;
+    }
+
+    #historyRow(revision: unknown, at: unknown, actor: unknown, data: unknown, editor: boolean, principal: Principal): RevisionShape | null {
+        const snapshot = JSON.parse(data as string) as RecordShape;
+        if (!editor && lockedRecord(snapshot)) return null;
+        const shaped = this.#redact(snapshot, principal);
+        return { revision: Number(revision), at: Number(at), actor: actor as string | null, data: editor || !('password' in shaped) ? shaped : Object.freeze({ ...shaped, password: null }) as RecordShape };
     }
 
     /** One revision's snapshot of a record the principal may change, or null. */
     async revision(id: string, revision: number, context: OperationContext): Promise<RevisionShape | null> {
-        await this.#historyOf(id, context);
+        const editor = await this.#historyOf(id, context);
         if (!Number.isSafeInteger(revision) || revision < 1) return null;
         const result = await this.#host.db.read([{
             rql: 'SELECT revision, at, actor, data FROM cms_revisions WHERE resource = $resource AND record_id = $key AND revision = $revision',
             params: { $resource: this.resource.id, $key: id, $revision: revision },
         }], this.#readOptions(context));
         const row = result.results[0]!.rows[0];
-        return row ? { revision: Number(row[0]), at: Number(row[1]), actor: row[2] as string | null, data: this.#redact(JSON.parse(row[3] as string) as RecordShape, context.principal) } : null;
+        return row ? this.#historyRow(row[0], row[1], row[2], row[3], editor, context.principal) : null;
     }
 
     /**
@@ -377,41 +387,44 @@ export class ResourceRepository {
             condition.params,
         )];
         const guard = `EXISTS (SELECT 1 FROM ${this.resource.storage} WHERE id = type::record('${this.resource.storage}', $key) AND "_op" = $op)`;
-        statements.push(...await this.#sharedStatements(id, op, previous, draft, guard, now, context));
+        const shared = await this.#sharedStatement(id, previous, draft, guard, { $key: id, $op: op, $now: now }, context);
+        if (shared) statements.push(shared);
         statements.push(...this.#sideEffects(guard, op, id, revision, 'update', record, context.principal, now, {}, previous));
         // A published entry whose URL changes keeps answering at the old one. The audit row,
         // written only when the change commits, guards these relational statements.
         statements.push(...await this.#host.redirectStatements(this.resource, previous, record, { rql: 'EXISTS (SELECT 1 FROM cms_audit WHERE id = $rOp)', params: { $rOp: op } }, principalId(context.principal)));
         const result = await this.#write(statements, op, context);
-        if (result !== 1) throw new CmsError('CMS_CONFLICT', 'The record changed since it was read. Reload and try again.');
+        if (result.affected !== 1) throw new CmsError('CMS_CONFLICT', 'The record changed since it was read. Reload and try again.');
+        if (shared) await this.#sharedSideEffects(id, op, previous, result.sequence, now, context);
         return this.#redact(record, context.principal);
     }
 
     /**
-     * Fields that are the same in every language (`translatable: false`) and changed: each of the
-     * entry's other translations gets them in its own statement, once the entry's own update
-     * committed, with its revision moved on (so an editor holding an older one reloads) and the
-     * revision, audit, search and outbox rows any update writes. The principal must be able to
-     * update every translation.
+     * Fields that are the same in every language (`translatable: false`) and changed: one
+     * statement gives them to every other translation of the entry, once the entry's own update
+     * committed, with each translation's revision moved on (so an editor holding an older one
+     * reloads) and the entry's operation ID. The principal must be able to update every
+     * translation. The translations' revision, audit, search and outbox rows follow in their own
+     * writes (`#sharedSideEffects`), so a site with many languages still fits one request.
      */
-    async #sharedStatements(id: string, op: string, previous: RecordShape, draft: Draft, guard: string, now: number, context: OperationContext): Promise<Statement[]> {
-        if (!this.resource.fields.translationGroup) return [];
+    async #sharedStatement(id: string, previous: RecordShape, draft: Draft, guard: string, params: { [key: string]: Value }, context: OperationContext): Promise<Statement | null> {
+        if (!this.resource.fields.translationGroup) return null;
         const changed = Object.entries(this.resource.fields).filter(([name, declaration]) => declaration.translatable === false && draft[name] !== undefined
             && JSON.stringify(draft[name] ?? null) !== JSON.stringify(previous[name] ?? null)).map(([name]) => name);
-        if (!changed.length) return [];
+        if (!changed.length) return null;
         const group = translationGroupOf(previous);
         const members = await this.#host.db.read([{
-            rql: `SELECT * FROM ${this.resource.storage} WHERE ("translationGroup" = $group OR id = type::record('${this.resource.storage}', $group)) AND record::id(id) != $key LIMIT 100`,
+            rql: `SELECT record::id(id) FROM ${this.resource.storage} WHERE ${this.#membersOf()} LIMIT ${SHARED_MEMBERS}`,
             params: { $group: group, $key: id },
         }], this.#readOptions(context));
-        const others = members.results[0]!.rows.map(row => this.#shapeOf(row[0] as Document));
-        if (!others.length) return [];
-        if ((await this.updatable(others.map(other => other.id), context)).size < others.length) {
+        const others = members.results[0]!.rows.map(row => row[0] as string);
+        if (!others.length) return null;
+        if ((await this.updatable(others, context)).size < others.length) {
             const labels = changed.map(name => this.resource.fields[name]!.label ?? name).join(', ');
             throw new CmsError('CMS_FORBIDDEN', `${labels} is the same in every language, and you cannot edit every translation.`, { fields: Object.fromEntries(changed.map(name => [name, 'is the same in every language.'])) });
         }
         const shared: Draft = Object.fromEntries(changed.map(name => [name, draft[name]]));
-        const values: { [key: string]: Value } = { $sNow: now };
+        const values: { [key: string]: Value } = { ...params, $group: group };
         const assignments = changed.map((name, index) => {
             values[`$s${index}`] = this.#store(name, this.resource.fields[name]!, draft[name]);
             return `${quote(name)} = $s${index}`;
@@ -420,20 +433,53 @@ export class ResourceRepository {
             values[`$st${index}`] = text;
             assignments.push(`${quote(path)} = $st${index}`);
         }
-        const statements: Statement[] = [];
-        for (const other of others) {
-            const memberOp = uuidv7();
-            const revision = other.rev + 1;
-            statements.push(bound(
-                `UPDATE ${this.resource.storage} SET ${[...assignments, '"_rev" = "_rev" + 1', '"_op" = $sOp', '"_updatedAt" = $sNow'].join(', ')} WHERE id = type::record('${this.resource.storage}', $sKey) AND ${guard}`,
-                { ...values, $key: id, $op: op, $sKey: other.id, $sOp: memberOp },
-            ));
-            // The member's own rows follow its update, as an update of it would write them.
-            const memberGuard = `EXISTS (SELECT 1 FROM ${this.resource.storage} WHERE id = type::record('${this.resource.storage}', $key) AND "_op" = $op)`;
-            const record = this.#shape(other.id, revision, other.createdAt, now, other.owner, { ...this.#fieldsOf(other), ...shared });
-            statements.push(...this.#sideEffects(memberGuard, memberOp, other.id, revision, 'update', record, context.principal, now, {}, other));
+        return {
+            rql: `UPDATE ${this.resource.storage} SET ${[...assignments, '"_rev" = "_rev" + 1', '"_op" = $op', '"_updatedAt" = $now'].join(', ')} WHERE ${this.#membersOf()} AND ${guard}`,
+            params: values,
+        };
+    }
+
+    /** The entry's other translations, by `$group` and the entry's own `$key`. */
+    #membersOf(): string {
+        return `("translationGroup" = $group OR id = type::record('${this.resource.storage}', $group)) AND record::id(id) != $key`;
+    }
+
+    /**
+     * The revision, audit, search and outbox rows of the translations a shared-field update
+     * changed, read back as that update left them and written in batches that fit a request.
+     * Each translation's rows are guarded on it still holding that update (its `_op` and
+     * revision): a translation saved again since then wrote its own rows. The entry's update has
+     * committed, so a failure here is reported, not thrown.
+     */
+    async #sharedSideEffects(id: string, op: string, previous: RecordShape, sequence: number, now: number, context: OperationContext): Promise<void> {
+        try {
+            const members = await this.#host.db.read([{
+                rql: `SELECT * FROM ${this.resource.storage} WHERE ${this.#membersOf()} AND "_op" = $op LIMIT ${SHARED_MEMBERS}`,
+                params: { $group: translationGroupOf(previous), $key: id, $op: op },
+            }], { ...this.#readOptions(context), afterSequence: sequence });
+            const groups = members.results[0]!.rows.map(row => {
+                const member = this.#shapeOf(row[0] as Document);
+                const guard = `EXISTS (SELECT 1 FROM ${this.resource.storage} WHERE id = type::record('${this.resource.storage}', $key) AND "_op" = $sharedOp AND "_rev" = $sharedRev)`;
+                return this.#sideEffects(guard, uuidv7(), member.id, member.rev, 'update', member, context.principal, now, { $sharedOp: op, $sharedRev: member.rev }, member);
+            });
+            const limit = await this.#host.db.maxRequestBytes() - REQUEST_MARGIN;
+            let batch: Statement[] = [];
+            let bytes = 0;
+            const flush = async () => {
+                if (!batch.length) return;
+                await this.#host.db.write(batch, { kind: 'cms.resource.shared', ...(context.signal ? { signal: context.signal } : {}), workLimits: this.#host.writeLimits });
+                batch = []; bytes = 0;
+            };
+            for (const group of groups) {
+                const size = statementBytes(group);
+                if (batch.length && (batch.length + group.length > MAX_STATEMENTS || bytes + size > limit)) await flush();
+                batch.push(...group); bytes += size;
+            }
+            await flush();
+            this.#host.outboxWritten();
+        } catch (error) {
+            console.warn(`[cms] ${this.resource.id} ${id}: the other translations' history and search rows were not written: ${(error as Error).message}`);
         }
-        return statements;
     }
 
     /** The IDs among these the principal may update. */
@@ -462,7 +508,7 @@ export class ResourceRepository {
         const statements = this.#sideEffects(guard, op, id, context.expectedRevision, 'delete', null, context.principal, now, condition.params, previous);
         statements.push(bound(`DELETE FROM ${this.resource.storage} WHERE ${condition.rql}`, condition.params));
         const deleted = await this.#write(statements, op, context, undefined, statements.length - 1);
-        if (deleted !== 1) throw new CmsError('CMS_CONFLICT', 'The record changed or was deleted since it was read.');
+        if (deleted.affected !== 1) throw new CmsError('CMS_CONFLICT', 'The record changed or was deleted since it was read.');
     }
 
     async #authorize(action: ResourceAction, principal: Principal): Promise<Access> {
@@ -827,12 +873,13 @@ export class ResourceRepository {
         return statements;
     }
 
-    async #write(statements: Statement[], op: string, context: OperationContext, onRolledBack?: (error: ClientError) => void, statement = 0, kind = 'cms.resource.write'): Promise<number> {
+    async #write(statements: Statement[], op: string, context: OperationContext, onRolledBack?: (error: ClientError) => void, statement = 0, kind = 'cms.resource.write'): Promise<{ affected: number; sequence: number }> {
         try {
             const result = await this.#host.db.write(statements, { requestId: op, kind, ...(context.signal ? { signal: context.signal } : {}), workLimits: this.#host.writeLimits });
             this.#host.outboxWritten();
-            return Number(result.results[statement]!.affected);
+            return { affected: Number(result.results[statement]!.affected), sequence: result.sequence };
         } catch (error) {
+            if (error instanceof RequestTooLargeError) throw new CmsError('CMS_LIMIT', 'This entry is too large to save. Shorten it, or split it into several entries.', { cause: error });
             if (error instanceof UncertainWriteError) throw new CmsError('CMS_UNCERTAIN', 'The change was sent but not confirmed. It will be completed or reported shortly.', { requestId: error.requestId, cause: error });
             if (error instanceof ClientError && error.outcome === 'rolled-back') {
                 if (error.code === 'RDB_WRITE_CONFLICT') throw new CmsError('CMS_CONFLICT', 'The record changed since it was read. Reload and try again.', { cause: error });
@@ -984,3 +1031,13 @@ function decodeCursor(cursor: string): { at: number; key: string } {
 }
 
 export { afterCommit };
+
+/** A protected or members-only record: only those who may change it read it whole. */
+function lockedRecord(record: RecordShape): boolean {
+    return (typeof record.password === 'string' && record.password.length > 0) || record.membersOnly === true;
+}
+
+/** Translations one shared-field update reaches. */
+const SHARED_MEMBERS = 100;
+/** Room left in a request for its envelope (request ID, sequences, work limits). */
+const REQUEST_MARGIN = 2048;

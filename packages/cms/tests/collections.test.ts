@@ -121,7 +121,13 @@ describe.skipIf(!live)('collections built in the dashboard', () => {
         const comment = { resource: 'cms/products', recordId: 'p1', parentId: null, userId: null, authorName: 'Ann', authorEmail: 'ann@example.com', authorUrl: '', content: 'Nice', status: 'approved' as const, ipHash: null, userAgent: null };
         await cms.comments.create({ ...comment, id: 'c-products-1' });
         await cms.comments.create({ ...comment, id: 'c-posts-1', resource: 'cms/posts' });
+        // A comment guarded on its entry is not added once the entry is gone.
+        await expect(cms.comments.create({ ...comment, id: 'c-gone-1' }, { rql: 'EXISTS (SELECT 1 FROM cms_comments WHERE id = $missing)', params: { $missing: 'none' } })).rejects.toMatchObject({ code: 'CMS_NOT_FOUND' });
+        expect(await cms.comments.get('c-gone-1')).toBeNull();
         await cms.deleteCollection('products', admin);
+        // From the outbox, queued in the batch that dropped the collection.
+        expect(await cms.comments.get('c-products-1')).not.toBeNull();
+        await cms.outbox.dispatch({ limit: 100 });
         expect(await cms.comments.get('c-products-1')).toBeNull();
         expect(await cms.comments.get('c-posts-1')).not.toBeNull();
         // Posts were relabelled Articles above, so they sort first.

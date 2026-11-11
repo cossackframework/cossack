@@ -5,9 +5,24 @@
  */
 import os from 'node:os';
 import { assertCredentialTarget, CmsApiError, createClient, resolveTarget, tokenId } from './client.js';
-import { forgetLogin, rememberLogin } from './logins.js';
+import { forgetLogin, loginKey, rememberLogin } from './logins.js';
 
 const coded = (code, message) => Object.assign(new Error(message), { code });
+
+/**
+ * A clear error for a refused password sign-in: the site's bot check, its two-step requirement,
+ * or a wrong password. Other refusals keep the CMS's own message. Plugin commands share it.
+ */
+export function signInFailure(error) {
+  if (error instanceof CmsApiError && error.cmsCode === 'CMS_BOT_CHECK') {
+    return coded('COSSACK_CMS_BOT_CHECK', 'This site checks sign-ins for bots, so the CLI cannot sign in with a password. Create an application password in the dashboard (your profile) and pass it with --token or COSSACK_CMS_TOKEN.');
+  }
+  if (error instanceof CmsApiError && error.cmsCode === 'CMS_SECOND_FACTOR_REQUIRED') {
+    return coded('COSSACK_CMS_SECOND_FACTOR_REQUIRED', 'This site requires two-step sign-in. Set it up in the dashboard under your profile, then sign in again.');
+  }
+  if (error instanceof CmsApiError && error.status === 401) return coded('COSSACK_CMS_SIGN_IN_FAILED', 'Sign-in failed. Check the email, the password and the address.');
+  return error;
+}
 
 /** Ask in the terminal; nothing to ask without one. */
 async function terminalAsk({ type, message }) {
@@ -43,13 +58,17 @@ export async function loginCommand({ flags, env = process.env, cwd = process.cwd
           if (code) continue;
           throw coded('COSSACK_CMS_TWO_FACTOR_REQUIRED', 'This account signs in with a second factor: pass --code <code> from the authenticator app.');
         }
-        if (error instanceof CmsApiError && error.status === 401) throw coded('COSSACK_CMS_SIGN_IN_FAILED', 'Sign-in failed. Check the email, the password and the address.');
-        throw error;
+        throw signInFailure(error);
       }
     }
     if (!cookie) throw coded('COSSACK_CMS_SIGN_IN_FAILED', 'Sign-in gave no session.');
     name ||= `cossack CLI (${os.hostname()})`;
-    const created = await session.request('POST', '/api/cms/me/tokens', { body: { name, scope, ...(flags.expires ? { expiresInDays: Number(flags.expires) } : {}) }, cookie });
+    let created;
+    try { created = await session.request('POST', '/api/cms/me/tokens', { body: { name, scope, ...(flags.expires ? { expiresInDays: Number(flags.expires) } : {}) }, cookie }); }
+    catch (error) {
+      await session.request('DELETE', '/api/auth/session', { cookie }).catch(() => undefined);
+      throw signInFailure(error);
+    }
     token = created.data.token;
     // The session did its job; the application password signs in from now on.
     await session.request('DELETE', '/api/auth/session', { cookie }).catch(() => undefined);
@@ -70,6 +89,11 @@ export async function logoutCommand({ flags, env = process.env, cwd = process.cw
   // Forgetting a stored login sends nothing, so it works for any address; revoking sends the
   // password, so only where it may go.
   const target = await resolveTarget({ flags, env, cwd, needToken: false });
+  // A site without its own login signs in with the address's network login; ending that ends
+  // every site's, so it takes --network rather than happening as a side effect of --site.
+  if (target.site && target.login && target.key === loginKey(target.url, undefined) && !flags.network) {
+    throw coded('COSSACK_CMS_NETWORK_LOGIN', `Site ${target.site} has no login of its own: it uses the network login for ${target.url}, which every site of the network shares. To sign out of all of them, run cossack cms logout --url ${target.url} --network.`);
+  }
   // Logging out ends the stored login: its password is the one revoked and forgotten. A
   // `COSSACK_CMS_TOKEN` from the shell is revoked only when no login is stored for the target.
   const stored = target.login?.token;

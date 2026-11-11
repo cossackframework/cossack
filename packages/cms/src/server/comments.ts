@@ -6,6 +6,27 @@ import type { RomeDB, Statement, Value } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
 import { containsPattern, inList } from './users';
 import { checkComment, COMMENT_STATUSES, type CommentRow, type CommentShape, type CommentStatus } from '../comments';
+import { defineAction } from '@cossackframework/core/hooks';
+
+/** A deleted collection, queued in the batch that drops it, so its comments go in a retried job. */
+export interface CollectionDeletedEvent {
+    readonly eventId: string;
+    readonly topic: 'collection.deleted';
+    readonly at: number;
+    readonly resource: string;
+}
+
+/** Runs the deleted collection's cleanup from the outbox. The host handles it; plugins cannot hook it. */
+export const collectionDeleted = defineAction<CollectionDeletedEvent>('cms.collection.deleted', { version: 1, timeoutMs: 60_000 });
+
+/** The outbox row that queues `collectionDeleted`, for the batch that drops the collection. */
+export function collectionDeletedStatement(resource: string, eventId: string, at: number): Statement {
+    const event: CollectionDeletedEvent = { eventId, topic: 'collection.deleted', at, resource };
+    return {
+        rql: 'INSERT INTO cms_outbox (id, topic, payload, created_at, available_at, attempts, lease_until) VALUES ($eventId, $topic, $payload, $at, $at, 0, 0)',
+        params: { $eventId: eventId, $topic: event.topic, $payload: JSON.stringify(event), $at: at },
+    };
+}
 
 export interface CommentListOptions {
     readonly status?: CommentStatus;
@@ -87,20 +108,25 @@ export class CmsComments {
     }
 
     /** The insert statement for a new comment, so callers can batch it. */
-    insert(row: Omit<CommentRow, 'createdAt' | 'updatedAt'>): Statement {
+    /** The comment's row; with `guard` (an SQL condition, such as the entry still existing), only while it holds. */
+    insert(row: Omit<CommentRow, 'createdAt' | 'updatedAt'>, guard?: { readonly rql: string; readonly params: { readonly [key: string]: Value } }): Statement {
         const now = this.#now();
+        const values = '$id, $resource, $record, $parent, $user, $name, $email, $url, $content, $status, $ip, $agent, $now, $now';
         return {
             rql: `INSERT INTO cms_comments (id, resource, record_id, parent_id, user_id, author_name, author_email, author_url, content, status, ip_hash, user_agent, created_at, updated_at)
-                VALUES ($id, $resource, $record, $parent, $user, $name, $email, $url, $content, $status, $ip, $agent, $now, $now)`,
+                ${guard ? `SELECT ${values} WHERE ${guard.rql}` : `VALUES (${values})`}`,
             params: {
+                ...guard?.params,
                 $id: row.id, $resource: row.resource, $record: row.recordId, $parent: row.parentId, $user: row.userId, $name: row.authorName, $email: row.authorEmail.toLowerCase(),
                 $url: row.authorUrl, $content: row.content, $status: row.status, $ip: row.ipHash, $agent: row.userAgent, $now: now,
             },
         };
     }
 
-    async create(row: Omit<CommentRow, 'createdAt' | 'updatedAt'>): Promise<CommentShape> {
-        await this.#db.write([this.insert(row)], WRITE);
+    /** Add a comment; with `guard`, refused as `CMS_NOT_FOUND` when it no longer holds, such as for an entry just deleted. */
+    async create(row: Omit<CommentRow, 'createdAt' | 'updatedAt'>, guard?: { readonly rql: string; readonly params: { readonly [key: string]: Value } }): Promise<CommentShape> {
+        const result = await this.#db.write([this.insert(row, guard)], WRITE);
+        if (result.results[0]!.affected === 0n) throw new CmsError('CMS_NOT_FOUND', 'The entry is gone.');
         if (row.status === 'approved') await this.#changed?.([{ resource: row.resource, recordId: row.recordId }]);
         return (await this.get(row.id))!;
     }
