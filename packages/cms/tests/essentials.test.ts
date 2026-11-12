@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { StorageProvider } from '@cossackframework/core/storage';
 import { totpCode, totpStep } from '@cossackframework/auth';
 import {
-    ANONYMOUS, contentModule, createCMS, DEFAULT_ROLES, field, imageSrcset, MAX_FILE_VARIANTS, posts, verifyWebhookSignature,
+    ANONYMOUS, contentModule, createCMS, DEFAULT_ROLES, field, imageSrcset, MAX_FILE_VARIANTS, VARIANT_ASPECTS, posts, verifyWebhookSignature,
     type CmsHost, type CmsModule, type ImageTransformer, type Principal,
 } from '../src/server/index';
 import { romedbService, live } from './helpers';
@@ -760,15 +760,27 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         await cms.files!.variant(file.id, { width: 640, accept: 'image/webp' });
         expect(transforms.length - before).toBe(1);
         expect(keys()).toHaveLength(1);
-        // Past the cap, a new variant replaces the oldest: storage stays bounded, and sizes asked for later are still made.
-        for (let height = 1; keys().length < MAX_FILE_VARIANTS && height < 2000; height += 7) await cms.files!.variant(file.id, { width: 320, height, accept: 'image/png' });
-        expect(keys()).toHaveLength(MAX_FILE_VARIANTS);
-        const full = keys();
+        // Any width and height maps to one of a few kept shapes: a sweep of 2,000 heights at every
+        // width makes each shape once, and asking again makes nothing.
+        const sweep = async () => { for (const width of [100, 320, 700, 1280]) for (let height = 1; height < 2000; height += 37) await cms.files!.variant(file.id, { width, height, accept: 'image/png' }); };
+        await sweep();
+        const swept = keys().length;
+        expect(swept).toBeLessThanOrEqual(1 + 4 * VARIANT_ASPECTS.length);
         const made = transforms.length;
-        expect(await cms.files!.variant(file.id, { width: 1280, height: 77, accept: 'image/png' })).not.toBeNull();
-        expect(transforms).toHaveLength(made + 1);
-        expect(keys()).toHaveLength(MAX_FILE_VARIANTS);
-        expect(full.filter(key => !keys().includes(key))).toHaveLength(1);
+        await sweep();
+        expect(transforms).toHaveLength(made);
+        expect(keys()).toHaveLength(swept);
+        // A square icon asks for a square.
+        await cms.files!.variant(file.id, { width: 192, height: 192, accept: 'image/webp' });
+        expect(transforms.at(-1)).toMatchObject({ width: 320, height: 320 });
+        // Past the cap (left by changed widths), the original is served: no transform, no row.
+        const filler = Array.from({ length: MAX_FILE_VARIANTS }, (_, i) => `cms/variants/${file.id}/old/${i}.webp`);
+        for (let i = 0; i < filler.length; i += 32) {
+            await cms.db.write(filler.slice(i, i + 32).map(key => ({ rql: 'INSERT INTO cms_file_variants (key, file_id, created_at, size) VALUES ($key, $id, 0, 1)', params: { $key: key, $id: file.id } })));
+        }
+        const capped = transforms.length;
+        expect(await cms.files!.variant(file.id, { width: 2560, height: 2560 * 9 / 21, accept: 'image/avif' })).toBeNull();
+        expect(transforms).toHaveLength(capped);
         // A variant row naming another file's object (as an edited export could) never deletes it.
         const foreign = 'cms/variants/someone-else/x/1x1.png';
         storage.objects.set(foreign, new Uint8Array([1]));
@@ -784,7 +796,7 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         expect((await cms.db.read([{ rql: 'SELECT count(*) FROM cms_file_variants WHERE file_id = $id', params: { $id: file.id } }])).results[0]!.rows[0]![0]).toBe(0n);
         expect(storage.objects.has(foreign)).toBe(true);
         storage.objects.delete(foreign);
-    });
+    }, 120_000);
 
     it('deletes only a file\'s own stored object, whatever key its row names', async () => {
         const bytes = png(10, 10);

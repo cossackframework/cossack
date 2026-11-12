@@ -15,6 +15,9 @@ interface MediaRow { id: string; url: string; name: string; title: string; alt: 
 /** The media library: a grid of uploads with type and text filters, and an uploader that takes dropped files. */
 @Page({ transport: 'http', middlewares: [requireAny(PERMISSIONS.upload, PERMISSIONS.manageMedia)] })
 export default class MediaLibrary extends Cossack {
+    /** The plain upload form posts up to ten files at the size Settings → Media allows; `uploadFiles` checks each. */
+    static maxBodyBytes = 1024 * 1024 * 1024;
+
     @State() items: MediaRow[] = [];
     @State() total = 0;
     @State() page = 1;

@@ -114,11 +114,35 @@ describe.skipIf(!live)('resource repositories', () => {
         await repository.delete('stale', { principal: editor, expectedRevision: 1 });
         expect(await repository.get('stale', { principal: editor })).toBeNull();
         expect(await count("SELECT count(*) FROM cms_audit WHERE record_id = 'stale' AND action = 'delete'")).toBe(1);
-        // The delete takes the record's revisions along, so its ID can be used again.
-        expect(await count("SELECT count(*) FROM cms_revisions WHERE record_id = 'stale'")).toBe(0);
+        // The ID can be used again at once: the old history gives way to the new one.
         expect(await repository.create({ title: 'Stale again' }, { principal: alice, id: 'stale' })).toMatchObject({ id: 'stale', rev: 1 });
         expect((await repository.revisions('stale', { principal: editor })).map(entry => entry.data.title)).toEqual(['Stale again']);
+        // The outbox job then removes what the deleted record wrote up to its delete, and keeps the new record's.
+        await cms.outbox.dispatch({ limit: 100 });
+        expect(await count("SELECT count(*) FROM cms_revisions WHERE record_id = 'stale'")).toBe(1);
+        expect((await repository.revisions('stale', { principal: editor })).map(entry => entry.data.title)).toEqual(['Stale again']);
     });
+
+    it('deletes an entry saved over a thousand times, and its leftovers, in the outbox', async () => {
+        const repository = cms.resource('app/articles');
+        await repository.create({ title: 'Long lived' }, { principal: alice, id: 'long' });
+        // 1,100 earlier revisions: more rows than one write may change.
+        for (let i = 0; i < 1100; i += 32) {
+            await cms.db.write(Array.from({ length: Math.min(32, 1100 - i) }, (_, j) => ({
+                rql: "INSERT INTO cms_revisions (id, resource, record_id, revision, data, actor, at) VALUES ($id, 'app/articles', 'long', $rev, '{}', NULL, 1)",
+                params: { $id: `app/articles:long:${1000 + i + j}`, $rev: 1000 + i + j },
+            })));
+        }
+        await cms.drafts.save('app/articles', 'long', { baseRev: 1, values: { title: 'Draft' }, versions: {}, editors: [] });
+        await cms.autosaves.save('app/articles', 'long', 'alice', { title: 'Autosaved' });
+        await cms.previews.create('app/articles', 'long', 'alice');
+        await repository.delete('long', { principal: editor, expectedRevision: 1 });
+        await cms.outbox.dispatch({ limit: 100 });
+        expect(await count("SELECT count(*) FROM cms_revisions WHERE record_id = 'long'")).toBe(0);
+        expect(await count("SELECT count(*) FROM cms_drafts WHERE record_id = 'long'")).toBe(0);
+        expect(await count("SELECT count(*) FROM cms_autosaves WHERE record_id = 'long'")).toBe(0);
+        expect(await count("SELECT count(*) FROM cms_preview_tokens WHERE record_id = 'long'")).toBe(0);
+    }, 60_000);
 
     it('enforces ownership in queries, updates and search', async () => {
         const repository = cms.resource('app/notes');

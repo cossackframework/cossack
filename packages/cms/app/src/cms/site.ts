@@ -1074,12 +1074,27 @@ async function resolveIn(cms: CmsHost, languages: SiteLanguages, locale: string,
 /** The redirect for a path without content, if any; its use is counted in the background. */
 export async function redirectFor(cms: CmsHost, path: string, query: string, later: (work: Promise<unknown>) => void): Promise<Resolved | null> {
     let match;
-    try { match = await cms.redirects.match(path); }
+    let prefix = '';
+    try {
+        match = await cms.redirects.match(path);
+        // A moved collection's or taxonomy's redirects are written without a language prefix: under
+        // a language's prefix the same redirect applies, and its target keeps that prefix.
+        if (!match) {
+            const languages = await cms.languages();
+            const code = path.split('/')[1] ?? '';
+            if (languages.multilingual && languages.all.includes(code)) {
+                const rest = path.slice(code.length + 1) || '/';
+                const unprefixed = await cms.redirects.match(rest);
+                if (unprefixed?.redirect.prefix && unprefixed.location?.startsWith('/')) { match = unprefixed; prefix = `/${code}`; }
+            }
+        }
+    }
     catch (error) { if (isCmsError(error) || /cms_redirects|no such table/i.test(String((error as Error).message))) return null; throw error; }
     if (!match) return null;
     later(cms.redirects.hit(match.redirect.id));
     if (match.location === null) return { kind: 'gone' };
-    const location = query && !match.location.includes('?') ? `${match.location}?${query}` : match.location;
+    const target = prefix ? `${prefix}${match.location === '/' ? '' : match.location}` || '/' : match.location;
+    const location = query && !target.includes('?') ? `${target}?${query}` : target;
     return { kind: 'redirect', url: location, status: match.redirect.status as 301 | 302 | 307 | 308 };
 }
 

@@ -41,7 +41,7 @@ export default class RegistrationsPage extends Cossack {
         try {
             if (!(await cms.users.awaitingApproval(id))) throw new Error(__('This account does not wait for approval.'));
             if (action === 'approve') {
-                await approveRegistration(id, new URL(this.c.req.url).origin);
+                await approveRegistration(id);
                 flash('registrations.message', __('Approved. They can sign in now and got an email saying so.'));
             } else if (action === 'delete') {
                 await cms.users.delete(id);

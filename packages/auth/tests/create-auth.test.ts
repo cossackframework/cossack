@@ -303,6 +303,22 @@ describe('createAuth — createLoginHandler request guards', () => {
         expect(pulls).toBe(2);
     });
 
+    it('refuses a login body over 64 KiB with 413, declared or streamed, before reading credentials', async () => {
+        const { post, validateCredentials } = setup();
+        const big = JSON.stringify({ email: 'a@b.io', password: 'x'.repeat(70 * 1024) });
+        expect((await post({ 'Content-Type': 'application/json' }, big)).status).toBe(413);
+        const kit = createAuth<User>({ extractSessionId: () => undefined, validateSessionId: async () => null, resolveUserById: async () => null });
+        const app = buildApp(kit, kit.createLoginHandler({ validateCredentials, createSession: vi.fn() }));
+        let pulls = 0;
+        const chunk = new TextEncoder().encode('x'.repeat(16 * 1024));
+        const stream = new ReadableStream<Uint8Array>({ pull(controller) { pulls++; controller.enqueue(chunk); } });
+        const res = await app.request('http://localhost/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: stream, duplex: 'half' } as RequestInit);
+        expect(res.status).toBe(413);
+        // An endless stream is read only past the limit, then cancelled.
+        expect(pulls).toBeLessThan(10);
+        expect(validateCredentials).not.toHaveBeenCalled();
+    });
+
     it('accepts application/json with parameters', async () => {
         const { post } = setup();
         const res = await post({ 'Content-Type': 'Application/JSON; charset=utf-8' });

@@ -17,7 +17,7 @@ export { siteExport, siteFile, EXPORT_SKIPPED_TABLES, EXPORT_REDACTED_COLUMNS, F
 export { siteImport, siteImportState, type SiteImportOptions, type SiteImportReport } from './site-import';
 export { OPEN_POLICY, pluginState, readPolicy, type NetworkPluginState, type NetworkPolicy, type NetworkThemeState } from './network-policy';
 export { CmsHandoffs, type Handoff } from './handoffs';
-export { FileService, MAX_FILE_VARIANTS, type CmsFile, type FileServiceOptions, type FileMetadata, type FileSummary, type ImageSettings, type PendingUpload } from './files';
+export { FileService, MAX_FILE_VARIANTS, VARIANT_ASPECTS, type CmsFile, type FileServiceOptions, type FileMetadata, type FileSummary, type ImageSettings, type PendingUpload } from './files';
 export { CmsCache, type CacheEntry } from './cache';
 export { CmsTaxonomies, freeSlug, type TermUsage, type TermInput } from './taxonomies';
 export { CmsSettings } from './site-settings';

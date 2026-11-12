@@ -55,10 +55,12 @@ export async function settleCancel(cancellation: Promise<unknown>, timeoutMs = 1
  * the end (within `limit`) lets the upstream connection finish sending, so a
  * keep-alive connection stays usable; cancelling an unread body instead left
  * the sender writing after the response and broke the next request on Workers.
- * Bodies over `limit` are cancelled.
+ * Bodies over `limit` are cancelled. A body read partway and released (such as
+ * `getFormData` refusing an oversized form) is drained the same way; a body read
+ * to its end gives nothing more to read.
  */
 export async function discardRequestBody(request: Request, limit: number): Promise<void> {
-    if (!request.body || request.bodyUsed || request.body.locked) return;
+    if (!request.body || request.body.locked) return;
     const reader = request.body.getReader();
     let size = 0;
     try {

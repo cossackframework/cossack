@@ -34,6 +34,8 @@ export interface SecurityStatus {
 export type ChallengeKind = 'signin' | 'passkey-register' | 'passkey-signin';
 
 const WRITE = { kind: 'cms.security', retryConflicts: 5 } as const;
+/** Attempt counters: one row takes every attempt of a burst, so they retry longer. */
+const COUNT = { kind: 'cms.security', retryConflicts: 20 } as const;
 const PASSKEY_COLUMNS = 'id, user_id, name, public_key, counter, transports, device_type, backed_up, created_at, last_used_at';
 /** Wrong codes a pending sign-in allows. */
 export const SIGN_IN_ATTEMPTS = 5;
@@ -109,12 +111,19 @@ export class CmsSecurity {
      */
     async #count(key: string, windowMs: number, max: number): Promise<boolean> {
         const now = this.#now();
-        const result = await this.#db.write([
-            { rql: 'DELETE FROM cms_attempts WHERE key = $key AND until <= $now', params: { $key: key, $now: now } },
-            { rql: 'INSERT INTO cms_attempts (key, count, until) VALUES ($key, 0, $until) ON CONFLICT (key) DO NOTHING', params: { $key: key, $until: now + windowMs } },
-            { rql: 'UPDATE cms_attempts SET count = count + 1 WHERE key = $key AND count < $max', params: { $key: key, $max: max } },
-        ], WRITE);
-        return result.results[2]!.affected === 1n;
+        try {
+            const result = await this.#db.write([
+                { rql: 'DELETE FROM cms_attempts WHERE key = $key AND until <= $now', params: { $key: key, $now: now } },
+                { rql: 'INSERT INTO cms_attempts (key, count, until) VALUES ($key, 0, $until) ON CONFLICT (key) DO NOTHING', params: { $key: key, $until: now + windowMs } },
+                { rql: 'UPDATE cms_attempts SET count = count + 1 WHERE key = $key AND count < $max', params: { $key: key, $max: max } },
+            ], COUNT);
+            return result.results[2]!.affected === 1n;
+        } catch (error) {
+            // A key under a burst of attempts can keep conflicting past the retries: refuse this
+            // attempt, as the limit would, rather than fail the request.
+            if ((error as { code?: string }).code === 'RDB_WRITE_CONFLICT') return false;
+            throw error;
+        }
     }
 
     async status(userId: string): Promise<SecurityStatus> {
@@ -306,6 +315,15 @@ export class CmsSecurity {
         const live = await this.#db.read([{ rql: 'SELECT attempts FROM cms_auth_challenges WHERE id = $id', params: { $id: id } }]);
         const row = live.results[0]!.rows[0];
         return { left: row ? SIGN_IN_ATTEMPTS - Number(row[0] as bigint) : 0 };
+    }
+
+    /**
+     * Spend one of the account's code tries outside a sign-in (turning the authenticator off,
+     * new recovery codes): the same per-account count as `secondFactorAttempt`, so codes cannot
+     * be guessed faster on the security page than at sign-in. False when the account is locked.
+     */
+    async codeAttempt(userId: string): Promise<boolean> {
+        return this.#count(secondFactorKey(userId), SECOND_FACTOR_LOCK.windowMs, SECOND_FACTOR_LOCK.perAccount);
     }
 
     /** A wrong code: the challenge ends once it has no tries left. */

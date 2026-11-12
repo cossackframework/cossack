@@ -73,6 +73,48 @@ describe('createCossackContext — getFormData', () => {
     expect(await small.getFormData({ maxBytes: 4096 })).toEqual({ a: { b: '1' } });
   });
 
+  it('shares Hono\'s body cache: parseBody before or after getFormData', async () => {
+    const app = new Hono();
+    app.post('/before', async c => {
+      expect(await c.req.parseBody()).toMatchObject({ 'a[b]': '1' });
+      const ctx = createCossackContext(c, true) as unknown as CossackContext;
+      return c.json(await ctx.getFormData());
+    });
+    app.post('/after', async c => {
+      const ctx = createCossackContext(c, true) as unknown as CossackContext;
+      const data = await ctx.getFormData();
+      expect(await c.req.parseBody()).toMatchObject({ 'a[b]': '1' });
+      expect((await c.req.formData()).get('a[b]')).toBe('1');
+      return c.json(data);
+    });
+    for (const path of ['/before', '/after']) {
+      const form = new FormData();
+      form.append('a[b]', '1');
+      const response = await app.request(path, { method: 'POST', body: form });
+      expect(response.status, path).toBe(200);
+      expect(await response.json()).toEqual({ a: { b: '1' } });
+    }
+  });
+
+  it('reads a declared length into one buffer, and a body longer than it declared as well', async () => {
+    const body = new TextEncoder().encode('a=1&b=2');
+    const chunks = [body.subarray(0, 3), body.subarray(3)];
+    let index = 0;
+    const stream = new ReadableStream<Uint8Array>({ pull(controller) { if (index < chunks.length) controller.enqueue(chunks[index++]!); else controller.close(); } });
+    // Declares fewer bytes than it sends: the rest is still read, within the limit.
+    const raw = { body: stream, headers: new Headers({ 'content-type': 'application/x-www-form-urlencoded', 'content-length': '3' }) };
+    const ctx = createCossackContext({ req: { raw } } as unknown as Context, true) as unknown as CossackContext;
+    expect(await ctx.getFormData({ maxBytes: 4096 })).toEqual({ a: '1', b: '2' });
+  });
+
+  it('defaults to an 8 MiB limit', async () => {
+    const { FORM_DATA_MAX_BYTES } = await import('../src/shared/context');
+    expect(FORM_DATA_MAX_BYTES).toBe(8 * 1024 * 1024);
+    const raw = { body: new ReadableStream(), headers: new Headers({ 'content-type': 'application/x-www-form-urlencoded', 'content-length': String(8 * 1024 * 1024 + 1) }) };
+    const ctx = createCossackContext({ req: { raw } } as unknown as Context, true) as unknown as CossackContext;
+    await expect(ctx.getFormData()).rejects.toMatchObject({ status: 413 });
+  });
+
   it('parses nested form data (server side)', async () => {
     const ctx = createCossackContext(
       mockContext([

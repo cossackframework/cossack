@@ -77,16 +77,44 @@ function json(body: unknown, status = 200, headers: Record<string, string> = {})
     return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store', ...headers } });
 }
 
+/** The largest request body read, and the most messages one batch may carry (each runs in turn). */
+export const MCP_MAX_BYTES = 1024 * 1024;
+export const MCP_MAX_BATCH = 20;
+
+/** The body as text, read up to `MCP_MAX_BYTES`: null past it, declared or not. */
+async function boundedText(request: Request): Promise<string | null> {
+    const declared = Number(request.headers.get('content-length'));
+    if (Number.isFinite(declared) && declared > MCP_MAX_BYTES) return null;
+    if (!request.body) return '';
+    const reader = request.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > MCP_MAX_BYTES) { await reader.cancel().catch(() => undefined); return null; }
+        chunks.push(value);
+    }
+    const body = new Uint8Array(size);
+    let at = 0;
+    for (const chunk of chunks) { body.set(chunk, at); at += chunk.byteLength; }
+    return new TextDecoder().decode(body);
+}
+
 export async function handleMcp<C>(request: Request, options: McpServerOptions<C>): Promise<Response> {
     if (request.method !== 'POST') {
         return json(failure(null, INVALID_REQUEST, request.method === 'GET' ? 'This server opens no streams: send JSON-RPC requests with POST.' : 'This server keeps no sessions.'), 405, { allow: 'POST' });
     }
+    const text = await boundedText(request);
+    if (text === null) return json(failure(null, INVALID_REQUEST, `The request is larger than ${MCP_MAX_BYTES / 1024 / 1024} MiB.`), 413);
     let parsed: unknown;
-    try { parsed = await request.json(); }
+    try { parsed = JSON.parse(text); }
     catch { return json(failure(null, PARSE_ERROR, 'The body is not JSON.'), 400); }
     const batch = Array.isArray(parsed);
     const messages = (batch ? parsed : [parsed]) as unknown[];
     if (!messages.length) return json(failure(null, INVALID_REQUEST, 'An empty batch.'), 400);
+    if (messages.length > MCP_MAX_BATCH) return json(failure(null, INVALID_REQUEST, `A batch carries at most ${MCP_MAX_BATCH} messages.`), 400);
     const answers: unknown[] = [];
     for (const message of messages) {
         const reply = await handleMessage(message, options);

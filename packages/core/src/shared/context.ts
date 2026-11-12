@@ -58,48 +58,83 @@ function resolveFlashOptions(flash: FlashOptions | undefined): { input: readonly
 export type GetFormDataOptions<T> = {
     rules?: StoreRuleMap<T>;
     flash?: FlashOptions;
-    /** Largest body read, files included; a larger one answers 413. Default: 32 MiB (the `/upload` limit). */
+    /**
+     * Largest body read, files included; a larger one answers 413. Default: 8 MiB
+     * (`FORM_DATA_MAX_BYTES`). Raise it for forms that post larger files, up to
+     * what the runtime's memory allows: the body is held in memory while parsed.
+     */
     maxBytes?: number;
 };
 
-/** Default `getFormData` body limit, the same as the `/upload` route's. */
-export const FORM_DATA_MAX_BYTES = 32 * 1024 * 1024;
+/** Default `getFormData` body limit. Larger files belong on `/upload` (32 MiB) or direct storage uploads. */
+export const FORM_DATA_MAX_BYTES = 8 * 1024 * 1024;
+
+/** Hono's per-request body cache (`HonoRequest.bodyCache`), which holds promises. */
+type BodyCache = Record<string, Promise<unknown> | undefined>;
 
 /**
  * The request's form data, read into memory up to `limit` bytes. A body that
  * says or turns out to be larger answers 413 before it is buffered whole.
+ *
+ * Shares Hono's body cache both ways: a body already read through Hono
+ * (`parseBody()`, `req.text()`, a validator) is taken from the cache, and the
+ * form read here is cached for later `parseBody()` / `req.formData()` calls.
+ * An oversized body is released partly read; the framework drains it before
+ * the response leaves (`discardRequestBody`), as Workers needs. Cancelling it
+ * here races the runtime's own body pump on Node.
  */
 async function boundedFormData(req: Context['req'], limit: number): Promise<FormData> {
+    const cache = (req as unknown as { bodyCache?: BodyCache }).bodyCache;
+    if (cache && Object.keys(cache).length > 0) return req.formData();
     const raw = req.raw;
     const tooLarge = () => new HTTPException(413, { message: 'The form is too large.' });
-    const declared = Number(raw.headers.get('content-length'));
-    // Refused unread: the adapter discards the body (cancelling it here races the runtime's own body pump,
-    // which then fails enqueueing into a closed stream).
-    if (Number.isFinite(declared) && declared > limit) throw tooLarge();
+    const declaredHeader = raw.headers.get('content-length')?.trim();
+    const declared = declaredHeader && /^\d+$/.test(declaredHeader) ? Number(declaredHeader) : undefined;
+    if (declared !== undefined && declared > limit) throw tooLarge();
     if (!raw.body) return raw.formData();
     const reader = raw.body.getReader();
+    // A declared length gets one buffer up front; otherwise chunks are kept and
+    // copied once at the end, dropping each as it is copied.
+    let exact: Uint8Array<ArrayBuffer> | null = declared !== undefined ? new Uint8Array(declared) : null;
     const chunks: Uint8Array[] = [];
     let size = 0;
     try {
         while (true) {
             const next = await reader.read();
             if (next.done) break;
-            size += next.value.byteLength;
-            // The rest stays unread for the adapter to discard, as above.
-            if (size > limit) throw tooLarge();
-            chunks.push(next.value);
+            const end = size + next.value.byteLength;
+            if (end > limit) throw tooLarge();
+            if (exact && end <= exact.length) exact.set(next.value, size);
+            else {
+                // The body ran past its declared length: keep what came so far as one chunk.
+                if (exact) { chunks.push(exact.subarray(0, size)); exact = null; }
+                chunks.push(next.value);
+            }
+            size = end;
         }
     } finally {
         reader.releaseLock();
     }
-    const body = new Uint8Array(size);
-    let offset = 0;
-    for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.byteLength; }
+    let body: Uint8Array<ArrayBuffer>;
+    if (exact) body = exact.subarray(0, size);
+    else {
+        body = new Uint8Array(size);
+        let offset = 0;
+        for (let i = 0; i < chunks.length; i++) {
+            body.set(chunks[i]!, offset);
+            offset += chunks[i]!.byteLength;
+            chunks[i] = EMPTY;
+        }
+    }
     const headers = new Headers();
     const type = raw.headers.get('content-type');
     if (type) headers.set('content-type', type);
-    return new Request('http://form.invalid/', { method: 'POST', headers, body }).formData();
+    const form = new Request('http://form.invalid/', { method: 'POST', headers, body }).formData();
+    if (cache) cache.formData = form;
+    return form;
 }
+
+const EMPTY = new Uint8Array(0);
 
 /**
  * `getFormData<T>()` with NO rules returns the parsed data typed as `T`.

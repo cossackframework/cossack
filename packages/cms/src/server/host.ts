@@ -599,9 +599,12 @@ export class CmsHost {
             await this.webhooks.enqueue({ event: 'payment.completed', eventId: `${event.eventId}:payment.completed`, at: this.#now(), collection: '', payment });
         }, { plugin: 'cms' });
         // A deleted entry takes its comments along; under its own name, so its retries are its alone.
-        this.hooks.addAction(afterCommit, async event => { if (event.topic === 'resource.deleted') await this.comments.deleteForEntry(event.resource, event.id); }, { plugin: 'cms-comments' });
+        // Only those made up to the delete: an entry made again under the same ID keeps its own.
+        this.hooks.addAction(afterCommit, async event => { if (event.topic === 'resource.deleted') await this.comments.deleteForEntry(event.resource, event.id, event.at); }, { plugin: 'cms-comments' });
+        // And its revisions, drafts, autosaves, notes and preview links, each written up to the delete.
+        this.hooks.addAction(afterCommit, async event => { if (event.topic === 'resource.deleted') await this.#entryDeleted(event.resource, event.id, event.at); }, { plugin: 'cms-revisions' });
         this.hooks.addAction(collectionDeleted, event => this.comments.deleteForResource(event.resource, event.at), { plugin: 'cms-comments' });
-        // And its entries' revisions, a thousand at a time; under its own name, so its retries are its alone.
+        // And its entries' revisions, a page at a time; under its own name, so its retries are its alone.
         this.hooks.addAction(collectionDeleted, event => this.#deleteRevisions(event.resource, event.at), { plugin: 'cms-revisions' });
         // Shared fields' rows for an entry's other translations; under its own name, so its retries are its alone.
         // A collection or taxonomy that moved: its old links redirect. Under its own name, so its retries are its alone.
@@ -721,9 +724,34 @@ export class CmsHost {
 
     /** Revisions of a dropped collection's entries written up to `before`. */
     async #deleteRevisions(resource: string, before: number): Promise<void> {
+        await this.#deletePages('cms_revisions', 'resource = $resource AND at <= $before', { $resource: resource, $before: before });
+    }
+
+    /**
+     * What a deleted entry leaves behind, written up to its delete at `before`: its revisions, the
+     * room's draft, autosaves, notes and preview links. An entry made again under the same ID
+     * (seeded patterns are) starts afresh and keeps whatever it got after the delete.
+     */
+    async #entryDeleted(resource: string, id: string, deletedAt: number): Promise<void> {
+        // Made again already: only what was written before the new record began goes.
+        const again = this.#resources.has(resource) ? await this.resource(resource).get(id, { principal: systemPrincipal('cleanup') }).catch(() => null) : null;
+        const before = again ? Math.min(deletedAt, again.createdAt - 1) : deletedAt;
+        const params = { $resource: resource, $record: id, $before: before };
+        await this.#deletePages('cms_revisions', 'resource = $resource AND record_id = $record AND at <= $before', params);
+        await this.db.write([
+            { rql: 'DELETE FROM cms_drafts WHERE resource = $resource AND record_id = $record AND at <= $before', params },
+            { rql: 'DELETE FROM cms_autosaves WHERE resource = $resource AND record_id = $record AND at <= $before', params },
+            { rql: 'DELETE FROM cms_preview_tokens WHERE resource = $resource AND record_id = $record AND created_at <= $before', params },
+            { rql: 'DELETE FROM cms_note_mentions WHERE thread_id IN (SELECT id FROM cms_notes WHERE resource = $resource AND record_id = $record AND parent_id IS NULL AND created_at <= $before)', params },
+            { rql: 'DELETE FROM cms_notes WHERE resource = $resource AND record_id = $record AND created_at <= $before', params },
+        ], { kind: 'cms.revisions', retryConflicts: 5, workLimits: this.writeLimits });
+    }
+
+    /** Delete matching rows of a table with an `id` key, 500 at a time (under a write's row limit). */
+    async #deletePages(table: 'cms_revisions', where: string, params: { [key: string]: Value }): Promise<void> {
         for (;;) {
-            const result = await this.db.write([{ rql: 'DELETE FROM cms_revisions WHERE id IN (SELECT id FROM cms_revisions WHERE resource = $resource AND at <= $before LIMIT 1000)', params: { $resource: resource, $before: before } }], { kind: 'cms.revisions', retryConflicts: 5 });
-            if (Number(result.results[0]!.affected) < 1000) return;
+            const result = await this.db.write([{ rql: `DELETE FROM ${table} WHERE id IN (SELECT id FROM ${table} WHERE ${where} LIMIT 500)`, params }], { kind: 'cms.revisions', retryConflicts: 5, workLimits: this.writeLimits });
+            if (Number(result.results[0]!.affected) < 500) return;
         }
     }
 
@@ -1632,13 +1660,15 @@ export class CmsHost {
         } else {
             // Entries leave the site root: a prefix of / would catch every missing page.
             const repository = this.resource(`cms/${after.name}`);
+            const languages = await this.languages();
             const where: { [field: string]: FieldFilter } = after.publishable === false ? {} : { status: 'published' };
             for (let offset = 0; offset < 1000; offset += 100) {
                 const page = await repository.list({ where, order: { field: 'createdAt', direction: 'asc' }, limit: 100, offset }, { principal: systemPrincipal('redirects') });
                 const urls = await this.entryUrls(after, page.records);
                 for (const record of page.records) {
                     const to = urls.get(record.id);
-                    if (to && typeof record.slug === 'string') pairs.push({ from: `/${record.slug}`, to });
+                    // Each entry answered under its own language's prefix.
+                    if (to && typeof record.slug === 'string') pairs.push({ from: `${this.localePrefix(record.locale, languages)}/${record.slug}`, to });
                 }
                 if (!page.more) break;
             }

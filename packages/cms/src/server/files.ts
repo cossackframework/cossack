@@ -245,17 +245,21 @@ export class FileService {
 
     /**
      * A resized variant of an image, made on first request and kept in storage: `width` snaps to
-     * `IMAGE_WIDTHS` and never exceeds the image; `height` crops to that shape around the focal
-     * point. The format follows `accept`. Null when the file is missing or cannot be resized.
+     * the site's widths and never exceeds the image; `height` crops to the requested shape, snapped
+     * to one of `VARIANT_ASPECTS`, around the focal point. The format follows `accept`. Null when
+     * the file is missing or cannot be resized.
+     *
+     * Every request maps to one of a finite set of variants (widths × shapes × formats), so a
+     * visitor cannot make a file transform more than `MAX_FILE_VARIANTS` times: each variant is
+     * made once and kept. Past the cap (only after the site's widths changed), the original is served.
      */
     async variant(id: string, request: { width: number; height?: number; accept?: string; signal?: AbortSignal }): Promise<{ file: CmsFile; body: ReadableStream<Uint8Array>; contentType: string; size: number } | null> {
         const file = await this.get(id);
         if (!file || !this.#images || !transformable(file.contentType) || !file.width || !file.height) return null;
         if (!Number.isSafeInteger(request.width) || request.width < 1 || (request.height !== undefined && (!Number.isSafeInteger(request.height) || request.height < 1 || request.height > 10_000))) return null;
         const settings = await this.#imageSettings();
-        // Any height is a new crop, and every crop is kept: the shape snaps to a bounded set of
-        // fractions, so visitors cannot make unbounded variants of one image.
-        const aspect = request.height ? snapAspect(variantWidth(request.width, settings.widths) / request.height) : undefined;
+        // The shape asked for (the icons ask for squares) snaps to a short list of common shapes.
+        const aspect = request.height ? snapAspect(request.width / request.height) : undefined;
         const rect = variantRect(file, aspect)!;
         const width = Math.min(variantWidth(request.width, settings.widths), rect.width);
         const height = Math.max(1, Math.round(width * rect.height / rect.width));
@@ -276,15 +280,13 @@ export class FileService {
     }
 
     /**
-     * Make and keep one variant. A file keeps at most `MAX_FILE_VARIANTS`: a new one past that
-     * replaces the oldest. Storage stays bounded however many shapes, widths and formats are
-     * asked for, and the theme's own sizes are made again when someone asks for them, never
-     * shut out by sizes asked for first (round 12 refused new variants for good once full).
+     * Make and keep one variant. The variants a file can have are a finite set, so a file never
+     * holds more than `MAX_FILE_VARIANTS`; the count check below only matters once the site's
+     * widths changed and left the old widths' variants behind: then the original is served.
      */
     async #makeVariant(file: CmsFile, key: string, shape: { rect: { x: number; y: number; width: number; height: number }; width: number; height: number; format: ImageFormat; contentType: string; quality: number }): Promise<Uint8Array | null> {
-        const kept = await this.#db.read([{ rql: `SELECT key FROM cms_file_variants WHERE file_id = $id ORDER BY created_at, key LIMIT ${MAX_FILE_VARIANTS}`, params: { $id: file.id } }]);
-        const keys = kept.results[0]!.rows.map(row => row[0] as string);
-        if (keys.length >= MAX_FILE_VARIANTS) await this.#evictVariants(file.id, keys.slice(0, keys.length - MAX_FILE_VARIANTS + 1));
+        const kept = await this.#db.read([{ rql: 'SELECT count(*) FROM cms_file_variants WHERE file_id = $id', params: { $id: file.id } }]);
+        if (Number(kept.results[0]!.rows[0]![0] ?? 0) >= MAX_FILE_VARIANTS) return null;
         const original = await this.#storage.get(`cms/files/${file.id}`);
         if (!original) return null;
         let bytes: Uint8Array;
@@ -749,12 +751,14 @@ function streamOf(bytes: Uint8Array): ReadableStream<Uint8Array> {
     return new ReadableStream({ start(controller) { controller.enqueue(bytes); controller.close(); } });
 }
 
+/** The shapes variants are cut to: square, and 4:3, 3:2, 16:9 and 21:9 either way up. */
+export const VARIANT_ASPECTS = Object.freeze([1, 4 / 3, 3 / 4, 3 / 2, 2 / 3, 16 / 9, 9 / 16, 21 / 9, 9 / 21] as const);
+
 /**
- * A variant's shape, snapped to the nearest fraction with a denominator up to 16 between 1:8 and
- * 8:1: the usual shapes (16:9, 4:3, 3:2, 21:9) stay exact, and there are a few hundred at most.
+ * The most variants one file has: up to 12 widths (Settings → Files) × the whole image and each
+ * shape × 3 formats. Every request maps to one of these, so this bound holds by construction.
  */
-/** The most variants one file keeps; requests past it are served the original. */
-export const MAX_FILE_VARIANTS = 96;
+export const MAX_FILE_VARIANTS = 12 * (1 + VARIANT_ASPECTS.length) * 3;
 
 /** A short, stable name for an image's edits (crop and focus), for its variants' keys. */
 function editsKey(edits: ImageEdits | null | undefined): string {
@@ -765,12 +769,10 @@ function editsKey(edits: ImageEdits | null | undefined): string {
     return hash.toString(36);
 }
 
+/** A requested shape, snapped to the nearest of `VARIANT_ASPECTS` (by ratio, so wide and tall weigh alike). */
 export function snapAspect(aspect: number): number {
-    const target = Math.min(8, Math.max(1 / 8, aspect));
-    let best = 1;
-    for (let q = 1; q <= 16; q++) {
-        const p = Math.max(1, Math.round(target * q));
-        if (Math.abs(p / q - target) < Math.abs(best - target) - 1e-12) best = p / q;
-    }
-    return Math.min(8, Math.max(1 / 8, best));
+    if (!Number.isFinite(aspect) || aspect <= 0) return 1;
+    let best: number = VARIANT_ASPECTS[0];
+    for (const shape of VARIANT_ASPECTS) if (Math.abs(Math.log(shape / aspect)) < Math.abs(Math.log(best / aspect)) - 1e-12) best = shape;
+    return best;
 }

@@ -271,11 +271,21 @@ export async function manageableHere(userId: string): Promise<boolean> {
   return request ? heldOnEverySite(networkFor(request.env as CmsBindings), principal, userId) : true;
 }
 
+/**
+ * Every site the account belongs to counts, whatever its status and whether the network is on:
+ * a site switched off, archived or deleted (until purged) can come back with the account still
+ * its member. A site that cannot be read makes the account unmanageable here.
+ */
 async function heldOnEverySite(network: ReturnType<typeof networkFor>, principal: Principal, userId: string): Promise<boolean> {
   try {
-    for (const site of await network.memberSites(userId)) {
-      if (site.id === MAIN_SITE) continue;
-      const member = await network.hostOf(site).users.get(userId);
+    const ids = ((await network.main.accounts.memberships([userId])).get(userId) ?? []).filter(id => id !== MAIN_SITE);
+    if (!ids.length) return true;
+    const records = new Map((await network.sites.getMany(ids)).map(record => [record.id, record]));
+    for (const id of ids) {
+      const record = records.get(id);
+      // A purged site has no record and no database left.
+      if (!record) continue;
+      const member = await network.hostOf(networkSite(record)).users.get(userId);
       if (member && !holdsAll(principal, member.permissions)) return false;
     }
     return true;
@@ -525,16 +535,20 @@ async function requireFactorSetupAllowed(userId: string): Promise<void> {
 }
 
 /**
- * After the user added a factor in this session: the session counts as using it. Other sessions
+ * After the user added a factor in this session: the session counts as using it when it was the
+ * account's first. Other sessions
  * keep what their own sign-in used, so a password-only one stays limited; they are not ended,
  * since whoever added the first factor (the owner, or someone with the password) would otherwise
  * sign the other out.
  */
-async function factorAdded(userId: string): Promise<void> {
+async function factorAdded(userId: string, hadFactor: boolean): Promise<void> {
   const c = getRequestContext();
   const id = c ? getCookie(c, SESSION_COOKIE) : undefined;
   const user = c?.get('user') as PublicUser | undefined;
   if (!c || !id || user?.id !== userId) return;
+  // Only the account's first factor counts for the session that set it up: one added beside a
+  // factor the session never used (setup raced another session's) does not.
+  if (hadFactor && c.get('cms.sessionSecondFactor') !== true) return;
   await cms(c).authSessions.markSecondFactor(id);
   c.set('cms.sessionSecondFactor', true);
 }
@@ -552,24 +566,47 @@ export async function startAuthenticator(user: PublicUser): Promise<{ secret: st
 /** Confirm the authenticator with a code from it; returns the recovery codes, shown once. */
 export async function confirmAuthenticator(userId: string, code: string): Promise<string[]> {
   await requireFactorSetupAllowed(userId);
+  const { security } = await storesOf(userId);
+  const hadFactor = await security.hasSecondFactor(userId);
   let codes: string[];
-  try { codes = await (await storesOf(userId)).security.confirmTotp(userId, code); }
+  try { codes = await security.confirmTotp(userId, code); }
   catch (error) { throw isCmsError(error) ? new ClientVisibleError(error.message) : error; }
-  await factorAdded(userId);
+  await factorAdded(userId, hadFactor);
   return codes;
+}
+
+/**
+ * Before a factor is removed or replaced: a session limited by required two-step sign-in never
+ * used the account's factors, so it may not take them away (it could then set up its own and
+ * count as two-step). It signs in again with a factor first.
+ */
+async function requireFactorUsed(userId: string): Promise<void> {
+  const c = getRequestContext();
+  const user = c?.get('user') as PublicUser | undefined;
+  if (!user || user.id !== userId || c?.get('cms.sessionSecondFactor') === true) return;
+  if (!(await twoFactorAsked(user))) return;
+  throw new ClientVisibleError('Sign out, then sign in again with two-step sign-in to change it.');
+}
+
+/** Check an authenticator or recovery code, counted against the account's tries as at sign-in. */
+async function checkAccountCode(userId: string, code: string): Promise<void> {
+  const { security } = await storesOf(userId);
+  if (!(await security.codeAttempt(userId))) throw new ClientVisibleError('Too many wrong codes for this account. Try again in 15 minutes.');
+  if (!(await security.verifyCode(userId, code))) throw new ClientVisibleError('That code is not right.');
+  await security.secondFactorSucceeded(userId);
 }
 
 /** Turning the authenticator off needs one of its codes, or a recovery code. */
 export async function disableAuthenticator(userId: string, code: string): Promise<void> {
-  const { security } = await storesOf(userId);
-  if (!(await security.verifyCode(userId, code))) throw new ClientVisibleError('That code is not right.');
-  await security.disableTotp(userId);
+  await requireFactorUsed(userId);
+  await checkAccountCode(userId, code);
+  await (await storesOf(userId)).security.disableTotp(userId);
 }
 
 export async function newRecoveryCodes(userId: string, code: string): Promise<string[]> {
-  const { security } = await storesOf(userId);
-  if (!(await security.verifyCode(userId, code))) throw new ClientVisibleError('That code is not right.');
-  return security.regenerateRecoveryCodes(userId);
+  await requireFactorUsed(userId);
+  await checkAccountCode(userId, code);
+  return (await storesOf(userId)).security.regenerateRecoveryCodes(userId);
 }
 
 /** Remove a user's second factors, for a user manager helping someone who lost their device. */
@@ -609,19 +646,32 @@ export async function addPasskey(c: Context, user: PublicUser, challengeId: stri
   const passkey = await verifyPasskeyRegistration(site, response, pending.challenge);
   if (!passkey) throw new ClientVisibleError('The passkey could not be verified.');
   await requireFactorSetupAllowed(user.id);
+  const hadFactor = await security.hasSecondFactor(user.id);
   try { await security.addPasskey(user.id, passkey, name); }
   catch (error) { throw isCmsError(error) ? new ClientVisibleError(error.message) : error; }
-  await factorAdded(user.id);
+  await factorAdded(user.id, hadFactor);
 }
 
 export async function removePasskey(userId: string, id: string): Promise<void> {
   await requireLocalPasskeys(userId);
+  await requireFactorUsed(userId);
   await (await storesOf(userId)).security.removePasskey(userId, id);
 }
+
+/**
+ * Passkey sign-in challenges anyone may ask for, each a stored row: per client address, and for
+ * the whole host so many addresses together cannot fill the database (challenges live 5 minutes).
+ */
+export const PASSKEY_CHALLENGES = Object.freeze({ windowMs: 10 * 60_000, perAddress: 30, perHost: 2000 });
 
 /** A passkey signs in this host's accounts, bound to this host: the network's on the main site, the site's own on an added site. */
 export async function passkeySignIn(c: Context): Promise<{ challenge: string; options: PublicKeyCredentialRequestOptionsJSON }> {
   const host = cms(c);
+  const counters = host.signIn.security;
+  if (!(await counters.attempt('passkey-options', `a:${clientAddress()}`, PASSKEY_CHALLENGES.perAddress, PASSKEY_CHALLENGES.windowMs))
+    || !(await counters.attempt('passkey-options', 'host', PASSKEY_CHALLENGES.perHost, PASSKEY_CHALLENGES.windowMs))) {
+    throw new ClientVisibleError('Too many passkey sign-ins were started. Try again in a few minutes, or sign in with your password.');
+  }
   const site = passkeySite(c, await host.settings.get('general.siteTitle').catch(() => 'Cossack'));
   const options = await passkeyAuthenticationOptions(site);
   return { challenge: await host.signIn.security.createChallenge('passkey-signin', null, options.challenge), options };
@@ -749,6 +799,7 @@ export async function listUserSessions(c: Context): Promise<SessionInfo[]> {
  * the caller's own session is marked current.
  */
 export async function sessionsOf(c: Context, userId: string): Promise<SessionInfo[]> {
+  await requireManageable(userId);
   const host = cms(c);
   const currentId = getCookie(c, SESSION_COOKIE);
   const current = currentId ? await host.authSessions.publicReference(currentId) : null;
@@ -760,11 +811,13 @@ export async function sessionsOf(c: Context, userId: string): Promise<SessionInf
 
 /** End one of a user's sessions, never the caller's own. */
 export async function revokeSessionOf(c: Context, userId: string, reference: string): Promise<boolean> {
+  await requireManageable(userId);
   return cms(c).authSessions.revokeByReference(userId, reference, getCookie(c, SESSION_COOKIE));
 }
 
 /** End all of a user's sessions except the caller's own. */
 export async function revokeSessionsOf(c: Context, userId: string): Promise<void> {
+  await requireManageable(userId);
   await cms(c).authSessions.revokeAllForUser(userId, getCookie(c, SESSION_COOKIE));
 }
 
@@ -862,14 +915,17 @@ export async function verifyEmail(token: string): Promise<{ user: string; pendin
  * Approve a member who waits for it: their account becomes active and they get an email saying
  * so. False when they were not waiting; `CMS_VALIDATION` before their email is confirmed.
  */
-export async function approveRegistration(userId: string, origin: string): Promise<boolean> {
+export async function approveRegistration(userId: string): Promise<boolean> {
   const host = cms();
   if (!(await host.users.approve(userId))) return false;
   const user = await host.users.get(userId);
+  // The site's configured address, never the request's Host, which a caller could set.
+  const origin = linkOrigin();
   if (user && host.mail) {
     const title = await host.settings.get('general.siteTitle').catch(() => '');
+    const where = origin ? ` Sign in at:\n${origin.replace(/\/$/, '')}/auth/login\n` : '\n';
     await host.mail.send({ to: user.email, from: host.mailFrom, subject: `Your account on ${title || 'the site'} is ready`,
-      text: `Hello ${user.name || user.email},\n\nAn administrator approved your account. Sign in at:\n${origin.replace(/\/$/, '')}/auth/login\n` }).catch(() => undefined);
+      text: `Hello ${user.name || user.email},\n\nAn administrator approved your account.${where}` }).catch(() => undefined);
   }
   return true;
 }

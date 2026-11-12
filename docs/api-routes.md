@@ -255,6 +255,14 @@ export default class MyApi extends Cossack {
 }
 ```
 
+A handler reads at most 32 MiB of request body (the upload limit, set with
+`rpc.maxUploadBytes` in `createApp()`), whether through `json()`, `text()`,
+`arrayBuffer()`, `formData()`, `parseBody()` or the raw stream. A larger
+body answers 413 `COSSACK_API_INPUT_TOO_LARGE`, even when the handler catches
+the read error. A class sets its own limit with a static field, for example
+`static maxBodyBytes = 1024 * 1024 * 1024` for a page that takes large uploads
+and streams them.
+
 ### Pages that also expose endpoints
 
 A class with a `render()` method is a regular page: `GET` renders HTML through

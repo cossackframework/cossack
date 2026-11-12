@@ -1552,6 +1552,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
   // (matched `:id = 'new'`). See `compareHttpRoutes` for the comparator.
   const apiHandlerOptions = (componentPath: string) => ({
     componentPath, layouts, owners, routePathToIdMap, runtimeInfo: resolveRuntimeInfo,
+    maxBodyBytes: options.rpc?.maxUploadBytes ?? RPC_UPLOAD_REQUEST_MAX_BYTES,
   });
   const pagePaths = resolvePageRouteFiles(Object.keys(pages)).sort((a, b) =>
     compareHttpRoutes(filePathToHttpRoute(a), filePathToHttpRoute(b)),

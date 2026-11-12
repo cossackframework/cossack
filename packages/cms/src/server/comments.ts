@@ -188,8 +188,9 @@ export class CmsComments {
     }
 
     /** Delete an entry's comments, after the entry is deleted. */
-    async deleteForEntry(resource: string, recordId: string): Promise<void> {
-        await this.#deleteWhere('resource = $resource AND record_id = $record', { $resource: resource, $record: recordId });
+    /** Delete an entry's comments posted up to its delete at `before`: an entry made again under the same ID keeps later ones. */
+    async deleteForEntry(resource: string, recordId: string, before: number): Promise<void> {
+        await this.#deleteWhere('resource = $resource AND record_id = $record AND created_at <= $before', { $resource: resource, $record: recordId, $before: before });
     }
 
     /**

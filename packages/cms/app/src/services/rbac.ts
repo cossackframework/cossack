@@ -34,11 +34,14 @@ export function canAssignRoles(user: PublicUser | null | undefined): boolean {
 
 /**
  * Who may see and end a user's sessions and application passwords: the user, and role managers
- * who may change the account (`canManageUser`), so nobody mints a token for a stronger account.
+ * who may change the account (`canManageUser`, and `manageableHere` for a network account), so
+ * nobody mints a token for a stronger account or reads and ends its sessions.
  */
-export function canManageAccess(user: PublicUser | null | undefined, target: { id: string; roles: readonly { permissions: readonly string[] }[]; networkAdmin?: boolean }): boolean {
+export function canManageAccess(user: PublicUser | null | undefined, target: { id: string; roles: readonly { permissions: readonly string[] }[]; networkAdmin?: boolean; lockedProfile?: string }): boolean {
     if (!user) return false;
     if (user.id === target.id) return true;
+    // A network account this request may not change (`manageableHere`): its sessions show where it signs in on every site.
+    if (target.lockedProfile) return false;
     return canAssignRoles(user) && canManageUser(user, target);
 }
 

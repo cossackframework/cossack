@@ -1,10 +1,11 @@
 import { ClientVisibleError, Cossack, Page, Store, State, Validate, Client, Server, storeRules } from '@cossackframework/core';
+import { input } from '@cossackframework/core/input';
 import { Card, CardBody, CardHeader, Checkbox, Field, Input, PasswordInput, Button, Form } from '@cossackframework/ui';
 import { linkButton, notice, pageHeader } from '@cossackframework/ui/blocks';
 import { html, component, bind } from '@cossackframework/renderer';
 import { canAssignRoles, canGrantRoles, guard } from '../../../../services/rbac';
 import { createUser } from '../../../../services/users';
-import { defaultRole, listRoles, type RoleDetail } from '../../../../services/roles';
+import { defaultRole, getRole, listRoles, type RoleDetail } from '../../../../services/roles';
 import type { PublicUser } from '../../../../auth';
 
 interface NewUserForm {
@@ -66,11 +67,17 @@ export default class NewUserPage extends Cossack {
         }
     }
 
-    @Server()
-    async create(name: string, email: string, password: string, roleIds: string[], invite: boolean) {
-        // Roles from the form count only for a role manager; others get the default role.
-        const chosen = canAssignRoles(this.user as PublicUser | undefined) ? roleIds : undefined;
-        if (chosen && !canGrantRoles(this.user as PublicUser | undefined, (await listRoles()).filter(role => chosen.includes(role.id)))) throw new ClientVisibleError(__('You cannot give a role with permissions you do not have.'));
+    @Server({ input: input.args(input.string({ maxLength: 200 }), input.string({ maxLength: 320 }), input.string({ maxLength: 1000 }),
+        input.array(input.string({ maxLength: 200 }), { maxItems: 50 }), input.boolean().optional()) })
+    async create(name: string, email: string, password: string, roleIds: string[], invite = false) {
+        // Roles from the form count only for a role manager; others get the default role. Each
+        // requested role is read by its ID, so none escapes the check however many roles exist.
+        const chosen = canAssignRoles(this.user as PublicUser | undefined) ? [...new Set(roleIds)] : undefined;
+        if (chosen) {
+            const roles = await Promise.all(chosen.map(id => getRole(id)));
+            if (roles.some(role => !role)) throw new ClientVisibleError(__('Role not found'));
+            if (!canGrantRoles(this.user as PublicUser | undefined, roles as RoleDetail[])) throw new ClientVisibleError(__('You cannot give a role with permissions you do not have.'));
+        }
         await createUser({ email, ...(invite ? { invite: true } : { password }), name: name || undefined, ...(chosen ? { roleIds: chosen } : {}) });
         this.redirect('/dashboard/users');
     }

@@ -21,6 +21,11 @@ and page policies first. A missing file reaches the framework's 404 handling.
 answers its client and source modules first. See
 [Desktop static files](./adapters.md#desktop-static-files).
 
+Windows get no Chromium permissions (camera and microphone, location,
+notifications and the rest) unless `createDesktopApp({ permissions: [...] })`
+names them, for example `['notifications']`. Named permissions apply only to
+the app's own windows on `cossack://app` pages.
+
 Use `pnpm desktop:dev`, `pnpm desktop:package`, and `pnpm desktop:make`.
 Development runs Vite inside Electron and retains the private origin. Source
 edits reload managed windows. Changes to the native bootstrap, the Vite

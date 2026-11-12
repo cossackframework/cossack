@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { handleMcp, MCP_PROTOCOL_VERSIONS, validateInput, type McpTool } from '../src/cms/mcp';
+import { handleMcp, MCP_MAX_BATCH, MCP_MAX_BYTES, MCP_PROTOCOL_VERSIONS, validateInput, type McpTool } from '../src/cms/mcp';
 
 type Ctx = { calls: string[] };
 const tools: McpTool<Ctx>[] = [
@@ -20,6 +20,27 @@ describe('MCP over stateless Streamable HTTP', () => {
         expect(known).toEqual({ jsonrpc: '2.0', id: 1, result: { protocolVersion: '2025-03-26', capabilities: { tools: { listChanged: false } }, serverInfo: { name: 'cossack-cms', version: '1' }, instructions: 'Be nice.' } });
         const unknown = await (await post(rpc('initialize', { protocolVersion: '2031-01-01' }))).json();
         expect(unknown.result.protocolVersion).toBe(MCP_PROTOCOL_VERSIONS[0]);
+    });
+
+    it('refuses a body over the limit and a batch over the limit, running nothing', async () => {
+        const ctx: Ctx = { calls: [] };
+        const big = await post(rpc('tools/call', { name: 'write_thing', arguments: { id: 'x'.repeat(MCP_MAX_BYTES) } }), {}, ctx);
+        expect(big.status).toBe(413);
+        expect((await big.json()).error.code).toBe(-32600);
+        // A chunked body with no declared length is counted as it is read.
+        const stream = new ReadableStream<Uint8Array>({ start(controller) {
+            const chunk = new TextEncoder().encode(' '.repeat(64 * 1024));
+            for (let i = 0; i < 20; i++) controller.enqueue(chunk);
+            controller.close();
+        } });
+        const chunked = await handleMcp(new Request('http://cms.test/api/cms/mcp', { method: 'POST', body: stream, duplex: 'half' } as RequestInit), { name: 'cossack-cms', version: '1', tools, context: ctx });
+        expect(chunked.status).toBe(413);
+        const many = Array.from({ length: MCP_MAX_BATCH + 1 }, (_, i) => rpc('tools/call', { name: 'write_thing', arguments: { id: `w${i}` } }, i));
+        const batch = await post(many, {}, ctx);
+        expect(batch.status).toBe(400);
+        expect((await batch.json()).error.message).toContain(String(MCP_MAX_BATCH));
+        expect(ctx.calls).toEqual([]);
+        expect((await (await post(many.slice(0, MCP_MAX_BATCH), {}, ctx)).json())).toHaveLength(MCP_MAX_BATCH);
     });
 
     it('acknowledges notifications with 202 and answers ping', async () => {

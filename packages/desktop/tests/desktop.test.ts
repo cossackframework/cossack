@@ -148,7 +148,11 @@ const electron = vi.hoisted(() => {
     shell: { openExternal: vi.fn(async () => {}) },
     Tray: FakeTray,
   };
-  api.session.fromPartition.mockReturnValue({protocol:api.protocol,webRequest:{onBeforeSendHeaders:vi.fn(listener=>{requestListener=listener;})}});
+  const permissionHandlers: { request?: (...args: any[]) => void; check?: (...args: any[]) => boolean } = {};
+  (api as any).permissionHandlers = permissionHandlers;
+  api.session.fromPartition.mockReturnValue({protocol:api.protocol,webRequest:{onBeforeSendHeaders:vi.fn(listener=>{requestListener=listener;})},
+    setPermissionRequestHandler: vi.fn(handler => { permissionHandlers.request = handler; }),
+    setPermissionCheckHandler: vi.fn(handler => { permissionHandlers.check = handler; })});
   return { ...api, default: api };
 });
 
@@ -294,6 +298,7 @@ describe('Electron Desktop runtime', () => {
       get assets() { return provider; },
       fetch,
       env: { TEST: true, COSSACK_DESKTOP: 'cannot override' },
+      permissions: ['notifications'],
     });
 
     // Hashed build output skips the application, as on Cloudflare and Node.
@@ -421,6 +426,23 @@ describe('Electron Desktop runtime', () => {
         preload: undefined,
       },
     });
+
+    // Permissions: only the app's named ones, for its own windows' app pages.
+    const handlers = (electron as any).permissionHandlers;
+    const ask = (contents: unknown, permission: string, url: string) => {
+      let answer: boolean | undefined;
+      handlers.request(contents, permission, (allowed: boolean) => { answer = allowed; }, { requestingUrl: url });
+      return answer;
+    };
+    const own = { id: window.webContents.id, getURL: () => 'cossack://app/' };
+    expect(ask(own, 'notifications', 'cossack://app/settings')).toBe(true);
+    expect(ask(own, 'media', 'cossack://app/settings')).toBe(false);
+    expect(ask(own, 'geolocation', 'cossack://app/')).toBe(false);
+    expect(ask(own, 'notifications', 'https://example.com/')).toBe(false);
+    expect(ask({ id: -5, getURL: () => 'cossack://app/' }, 'notifications', 'cossack://app/')).toBe(false);
+    expect(handlers.check(own, 'notifications', 'cossack://app')).toBe(true);
+    expect(handlers.check(own, 'media', 'cossack://app')).toBe(false);
+    expect(handlers.check(own, 'notifications', 'https://example.com')).toBe(false);
 
     const preventDefault = vi.fn();
     window.webContents.emit('will-navigate', { preventDefault }, 'cossack://app/settings');

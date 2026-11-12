@@ -49,7 +49,7 @@ const PAGES = [
   { prefix: 'dashboard/index.ts', allow: SIGNED_IN },
   { prefix: 'dashboard/layout.ts', allow: SIGNED_IN, methods: { 'doLogout': { skip: 'signs the client out' } } },
   { prefix: 'dashboard/profile/', allow: SIGNED_IN },
-  { prefix: 'dashboard/profile/security/', allow: [...SIGNED_IN, 'gated'], methods: { 'addToken': SIGNED_IN } },
+  { prefix: 'dashboard/profile/security/', allow: [...SIGNED_IN, 'gated'], methods: { 'addToken': SIGNED_IN, 'turnOff': SIGNED_IN, 'regenerate': SIGNED_IN, 'deletePasskey': SIGNED_IN } },
   { prefix: 'dashboard/sessions/', allow: SIGNED_IN, methods: { 'revokeAll': { skip: 'ends the client\'s session' } } },
   { prefix: 'dashboard/users/', allow: ADMIN },
   { prefix: 'dashboard/roles/', allow: ADMIN },

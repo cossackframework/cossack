@@ -903,7 +903,9 @@ export class ResourceRepository {
         const statements: Statement[] = [];
         if (this.resource.revisions && record) {
             statements.push(bound(
-                `INSERT INTO cms_revisions (id, resource, record_id, revision, data, actor, at) SELECT $revisionId, $resource, $key, $revision, $data, $actor, $at WHERE ${guard}`,
+                // A row left by a deleted entry of the same ID (its cleanup job not run yet) gives way.
+                `INSERT INTO cms_revisions (id, resource, record_id, revision, data, actor, at) SELECT $revisionId, $resource, $key, $revision, $data, $actor, $at WHERE ${guard}
+                    ON CONFLICT (id) DO UPDATE SET data = excluded.data, actor = excluded.actor, at = excluded.at`,
                 { ...params, $revisionId: `${this.resource.id}:${key}:${revision}`, $data: JSON.stringify(record) },
             ));
         }
@@ -911,11 +913,8 @@ export class ResourceRepository {
             `INSERT INTO cms_audit (id, actor, action, resource, record_id, revision, at) SELECT $op, $actor, $action, $resource, $key, $revision, $at WHERE ${guard}`,
             { ...params, $action: action },
         ));
-        // A deleted record takes its revisions along, so an ID used again starts its history afresh.
-        // Guarded by the audit row above (a relational DELETE takes no RomeQL functions).
-        if (this.resource.revisions && action === 'delete') {
-            statements.push({ rql: 'DELETE FROM cms_revisions WHERE resource = $resource AND record_id = $key AND EXISTS (SELECT 1 FROM cms_audit WHERE id = $op)', params: { $resource: this.resource.id, $key: key, $op: op } });
-        }
+        // A deleted record's revisions, drafts, notes and preview links go in an outbox job
+        // (`entryDeleted` in the host), a page at a time: an entry saved a thousand times still deletes.
         // The site's search index, guarded by the audit row above.
         statements.push(...this.#host.siteSearch.statements(this.resource, key, op, record && this.canRead(record, ANONYMOUS) ? record : null));
         const event: ResourceEvent = {
@@ -941,6 +940,8 @@ export class ResourceRepository {
             if (error instanceof UncertainWriteError) throw new CmsError('CMS_UNCERTAIN', 'The change was sent but not confirmed. It will be completed or reported shortly.', { requestId: error.requestId, cause: error });
             if (error instanceof ClientError && error.outcome === 'rolled-back') {
                 if (error.code === 'RDB_WRITE_CONFLICT') throw new CmsError('CMS_CONFLICT', 'The record changed since it was read. Reload and try again.', { cause: error });
+                // Over the write's work limits (rows changed, rows read, steps): a plain limit, not a 500.
+                if (error.code === 'RDB_LIMIT') throw new CmsError('CMS_LIMIT', 'This change is too large for one write. Make it in smaller steps.', { cause: error });
                 onRolledBack?.(error);
                 if (error.code === 'RDB_VALIDATION' || error.code === 'RDB_CONSTRAINT') throw new CmsError('CMS_VALIDATION', 'The database rejected the values.', { cause: error });
             }

@@ -13,6 +13,46 @@ export interface ApiHandlerOptions {
     owners?: Readonly<Record<string, string>>;
     routePathToIdMap?: Map<string, string>;
     runtimeInfo?: () => Promise<CossackRuntimeInfo>;
+    /**
+     * Largest request body a handler may read (`json()`, `text()`, `formData()`,
+     * `parseBody()` and the raw stream alike). A class can raise or lower it with
+     * a static `maxBodyBytes`. Default: the upload limit, 32 MiB.
+     */
+    maxBodyBytes?: number;
+}
+
+/** Default class-route body limit: the RPC upload limit. */
+export const API_HANDLER_BODY_MAX_BYTES = 32 * 1024 * 1024;
+
+/**
+ * Bound the request body every reader of `c.req` sees. A body that declares a
+ * larger size is refused before the handler runs; one that streams past the
+ * limit errors its readers, and the handler answers 413.
+ */
+function boundRequestBody(c: Context, limit: number): { refused: boolean; exceeded: () => boolean } {
+    const raw = c.req.raw;
+    let exceeded = false;
+    if (!raw.body) return { refused: false, exceeded: () => false };
+    const declared = raw.headers.get('content-length')?.trim();
+    if (declared && /^\d+$/.test(declared) && Number(declared) > limit) return { refused: true, exceeded: () => true };
+    let size = 0;
+    const bounded = raw.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, controller) {
+            size += chunk.byteLength;
+            if (size > limit) {
+                exceeded = true;
+                controller.error(new HTTPException(413, { message: 'Request body is too large.' }));
+                return;
+            }
+            controller.enqueue(chunk);
+        },
+    }));
+    c.req.raw = new Request(raw, { body: bounded, duplex: 'half' } as RequestInit);
+    return { refused: false, exceeded: () => exceeded };
+}
+
+function tooLarge(c: Context) {
+    return c.json({ error: 'Request body is too large.', code: 'COSSACK_API_INPUT_TOO_LARGE' }, 413);
 }
 
 /** @internal Find an authored member without treating framework defaults as handlers. */
@@ -43,6 +83,10 @@ export function createApiHandler(ComponentClass: new () => Cossack, methodNames:
         let methodName: string | undefined;
         const logContext = createServerFailureContext(c);
         let stage: ServerFailureStage = 'handler';
+        const classLimit = (ComponentClass as unknown as { maxBodyBytes?: unknown }).maxBodyBytes;
+        const limit = typeof classLimit === 'number' && Number.isSafeInteger(classLimit) && classLimit > 0
+            ? classLimit : options.maxBodyBytes ?? API_HANDLER_BODY_MAX_BYTES;
+        let body: { refused: boolean; exceeded: () => boolean } = { refused: false, exceeded: () => false };
         try {
             // Prefer authored get() over init(), including inherited handlers.
             // Stop before the framework's default methods and do not invoke getters.
@@ -55,6 +99,8 @@ export function createApiHandler(ComponentClass: new () => Cossack, methodNames:
             if (!methodName) {
                 return c.json({ error: 'Method Not Allowed' }, 405);
             }
+            body = boundRequestBody(c, limit);
+            if (body.refused) return tooLarge(c);
 
             logContext.action = methodName;
             stage = 'authorize';
@@ -94,6 +140,8 @@ export function createApiHandler(ComponentClass: new () => Cossack, methodNames:
 
                 // Call the designated API method (get, post, etc.)
                 const result = await (instance as any)[methodName]();
+                // The body ran past its limit: the handler worked on a cut-off body.
+                if (body.exceeded()) return tooLarge(c);
 
                 // If the method returns a Response object, return it directly
                 if (result instanceof Response) {
@@ -109,6 +157,8 @@ export function createApiHandler(ComponentClass: new () => Cossack, methodNames:
                 finally { await chain.root.disposeAsync(); }
             }
         } catch (error) {
+            // A handler that read past the body limit, whatever it made of the stream error.
+            if (body.exceeded()) return tooLarge(c);
             const denial = getAuthorizationFailure(error);
             if (denial) {
                 const requestId = logContext.requestId;

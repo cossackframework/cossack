@@ -17,6 +17,9 @@ interface Member { id: string; name: string; email: string; roles: string; accou
 /** One site: its name, domains (with the check that makes one primary), members and state. */
 @Page({ transport: 'http', middlewares: [requireNetworkAdmin()] })
 export default class NetworkSite extends Cossack {
+    /** A site export arrives as the request body and is read as a stream, so it may be large. */
+    static maxBodyBytes = 4 * 1024 * 1024 * 1024;
+
     @State() id = '';
     @State() name = '';
     @State() status: SiteStatus = 'active';

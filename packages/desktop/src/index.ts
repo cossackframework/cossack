@@ -125,6 +125,13 @@ export interface CreateDesktopAppOptions {
   env?: Record<string, unknown>;
   startPath?: string;
   window?: SafeBrowserWindowOptions;
+  /**
+   * Electron permissions the app's own pages may use, such as `media`
+   * (camera and microphone), `geolocation`, `notifications` or
+   * `clipboard-sanitized-write`. Every other permission request and check is
+   * denied, and so is any request from a page outside `cossack://app`.
+   */
+  permissions?: readonly string[];
 }
 
 export interface CreateDesktopWindowOptions extends SafeBrowserWindowOptions {
@@ -534,6 +541,19 @@ async function initializeDesktopApp(options: CreateDesktopAppOptions): Promise<D
   const desktopSession = electronApi.session.fromPartition(`persist:cossack.${options.identifier}`);
   const windows = new Map<number, BrowserWindow>();
   const requestToken = randomUUID();
+  // Chromium grants camera, microphone, location and the rest by default: deny all
+  // but the permissions the app names, and only to its own windows' app pages.
+  const allowedPermissions = new Set(options.permissions ?? []);
+  const appPage = (url: string | undefined) => {
+    try { return url !== undefined && isDesktopAppUrl(new URL(url)); } catch { return false; }
+  };
+  desktopSession.setPermissionRequestHandler((contents, permission, callback, details) => {
+    const allowed = allowedPermissions.has(permission) && windows.has(contents?.id ?? -1) && appPage(details?.requestingUrl ?? contents?.getURL());
+    if (!allowed) debugDesktop(`denied permission ${permission}`);
+    callback(allowed);
+  });
+  desktopSession.setPermissionCheckHandler((contents, permission, requestingOrigin) =>
+    allowedPermissions.has(permission) && windows.has(contents?.id ?? -1) && appPage(requestingOrigin));
   // This session belongs to the runtime, so its single-listener WebRequest hook
   // does not replace hooks attached to Electron's default session by the app.
   desktopSession.webRequest.onBeforeSendHeaders((details, callback) => {

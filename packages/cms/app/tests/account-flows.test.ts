@@ -3,7 +3,7 @@ import { contentModule, createCMS, DEFAULT_ROLES, systemPrincipal, type CmsHost 
 import { live, romedbService } from '../../tests/helpers';
 
 const state = vi.hoisted(() => ({ cms: undefined as CmsHost | undefined, c: undefined as unknown, sent: [] as { to: string; text: string }[] }));
-vi.mock('../src/cms/index', () => ({ currentCms: () => state.cms, networkFor: () => ({ memberSites: async () => [{ id: 'main' }] }), siteUrl: () => undefined }));
+vi.mock('../src/cms/index', () => ({ currentCms: () => state.cms, networkFor: () => ({ memberSites: async () => [{ id: 'main' }], main: { accounts: { memberships: async () => new Map() } }, sites: { getMany: async () => [] } }), siteUrl: () => undefined }));
 vi.mock('@cossackframework/core', async original => ({ ...await original<typeof import('@cossackframework/core')>(), getRequestContext: () => state.c }));
 vi.stubGlobal('env', (_name: string, fallback: string) => fallback);
 vi.stubGlobal('__', (text: string) => text);
