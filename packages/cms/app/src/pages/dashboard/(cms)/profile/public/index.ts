@@ -51,7 +51,10 @@ export default class PublicProfilePage extends Cossack {
         if (!this.error) this.message = __('Profile saved.');
     }
 
-    @Server({ input: input.args(input.record<PublicProfile>()) })
+    @Server({ input: input.args(input.object({
+        slug: input.string({ maxLength: 200 }), bio: input.string({ maxLength: 10_000 }), jobTitle: input.string({ maxLength: 500 }),
+        website: input.string({ maxLength: 2000 }), profiles: input.string({ maxLength: 10_000 }),
+    })) })
     async save(form: PublicProfile) {
         this.error = '';
         this.errors = {};
@@ -64,7 +67,7 @@ export default class PublicProfilePage extends Cossack {
         try {
             await cms.users.update(this.user.id, { meta, ...(slug ? { slug } : {}) });
             const user = await cms.users.get(this.user.id);
-            this.form = { ...form, slug: user?.slug ?? slug };
+            this.form = { slug: user?.slug ?? slug, bio: form.bio, jobTitle: form.jobTitle, website: form.website, profiles: form.profiles };
         } catch (error) {
             this.errors = isCmsError(error) && error.fields ? { ...error.fields } : {};
             this.error = isCmsError(error) ? error.message : __('The profile could not be saved.');

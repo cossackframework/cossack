@@ -1,7 +1,7 @@
 import { Cossack, Page, State, flash, flashed, type HeadValue } from '@cossackframework/core';
 import { Card, CardBody } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
-import { isCmsError, isNetworkAdmin, isSameOriginPost, MAIN_SITE, PERMISSIONS } from '@cossackframework/cms';
+import { hasPermission, holdsAll, isCmsError, isNetworkAdmin, isSameOriginPost, MAIN_SITE, PERMISSIONS } from '@cossackframework/cms';
 import { requireAny } from '../../../../../cms/guards';
 import { notice, pageHeader, shortDate } from '../../../../../cms/ui';
 import { actionButton } from '../../../../../cms/network-view';
@@ -21,6 +21,8 @@ type ExportAccess =
 @Page({ transport: 'http', middlewares: [requireAny(PERMISSIONS.manageSettings)] })
 export default class ExportPage extends Cossack {
     @State() access: ExportAccess = { kind: 'download' };
+    /** Whether this user may download the export: it holds every account and submission. */
+    @State() exportable = false;
     /** Whether this user may have this site's `.romedb` file. */
     @State() files = false;
     @State() message = '';
@@ -35,7 +37,10 @@ export default class ExportPage extends Cossack {
         const { allowed, request } = await this.c.get('network').exportAccess(site?.id ?? MAIN_SITE);
         this.access = allowed ? request?.expiresAt ? { kind: 'approved', until: request.expiresAt } : { kind: 'download' }
             : request ? { kind: 'requested', at: request.requestedAt } : { kind: 'request' };
-        this.files = site?.id !== MAIN_SITE || isNetworkAdmin(this.c.get('principal'));
+        const principal = this.c.get('principal');
+        const roles = await this.c.get('cms').users.roles();
+        this.exportable = isNetworkAdmin(principal) || (hasPermission(principal, PERMISSIONS.manageUsers) && holdsAll(principal, roles.flatMap(role => role.permissions)));
+        this.files = this.exportable && (site?.id !== MAIN_SITE || isNetworkAdmin(principal));
         this.message = flashed<string>('export.message') ?? '';
         this.error = flashed<string>('export.error') ?? '';
     }
@@ -61,7 +66,7 @@ export default class ExportPage extends Cossack {
     }
 
     render() {
-        const download = html`<div class="flex flex-wrap gap-2">
+        const download = !this.exportable ? notice(__('The export holds every account and submission: only an administrator who may manage all of them downloads it.'), 'info') : html`<div class="flex flex-wrap gap-2">
             <a href="/api/cms/site-export" download class="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground no-underline">${__('Download export')}</a>
             ${this.files ? html`<a href="/api/cms/site-export?format=romedb" download data-database-file class="inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground no-underline hover:bg-muted">${__('Download database file')}</a>` : null}
         </div>`;

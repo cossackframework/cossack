@@ -1,6 +1,7 @@
 import './metadata';
 import type { Context } from 'hono';
 import { findServerMethodRegistration } from './action-input';
+import { isArgsSchema } from './input-schema';
 import { RpcError } from './rpc-stream';
 
 export interface ServerActionAuthorizationContext {
@@ -43,11 +44,13 @@ export async function enforceActionAuthorization(constructor: unknown, action: s
         signal.addEventListener('abort', onAbort, { once: true });
         if (signal.aborted) onAbort();
     });
+    // An argument list (`input.args`) is authorized whole; a single input is the first argument.
+    const input = isArgsSchema(registration.input) ? payload : payload[0];
     let accepted:unknown;
     try {
         accepted = await Promise.race([Promise.resolve().then(() => {
             cancelled();
-            return (registration.authorize as ServerActionAuthorizer)(payload[0], { context, signal, action });
+            return (registration.authorize as ServerActionAuthorizer)(input, { context, signal, action });
         }), interrupted]);
         cancelled();
     } catch (error) {

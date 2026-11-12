@@ -67,6 +67,19 @@ describe('re-rendering unchanged values', () => {
         expect([button.title, button.disabled, button.getAttribute('aria-label'), button.getAttribute('data-hidden')]).toEqual(['Save', true, 'Save it', 'no']);
     });
 
+    it('puts back an attribute that other code changed, on the next render of the same value', async () => {
+        const container = document.createElement('div');
+        const template = (expanded: string, disabled: boolean) => html`<button aria-expanded=${expanded} ?disabled=${disabled}>Go</button>`;
+        render(template('false', true), container);
+        const button = container.querySelector('button')!;
+        // A component toggles the attributes itself; the parent renders its own values again.
+        button.setAttribute('aria-expanded', 'true');
+        button.removeAttribute('disabled');
+        render(template('false', true), container);
+        expect([button.getAttribute('aria-expanded'), button.disabled]).toEqual(['false', true]);
+        expect(await mutations(container, () => render(template('false', true), container))).toEqual([]);
+    });
+
     it('writes spread attributes and classes only when they change, and gives a dropped key back to the template', async () => {
         const container = document.createElement('div');
         const template = (props: Record<string, unknown>) => html`<div class="own" title="static" ...=${props}></div>`;

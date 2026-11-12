@@ -37,7 +37,7 @@ const PAGES = [
   // The public site: open to all; editing on the site is for editors.
   { prefix: '(site)/', allow: ALL, methods: {
     // Stopping only drops the caller's own draft.
-    'startEditing': STAFF, 'previewDraft': STAFF, 'saveDraft': STAFF, 'stopEditing': ALL, 'searchDraftMedia': STAFF,
+    'startEditing': STAFF, 'restartEditing': STAFF, 'previewDraft': STAFF, 'saveDraft': STAFF, 'stopEditing': ALL, 'searchDraftMedia': STAFF,
     // Renders the caller's own drafts back to them; area drafts only for appearance managers.
     'previewAreas': SIGNED_IN,
     'doLogout': { skip: 'signs the client out' },

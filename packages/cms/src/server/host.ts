@@ -27,7 +27,7 @@ import { ANONYMOUS, evaluateRule, hasPermission, isNetworkAdmin, PERMISSIONS, pr
 import { AVATAR_TYPES, mediaUrl } from '../media';
 import { canonicalJson, declarationHash, resolveResource, type Resource, type ResourceAction, type ResourceDeclaration } from '../resource';
 import { Outbox, type OutboxOptions } from './outbox';
-import { ResourceRepository, type FieldFilter, type ListOptions, type OperationContext } from './repository';
+import { JOIN_GROUP, ResourceRepository, type FieldFilter, type ListOptions, type OperationContext } from './repository';
 import { migrate, nextGenerationStatement, planSchema, readCatalog, type MigrationReport, type SchemaPlan } from './schema';
 import { FileService, type CmsFile, type FileServiceOptions, type ImageSettings, LIBRARY_KEYS } from './files';
 import { CmsCache } from './cache';
@@ -604,15 +604,17 @@ export class CmsHost {
         // Shared fields' rows for an entry's other translations; under its own name, so its retries are its alone.
         // A collection or taxonomy that moved: its old links redirect. Under its own name, so its retries are its alone.
         this.hooks.addAction(pathsMoved, async event => {
+            // This isolate may hold the collection or taxonomy as it was before the move. Each
+            // move's job redirects its own old path to where the links live now, so a path that
+            // moved again before this job ran still reaches the latest one.
+            await this.ready({ force: true });
             if (event.kind === 'taxonomy') {
-                await this.redirects.record([{ from: `/${event.from}`, to: `/${event.to}`, prefix: true }], event.by);
+                const now = this.#taxonomies.get(event.name)?.path;
+                if (now && now !== event.from) await this.redirects.record([{ from: `/${event.from}`, to: `/${now}`, prefix: true }], event.by);
                 return;
             }
-            // This isolate may hold the collection as it was before the move.
-            await this.ready({ force: true });
             const after = this.#collections.get(event.name);
-            // Gone, or moved again since: the later move's own job redirects.
-            if (!after || after.path !== event.to) return;
+            if (!after || after.path === event.from) return;
             await this.#pathRedirects({ ...after, path: event.from }, after, event.by);
         }, { plugin: 'cms-paths' });
         const announceNote = options.announceNote;
@@ -673,8 +675,9 @@ export class CmsHost {
         this.menus = new CmsMenus(this.db, { now: this.#now, checkMeta: (meta, previous, principal) => this.#checkMeta({ kind: 'menus' }, meta, previous, principal), resolve: (items, locale) => this.#resolveMenu(items, locale), beforeSave: (items, input) => this.hooks.applyFilters(menuBeforeSave, items, input), changed: () => this.#purgeSite('menus') });
         this.areas = new CmsAreas(this.db, { now: this.#now, check: blocks => this.#checkBlocks(blocks), changed: () => this.#purgeSite('areas') });
         this.previews = new CmsPreviews(this.db, { now: this.#now });
-        this.autosaves = new CmsAutosaves(this.db, { now: this.#now });
-        this.drafts = new CmsDrafts(this.db, { now: this.#now });
+        const sharedFieldsOf = (id: string) => this.#sharedFields(id);
+        this.autosaves = new CmsAutosaves(this.db, { now: this.#now, sharedFields: sharedFieldsOf });
+        this.drafts = new CmsDrafts(this.db, { now: this.#now, sharedFields: sharedFieldsOf });
         this.notes = new CmsNotes(this.db, { now: this.#now });
         this.files = options.storage ? new FileService(this.db, options.storage, { now: this.#now, ...(options.images ? { images: options.images } : {}), imageSettings: () => this.#imageSettings(), changed: () => this.#purgeSite('media'), ...options.files }) : null;
         this.cache = new CmsCache(this.db, { now: this.#now });
@@ -706,6 +709,13 @@ export class CmsHost {
     now(): number { return this.#now(); }
 
     get resources(): readonly Resource[] { return [...this.#resources.values()]; }
+
+    /** A translated resource's fields that are the same in every language. */
+    #sharedFields(id: string): readonly string[] {
+        const resource = this.#resources.get(id);
+        if (!resource?.fields.translationGroup) return [];
+        return Object.entries(resource.fields).filter(([, declaration]) => declaration.translatable === false).map(([name]) => name);
+    }
 
     resourceById(id: string): Resource {
         const resource = this.#resources.get(id) ?? this.forms.resourceById(id);
@@ -1414,7 +1424,8 @@ export class CmsHost {
             const translated = parent ? (await this.translations(collection, parent, { principal })).get(locale) : undefined;
             if (translated) input.parent = translated.id;
         }
-        return repository.create({ ...input, locale, translationGroup: typeof source.translationGroup === 'string' ? source.translationGroup : source.id, ...(collection.publishable === false ? {} : { status: 'draft' }) }, { principal });
+        const group = typeof source.translationGroup === 'string' ? source.translationGroup : source.id;
+        return repository.create({ ...input, locale, translationGroup: group, ...(collection.publishable === false ? {} : { status: 'draft' }) }, { principal, [JOIN_GROUP]: group } as OperationContext);
     }
 
     /**

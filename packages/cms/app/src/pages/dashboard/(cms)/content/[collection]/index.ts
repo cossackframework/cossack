@@ -136,6 +136,7 @@ export default class EntriesPage extends Cossack {
 
     @Server()
     private async load() {
+        this.fromRoute();
         const cms = this.c.get('cms');
         const principal = this.c.get('principal');
         let resource;

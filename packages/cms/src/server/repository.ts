@@ -33,6 +33,12 @@ export interface OperationContext {
     readonly signal?: AbortSignal;
 }
 
+/**
+ * The translation group a create may join: set only by `translateEntry`, which owns joining a
+ * group (rule 3 of specs/cms-invariants.md). A client-set group is refused.
+ */
+export const JOIN_GROUP: unique symbol = Symbol('cms.joinGroup');
+
 const KEY = /^[A-Za-z0-9_-]{1,80}$/;
 /** Fields a restored revision does not change: where and whether the entry is published, and its translations. */
 const KEPT_ON_RESTORE = new Set(['status', 'publishedAt', 'parent', 'menuOrder', 'locale', 'translationGroup', 'commentsOpen']);
@@ -429,11 +435,13 @@ export class ResourceRepository {
         if (!changed.length) return null;
         const group = translationGroupOf(previous);
         const members = await this.#host.db.read([{
-            rql: `SELECT record::id(id) FROM ${this.resource.storage} WHERE ${this.#membersOf()} LIMIT ${SHARED_MEMBERS}`,
+            rql: `SELECT record::id(id) FROM ${this.resource.storage} WHERE ${this.#membersOf()} ORDER BY record::id(id) LIMIT ${SHARED_MEMBERS + 1}`,
             params: { $group: group, $key: id },
         }], this.#readOptions(context));
         const others = members.results[0]!.rows.map(row => row[0] as string);
         if (!others.length) return null;
+        // The check, the update and its side effects all cover the same members: every one of them.
+        if (others.length > SHARED_MEMBERS) throw new CmsError('CMS_LIMIT', `An entry with more than ${SHARED_MEMBERS} translations cannot change a field that is the same in every language.`);
         if ((await this.updatable(others, context)).size < others.length) {
             const labels = changed.map(name => this.resource.fields[name]!.label ?? name).join(', ');
             throw new CmsError('CMS_FORBIDDEN', `${labels} is the same in every language, and you cannot edit every translation.`, { fields: Object.fromEntries(changed.map(name => [name, 'is the same in every language.'])) });
@@ -448,8 +456,10 @@ export class ResourceRepository {
             values[`$st${index}`] = text;
             assignments.push(`${quote(path)} = $st${index}`);
         }
+        // Only the members checked above: a translation started since then keeps the value it copied.
+        const checked = others.map((other, index) => { values[`$m${index}`] = other; return `type::record('${this.resource.storage}', $m${index})`; }).join(', ');
         return {
-            rql: `UPDATE ${this.resource.storage} SET ${[...assignments, '"_rev" = "_rev" + 1', '"_op" = $op', '"_updatedAt" = $now'].join(', ')} WHERE ${this.#membersOf()} AND ${guard}`,
+            rql: `UPDATE ${this.resource.storage} SET ${[...assignments, '"_rev" = "_rev" + 1', '"_op" = $op', '"_updatedAt" = $now'].join(', ')} WHERE id IN (${checked}) AND ${this.#membersOf()} AND ${guard}`,
             params: values,
         };
     }
@@ -678,10 +688,25 @@ export class ResourceRepository {
         }
         // Filters can change values; validate the result again.
         const final = filtered === draft ? draft : this.#validate(action, filtered, previous, context.principal);
+        this.#checkGroup(final, previous, context);
         await this.#checkReferences(final, id);
         await this.#checkTemplate(final, previous);
         await this.#checkNotes(final, previous);
         return this.#uniqueSlugs(await this.#withLocale(action, final), id, previous, context);
+    }
+
+    /**
+     * Joining a translation group goes through `translateEntry` alone: a save may keep the
+     * entry's group or leave it (null), never name another one, which would make the entry a
+     * translation of somebody else's.
+     */
+    #checkGroup(draft: Draft, previous: RecordShape | null, context: OperationContext): void {
+        const group = draft.translationGroup;
+        if (group === undefined || group === null) return;
+        const current = previous && typeof previous.translationGroup === 'string' ? previous.translationGroup : null;
+        if (group === current) return;
+        if ((context as { readonly [JOIN_GROUP]?: string })[JOIN_GROUP] === group) return;
+        throw new CmsError('CMS_VALIDATION', 'Start a translation from the entry it translates.', { fields: { translationGroup: 'is set when a translation starts.' } });
     }
 
     /** A new content entry belongs to a language: the site's default unless it names one. */

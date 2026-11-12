@@ -6,6 +6,7 @@ import {
     type CmsHost, type CmsModule, type ImageTransformer, type Principal,
 } from '../src/server/index';
 import { romedbService, live } from './helpers';
+import { RecordId } from '@cossackframework/romedb';
 
 const admin: Principal = { kind: 'user', id: 'admin-1', roles: ['admin'], permissions: ['*'] };
 
@@ -178,6 +179,18 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         clock += 1000;
         await cms.saveCollection({ ...cms.collection('posts'), path: 'posts' }, admin);
         await cms.outbox.dispatch({ limit: 100 });
+        // Two moves before either job runs: both old paths reach the latest one.
+        clock += 1000;
+        await cms.saveCollection({ ...cms.collection('posts'), path: 'journal' }, admin);
+        clock += 1000;
+        await cms.saveCollection({ ...cms.collection('posts'), path: 'diary' }, admin);
+        await cms.outbox.dispatch({ limit: 100 });
+        expect(await cms.redirects.match('/posts/moving-post')).toMatchObject({ location: '/diary/moving-post' });
+        expect(await cms.redirects.match('/journal/moving-post')).toMatchObject({ location: '/diary/moving-post' });
+        clock += 1000;
+        await cms.saveCollection({ ...cms.collection('posts'), path: 'posts' }, admin);
+        await cms.outbox.dispatch({ limit: 100 });
+        expect(await cms.redirects.match('/posts/moving-post')).toBeNull();
 
         // Category permalinks: the first category's slug before the post name; a change of category redirects.
         const [sports, culture] = (await Promise.all([cms.taxonomies.create('categories', { name: 'Sports' }, { principal: editor }), cms.taxonomies.create('categories', { name: 'Culture' }, { principal: editor })])).map(term => term.id);
@@ -236,6 +249,8 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         await expect(cms.webhooks.save({ name: 'Plain', url: 'http://example.com/hook', events: ['entry.published'] })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         const hook = await cms.webhooks.save({ name: 'Rebuild', url: 'https://build.example.com/hook', events: ['entry.published', 'entry.deleted'], collections: ['posts'] }, { collections: cms.collections().map(entry => entry.name) });
         expect(hook.secret).toMatch(/^whsec_/);
+        // The listing tells webhooks apart without any of the secret's characters.
+        expect((await cms.webhooks.list()).find(entry => entry.id === hook.id)?.secretHint).toBe('whsec_');
         await cms.outbox.dispatch({ limit: 100 });
         await cms.webhooks.dispatch({ limit: 50 });
         sent.length = 0;
@@ -352,6 +367,17 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         expect(await products.update(gadget.id, { title: 'Gadget 2' }, { principal: ann, expectedRevision: gadget.rev })).toMatchObject({ title: 'Gadget 2', price: 5 });
         expect((await products.get(theirs.id, { principal: bob }))!.price).toBe(5);
         expect(await products.updatable([gadget.id, theirs.id], { principal: bob })).toEqual(new Set([theirs.id]));
+        // More translations than one check covers: the shared field is refused, not half copied.
+        const crowded = await products.create({ title: 'Crowded', price: 1 }, { principal: admin });
+        const storage = cms.resourceById('cms/products').storage;
+        for (let start = 0; start < 101; start += 25) {
+            await cms.db.write(Array.from({ length: Math.min(25, 101 - start) }, (_, i) => ({
+                rql: `INSERT INTO ${storage} DOCUMENT $document`,
+                params: { $document: { id: new RecordId(storage, `crowd-${start + i}`), title: `Crowd ${start + i}`, price: 1, locale: 'fr', translationGroup: crowded.id, _rev: 1, _op: `crowd-${start + i}`, _createdAt: clock, _updatedAt: clock, _owner: null } },
+            })));
+        }
+        await expect(products.update(crowded.id, { price: 2 }, { principal: admin, expectedRevision: crowded.rev })).rejects.toMatchObject({ code: 'CMS_LIMIT' });
+        expect((await products.get('crowd-100', { principal: admin }))!.price).toBe(1);
         await cms.saveLanguages({ default: 'en', others: [] }, admin);
     });
 
@@ -411,6 +437,13 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         // Each language has its own slugs, so the translation keeps the original's.
         expect(french).toMatchObject({ locale: 'fr', translationGroup: about.id, status: 'draft', title: 'About', slug: 'about' });
         expect((await cms.translateEntry('pages', about.id, 'fr', editor)).id).toBe(french.id);
+        // Joining a group is translateEntry's: a save naming another entry's group is refused.
+        await expect(pages.create({ title: 'Mine', locale: 'fr', translationGroup: about.id }, { principal: editor })).rejects.toMatchObject({ code: 'CMS_VALIDATION', fields: { translationGroup: expect.any(String) } });
+        const loose = await pages.create({ title: 'Loose' }, { principal: editor });
+        await expect(pages.update(loose.id, { translationGroup: about.id }, { principal: editor, expectedRevision: loose.rev })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        // Keeping the group, or leaving it, stays open.
+        expect((await pages.update(french.id, { translationGroup: about.id, title: 'About' }, { principal: editor, expectedRevision: french.rev })).rev).toBe(french.rev + 1);
+        await pages.delete(loose.id, { principal: editor, expectedRevision: loose.rev });
         // A protected or members-only entry is translated only by those who may edit it.
         const reader: Principal = { kind: 'user', id: 'reader-1', roles: [], permissions: ['cms/pages:read', 'cms/pages:create'] };
         const secret = await pages.create({ title: 'Secret', password: 'open sesame', status: 'published' }, { principal: editor });
@@ -425,7 +458,7 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         expect(third.slug).toBe('about-3');
         await pages.delete(second.id, { principal: editor, expectedRevision: moved.rev });
         await pages.delete(third.id, { principal: editor, expectedRevision: third.rev });
-        const published = await pages.update(french.id, { title: 'À propos', slug: 'a-propos', status: 'published' }, { principal: editor, expectedRevision: french.rev });
+        const published = await pages.update(french.id, { title: 'À propos', slug: 'a-propos', status: 'published' }, { principal: editor, expectedRevision: french.rev + 1 });
         expect((await cms.entryUrls(cms.collection('pages'), [about, published]))).toEqual(new Map([[about.id, '/about'], [french.id, '/fr/a-propos']]));
         // Language in URLs → Every language: the default's pages take its code too.
         await cms.saveLanguages({ default: 'en', others: ['fr'], urls: 'all' }, admin);

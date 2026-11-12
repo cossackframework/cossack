@@ -92,7 +92,10 @@ export default class FieldGroupPage extends Cossack {
         await this.save(this.draft, this.targets, this.blocks);
     }
 
-    @Server({ input: input.args(input.record<Draft>(), input.array(input.record<FieldGroupTarget>(), { maxItems: 1000 }), input.array(input.record<EditorBlock>(), { maxItems: 1000 })) })
+    @Server({ input: input.args(input.object({
+        id: input.string({ maxLength: 200 }), title: input.string({ maxLength: 500 }), description: input.string({ maxLength: 5000 }),
+        placement: input.enum(['main', 'sidebar']), order: input.string({ maxLength: 20 }),
+    }), input.array(input.record<FieldGroupTarget>(), { maxItems: 1000 }), input.array(input.record<EditorBlock>(), { maxItems: 1000 })) })
     async save(draft: Draft, targets: FieldGroupTarget[], blocks: EditorBlock[]) {
         this.error = '';
         this.message = '';
@@ -100,8 +103,10 @@ export default class FieldGroupPage extends Cossack {
         const converted = blocksInput(blocks, new Map(options.map(option => [option.name, option])));
         if ('error' in converted) { this.error = `${__('Fields')}: ${converted.error}`; return; }
         const order = draft.order.trim() === '' ? undefined : Number(draft.order);
-        // A new group's ID comes from its title.
-        const id = draft.id || collectionName(draft.title).replaceAll('_', '-');
+        // The group the URL names; a new group's ID comes from its title.
+        const route = this.c.req.param('id') ?? '';
+        const fresh = route === 'new';
+        const id = fresh ? collectionName(draft.title).replaceAll('_', '-') : route;
         if (!id) { this.error = __('Give the field group a title.'); return; }
         const group: FieldGroup = {
             id, title: draft.title.trim(), description: draft.description.trim(), placement: draft.placement,
@@ -109,7 +114,7 @@ export default class FieldGroupPage extends Cossack {
         };
         try {
             const saved = await this.c.get('cms').saveFieldGroup(group, this.c.get('principal'));
-            if (this.fresh) return this.redirect(`/dashboard/field-groups/${saved.id}?created=1`);
+            if (fresh) return this.redirect(`/dashboard/field-groups/${saved.id}?created=1`);
             await this.load(saved.id);
             this.message = __('Field group saved.');
         } catch (error) {

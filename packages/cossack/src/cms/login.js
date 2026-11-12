@@ -4,7 +4,7 @@
  * clients. The password itself is printed only by `mcp`, which exists to configure a client.
  */
 import os from 'node:os';
-import { assertCredentialTarget, CmsApiError, createClient, resolveTarget, tokenId } from './client.js';
+import { assertCredentialTarget, CmsApiError, createClient, isLocalAddress, resolveTarget, tokenId } from './client.js';
 import { forgetLogin, loginKey, readLogins, rememberLogin } from './logins.js';
 
 const coded = (code, message) => Object.assign(new Error(message), { code });
@@ -39,10 +39,17 @@ export async function loginCommand({ flags, env = process.env, cwd = process.cwd
   let name = flags.name;
   const scope = flags.scope ?? 'write';
   if (!token) {
-    const email = flags.email || env.CMS_EMAIL || await ask({ type: 'text', message: 'Email' });
-    const password = env.CMS_PASSWORD || await ask({ type: 'password', message: 'Password' });
-    if (!email || !password) throw coded('COSSACK_CMS_CREDENTIALS_REQUIRED', 'Pass --email and set CMS_PASSWORD (or run in a terminal to be asked).');
+    // Checked before anything is typed: plain HTTP, and an address only the project's .env names.
     assertCredentialTarget(url, { source: target.source, credential: 'CMS_PASSWORD', fromEnvironment: Boolean(env.CMS_PASSWORD), allowHttp: target.allowHttp });
+    const origin = new URL(url).origin;
+    if (!env.CMS_PASSWORD && target.source === 'project' && !isLocalAddress(url)) {
+      // A cloned project could name any host; a typed password goes there only once confirmed.
+      const confirmed = await ask({ type: 'confirm', message: `Only this folder's .env names ${origin}. Send your password there?` });
+      if (confirmed !== true) throw coded('COSSACK_CMS_URL_UNCONFIRMED', `Your password is not sent to ${origin}, which only this folder's .env names. Pass --url ${origin} (or set COSSACK_CMS_URL) to confirm.`);
+    }
+    const email = flags.email || env.CMS_EMAIL || await ask({ type: 'text', message: `Email for ${origin}` });
+    const password = env.CMS_PASSWORD || await ask({ type: 'password', message: `Password for ${origin}` });
+    if (!email || !password) throw coded('COSSACK_CMS_CREDENTIALS_REQUIRED', 'Pass --email and set CMS_PASSWORD (or run in a terminal to be asked).');
     const session = createClient({ url, site, fetch });
     const sameOrigin = { origin: session.origin, 'sec-fetch-site': 'same-origin' };
     let code = flags.code;

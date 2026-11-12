@@ -96,6 +96,20 @@ describe('ORM and session server-only imports', () => {
     `, '/src/leak.ts')).toThrow(/server-only import/);
   });
 
+  it.each(['node', 'cloudflare', 'isolate', 'vite'])('treats @cossackframework/cms/%s as server-only, like the host', entry => {
+    const safe = stripClientServerOnlyImports(`
+      import { pick } from '@cossackframework/cms/${entry}';
+      import { field } from '@cossackframework/cms';
+      class Page { render() { return field.name; } }
+    `, '/src/page.ts');
+    expect(safe).not.toContain(`@cossackframework/cms/${entry}`);
+    expect(safe).toContain("from '@cossackframework/cms'");
+    expect(() => stripClientServerOnlyImports(`
+      import { pick } from '@cossackframework/cms/${entry}';
+      export const leaked = pick;
+    `, '/src/leak.ts')).toThrow(/server-only import/);
+  });
+
   it('ignores type-only imports and type positions when checking server-only references', () => {
     const source = `
       import type { Generated } from '@cossackframework/database';

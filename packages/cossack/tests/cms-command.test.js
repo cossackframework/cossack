@@ -391,6 +391,20 @@ describe('cms helpers', () => {
       const never = vi.fn();
       await expect(loginCommand({ flags: { token: 'cms_aaaaaaaaaaaaaaaa.secret' }, env: { COSSACK_CONFIG_DIR: project }, cwd: project, fetch: never })).rejects.toMatchObject({ code: 'COSSACK_CMS_URL_UNCONFIRMED' });
       await expect(loginCommand({ flags: { token: 'cms_aaaaaaaaaaaaaaaa.secret', url: 'http://cms.example' }, env: { COSSACK_CONFIG_DIR: project }, cwd: project, fetch: never })).rejects.toMatchObject({ code: 'COSSACK_CMS_URL_INSECURE' });
+      // A typed password goes to that address only after the terminal confirms it, and the
+      // prompts name where it goes.
+      const asked = [];
+      const decline = vi.fn(async question => { asked.push(question); return question.type === 'confirm' ? false : 'typed'; });
+      await expect(loginCommand({ flags: {}, env: { COSSACK_CONFIG_DIR: project }, cwd: project, fetch: never, ask: decline })).rejects.toMatchObject({ code: 'COSSACK_CMS_URL_UNCONFIRMED' });
+      expect(asked).toEqual([expect.objectContaining({ type: 'confirm', message: expect.stringContaining('https://evil.example') })]);
+      // Without a terminal there is no confirmation, so nothing is sent.
+      await expect(loginCommand({ flags: { email: 'ada@example.com' }, env: { COSSACK_CONFIG_DIR: project }, cwd: project, fetch: never, ask: async () => undefined })).rejects.toMatchObject({ code: 'COSSACK_CMS_URL_UNCONFIRMED' });
+      asked.length = 0;
+      const accept = async question => { asked.push(question); return question.type === 'confirm' ? true : question.type === 'password' ? 'secret' : 'ada@example.com'; };
+      const refused = vi.fn(async () => new Response(JSON.stringify({ error: 'Invalid', code: 'CMS_UNAUTHENTICATED' }), { status: 401, headers: { 'content-type': 'application/json' } }));
+      await expect(loginCommand({ flags: {}, env: { COSSACK_CONFIG_DIR: project }, cwd: project, fetch: refused, ask: accept })).rejects.toMatchObject({ code: 'COSSACK_CMS_SIGN_IN_FAILED' });
+      expect(asked.map(question => question.message)).toEqual([expect.stringContaining('Send your password'), 'Email for https://evil.example', 'Password for https://evil.example']);
+      expect(refused).toHaveBeenCalled();
       expect(never).not.toHaveBeenCalled();
     } finally { await fs.rm(project, { recursive: true, force: true }); }
   });

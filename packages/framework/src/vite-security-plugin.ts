@@ -372,9 +372,15 @@ function isServerOnlyImportSource(source: string): boolean {
     ((source === '@cossackframework/romedb' || source.startsWith('@cossackframework/romedb/') ||
       source === '@romedb/client' || source.startsWith('@romedb/client/') ||
       source === '@romedb/node' || source.startsWith('@romedb/node/')) && !CLIENT_SAFE_IMPORT_SOURCES.has(source)) ||
-    source === '@cossackframework/cms/server' ||
+    CMS_SERVER_ENTRIES.has(source) ||
     source.startsWith('node:');
 }
+
+/**
+ * Every server-side entry of the CMS package: the host, the Node and Cloudflare runtime pieces,
+ * the plugin isolate and the Vite plugin. Only `@cossackframework/cms` itself is client-safe.
+ */
+const CMS_SERVER_ENTRIES: ReadonlySet<string> = new Set(['server', 'node', 'cloudflare', 'isolate', 'vite'].map(entry => `@cossackframework/cms/${entry}`));
 
 /** AST child keys that only hold type syntax. */
 const TYPE_ONLY_KEYS: ReadonlySet<string> = new Set([
@@ -926,7 +932,7 @@ const SERVER_ONLY_IMPORT_SOURCES = new Set([
   '@cossackframework/romedb',
   '@romedb/client',
   '@romedb/node',
-  '@cossackframework/cms/server',
+  ...CMS_SERVER_ENTRIES,
 ]);
 
 /** Client-safe subpaths of otherwise server-only packages (typed values and transport codecs). */

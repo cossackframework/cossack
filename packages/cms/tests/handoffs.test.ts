@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { RomeDB } from '@cossackframework/romedb';
-import { CmsNetwork, createCMS, isNetworkAdmin, NETWORK_ADMIN, systemPrincipal, type CmsHost } from '../src/server/index';
+import { CmsHandoffs, CmsNetwork, createCMS, isNetworkAdmin, NETWORK_ADMIN, systemPrincipal, type CmsHost } from '../src/server/index';
 import { romedbService, live } from './helpers';
 
 const record = (id: string, userId: string) => ({ id: id.repeat(64).slice(0, 64), userId, kind: 'auth' as const, createdAt: Date.now(), expiresAt: Date.now() + 60_000 });
@@ -59,6 +59,27 @@ describe.skipIf(!live)('sign-in handoffs and child sessions', () => {
         const ended = await network.handoffs.issue({ session: reference, user, site: 'blog' });
         await main.authSessions.revoke(record('a', user).id);
         expect(await network.handoffs.consume(ended, 'blog')).toBeNull();
+    });
+
+    it('records no site for a network session signed out while its code is traded', async () => {
+        const reference = await signIn('r', user);
+        // The sign-out lands between the handoff's read and its write.
+        const db = service.database();
+        let signedOut = false;
+        const racing = new Proxy(db, {
+            get(target, property) {
+                if (property === 'read') return async (...args: Parameters<RomeDB['read']>) => {
+                    const result = await target.read(...args);
+                    if (!signedOut) { signedOut = true; await main.authSessions.revoke(record('r', user).id); }
+                    return result;
+                };
+                const value = Reflect.get(target, property, target) as unknown;
+                return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+            },
+        });
+        const handoffs = new CmsHandoffs(racing);
+        expect(await handoffs.consume(await handoffs.issue({ session: reference, user, site: 'blog' }), 'blog')).toBeNull();
+        expect(await network.handoffs.reached({ session: reference })).toEqual([]);
     });
 
     it('records whether a sign-in used a second factor, carries it through a handoff and keeps it across rotation', async () => {

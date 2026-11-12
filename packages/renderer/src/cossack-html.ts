@@ -2440,9 +2440,14 @@ class AttributePart implements Part {
   update(value: unknown) {
     this.commit(value);
   }
-  /** Set the attribute, or remove it for null, unless the last commit left it so. */
+  /**
+   * Set the attribute, or remove it for null, unless the last commit left it so and it still is:
+   * other code (a component toggling `aria-expanded` or `hidden`) may have changed it since, and
+   * the template's value wins again. `class` is compared with the last commit alone, since a
+   * spread on the element adds tokens of its own.
+   */
   private writeAttribute(name: string, domName: string, next: string | null) {
-    if (next === this.writtenAttribute) return;
+    if (next === this.writtenAttribute && (this.name === 'class' || this.element.getAttribute(name) === next)) return;
     this.writtenAttribute = next;
     if (next === null) this.element.removeAttribute(domName);
     else this.element.setAttribute(name, next);

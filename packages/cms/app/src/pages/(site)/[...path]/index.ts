@@ -337,9 +337,23 @@ export default class SitePath extends Cossack {
     /** Enter edit mode: a draft of the saved entry, rendered like a preview. */
     @Server()
     async startEditing() {
+        // The entry this address shows, never the one the client's state names.
+        await this.openDraft(await this.routeEntry());
+    }
+
+    /**
+     * Start again from the saved entry being edited, after a conflict: the draft's own entry, since
+     * a save elsewhere may have moved it to another address. Its editor's rights are checked again.
+     */
+    @Server()
+    async restartEditing() {
+        const draft = this.draft;
+        await this.openDraft(draft?.collection && draft.id ? { collection: draft.collection, id: draft.id } : await this.routeEntry());
+    }
+
+    private async openDraft(shown: { collection: string; id: string } | null) {
         const cms = this.c.get('cms');
-        const editable = this.editable;
-        const found = editable ? await editableRecord(cms, editable.collection, editable.id, this.c.get('principal')) : null;
+        const found = shown ? await editableRecord(cms, shown.collection, shown.id, this.c.get('principal')) : null;
         if (!found) {
             // A list page: the frame alone, for a user who may change the theme's areas.
             const frame = this.frameEditable ? await frameDraft(cms, this.c.get('principal')) : null;
@@ -348,11 +362,31 @@ export default class SitePath extends Cossack {
             if (frame) this.c.set('cms.editing', editingContext(frame.documents));
             return;
         }
+        this.editable = { collection: found.collection.name, id: found.record.id, dashboard: `/dashboard/content/${found.collection.name}/${found.record.id}` };
         this.draft = await siteDraft(cms, found.collection, found.record, this.c.get('principal'));
         // The layout renders the areas with their markers from the first paint (`server$` in the layout reads this at render time).
         this.c.set('cms.editing', editingContext(this.draft.documents));
         this.entry = await draftEntry(cms, found.collection, found.record, this.draft.values, this.formRequest());
         await this.refreshMenus();
+    }
+
+    /**
+     * The entry the page's address shows, as `init` finds it: an entry (not the posts page) or the
+     * static front page. The other editing methods act on the draft this one started, and check
+     * again that the user may edit its entry.
+     */
+    private async routeEntry(): Promise<{ collection: string; id: string } | null> {
+        const cms = this.c.get('cms');
+        const resolved = await resolvePath(cms, segmentsOf(this.c.req.param('path'))).catch(() => null);
+        if (resolved?.kind === 'entry') {
+            if (resolved.collection.name === 'pages' && resolved.record.id === await cms.settings.get('reading.pageForPosts').catch(() => null)) return null;
+            return { collection: resolved.collection.name, id: resolved.record.id };
+        }
+        if (resolved?.kind === 'home') {
+            const home = await homeView(cms, resolved.locale, 1);
+            return home.record ? { collection: 'pages', id: home.record.id } : null;
+        }
+        return null;
     }
 
     /** Render the page from the draft's values. Invalid values keep the last rendering and show why. */
@@ -452,7 +486,7 @@ export default class SitePath extends Cossack {
     /** Start again from the saved entry and areas, after a conflict. */
     @Client()
     async reloadDraft() {
-        await this.startEditing();
+        await this.restartEditing();
         this.shareDocuments();
     }
 

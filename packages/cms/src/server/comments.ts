@@ -164,9 +164,16 @@ export class CmsComments {
     async delete(ids: readonly string[]): Promise<void> {
         const comments = (await Promise.all([...new Set(ids)].slice(0, 100).map(id => this.get(id)))).filter((comment): comment is CommentShape => comment !== null);
         if (!comments.length) return;
+        const deleting = new Map(comments.map(comment => [comment.id, comment]));
+        // A reply moves up to its nearest ancestor that stays, whatever order the IDs came in.
+        const keptParent = (comment: CommentShape): string | null => {
+            let parent = comment.parentId;
+            for (let depth = 0; parent && deleting.has(parent) && depth <= deleting.size; depth++) parent = deleting.get(parent)!.parentId;
+            return parent && deleting.has(parent) ? null : parent;
+        };
         const statements: Statement[] = [];
         for (const comment of comments) {
-            statements.push({ rql: 'UPDATE cms_comments SET parent_id = $parent WHERE parent_id = $id', params: { $parent: comment.parentId, $id: comment.id } });
+            statements.push({ rql: 'UPDATE cms_comments SET parent_id = $parent WHERE parent_id = $id', params: { $parent: keptParent(comment), $id: comment.id } });
             statements.push({ rql: 'DELETE FROM cms_comments WHERE id = $id', params: { $id: comment.id } });
         }
         // Each comment's two statements stay in one request.

@@ -19,19 +19,32 @@ const SAVE_OVERHEAD = 6144;
  * JSON quoted again three times (the search text, the revision and the event), plus the rest of
  * the save. A save under the database's request size fits.
  */
-export function saveBytes(values: unknown): number {
+export function saveBytes(values: unknown, shared: readonly string[] = []): number {
     const json = JSON.stringify(values ?? {});
-    let fields: number;
-    try { fields = statementBytes([{ rql: '', params: { $values: values as Value } }]); } catch { fields = 4 * encoder.encode(json).length; }
-    return fields + 3 * requestBytes(json) + SAVE_OVERHEAD;
+    let bytes = typedBytes(values, json) + 3 * requestBytes(json) + SAVE_OVERHEAD;
+    // Fields the same in every language go out a second time, with their search text, to the
+    // entry's other translations in the same request.
+    if (shared.length && values && typeof values === 'object' && !Array.isArray(values)) {
+        const subset = Object.fromEntries(shared.filter(name => Object.hasOwn(values, name)).map(name => [name, (values as Record<string, unknown>)[name]]));
+        if (Object.keys(subset).length) {
+            const subsetJson = JSON.stringify(subset);
+            bytes += typedBytes(subset, subsetJson) + requestBytes(subsetJson);
+        }
+    }
+    return bytes;
+}
+
+function typedBytes(values: unknown, json: string): number {
+    try { return statementBytes([{ rql: '', params: { $values: values as Value } }]); } catch { return 4 * encoder.encode(json).length; }
 }
 
 /** Refused as `CMS_LIMIT` when saving the values would not fit one request to this database. */
-export async function checkDraftSize(db: RomeDB, json: string, what: string): Promise<void> {
+export async function checkDraftSize(db: RomeDB, json: string, what: string, shared: readonly string[] = []): Promise<void> {
     const limit = await db.maxRequestBytes();
-    // A save carries well under eight times the JSON: a draft that small fits without measuring it.
-    if (8 * requestBytes(json) + SAVE_OVERHEAD <= limit) return;
-    if (saveBytes(JSON.parse(json) as unknown) > limit) throw new CmsError('CMS_LIMIT', `The ${what} is too large: an entry this size could not be saved. Shorten it, or split it into several entries.`);
+    // A save carries well under eight times the JSON (twelve with shared fields): a draft that
+    // small fits without measuring it.
+    if ((shared.length ? 12 : 8) * requestBytes(json) + SAVE_OVERHEAD <= limit) return;
+    if (saveBytes(JSON.parse(json) as unknown, shared) > limit) throw new CmsError('CMS_LIMIT', `The ${what} is too large: an entry this size could not be saved. Shorten it, or split it into several entries.`);
 }
 
 const encoder = new TextEncoder();
@@ -61,13 +74,18 @@ export interface DraftInput {
     readonly editors: readonly string[];
 }
 
+/** The fields of a resource that are the same in every language, which a save also gives its other translations. */
+export type SharedFieldsOf = (resource: string) => readonly string[];
+
 export class CmsDrafts {
     readonly #db: RomeDB;
     readonly #now: () => number;
+    readonly #shared: SharedFieldsOf;
 
-    constructor(db: RomeDB, options: { now?: () => number } = {}) {
+    constructor(db: RomeDB, options: { now?: () => number; sharedFields?: SharedFieldsOf } = {}) {
         this.#db = db;
         this.#now = options.now ?? Date.now;
+        this.#shared = options.sharedFields ?? (() => []);
     }
 
     /** Store the room's draft, replacing the entry's previous one. */
@@ -75,7 +93,7 @@ export class CmsDrafts {
         check(recordId);
         if (!Number.isSafeInteger(draft.baseRev) || draft.baseRev < 0) throw new CmsError('CMS_VALIDATION', 'baseRev must be a nonnegative integer.');
         const data = JSON.stringify(draft.values ?? {});
-        await checkDraftSize(this.#db, data, 'draft');
+        await checkDraftSize(this.#db, data, 'draft', this.#shared(resource));
         const at = this.#now();
         await this.#db.write([{
             rql: `INSERT INTO cms_drafts (id, resource, record_id, base_rev, data, logs, editors, editors_at, at) VALUES ($id, $resource, $record, $rev, $data, $logs, $editors, $at, $at)

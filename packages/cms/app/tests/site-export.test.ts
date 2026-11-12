@@ -55,3 +55,31 @@ describe('a database file download', () => {
         await expect(fileExportResponse(host(async () => { throw new Error('broken'); }), site, open())).rejects.toThrow('broken');
     });
 });
+
+describe('the site export route', () => {
+    it('gives both formats only to those who may manage every account', async () => {
+        vi.stubGlobal('__', (text: string) => text);
+        const { Hono } = await import('hono');
+        const { userPrincipal } = await import('@cossackframework/cms');
+        const { GET } = await import('../src/pages/api/cms/site-export');
+        const cms = { users: { roles: async () => [{ id: 'admin', permissions: ['*'] }, { id: 'manager', permissions: ['cms:settings'] }] }, settings: { get: async () => 'Site' } };
+        const call = async (principal: unknown, query = '') => {
+            const app = new Hono();
+            app.use('*', async (c, next) => {
+                c.set('principal' as never, principal as never);
+                c.set('cms' as never, cms as never);
+                c.set('site' as never, { id: 'blog', name: 'Blog' } as never);
+                c.set('network' as never, { exportAccess: async () => ({ allowed: true }) } as never);
+                await next();
+            });
+            app.get('/', GET as never);
+            return app.request(`/${query}`);
+        };
+        // Settings alone holds no accounts, submissions or drafts: neither the JSON nor the file.
+        const settingsOnly = userPrincipal('sam', ['manager'], ['cms:settings']);
+        expect((await call(settingsOnly)).status).toBe(403);
+        expect((await call(settingsOnly, '?format=romedb')).status).toBe(403);
+        const usersToo = userPrincipal('uma', ['manager'], ['cms:settings', 'cms:users']);
+        expect((await call(usersToo)).status).toBe(403);
+    });
+});

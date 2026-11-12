@@ -5,7 +5,7 @@
  */
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { MAX_STATEMENTS, statementBytes, type BatchResult, type RomeDB, type Statement } from '@cossackframework/romedb';
-import { contentModule, createCMS, field, readCatalog, type CmsHost, type Principal } from '../src/server/index';
+import { contentModule, createCMS, field, readCatalog, saveBytes, type CmsHost, type Principal } from '../src/server/index';
 import { live, romedbService } from './helpers';
 
 interface Recorded { readonly kind: 'read' | 'write'; readonly statements: number; readonly requestBytes: number; readonly resultBytes: number }
@@ -139,6 +139,30 @@ describe.skipIf(!live)('RomeDB limits', () => {
         expect(saved.specs).toBe(changed);
         await cms.saveLanguages({ default: 'en', others: [] }, admin);
     }, 180_000);
+
+    it('caps a draft of a shared field at what still saves to every translation', async () => {
+        clock += 1000;
+        await cms.saveCollection({ name: 'kits', label: 'Kits', singular: 'Kit', icon: 'box', path: 'kits', features: {},
+            fields: { parts: field.json({ nullable: true, translatable: false, label: 'Parts' }) } }, admin);
+        await cms.saveLanguages({ default: 'en', others: ['fr'] }, admin);
+        const kits = cms.resource('cms/kits');
+        const original = await kits.create({ title: 'Kit' }, { principal: admin });
+        await cms.translateEntry('kits', original.id, 'fr', admin);
+        const parts = (n: number) => ({ items: Array.from({ length: n }, (_, i) => ({ id: i, name: `Part "${i}"`, size: [i, i + 1, i + 2] })) });
+        const limit = await cms.db.maxRequestBytes();
+        let n = 1;
+        while (saveBytes({ parts: parts(n + 1) }, ['parts']) <= limit && n < 10_000) n++;
+        // Counting the shared copy refuses what the plain count still takes.
+        expect(saveBytes({ parts: parts(n + 1) })).toBeLessThanOrEqual(limit);
+        await expect(cms.drafts.save('cms/kits', original.id, { baseRev: 1, values: { parts: parts(n + 1) }, versions: {}, editors: [] })).rejects.toMatchObject({ code: 'CMS_LIMIT' });
+        await expect(cms.autosaves.save('cms/kits', original.id, 'admin-1', { parts: parts(n + 1) })).rejects.toMatchObject({ code: 'CMS_LIMIT' });
+        // The largest draft the cap takes saves, to the entry and its translation.
+        await cms.drafts.save('cms/kits', original.id, { baseRev: 1, values: { parts: parts(n) }, versions: {}, editors: [] });
+        const current = (await kits.get(original.id, { principal: admin }))!;
+        const saved = await kits.update(original.id, { parts: parts(n) }, { principal: admin, expectedRevision: current.rev });
+        expect((saved.parts as { items: unknown[] }).items).toHaveLength(n);
+        await cms.saveLanguages({ default: 'en', others: [] }, admin);
+    }, 120_000);
 
     it('saves and reads forty collections while other writes land, and plans nothing more after', async () => {
         await cms.db.write([{ rql: 'CREATE TABLE limits_noise (id INTEGER PRIMARY KEY, at INTEGER NOT NULL)' }]);

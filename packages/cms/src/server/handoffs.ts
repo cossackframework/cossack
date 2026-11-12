@@ -58,14 +58,25 @@ export class CmsHandoffs {
             params: { $id: id, $site: site, $now: now },
         }]);
         const row = found.results[0]!.rows[0];
-        // Delete it either way; only the request whose delete removed it may use it.
-        const taken = await this.#db.write([{ rql: 'DELETE FROM cms_handoffs WHERE id = $id', params: { $id: id } }], WRITE);
-        if (!row || taken.results[0]!.affected !== 1n) return null;
+        if (!row) {
+            await this.#db.write([{ rql: 'DELETE FROM cms_handoffs WHERE id = $id', params: { $id: id } }], WRITE);
+            return null;
+        }
         const handoff = { session: row[0] as string, user: row[1] as string, networkRole: row[2] as string | null, expiresAt: Number(row[3]), secondFactor: row[4] !== null && Number(row[4]) === 1 };
-        await this.#db.write([{
-            rql: 'INSERT INTO cms_session_sites (session_id, site_id, user_id, created_at) SELECT $session, $site, $user, $now WHERE 1 = 1 ON CONFLICT (session_id, site_id) DO NOTHING',
-            params: { $session: handoff.session, $site: site, $user: handoff.user, $now: now },
-        }], WRITE);
+        // Only the request whose delete removed the code may use it. The site is recorded for the
+        // network session only while that session lives, so a sign-out finds every site it reached.
+        const taken = await this.#db.write([
+            { rql: 'DELETE FROM cms_handoffs WHERE id = $id', params: { $id: id } },
+            {
+                rql: `INSERT INTO cms_session_sites (session_id, site_id, user_id, created_at) SELECT $session, $site, $user, $now
+                    WHERE EXISTS (SELECT 1 FROM cms_auth_sessions WHERE public_id = $session AND user_id = $user AND expires_at > $now) ON CONFLICT (session_id, site_id) DO NOTHING`,
+                params: { $session: handoff.session, $site: site, $user: handoff.user, $now: now },
+            },
+        ], WRITE);
+        if (taken.results[0]!.affected !== 1n) return null;
+        // Signed out since the read: no child session. A sign-out after this check lists the site.
+        const alive = await this.#db.read([{ rql: 'SELECT 1 FROM cms_auth_sessions WHERE public_id = $session AND user_id = $user AND expires_at > $now', params: { $session: handoff.session, $user: handoff.user, $now: now } }]);
+        if (!alive.results[0]!.rows.length) return null;
         return Object.freeze(handoff);
     }
 

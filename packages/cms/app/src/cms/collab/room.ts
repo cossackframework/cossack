@@ -175,6 +175,11 @@ export class EntryRoom extends Cossack {
     private docs = new Map<string, ProseMirrorNode>();
     private logs = new Map<string, StepLog>();
     private roomPeers = new Map<string, PeerState>();
+    /**
+     * Who each peer ID belongs to: the first user to use it. Tabs learn every peer's ID from the
+     * presence broadcasts, so a call naming a peer of another user is refused.
+     */
+    private peerOwners = new Map<string, string>();
     /** The entry's notes as the room holds them, the authority while it lives; `cms.notes` keeps them. */
     private notes: Note[] = [];
     /** Who the notes and the peers name, so tabs show names without looking anyone up. */
@@ -379,6 +384,16 @@ export class EntryRoom extends Cossack {
         return this.snapshot();
     }
 
+    /** The peer ID when it is well formed and belongs to the caller (claimed on first use), else null. */
+    private ownPeer(peer: unknown, principal: Principal & { kind: 'user' }): string | null {
+        if (typeof peer !== 'string' || !PEER.test(peer)) return null;
+        const owner = this.peerOwners.get(peer);
+        if (owner !== undefined) return owner === principal.id ? peer : null;
+        if (this.peerOwners.size >= 10_000) this.peerOwners.delete(this.peerOwners.keys().next().value!);
+        this.peerOwners.set(peer, principal.id);
+        return peer;
+    }
+
     /** A tab's state as the room keeps it: the user's name and picture, looked up when the tab arrives. */
     private async peerState(cms: CmsHost, peer: string, userId: string, presence: unknown): Promise<PeerState> {
         const user = await cms.users.get(userId).catch(() => null);
@@ -391,12 +406,12 @@ export class EntryRoom extends Cossack {
     async join(peer: unknown, presence: unknown): Promise<RoomSnapshot> {
         const { cms, principal } = this.contextOf();
         await this.load(cms);
-        if (typeof peer !== 'string' || !PEER.test(peer)) throw new Error('Invalid peer.');
-        const state = await this.peerState(cms, peer, principal.id, presence);
+        if (!this.ownPeer(peer, principal)) throw new Error('Invalid peer.');
+        const state = await this.peerState(cms, peer as string, principal.id, presence);
         // Notes written outside the room (the API) show to whoever joins next.
         this.notes = await cms.notes.forEntry(this.resourceId, this.entryId).catch(() => this.notes);
         await this.know(cms, this.notes.map(note => note.userId));
-        this.roomPeers.set(peer, state);
+        this.roomPeers.set(peer as string, state);
         this.presenceChanged();
         this.broadcastEvent('presence', state);
         void this.reportEditors();
@@ -416,7 +431,7 @@ export class EntryRoom extends Cossack {
     async set(peer: unknown, field: unknown, value: unknown): Promise<{ applied: boolean }> {
         const { cms, principal } = this.contextOf();
         await this.load(cms);
-        if (typeof peer !== 'string' || !PEER.test(peer) || typeof field !== 'string' || !this.scalarFields.has(field) || stableJson(value).length > VALUE_MAX) return { applied: false };
+        if (!this.ownPeer(peer, principal) || typeof field !== 'string' || !this.scalarFields.has(field) || stableJson(value).length > VALUE_MAX) return { applied: false };
         if (this.htmlRefused(principal, value, this.values[field])) return { applied: false };
         this.values = { ...this.values, [field]: value };
         this.changed();
@@ -428,7 +443,7 @@ export class EntryRoom extends Cossack {
     async tree(peer: unknown, op: unknown): Promise<{ applied: boolean; hash: string }> {
         const { cms, principal } = this.contextOf();
         await this.load(cms);
-        const checked = typeof peer === 'string' && PEER.test(peer) ? this.checkOp(op) : null;
+        const checked = this.ownPeer(peer, principal) ? this.checkOp(op) : null;
         const field = checked?.field ?? '';
         const current = (this.values[field] as Block[] | undefined) ?? [];
         if (!checked) return { applied: false, hash: treeHash(current) };
@@ -476,7 +491,7 @@ export class EntryRoom extends Cossack {
         const { cms, principal } = this.contextOf();
         await this.load(cms);
         const at = typeof path === 'string' ? this.richTextAt(path) : null;
-        if (!at || typeof peer !== 'string' || !PEER.test(peer) || typeof clientID !== 'string' || clientID.length > 64 || !Number.isSafeInteger(version) || !Array.isArray(steps) || steps.length > STEPS_MAX) return { status: 'reload' };
+        if (!at || !this.ownPeer(peer, principal) || typeof clientID !== 'string' || clientID.length > 64 || !Number.isSafeInteger(version) || !Array.isArray(steps) || steps.length > STEPS_MAX) return { status: 'reload' };
         const log = this.logAt(path as string);
         if (!log.accepts(version as number)) {
             const since = log.since(version as number);
@@ -525,11 +540,11 @@ export class EntryRoom extends Cossack {
     async presence(peer: unknown, state: unknown): Promise<void> {
         const { cms, principal } = this.contextOf();
         await this.load(cms);
-        if (typeof peer !== 'string' || !PEER.test(peer)) return;
-        const known = this.roomPeers.get(peer);
+        if (!this.ownPeer(peer, principal)) return;
+        const known = this.roomPeers.get(peer as string);
         // A tab the room dropped as silent (throttled in the background, or the instance restarted) comes back under its user's name, not their ID.
-        const next: PeerState = known ? { ...known, at: Date.now(), presence: checkPresence(state) } : await this.peerState(cms, peer, principal.id, state);
-        this.roomPeers.set(peer, next);
+        const next: PeerState = known ? { ...known, at: Date.now(), presence: checkPresence(state) } : await this.peerState(cms, peer as string, principal.id, state);
+        this.roomPeers.set(peer as string, next);
         this.presenceChanged();
         this.broadcastEvent('presence', next);
     }
@@ -543,7 +558,7 @@ export class EntryRoom extends Cossack {
     async note(peer: unknown, action: unknown): Promise<Note | null> {
         const { cms, principal } = this.contextOf();
         await this.load(cms);
-        if (typeof peer !== 'string' || !PEER.test(peer)) throw new CmsError('CMS_VALIDATION', 'Invalid peer.');
+        if (!this.ownPeer(peer, principal)) throw new CmsError('CMS_VALIDATION', 'Invalid peer.');
         const input = checkNoteAction(action);
         const tell = (change: NoteChange) => this.broadcastEvent('note', change);
         // Webhooks and emails follow from the outbox job the note's write queues; the tab is answered first.
@@ -606,9 +621,11 @@ export class EntryRoom extends Cossack {
 
     @Server()
     async leave(peer: unknown): Promise<void> {
-        if (typeof peer !== 'string' || !this.roomPeers.delete(peer)) return;
+        const { principal } = this.contextOf();
+        const own = this.ownPeer(peer, principal);
+        if (!own || !this.roomPeers.delete(own)) return;
         this.presenceChanged();
-        this.broadcastEvent('left', peer);
+        this.broadcastEvent('left', own);
         void this.reportEditors();
     }
 
@@ -619,7 +636,7 @@ export class EntryRoom extends Cossack {
         const resets: string[] = [];
         const snapshot = await this.restart(cms, resets);
         const user = await cms.users.get(principal.id).catch(() => null);
-        this.broadcastEvent('saved', user?.name || principal.id, snapshot.rev, snapshot, resets, typeof peer === 'string' ? peer : '');
+        this.broadcastEvent('saved', user?.name || principal.id, snapshot.rev, snapshot, resets, this.ownPeer(peer, principal) ?? '');
         return snapshot;
     }
 

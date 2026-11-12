@@ -136,7 +136,10 @@ describe('Cloudflare realtime layout and component targets', () => {
 
   it("forwards a component upgrade with its hosting page's guards and rejects forged ids", async () => {
     const target = scoped('component', cartId, 'user:alice');
+    targets.length = 0;
     const result = await upgrade(target, { component: cartId }, ids.get(itemPath)!, { item: 'one' }, 'alice');
+    // The page the client names selects guards only; the code that runs is the component's.
+    expect(targets).toEqual([cartId]);
     expect(result.status).toBe(200);
     expect(result.header('X-Component-Path')).toBe(cartId);
     expect(result.header('X-Cossack-Realtime-Owner')).toBe('component');
@@ -173,8 +176,9 @@ describe('Durable Object authorization of layout and component peers', () => {
     targets.length = 0;
     expect(await object().authorizeWebSocketPeer(undefined, componentPeer, operation)).toBe(true);
     expect(guardLog).toEqual(['layout:one', 'page:one', 'cart']);
-    // Guards see the component's page as the code that runs, as the upgrade and Node record it.
-    expect(targets).toEqual([itemPath]);
+    // Guards see the component itself as the code that runs, as the upgrade and Node record it,
+    // never the page the client names.
+    expect(targets).toEqual([cartId]);
     session.userId = 'bob';
     expect(await object().authorizeWebSocketPeer(undefined, componentPeer, operation)).toBe(false);
     expect(operation).toHaveBeenCalledOnce();

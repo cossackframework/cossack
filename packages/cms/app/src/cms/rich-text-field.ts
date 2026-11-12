@@ -68,9 +68,25 @@ export const collabEditors = new Map<string, RichTextHandle>();
 
 const SURFACE = `${PROSE} min-h-[22rem] px-4 py-3 focus:outline-none [&_p.is-editor-empty:first-child]:before:pointer-events-none [&_p.is-editor-empty:first-child]:before:float-left [&_p.is-editor-empty:first-child]:before:h-0 [&_p.is-editor-empty:first-child]:before:text-muted-foreground [&_p.is-editor-empty:first-child]:before:content-[attr(data-placeholder)] [&_img.ProseMirror-selectednode]:ring-2 [&_img.ProseMirror-selectednode]:ring-ring`;
 
-/** A document as JSON, for telling the editor's own value from one set from outside. */
-function docKey(value: RichTextDoc | null | undefined): string {
-    try { return JSON.stringify(value ?? null); } catch { return ''; }
+/**
+ * A document's identity, for telling the editor's own value from one set from outside: keys sorted, and null attributes left out, since the saved value and the
+ * room's copy write the same document differently (the saved one without `textAlign: null`).
+ */
+export function docKey(value: RichTextDoc | null | undefined): string {
+    try { return JSON.stringify(canonicalDoc(value ?? null)); } catch { return ''; }
+}
+
+function canonicalDoc(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(canonicalDoc);
+    if (!value || typeof value !== 'object') return value;
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(value).sort()) {
+        const item = canonicalDoc((value as Record<string, unknown>)[key]);
+        if (item === null || item === undefined) continue;
+        if (key === 'attrs' && typeof item === 'object' && !Object.keys(item).length) continue;
+        out[key] = item;
+    }
+    return out;
 }
 
 @Component()

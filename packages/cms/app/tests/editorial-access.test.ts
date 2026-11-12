@@ -110,6 +110,35 @@ describe.skipIf(!live)('editorial access', () => {
         } finally { clearInterval(room.editorsTimer); clearTimeout(room.persistTimer); }
     });
 
+    it('refuses room calls that name another user\'s peer', async () => {
+        const room = new EntryRoom() as unknown as { c: unknown; broadcastEvent: (...args: unknown[]) => void; join: EntryRoom['join']; set: EntryRoom['set']; leave: EntryRoom['leave']; presence: EntryRoom['presence']; draft: EntryRoom['draft']; editorsTimer?: ReturnType<typeof setInterval>; persistTimer?: ReturnType<typeof setTimeout> };
+        const told: unknown[][] = [];
+        room.broadcastEvent = (...args: unknown[]) => { told.push(args); };
+        let principal = alice;
+        const app = new Hono();
+        app.use('*', async (c, next) => { c.set('cms' as never, cms as never); c.set('principal' as never, principal as never); room.c = c; await next(); });
+        app.get('/:collection/:id/join/:peer', requireEntryEditor, async c => c.json(await room.join(c.req.param('peer'), {})));
+        app.get('/:collection/:id/set/:peer', requireEntryEditor, async c => c.json(await room.set(c.req.param('peer'), 'title', c.req.query('title'))));
+        app.get('/:collection/:id/leave/:peer', requireEntryEditor, async c => { await room.leave(c.req.param('peer')); return c.json(null); });
+        app.get('/:collection/:id/peers', requireEntryEditor, async c => c.json((await room.draft()).peers.map(peer => peer.peer)));
+        try {
+            expect((await app.request('/app.articles/one/join/peer_alice')).status).toBe(200);
+            principal = editor;
+            expect((await app.request('/app.articles/one/join/peer_editor')).status).toBe(200);
+            // The editor learned Alice's peer ID from her presence; changes in her name are refused.
+            told.length = 0;
+            expect(await (await app.request('/app.articles/one/set/peer_alice?title=Forged')).json()).toEqual({ applied: false });
+            await app.request('/app.articles/one/leave/peer_alice');
+            expect(told).toEqual([]);
+            expect(await (await app.request('/app.articles/one/peers')).json()).toEqual(expect.arrayContaining(['peer_alice', 'peer_editor']));
+            // Joining under her ID is refused too; their own peer works.
+            expect((await app.request('/app.articles/one/join/peer_alice')).status).toBe(500);
+            expect(await (await app.request('/app.articles/one/set/peer_editor?title=Own')).json()).toEqual({ applied: true });
+            principal = alice;
+            expect(await (await app.request('/app.articles/one/set/peer_alice?title=Hers')).json()).toEqual({ applied: true });
+        } finally { clearInterval(room.editorsTimer); clearTimeout(room.persistTimer); }
+    });
+
     it('refuses Custom HTML from a room editor who may not post HTML', async () => {
         await cms.resource('cms/pages').create({ title: 'Shared page', content: [{ _id: 'h1', type: 'core/html', data: { html: '<p>ok</p>' } }] }, { principal: system, id: 'shared' });
         const room = new EntryRoom() as unknown as { c: unknown; broadcastEvent: () => void; tree: EntryRoom['tree']; editorsTimer?: ReturnType<typeof setInterval>; persistTimer?: ReturnType<typeof setTimeout> };
@@ -117,7 +146,7 @@ describe.skipIf(!live)('editorial access', () => {
         let principal = editor;
         const app = new Hono();
         app.use('*', async (c, next) => { c.set('cms' as never, cms as never); c.set('principal' as never, principal as never); room.c = c; await next(); });
-        app.post('/:collection/:id', requireEntryEditor, async c => c.json(await room.tree('peer_one', await c.req.json())));
+        app.post('/:collection/:id', requireEntryEditor, async c => c.json(await room.tree(`peer_${principal.id}`, await c.req.json())));
         const op = (body: unknown) => app.request('/pages/shared', { method: 'POST', body: JSON.stringify(body) }).then(response => response.json() as Promise<{ applied: boolean }>);
         const script = { _id: 'h2', type: 'core/html', data: { html: '<script>x</script>' } };
         try {

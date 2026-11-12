@@ -16,7 +16,7 @@ export interface Webhook {
     readonly events: readonly WebhookEvent[];
     /** Collection names; empty for all. */
     readonly collections: readonly string[];
-    /** The signing secret's first characters, to tell webhooks apart; the secret itself comes once at creation, or from `secret(id)`. */
+    /** The signing secret's prefix (`whsec_`), none of its secret characters; the secret itself comes once at creation, or from `secret(id)`. */
     readonly secretHint: string;
     readonly active: boolean;
     readonly createdAt: number;

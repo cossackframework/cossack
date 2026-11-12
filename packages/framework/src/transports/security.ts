@@ -113,7 +113,9 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
                 return c.text(resolved.message, 400);
             }
             componentPath = resolved.target.guardPath;
-            targetPath = resolved.target.owner.kind === 'component' ? resolved.target.pagePath : resolved.target.owner.id;
+            // The owner's own code runs: for a realtime component, its registry id, never the page the
+            // browser names (client input, which only selects the guards).
+            targetPath = resolved.target.owner.id;
             ownerMiddlewares = realtimeOwnerMiddlewares(resolved.target.owner);
             guarded = withRuntimeRouteParams(c, resolved.target.params);
         }

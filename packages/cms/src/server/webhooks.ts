@@ -229,7 +229,7 @@ export async function verifyWebhookSignature(secret: string, timestamp: string, 
 function webhookOf(row: readonly Value[]): Webhook {
     return Object.freeze({
         id: row[0] as string, name: row[1] as string, url: row[2] as string, events: JSON.parse(row[3] as string) as WebhookEvent[], collections: JSON.parse(row[4] as string) as string[],
-        secretHint: (row[5] as string).slice(0, 10), active: Number(row[6] as bigint) === 1, createdAt: Number(row[7] as bigint), updatedAt: Number(row[8] as bigint),
+        secretHint: (row[5] as string).slice(0, (row[5] as string).indexOf('_') + 1), active: Number(row[6] as bigint) === 1, createdAt: Number(row[7] as bigint), updatedAt: Number(row[8] as bigint),
     });
 }
 

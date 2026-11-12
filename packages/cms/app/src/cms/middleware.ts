@@ -79,6 +79,8 @@ export const cmsMiddleware: MiddlewareHandler = async (c, next) => {
     const writes = cms.outboxWrites;
     await next();
     securityHeaders(c, url);
+    // The API answers for the site `X-Cossack-Site` names: a shared cache keeps one answer per site.
+    if (url.pathname.startsWith('/api/') && !/(^|,)\s*x-cossack-site\s*(,|$)/i.test(c.res.headers.get('vary') ?? '')) c.header('vary', 'X-Cossack-Site', { append: true });
     const now = Date.now();
     if (cms.outboxWrites !== writes) later(c, cms.outbox.dispatch({ limit: 10 }).then(() => cms.webhooks.dispatch({ limit: 10 })));
     if (now - (lastMaintenance.get(found.site.database) ?? 0) > 60_000) {

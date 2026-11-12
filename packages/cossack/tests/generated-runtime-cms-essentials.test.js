@@ -319,6 +319,10 @@ async function essentials(origin, routeIds, diagnostics, { runtime, cloudflare =
   expect((await fetch(`${origin}/`)).headers.get('cache-tag')).toContain('cms:main:c:posts');
   expect((await fetch(`${origin}/feed`)).headers.get('cache-tag')).toBe('cms:main,cms:main:c:posts');
   expect((await fetch(`${origin}/nowhere-at-all`)).headers.get('cache-control')).toBe('public, max-age=0, s-maxage=60, stale-while-revalidate=60');
+  // The API answers for the site X-Cossack-Site names, so a shared cache keys on it.
+  const anonymousApi = await fetch(`${origin}/api/cms/content/posts`);
+  expect(anonymousApi.headers.get('cache-control')).toBe('public, max-age=60');
+  expect(anonymousApi.headers.get('vary') ?? '').toMatch(/X-Cossack-Site/i);
   // Markdown chosen by Accept is never stored (caches key by URL and ignore Vary); the ?format=md address is; an editor's page is theirs.
   expect(markdown.headers.get('cache-control')).toBe('private, no-store');
   expect((await fetch(`${origin}/posts/search-friendly?format=md`)).headers.get('cache-control')).toBe(`public, max-age=0, s-maxage=${hold}, stale-while-revalidate=60`);
@@ -525,7 +529,9 @@ async function essentials(origin, routeIds, diagnostics, { runtime, cloudflare =
   await expect(eve.action('dashboard/layout.ts', 'find', ['Needs'], { page: 'dashboard/profile/security/index.ts' })).rejects.toThrow(/answered 403/);
   // On the site her session is anonymous: Live Edit opens nothing, and visitor endpoints answer as for anyone.
   const SITE_PAGE = '(site)/[...path]/index.ts';
-  const liveEdit = { state: { editable: { collection: 'posts', id: pendingId } }, params: { path: 'needs-review' } };
+  // Live Edit opens the entry the address shows, whatever the client's state names.
+  const liveId = await save(web, 'posts', post('Edited live'));
+  const liveEdit = { state: { editable: { collection: 'posts', id: pendingId } }, params: { path: 'posts/edited-live' } };
   expect((await eve.action(SITE_PAGE, 'startEditing', [], liveEdit)).draft ?? null).toBeNull();
   expect((await eve.request('/api/cms/search?q=needs')).status).not.toBe(403);
   // A session still owing its second factor is a visitor on the site: members-only entries stay closed.
@@ -538,7 +544,9 @@ async function essentials(origin, routeIds, diagnostics, { runtime, cloudflare =
   expect((await fetch(`${origin}/api/cms/me/tokens`, { headers: { cookie: toolCookie } })).status).toBe(403);
   expect((await web.action(SETTINGS, 'saveAll', [{ document: { general: { requireTwoFactor: false } }, languages: null, permalinks: null, groups: {} }]))._cossack_return.error).toBe('');
   // Without the requirement the same session edits on the site, and the earlier password works again.
-  expect((await eve.action(SITE_PAGE, 'startEditing', [], liveEdit)).draft).toBeTruthy();
+  const opened = await eve.action(SITE_PAGE, 'startEditing', [], liveEdit);
+  expect(opened.draft).toBeTruthy();
+  expect(opened.editable).toMatchObject({ collection: 'posts', id: liveId });
   contains(await eve.page('/posts/staff-only'), 'Staff only body');
   expect((await fetch(`${origin}/api/cms/content/posts`, { headers: { authorization: `Bearer ${earlier.newToken}` } })).status).toBe(200);
   await web.action('dashboard/users/[id]/index.ts', 'deleteToken', [earlier.tokens.find(entry => entry.name === 'Before the rule').id], { params: { id: eveUserId } });

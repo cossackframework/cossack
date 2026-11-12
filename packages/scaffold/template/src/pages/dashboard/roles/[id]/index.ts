@@ -49,19 +49,22 @@ export default class EditRolePage extends Cossack {
         const ok = await this.validateAll();
         if (!ok) return;
 
+        if (!this.role) return;
         try {
-            await this.save(this.role, this.selected);
+            await this.save(this.role.name, this.selected);
             this.saved = true;
         } catch (e: any) {
             this.error = e?.message || __('Could not save role');
         }
     }
 
-    @Server({ input: input.args(input.record<RoleDetail>().nullable(), input.array(input.string({ maxLength: 200 }), { maxItems: 1000 })) })
-    async save(role: RoleDetail | null, permissions: string[]) {
+    @Server({ input: input.args(input.string({ minLength: 1, maxLength: 200 }), input.array(input.string({ maxLength: 200 }), { maxItems: 1000 })) })
+    async save(name: string, permissions: string[]) {
+        // The role the URL names, never one the client's state names.
+        const role = await getRole(this.c.req.param('id') ?? '');
         if (!role) throw new ClientVisibleError(__('Role not found'));
         // The roles service checks each permission (and that the actor holds it) before saving.
-        await updateRole(role.id, { name: role.name, permissions: permissions as Permission[] });
+        await updateRole(role.id, { name, permissions: permissions as Permission[] });
     }
 
     render() {

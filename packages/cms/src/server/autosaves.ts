@@ -4,7 +4,7 @@
  */
 import type { RomeDB } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
-import { checkDraftSize } from './drafts';
+import { checkDraftSize, type SharedFieldsOf } from './drafts';
 
 const WRITE = { kind: 'cms.autosaves', retryConflicts: 5 } as const;
 const KEY = /^[A-Za-z0-9_-]{1,80}$/;
@@ -17,17 +17,19 @@ export interface Autosave {
 export class CmsAutosaves {
     readonly #db: RomeDB;
     readonly #now: () => number;
+    readonly #shared: SharedFieldsOf;
 
-    constructor(db: RomeDB, options: { now?: () => number } = {}) {
+    constructor(db: RomeDB, options: { now?: () => number; sharedFields?: SharedFieldsOf } = {}) {
         this.#db = db;
         this.#now = options.now ?? Date.now;
+        this.#shared = options.sharedFields ?? (() => []);
     }
 
     /** Store the values, replacing the user's previous autosave of the entry, capped as a draft is. */
     async save(resource: string, recordId: string, userId: string, data: unknown): Promise<number> {
         check(recordId, userId);
         const json = JSON.stringify(data ?? null);
-        await checkDraftSize(this.#db, json, 'autosave');
+        await checkDraftSize(this.#db, json, 'autosave', this.#shared(resource));
         const at = this.#now();
         await this.#db.write([{
             rql: `INSERT INTO cms_autosaves (id, resource, record_id, user_id, data, at) VALUES ($id, $resource, $record, $user, $data, $at)

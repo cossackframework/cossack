@@ -142,4 +142,15 @@ describe.skipIf(!live)('collections built in the dashboard', () => {
         await cms.deleteTaxonomy('brands', admin);
         expect(cms.taxonomies.declarations.map(taxonomy => taxonomy.name)).toEqual(['categories', 'tags']);
     });
+
+    it('moves replies up past every comment deleted with their parent, in any order', async () => {
+        const comment = { resource: 'cms/posts', recordId: 'thread', parentId: null as string | null, userId: null, authorName: 'Ann', authorEmail: 'ann@example.com', authorUrl: '', content: 'Hi', status: 'approved' as const, ipHash: null, userAgent: null };
+        await cms.comments.create({ ...comment, id: 'c-root' });
+        await cms.comments.create({ ...comment, id: 'c-a', parentId: 'c-root' });
+        await cms.comments.create({ ...comment, id: 'c-b', parentId: 'c-a' });
+        await cms.comments.create({ ...comment, id: 'c-c', parentId: 'c-b' });
+        await cms.comments.delete(['c-a', 'c-b']);
+        expect((await cms.comments.get('c-c'))!.parentId).toBe('c-root');
+        await cms.comments.delete(['c-root', 'c-c']);
+    });
 });

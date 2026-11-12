@@ -36,6 +36,7 @@ An entry is **locked** when it has a password (`protected`) or is members-only.
 **Decisions:**
 - Route-scoped pages read `collection`/`id` from `c.req.param`, not from `this.route`/`this.id`. This covers the entry editor, the entries list, revisions and form submissions.
 - Field definitions (`view`, `fieldGroups`, `taxonomy`) come from the host, not from state, before a value is checked or written.
+- Joining a translation group is `translateEntry`'s alone (`JOIN_GROUP` in `repository.ts`): a save may keep or clear `translationGroup`, never name another entry's group. A shared-field save reaches only the members it checked, at most `SHARED_MEMBERS`.
 - The access matrix test (`packages/cms/app/tests/access-matrix.test.ts`) lists every route and `@Server` method from the route manifest and calls each one as anonymous, subscriber, gated staff, editor and administrator. A new method fails the test until it has an expected row.
 
 ## 4. Writes and side effects

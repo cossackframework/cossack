@@ -503,17 +503,21 @@ export class CmsUsers {
      */
     async updateRole(id: string, patch: { name?: string; permissions?: readonly string[] }, options: { actor?: Principal } = {}): Promise<boolean> {
         if (id === 'admin') throw new CmsError('CMS_FORBIDDEN', 'The administrator role cannot be changed.');
-        const current = await this.role(id);
-        if (!current) return false;
+        const read = await this.#storedRole(id);
+        if (!read) return false;
+        const { role: current, stored } = read;
         const permissions = checkRole({ id, name: patch.name ?? current.name, permissions: patch.permissions ?? current.permissions });
         if (options.actor) {
             if (!holdsAll(options.actor, current.permissions)) throw new CmsError('CMS_FORBIDDEN', 'This role has permissions you do not have, so you cannot change it.');
             checkGrant(options.actor, permissions);
         }
         try {
-            const result = await this.#db.write([{ rql: 'UPDATE cms_roles SET name = $name, permissions = $permissions WHERE id = $id',
-                params: { $id: id, $name: (patch.name ?? current.name).trim(), $permissions: JSON.stringify(permissions) } }], WRITE);
-            return result.results[0]!.affected === 1n;
+            // Only over the permissions checked above: a role raised meanwhile is not overwritten.
+            const result = await this.#db.write([{ rql: 'UPDATE cms_roles SET name = $name, permissions = $permissions WHERE id = $id AND permissions = $previous',
+                params: { $id: id, $name: (patch.name ?? current.name).trim(), $permissions: JSON.stringify(permissions), $previous: stored } }], WRITE);
+            if (result.results[0]!.affected === 1n) return true;
+            if (await this.role(id)) throw new CmsError('CMS_CONFLICT', 'The role changed since it was read. Reload and try again.');
+            return false;
         } catch (error) {
             if (error instanceof ClientError && error.outcome === 'rolled-back' && /UNIQUE|constraint/i.test(error.message)) throw new CmsError('CMS_CONFLICT', 'A role with this name already exists.', { fields: { name: 'is taken.' } });
             throw error;
@@ -523,19 +527,34 @@ export class CmsUsers {
     /** Remove a role and its assignments. The administrator role stays, and an actor deletes only roles within their own permissions. */
     async deleteRole(id: string, options: { actor?: Principal } = {}): Promise<boolean> {
         if (id === 'admin') throw new CmsError('CMS_FORBIDDEN', 'The administrator role cannot be deleted.');
+        let guard = '';
+        let params: { [key: string]: Value } = { $id: id };
         if (options.actor) {
-            const current = await this.role(id);
-            if (!current) return false;
-            if (!holdsAll(options.actor, current.permissions)) throw new CmsError('CMS_FORBIDDEN', 'This role has permissions you do not have, so you cannot delete it.');
+            const read = await this.#storedRole(id);
+            if (!read) return false;
+            if (!holdsAll(options.actor, read.role.permissions)) throw new CmsError('CMS_FORBIDDEN', 'This role has permissions you do not have, so you cannot delete it.');
+            // Only the role as checked: one raised meanwhile stays.
+            guard = ' AND EXISTS (SELECT 1 FROM cms_roles WHERE id = $id AND permissions = $previous)';
+            params = { $id: id, $previous: read.stored };
         }
         const result = await this.#db.write([
-            { rql: 'DELETE FROM cms_user_roles WHERE role_id = $id', params: { $id: id } },
-            { rql: 'DELETE FROM cms_roles WHERE id = $id', params: { $id: id } },
+            { rql: `DELETE FROM cms_user_roles WHERE role_id = $id${guard}`, params },
+            { rql: `DELETE FROM cms_roles WHERE id = $id${guard ? ' AND permissions = $previous' : ''}`, params },
         ], WRITE);
-        return result.results[1]!.affected === 1n;
+        if (result.results[1]!.affected === 1n) return true;
+        if (guard && await this.role(id)) throw new CmsError('CMS_CONFLICT', 'The role changed since it was read. Reload and try again.');
+        return false;
     }
 
-    async role(id: string): Promise<CmsRole | null> {
+    /** The role and its permissions as stored, for a write guarded on them. */
+    async #storedRole(id: string): Promise<{ role: CmsRole; stored: string } | null> {
+        if (!ID.test(id)) return null;
+        const result = await this.#db.read([{ rql: 'SELECT id, name, permissions, created_at FROM cms_roles WHERE id = $id', params: { $id: id } }]);
+        const row = result.results[0]!.rows[0];
+        return row ? { role: roleOf(row), stored: row[2] as string } : null;
+    }
+
+        async role(id: string): Promise<CmsRole | null> {
         if (!ID.test(id)) return null;
         const result = await this.#db.read([{ rql: 'SELECT id, name, permissions, created_at FROM cms_roles WHERE id = $id', params: { $id: id } }]);
         const row = result.results[0]!.rows[0];

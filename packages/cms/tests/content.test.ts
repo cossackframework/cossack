@@ -230,6 +230,27 @@ describe.skipIf(!live)('content, taxonomies, settings, users and media', () => {
         // Nor delete one: the stronger role stays with its holders.
         await expect(users.deleteRole('developer', { actor: manager })).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
         expect(await users.role('developer')).not.toBeNull();
+        // A role raised between the manager's check and write is neither overwritten nor deleted.
+        const db = cms.db as { read: typeof cms.db.read };
+        const read = db.read;
+        const raiseOnce = () => {
+            db.read = async (...args) => {
+                const result = await read.apply(cms.db, args);
+                db.read = read;
+                await cms.db.write([{ rql: "UPDATE cms_roles SET permissions = '[\"cms:dashboard\",\"cms:plugins\"]' WHERE id = 'viewer'" }]);
+                return result;
+            };
+        };
+        try {
+            raiseOnce();
+            await expect(users.updateRole('viewer', { name: 'Viewer 2' }, { actor: manager })).rejects.toMatchObject({ code: 'CMS_CONFLICT' });
+            expect((await users.role('viewer'))!.permissions).toEqual(['cms:dashboard', 'cms:plugins']);
+            await cms.db.write([{ rql: "UPDATE cms_roles SET permissions = '[\"cms:dashboard\"]' WHERE id = 'viewer'" }]);
+            raiseOnce();
+            await expect(users.deleteRole('viewer', { actor: manager })).rejects.toMatchObject({ code: 'CMS_CONFLICT' });
+            expect(await users.role('viewer')).not.toBeNull();
+        } finally { db.read = read; }
+        await cms.db.write([{ rql: "UPDATE cms_roles SET permissions = '[\"cms:dashboard\"]' WHERE id = 'viewer'" }]);
         expect(await users.deleteRole('viewer', { actor: manager })).toBe(true);
         expect(await users.deleteRole('moderator')).toBe(true);
         expect((await users.get(created.id))!.roles).toEqual([]);

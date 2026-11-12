@@ -481,6 +481,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       await page.getByRole('button', { name: 'Publish', exact: true }).click();
       await page.waitForURL(/\/dashboard\/content\/posts\/[0-9a-f-]{36}$/);
       await browserExpect(page.getByRole('status').filter({ hasText: 'Published.' }).first()).toBeVisible();
+      const postEditor = page.url();
       await browserExpect(page.locator('[data-block-tree-item] .ProseMirror strong').first()).toHaveText('bold');
       // JSON sits at the far edge; keyboard switching retains the editor and its unsaved title.
       const editorTabs = page.getByRole('tablist', { name: 'Editor view' });
@@ -510,6 +511,31 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       await page.goto(server.origin + '/posts/browser-post-first-try');
       await browserExpect(page.getByRole('heading', { name: 'Browser post: first try' })).toBeVisible();
       await browserExpect(page.locator('article .cms-prose strong')).toHaveText('bold');
+
+      // A room that comes up late: the editor runs alone while the socket is refused, then joins
+      // the room and keeps what was typed meanwhile, without mounting a second time.
+      const late = await context.newPage();
+      let refuseSockets = true;
+      await late.routeWebSocket(/.*/, socket => { if (refuseSockets) socket.close(); else socket.connectToServer(); });
+      await late.goto(postEditor);
+      await late.waitForFunction(() => window.__cossackReady === true);
+      const lateSurface = late.locator('[data-block-tree-item] .rich-text-surface[data-collab="off"] .ProseMirror').first();
+      await browserExpect(lateSurface).toBeVisible({ timeout: 20_000 });
+      await lateSurface.click();
+      await late.keyboard.press('End');
+      await late.keyboard.type(' typed early');
+      await browserExpect(lateSurface).toContainText('typed early');
+      refuseSockets = false;
+      await browserExpect(late.locator('[data-block-tree-item] .rich-text-surface[data-collab="on"]').first()).toBeVisible({ timeout: 30_000 });
+      await browserExpect(late.locator('[data-block-tree-item] .rich-text-surface .ProseMirror').first()).toContainText('typed early');
+      await browserExpect(late.getByText('was not kept')).toHaveCount(0);
+      // The typing reached the room: a second editor in the room sees it.
+      const peer = await context.newPage();
+      await peer.goto(postEditor);
+      await peer.waitForFunction(() => window.__cossackReady === true);
+      await browserExpect(peer.locator('[data-block-tree-item] .rich-text-surface[data-collab="on"] .ProseMirror').first()).toContainText('typed early', { timeout: 20_000 });
+      await peer.close();
+      await late.close();
 
       // Icon actions retain accessible names, a native download and a keyboard file picker.
       await page.goto(server.origin + '/dashboard/content/posts');
