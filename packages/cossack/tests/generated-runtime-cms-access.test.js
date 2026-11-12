@@ -4,8 +4,8 @@
 //
 // Outcomes: `allow` (not refused: answers, or rejects the arguments for another reason),
 // `deny` (401/403, a redirect to sign-in or the security page, or a refusal naming permission,
-// sign-in or edit rights), `skip` (not called, with a reason). A call that crashes (500) is
-// reported. Principals expected to be refused get the real fixtures as arguments, so a hole
+// sign-in or edit rights), `skip` (not called, with a reason). A call that crashes (500) fails
+// the test: malformed arguments must answer a validation error (`@Server({ input })`). Principals expected to be refused get the real fixtures as arguments, so a hole
 // would act on them; allowed principals get missing IDs for anything that changes data.
 //
 // COSSACK_ACCESS_ROOT reuses an app built earlier (for working on the table);
@@ -365,7 +365,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS access matrix', () => {
 
       const observed = [];
       const problems = [];
-      // Calls made with placeholder arguments may fail with 500: reported, not counted as access problems.
+      // Placeholder arguments must be refused as invalid (400), never crash the server (500).
       const crashes = [];
       const record = (principal, label, expected, result) => {
         const want = expected.includes(principal) ? 'allow' : 'deny';
@@ -448,6 +448,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS access matrix', () => {
 
       if (process.env.COSSACK_ACCESS_OBSERVE) await fs.writeFile(process.env.COSSACK_ACCESS_OBSERVE, JSON.stringify({ observed, problems, crashes }, null, 1));
       expect(problems, `${problems.length} access problems:\n${problems.join('\n')}`).toEqual([]);
+      expect(crashes, `${crashes.length} calls crashed (500) instead of refusing their arguments:\n${crashes.join('\n')}`).toEqual([]);
     } finally {
       await server.close();
       await database.stop();

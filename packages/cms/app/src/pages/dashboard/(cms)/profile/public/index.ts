@@ -1,4 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
+import { input } from '@cossackframework/core/input';
 import { Button, Card, CardBody, CardHeader, Field, Input, Textarea } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { AUTHOR_FIELDS, authorUrl, isCmsError } from '@cossackframework/cms';
@@ -50,7 +51,7 @@ export default class PublicProfilePage extends Cossack {
         if (!this.error) this.message = __('Profile saved.');
     }
 
-    @Server()
+    @Server({ input: input.args(input.record<PublicProfile>()) })
     async save(form: PublicProfile) {
         this.error = '';
         this.errors = {};

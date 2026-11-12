@@ -1,4 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
+import { input } from '@cossackframework/core/input';
 import { AlertDialog, Badge, Button, Card, CardBody, CardHeader, Checkbox, Field, Input } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS, WEBHOOK_EVENTS, type Webhook, type WebhookDelivery, type WebhookEvent } from '@cossackframework/cms';
@@ -99,12 +100,12 @@ export default class WebhooksPage extends Cossack {
         else this.error = result.error ?? __('The test failed.');
     }
 
-    @Server()
+    @Server({ input: input.args(input.string({ minLength: 1, maxLength: 200 })) })
     async ping(id: string) {
         return this.c.get('cms').webhooks.ping(id);
     }
 
-    @Server()
+    @Server({ input: input.args(input.string({ minLength: 1, maxLength: 200 })) })
     async redeliver(deliveryId: string) {
         const cms = this.c.get('cms');
         await cms.webhooks.redeliver(deliveryId);
@@ -113,7 +114,7 @@ export default class WebhooksPage extends Cossack {
         this.deliveries = hook ? await cms.webhooks.deliveries(hook.id, 20) : [];
     }
 
-    @Server()
+    @Server({ input: input.args(input.string({ minLength: 1, maxLength: 200 })) })
     async remove(id: string) {
         this.message = '';
         await this.c.get('cms').webhooks.delete(id);

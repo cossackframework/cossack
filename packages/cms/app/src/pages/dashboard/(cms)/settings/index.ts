@@ -1,4 +1,5 @@
 import { Client, ClientState, Cossack, Inject, OnDocument, OnWindow, Page, PreventNavigation, Server, Shared, server$, type HeadValue } from '@cossackframework/core';
+import { input } from '@cossackframework/core/input';
 import { Badge, Card, CardBody } from '@cossackframework/ui';
 import { component, html, repeat, type TemplateResult } from '@cossackframework/renderer';
 import { hasPermission, isCmsError, isNetworkAdmin, MAIN_SITE, PERMISSIONS, type SettingsDocument, type SettingsSection as SectionDeclaration } from '@cossackframework/cms';
@@ -266,7 +267,7 @@ export default class SettingsPage extends Cossack {
     async findMedia(search: string, kind: string) { return findSettingsMedia(this.c.get('cms'), this.c.get('principal'), search, kind); }
 
     /** One save for the whole page: the document first, then Languages, Permalinks, Network and the groups outside the document. */
-    @Server()
+    @Server({ input: input.args(input.record<SaveInput>()) })
     async saveAll(input: SaveInput): Promise<SaveResult> {
         const cms = this.c.get('cms'), principal = this.c.get('principal'), origin = new URL(this.c.req.url).origin;
         const result: SaveResult = { document: null, languages: null, permalinks: null, network: null, groups: [], error: '', fields: {} };

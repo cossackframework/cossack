@@ -1,4 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
+import { input } from '@cossackframework/core/input';
 import { AlertDialog, Badge, Button, Card, CardBody, CardHeader, Checkbox, Field, Input, NativeSelect, Tabs, Textarea } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { bindingPaths, findBlock, flattenBlocks, flattenGroupFields, hasPermission, isCmsError, PERMISSIONS, RESERVED_FIELDS, SCHEMA_PROPERTIES, SCHEMA_TYPE_LABELS, SCHEMA_TYPES, SEO_TEMPLATE_VARIABLES, updateBlock, type Block, type RichTextDoc, type SchemaType, type ThemePresets } from '@cossackframework/cms';
@@ -273,7 +274,7 @@ export default class CollectionBuilder extends Cossack {
         return [...new Set(paths.filter(path => !known.has(path.split('.')[0]!)))];
     }
 
-    @Server()
+    @Server({ input: input.args(input.string({ maxLength: 2000 })) })
     async searchMedia(search: string) {
         if (!hasPermission(this.c.get('principal'), PERMISSIONS.manageCollections)) return;
         this.chooser = { ...this.chooser, search, items: await findMedia(this.c.get('cms'), search, this.chooser.kind) };

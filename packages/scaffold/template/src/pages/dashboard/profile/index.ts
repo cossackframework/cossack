@@ -1,4 +1,5 @@
 import { Cossack, Page, State, ClientState, Store, Validate, Client, Server, storeRules, getLocale, getSupportedLocales, setLocale } from '@cossackframework/core';
+import { input } from '@cossackframework/core/input';
 import { Card, CardBody, CardHeader, Field, Input, Button, Avatar, Form, NativeSelect } from '@cossackframework/ui';
 import { notice, pageHeader } from '@cossackframework/ui/blocks';
 import { html, component, bind } from '@cossackframework/renderer';
@@ -89,7 +90,7 @@ export default class ProfilePage extends Cossack {
     }
 
     /** The stored picture's URL comes back as state. */
-    @Server()
+    @Server({ input: input.args(input.file()) })
     async storeAvatar(file: File) {
         this.form.avatar = await uploadAvatar(this.user!.id, file);
     }

@@ -1,4 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
+import { input } from '@cossackframework/core/input';
 import { Button, Card, CardBody, Field, Input, NativeSelect, Textarea } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { fieldVisibility, hasPermission, isCmsError, mediaUrl, PERMISSIONS, slugify } from '@cossackframework/cms';
@@ -105,7 +106,7 @@ export default class EditTerm extends Cossack {
 
     // --- Media --------------------------------------------------------------------
 
-    @Server()
+    @Server({ input: input.args(input.string({ maxLength: 2000 })) })
     async searchMedia(search: string) {
         if (!hasPermission(this.c.get('principal'), PERMISSIONS.manageTerms)) return;
         this.chooser = { ...this.chooser, search, items: await findMedia(this.c.get('cms'), search, this.chooser.kind) };

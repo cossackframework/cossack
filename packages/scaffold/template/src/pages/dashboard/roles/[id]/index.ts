@@ -1,4 +1,5 @@
-import { Cossack, Page, State, Store, Validate, Client, Server, storeRules } from '@cossackframework/core';
+import { ClientVisibleError, Cossack, Page, State, Store, Validate, Client, Server, storeRules } from '@cossackframework/core';
+import { input } from '@cossackframework/core/input';
 import { Card, CardBody, CardHeader, Field, Input, Button, Checkbox, Form } from '@cossackframework/ui';
 import { linkButton, notice, pageHeader } from '@cossackframework/ui/blocks';
 import { html, component, bind } from '@cossackframework/renderer';
@@ -56,10 +57,11 @@ export default class EditRolePage extends Cossack {
         }
     }
 
-    @Server()
-    async save(role: RoleDetail | null, permissions: Permission[]) {
-        if (!role) throw new Error(__('Role not found'));
-        await updateRole(role.id, { name: role.name, permissions });
+    @Server({ input: input.args(input.record<RoleDetail>().nullable(), input.array(input.string({ maxLength: 200 }), { maxItems: 1000 })) })
+    async save(role: RoleDetail | null, permissions: string[]) {
+        if (!role) throw new ClientVisibleError(__('Role not found'));
+        // The roles service checks each permission (and that the actor holds it) before saving.
+        await updateRole(role.id, { name: role.name, permissions: permissions as Permission[] });
     }
 
     render() {

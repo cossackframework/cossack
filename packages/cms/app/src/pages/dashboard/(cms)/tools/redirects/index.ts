@@ -1,4 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
+import { input } from '@cossackframework/core/input';
 import { AlertDialog, Badge, Button, Card, CardBody, Field, Input, NativeSelect, Pagination } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS, principalId, REDIRECT_STATUSES, type Redirect, type RedirectStatus } from '@cossackframework/cms';
@@ -83,7 +84,7 @@ export default class RedirectsPage extends Cossack {
         }
     }
 
-    @Server()
+    @Server({ input: input.args(input.string({ minLength: 1, maxLength: 200 })) })
     async remove(id: string) {
         this.message = '';
         await this.c.get('cms').redirects.delete(id);

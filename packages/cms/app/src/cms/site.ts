@@ -328,7 +328,11 @@ async function withForms(cms: CmsHost, blocks: readonly RenderedBlock[], request
             for (const entry of form.blocks) blockMediaIds(cms, entry, ids);
             const files = cms.files && ids.size ? await cms.files.getMany([...ids]) : new Map<string, CmsFile>();
             (block as { form?: FormView }).form = await formView(cms, form, request, entry => renderedBlock(cms, entry, files));
-        } catch (error) { if (!isCmsError(error)) throw error; }
+        } catch (error) {
+            if (!isCmsError(error)) throw error;
+            // The page still renders, without the form; say why, or a missing form cannot be told from a bug.
+            console.warn(`[cms] the form "${slug}" was left off the page: ${error.message}`);
+        }
     }
 }
 

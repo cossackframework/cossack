@@ -1,4 +1,5 @@
 import { Cossack, Page, State, Server, Client, Ref, type RefObject, type HeadValue } from '@cossackframework/core';
+import { input } from '@cossackframework/core/input';
 import { getCookie } from 'hono/cookie';
 import { bulkBar } from '../../../../../dashboard/bulk';
 import { listFilters, listFooter, listTable } from '../../../../../dashboard/list-table';
@@ -348,8 +349,8 @@ export default class EntriesPage extends Cossack {
     }
 
     /** Apply a bulk action to the selected entries, one by one, and report what went wrong. */
-    @Server()
-    async applyBulk(entries: { id: string; rev: number }[], key: BulkKey) {
+    @Server({ input: input.args(input.array(input.object({ id: input.string({ minLength: 1, maxLength: 200 }), rev: input.number({ integer: true, min: 0 }) }), { maxItems: 1000 }), input.string({ maxLength: 2000 })) })
+    async applyBulk(entries: { id: string; rev: number }[], key: string) {
         this.fromRoute();
         this.message = '';
         this.error = '';
@@ -364,6 +365,10 @@ export default class EntriesPage extends Cossack {
             if (!action?.command) { this.error = __('This action is not available.'); await this.load(); return; }
             try { await runEntryCommand(cms, action, { resource: resource.id, ids: entries.map(entry => entry.id) }, principal, this.c.req.raw.signal); done = entries.length; }
             catch (error) { failures.push(isCmsError(error) ? error.message : __('The action could not be run.')); }
+        } else if (!['trash', 'restore', 'delete', 'publish', 'draft'].includes(key)) {
+            this.error = __('This action is not available.');
+            await this.load();
+            return;
         } else {
             const status = ({ trash: 'trash', restore: 'draft', publish: 'published', draft: 'draft' } as Record<string, string>)[key];
             for (const entry of entries) {

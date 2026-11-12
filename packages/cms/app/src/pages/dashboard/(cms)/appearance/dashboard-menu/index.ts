@@ -1,4 +1,5 @@
 import { Client, ClientState, Cossack, Page, Server, State, type HeadValue } from '@cossackframework/core';
+import { input } from '@cossackframework/core/input';
 import { Button, Card, CardBody, CardHeader, Field, IconPicker, Input } from '@cossackframework/ui';
 import { component, html, repeat } from '@cossackframework/renderer';
 import { applyDashboardMenu, dashboardLinkModuleId, dashboardMenuOf, dashboardMenuProblems, DASHBOARD_MENU_LIMITS, isCmsError, PERMISSIONS, type DashboardMenu, type DashboardMenuLink } from '@cossackframework/cms';
@@ -50,7 +51,7 @@ export default class DashboardMenuPage extends Cossack {
         this.dirty = false;
     }
 
-    @Server()
+    @Server({ input: input.args(input.record<DashboardMenu>()) })
     async save(menu: DashboardMenu) {
         this.error = '';
         const problems = dashboardMenuProblems(menu);

@@ -1,4 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
+import { input } from '@cossackframework/core/input';
 import { Badge, Button, Card, CardBody, CardHeader, Checkbox, Field, Input, NativeSelect, Textarea } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { AUTOMATION_EVENT_LABELS, AUTOMATION_EVENTS, isCmsError, PERMISSIONS, type Automation, type AutomationEvent } from '@cossackframework/cms';
@@ -58,7 +59,7 @@ export default class AutomationsPage extends Cossack {
         if (!this.error) this.message = this.form.id ? __('Automation saved.') : __('Automation added.');
     }
 
-    @Server()
+    @Server({ input: input.args(input.record<Form>()) })
     async save(form: Form) {
         this.error = '';
         const cms = this.c.get('cms');
@@ -75,7 +76,7 @@ export default class AutomationsPage extends Cossack {
         }
     }
 
-    @Server()
+    @Server({ input: input.args(input.string({ minLength: 1, maxLength: 200 }), input.boolean()) })
     async toggle(id: string, active: boolean) {
         this.error = '';
         try { await this.c.get('cms').automations.setActive(id, active, this.c.get('principal')); }
@@ -83,7 +84,7 @@ export default class AutomationsPage extends Cossack {
         await this.load(this.form.id);
     }
 
-    @Server()
+    @Server({ input: input.args(input.string({ minLength: 1, maxLength: 200 })) })
     async remove(id: string) {
         await this.c.get('cms').automations.delete(id);
         await this.load('');

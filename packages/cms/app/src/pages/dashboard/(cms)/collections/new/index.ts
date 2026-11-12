@@ -1,4 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
+import { input } from '@cossackframework/core/input';
 import { Button, Card, CardBody, Field, IconPicker, Input, NativeSelect } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS } from '@cossackframework/cms';
@@ -28,7 +29,7 @@ export default class NewCollectionPage extends Cossack {
         await this.create(this.draft.label, this.draft.singular, this.draft.icon);
     }
 
-    @Server()
+    @Server({ input: input.args(input.string({ maxLength: 2000 }), input.string({ maxLength: 2000 }), input.string({ maxLength: 2000 })) })
     async create(label: string, singular: string, iconName: string) {
         this.error = '';
         const name = collectionName(label);

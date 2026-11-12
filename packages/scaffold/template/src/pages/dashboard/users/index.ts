@@ -1,4 +1,5 @@
 import { Cossack, Page, State, Server, Client } from '@cossackframework/core';
+import { input } from '@cossackframework/core/input';
 import { Avatar, Badge, NativeSelect, AlertDialog } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { canAssignRoles, canGrantRoles, canManageUser, guard } from '../../../services/rbac';
@@ -114,7 +115,7 @@ export default class UsersPage extends Cossack {
      * Apply a bulk action account by account. Your own account and accounts you may not manage
      * are skipped, so an administrator always remains: the one acting.
      */
-    @Server()
+    @Server({ input: input.args(input.array(input.string({ minLength: 1, maxLength: 200 }), { maxItems: 1000 }), input.string({ maxLength: 2000 })) })
     async applyBulk(ids: string[], key: string) {
         this.error = '';
         this.message = '';

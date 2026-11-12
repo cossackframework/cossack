@@ -1,4 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
+import { input } from '@cossackframework/core/input';
 import { Alert, Badge, Button, Card, CardBody, CardHeader, Field, Input } from '@cossackframework/ui';
 import { notice, pageHeader } from '@cossackframework/ui/blocks';
 import { html, component, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
@@ -131,7 +132,7 @@ export default class SecurityPage extends Cossack {
         } catch (error) { this.error = (error as Error).message; }
     }
 
-    @Server()
+    @Server({ input: input.args(input.string({ minLength: 1, maxLength: 200 })) })
     async deletePasskey(id: string) {
         await removePasskey(this.user!.id, id);
         await this.load();

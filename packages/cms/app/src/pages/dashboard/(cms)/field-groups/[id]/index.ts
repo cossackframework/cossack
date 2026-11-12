@@ -1,4 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
+import { input } from '@cossackframework/core/input';
 import { AlertDialog, Button, Card, CardBody, CardHeader, Checkbox, Field, Input, NativeSelect, Textarea } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { CORE_FIELDS, isCmsError, PERMISSIONS, type Block, type FieldGroup, type FieldGroupTarget } from '@cossackframework/cms';
@@ -91,7 +92,7 @@ export default class FieldGroupPage extends Cossack {
         await this.save(this.draft, this.targets, this.blocks);
     }
 
-    @Server()
+    @Server({ input: input.args(input.record<Draft>(), input.array(input.record<FieldGroupTarget>(), { maxItems: 1000 }), input.array(input.record<EditorBlock>(), { maxItems: 1000 })) })
     async save(draft: Draft, targets: FieldGroupTarget[], blocks: EditorBlock[]) {
         this.error = '';
         this.message = '';

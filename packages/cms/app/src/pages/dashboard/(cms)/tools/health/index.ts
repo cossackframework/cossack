@@ -1,4 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
+import { input } from '@cossackframework/core/input';
 import { settingsSectionHref } from '../../../../../cms/settings-search';
 import { Badge, Button, Card, CardBody, CardHeader } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
@@ -127,7 +128,7 @@ export default class HealthPage extends Cossack {
         this.message = __('Removed from the list.');
     }
 
-    @Server()
+    @Server({ input: input.args(input.string({ minLength: 1, maxLength: 200 })) })
     async forgetMissing(path: string) {
         await this.c.get('cms').traffic.forgetNotFound(path);
         this.missing = this.missing.filter(row => row.path !== path);

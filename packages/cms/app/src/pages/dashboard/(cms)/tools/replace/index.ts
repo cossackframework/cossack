@@ -1,4 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
+import { input } from '@cossackframework/core/input';
 import { Button, Card, CardBody, CardHeader, Checkbox, Field, Input, NativeSelect } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS, recordTitle, type Block, type RichTextDoc } from '@cossackframework/cms';
@@ -43,7 +44,7 @@ export default class ReplacePage extends Cossack {
     }
 
     /** Scan up to a thousand entries; with `apply`, write the replacement to every matching entry. */
-    @Server()
+    @Server({ input: input.args(input.string({ maxLength: 2000 }), input.string({ maxLength: 2000 }), input.string({ maxLength: 2000 }), input.boolean(), input.boolean()) })
     async run(collection: string, find: string, replace: string, matchCase: boolean, apply: boolean) {
         this.error = '';
         this.message = '';

@@ -1,4 +1,5 @@
 import { ClientVisibleError, Cossack, Page, State, ClientState, Validate, Client, Server, Store, storeRules } from '@cossackframework/core';
+import { input } from '@cossackframework/core/input';
 import { Alert, Card, CardBody, CardHeader, Field, Input, PasswordInput, Button, Checkbox, Form, Tabs } from '@cossackframework/ui';
 import { notice, pageHeader } from '@cossackframework/ui/blocks';
 import { html, component, bind } from '@cossackframework/renderer';
@@ -228,12 +229,12 @@ export default class EditUserPage extends Cossack {
         }
     }
 
-    @Server()
+    @Server({ input: input.args(input.string({ maxLength: 1024 }).optional()) })
     async save(emailPassword = '') {
         const user = this.userDetail;
         if (!user) {
             this.error = __('User not found');
-            throw new Error(__('User not found'));
+            throw new ClientVisibleError(__('User not found'));
         }
         if (user.id !== await this.editable()) throw new ClientVisibleError(__('User not found'));
         // Your own email moves your password resets with it, so changing it needs your password, as changing the password does.

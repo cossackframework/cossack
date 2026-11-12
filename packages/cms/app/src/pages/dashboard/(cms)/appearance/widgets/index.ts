@@ -1,4 +1,5 @@
 import { Client, Cossack, Page, Server, State, type HeadValue } from '@cossackframework/core';
+import { input } from '@cossackframework/core/input';
 import { Badge, Button, Card, CardBody } from '@cossackframework/ui';
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
 import { findBlock, flattenBlocks, hasPermission, isCmsError, PERMISSIONS, updateBlock, type RichTextDoc, type ThemePresets } from '@cossackframework/cms';
@@ -154,7 +155,7 @@ export default class WidgetsPage extends Cossack {
         return new Set(flattenBlocks(this.blocksOf(area)).map(block => block._id).filter(id => id !== except));
     }
 
-    @Server()
+    @Server({ input: input.args(input.string({ maxLength: 2000 })) })
     async searchMedia(search: string) {
         if (!hasPermission(this.c.get('principal'), PERMISSIONS.manageAppearance)) return;
         this.chooser = { ...this.chooser, search, items: await findMedia(this.c.get('cms'), search, this.chooser.kind) };

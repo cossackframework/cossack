@@ -1,4 +1,5 @@
 import { Cossack, Page, State, ClientState, Server, Client, On, OnWindow, PreventNavigation, type HeadValue, ClientVisibleError } from '@cossackframework/core';
+import { input } from '@cossackframework/core/input';
 import { Avatar, Button, Checkbox, Combobox, Icon, Input, Modal, NativeSelect, Textarea, CodeEditor, Tabs } from '@cossackframework/ui';
 import { html, component, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
 import { applyTreeOp, ARTICLE_TYPES, blockId, CORE_BLOCKS, entryAuthors, groupPeers, livePeers, patchKey, PendingKeys, richTextPath, parseRichTextPath, scalarKey, treeHash, treeOps, systemPrincipal, entryChecks, evaluateRule, fieldVisibility, findBlock, flattenBlocks, flattenGroupFields, formatBytes, hasPermission, isCmsError, languageName, mediaKind, recordSchema, recordTitle, renderSeoTemplate, richTextBlocks, TITLE_SEPARATORS, updateBlock, PERMISSIONS, participantColor, formatNoteTarget, noteBlock, noteField, noteThreads, parseNoteTarget, type Block, type BlockCondition, type Check, type EmbeddedBlock, type JsonSchema, type MediaKind, type Note, type NoteAction, type NoteRange, type NoteStatus, type NoteThread, type RecordShape, type RichTextDoc, type Participant, type PeerPresence, type PeerState, type TreeOp, blocksPlain, richTextPlain, principalId } from '@cossackframework/cms';
@@ -962,7 +963,7 @@ export default class EntryEditor extends Cossack {
     }
 
     /** Published entries of the site whose text matches the title: candidates for internal links, this entry left out. */
-    @Server()
+    @Server({ input: input.args(input.string({ maxLength: 2000 }), input.string({ maxLength: 2000 })) })
     async loadLinkSuggestions(title: string, exclude: string) {
         const cms = this.c.get('cms');
         const query = title.replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(word => word.length > 2).slice(0, 8).join(' ');
@@ -983,7 +984,7 @@ export default class EntryEditor extends Cossack {
     }
 
     /** Previews of the media the recovered values name. */
-    @Server()
+    @Server({ input: input.args(input.record()) })
     async refreshPreviews(values: EditorValues) {
         const cms = this.c.get('cms');
         this.previews = await mediaPreviews(cms, values, await this.serverView());
@@ -1219,7 +1220,7 @@ export default class EntryEditor extends Cossack {
         if (tab === 'preview') await this.preview(id, text);
     }
 
-    @Server()
+    @Server({ input: input.args(input.string({ minLength: 1, maxLength: 200 }), input.string({ maxLength: 100_000 })) })
     async preview(id: string, text: string) {
         this.rendered = { ...this.rendered, [id]: renderMarkdown(text.slice(0, 200_000)) };
     }
@@ -1260,7 +1261,7 @@ export default class EntryEditor extends Cossack {
         this.picker = { ...this.picker, open: false, target: null };
     }
 
-    @Server()
+    @Server({ input: input.args(input.string({ maxLength: 2000 }), input.string({ maxLength: 2000 })) })
     async findMedia(search: string, kind: string) {
         await this.assertEditor();
         const files = this.c.get('cms').files;

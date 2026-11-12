@@ -1,4 +1,5 @@
 import { Client, ClientState, Cossack, Page, Server, State, defineServerMiddleware, setRequestLocale, type HeadValue } from '@cossackframework/core';
+import { input } from '@cossackframework/core/input';
 import { isTransportPath } from '@cossackframework/core/transport-routes';
 import { getCookie } from 'hono/cookie';
 import { component, html } from '@cossackframework/renderer';
@@ -355,7 +356,7 @@ export default class SitePath extends Cossack {
     }
 
     /** Render the page from the draft's values. Invalid values keep the last rendering and show why. */
-    @Server()
+    @Server({ input: input.args(input.record()) })
     async previewDraft(values: EditorValues) {
         const cms = this.c.get('cms');
         const draft = this.draft;
@@ -419,7 +420,7 @@ export default class SitePath extends Cossack {
     }
 
     /** The media library, for the editor of this entry only. */
-    @Server()
+    @Server({ input: input.args(input.string({ maxLength: 2000 })) })
     async searchDraftMedia(search: string) {
         const cms = this.c.get('cms');
         const draft = this.draft;
