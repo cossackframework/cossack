@@ -103,6 +103,19 @@ describe.skipIf(!live)('registration approval, members-only entries and the user
         await cms.users.delete(again.id);
     });
 
+    it('keeps a turned-down account another site added meanwhile, and adds none once it is gone', async () => {
+        const held = await cms.users.create({ email: 'raced@example.com', name: 'Raced', roles: [], approval: { verified: true } });
+        // Another site adds the account between the turn-down's checks and its delete: it stays.
+        await cms.accounts.join(held.id, 'site-b');
+        await cms.users.delete(held.id);
+        expect(await cms.accounts.findByEmail('raced@example.com')).not.toBeNull();
+        await cms.accounts.leave(held.id, 'site-b');
+        await cms.accounts.delete(held.id);
+        // And once an account is gone, a site cannot add it: no membership without an account.
+        await expect(cms.accounts.join(held.id, 'site-b')).rejects.toMatchObject({ code: 'CMS_NOT_FOUND' });
+        expect((await cms.accounts.memberships([held.id])).get(held.id) ?? []).toEqual([]);
+    });
+
     it('keeps an account that signed in or belongs to another site when a member leaves', async () => {
         const kept = await cms.users.create({ email: 'kept@example.com', name: 'Kept', roles: [] });
         await cms.users.delete(kept.id);

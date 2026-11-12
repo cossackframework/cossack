@@ -207,12 +207,13 @@ describe.skipIf(!live)('adding, archiving and deleting sites', () => {
         expect(await network.purgeDeleted()).toEqual([]);
         expect(await network.setSiteStatus('the-blog', 'active', { principal: admin })).toMatchObject({ status: 'active', deletedAt: null });
         await network.setSiteStatus('the-blog', 'deleted', { principal: systemPrincipal('test') });
-        await network.main.accounts.join('purged-member', 'the-blog');
-        expect((await network.main.accounts.memberships(['purged-member'])).get('purged-member')).toEqual(['the-blog']);
+        const member = await network.main.accounts.create({ email: 'purged-member@example.com', name: 'Purged member' });
+        await network.main.accounts.join(member.id, 'the-blog');
+        expect((await network.main.accounts.memberships([member.id])).get(member.id)).toEqual(['the-blog']);
         now += 31 * 24 * 60 * 60_000;
         expect(await network.purgeDeleted()).toEqual(['the-blog']);
         // The purged site's memberships go with it: no "belongs to other sites", no stale My sites entry.
-        expect((await network.main.accounts.memberships(['purged-member'])).get('purged-member') ?? []).toEqual([]);
+        expect((await network.main.accounts.memberships([member.id])).get(member.id) ?? []).toEqual([]);
         expect(deleted).toEqual(['db-site-the-blog']);
         expect(await network.sites.get('the-blog')).toBeNull();
         expect(await network.sites.siteOf('www.theblog.test')).toBeNull();

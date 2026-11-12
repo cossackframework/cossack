@@ -375,12 +375,9 @@ export class CmsUsers {
         else {
             await this.#accounts.leave(id, this.#site);
             // A turned-down registration: the account was made for it, never used, and belongs to
-            // no other site, so it goes too, and the email can register again.
-            if (result.results[2]!.affected === 1n) {
-                const account = await this.#accounts.get(id);
-                const sites = (await this.#accounts.memberships([id])).get(id) ?? [];
-                if (account && account.status === 'disabled' && account.lastSignInAt === null && !sites.length) await this.#accounts.delete(id);
-            }
+            // no other site, so it goes too, and the email can register again. The delete checks
+            // all of that itself, so a site adding the account meanwhile keeps it.
+            if (result.results[2]!.affected === 1n) await this.#accounts.deleteUnused(id);
         }
         return result.results[1]!.affected === 1n;
     }

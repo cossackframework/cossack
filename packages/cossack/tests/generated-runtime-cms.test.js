@@ -4,7 +4,7 @@
 // posts with rich text, terms and media, a collection built in the dashboard with blocks,
 // themes, menus, the content API, the public site and background outbox delivery. The same
 // flow runs on Node and on Workers; a browser case drives the editors.
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
@@ -339,9 +339,11 @@ async function exercise(origin, routeIds, diagnostics) {
   // Permalinks: posts move to the site root, and a posts page lists them.
   expect((await web.action(SETTINGS, 'saveAll', [{ document: null, languages: null, permalinks: { postsAtRoot: true, postsBase: 'posts', withCategory: false, bases: [{ name: 'categories', path: 'category' }, { name: 'tags', path: 'tag' }] }, groups: {} }]))._cossack_return.error).toBe('');
   contains(await visitor.page('/hello-world'), 'zeppelin');
-  // Old addresses redirect to the new ones.
-  const oldPost = await fetch(origin + '/posts/hello-world', { redirect: 'manual' });
-  expect([oldPost.status, oldPost.headers.get('location')]).toEqual([301, '/hello-world']);
+  // Old addresses redirect to the new ones, once the move's outbox job has run (just after the save).
+  await vi.waitFor(async () => {
+    const oldPost = await fetch(origin + '/posts/hello-world', { redirect: 'manual' });
+    expect([oldPost.status, oldPost.headers.get('location')]).toEqual([301, '/hello-world']);
+  }, { timeout: 10_000, interval: 200 });
   const blogPage = await web.action(editor, 'save', [{ title: 'Blog', slug: '', status: 'draft', publishedAt: '', content: [], excerpt: '', featuredImage: '', parent: '', menuOrder: '5' }, 'publish', 0],
     { params: { collection: 'pages', id: 'new' }, state: { route: 'pages', id: 'new' } });
   expect((await web.action(SETTINGS, 'saveAll', [{ document: { reading: { pageForPosts: blogPage.id } }, languages: null, permalinks: null, groups: {} }]))._cossack_return.error).toBe('');

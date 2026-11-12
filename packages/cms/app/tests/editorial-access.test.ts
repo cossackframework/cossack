@@ -9,7 +9,8 @@ import { live, romedbService } from '../../tests/helpers';
 import { editorView, entryValues, saveEntry } from '../src/cms/content';
 import { draftEntry, draftMedia } from '../src/cms/site-editing';
 import { entryUpdate } from '../src/cms/manage';
-import { EntryRoom, requireEntryEditor } from '../src/cms/collab/room';
+import { ACCESS_BACKOFF, ACCESS_GRACE, EntryRoom, clearRoomAccess, requireEntryEditor } from '../src/cms/collab/room';
+import { CmsError } from '../../src/errors';
 import { GET as readNotes } from '../src/pages/api/cms/content/[collection]/[entry]/notes';
 import { GET as readComments } from '../src/pages/api/cms/comments/index';
 
@@ -279,7 +280,10 @@ describe.skipIf(!live)('editorial access', () => {
             expect((await app.request('/app.articles/one')).status).toBe(200);
             expect(warn).toHaveBeenCalled();
             warn.mockRestore();
-            // The next check reads again and still allows.
+            // Frames during the outage do not read again until the backoff passes; then it reads and still allows.
+            expect((await app.request('/app.articles/one')).status).toBe(200);
+            expect(get).toHaveBeenCalledTimes(1);
+            clock += ACCESS_BACKOFF + 1;
             expect((await app.request('/app.articles/one')).status).toBe(200);
             expect(get).toHaveBeenCalledTimes(2);
             get.mockRestore();
@@ -292,5 +296,39 @@ describe.skipIf(!live)('editorial access', () => {
             clock += 10_000;
             expect((await app.request('/app.articles/missing-entry')).status).not.toBe(200);
         } finally { now.mockRestore(); vi.restoreAllMocks(); }
+    });
+
+    it('keeps an earlier yes through an outage only for a while, and refuses an inactive plugin or pending migration', async () => {
+        clearRoomAccess();
+        const app = new Hono();
+        app.use('*', async (c, next) => { c.set('cms' as never, cms as never); c.set('principal' as never, alice as never); await next(); });
+        app.get('/:collection/:id', requireEntryEditor, c => c.text('ok'));
+        const resource = cms.resource('app/articles');
+        const now = vi.spyOn(Date, 'now');
+        let clock = Date.UTC(2031, 6, 1);
+        now.mockImplementation(() => clock);
+        vi.spyOn(console, 'warn').mockImplementation(() => {});
+        try {
+            expect((await app.request('/app.articles/one')).status).toBe(200);
+            // The database stays down: one read per backoff, and the earlier yes holds until the grace runs out.
+            const get = vi.spyOn(resource, 'get').mockRejectedValue(new CmsError('CMS_UNAVAILABLE', 'database down'));
+            let reads = 0;
+            for (let elapsed = 6000; elapsed <= ACCESS_GRACE; elapsed += 250) {
+                clock = Date.UTC(2031, 6, 1) + elapsed;
+                expect((await app.request('/app.articles/one')).status).toBe(200);
+            }
+            reads = get.mock.calls.length;
+            expect(reads).toBeLessThanOrEqual(Math.ceil((ACCESS_GRACE - 6000) / ACCESS_BACKOFF) + 1);
+            clock = Date.UTC(2031, 6, 1) + ACCESS_GRACE + ACCESS_BACKOFF + 1;
+            expect((await app.request('/app.articles/one')).status).toBe(403);
+            get.mockRestore();
+            // A plugin turned off (or a migration pending) is a lasting answer: refused at once, whatever was allowed before.
+            clearRoomAccess();
+            clock += 60_000;
+            expect((await app.request('/app.articles/one')).status).toBe(200);
+            clock += 10_000;
+            vi.spyOn(resource, 'get').mockRejectedValueOnce(new CmsError('CMS_UNAVAILABLE', 'Plugin shop is not active.', { lasting: true }));
+            expect((await app.request('/app.articles/one')).status).toBe(403);
+        } finally { now.mockRestore(); vi.restoreAllMocks(); clearRoomAccess(); }
     });
 });

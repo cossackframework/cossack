@@ -28,7 +28,12 @@ export class CmsError extends ClientVisibleError {
     readonly fields?: { readonly [field: string]: string };
     /** Request ID of a write saved for recovery (`CMS_UNCERTAIN`). */
     readonly requestId?: string;
-    constructor(code: CmsErrorCode, message: string, details: { fields?: { [field: string]: string }; requestId?: string; cause?: unknown } = {}) {
+    /**
+     * A `CMS_UNAVAILABLE` that lasts until someone acts (an inactive plugin, a pending schema
+     * migration), not a passing database error: callers keeping an earlier answer refuse instead.
+     */
+    readonly lasting?: boolean;
+    constructor(code: CmsErrorCode, message: string, details: { fields?: { [field: string]: string }; requestId?: string; cause?: unknown; lasting?: boolean } = {}) {
         super(message);
         if (details.cause !== undefined) Object.defineProperty(this, 'cause', { value: details.cause, configurable: true, writable: true });
         this.name = 'CmsError';
@@ -36,6 +41,7 @@ export class CmsError extends ClientVisibleError {
         this.status = STATUS[code];
         if (details.fields) this.fields = Object.freeze({ ...details.fields });
         if (details.requestId) this.requestId = details.requestId;
+        if (details.lasting) this.lasting = true;
     }
 }
 

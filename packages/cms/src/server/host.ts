@@ -1801,11 +1801,11 @@ export class CmsHost {
             hash = await recorded();
         }
         if (hash !== await declarationHash(current)) {
-            throw new CmsError('CMS_UNAVAILABLE', `${resource.id} is waiting for a schema migration.`);
+            throw new CmsError('CMS_UNAVAILABLE', `${resource.id} is waiting for a schema migration.`, { lasting: true });
         }
         const owner = collection ? this.#collections.get(resource.name)?.plugin ?? resource.owner : resource.owner;
         const plugin = this.#plugins.get(owner);
-        if (plugin && !(await this.#pluginStatus(plugin, await this.#state())).active) throw new CmsError('CMS_UNAVAILABLE', `Plugin ${owner} is not active.`);
+        if (plugin && !(await this.#pluginStatus(plugin, await this.#state())).active) throw new CmsError('CMS_UNAVAILABLE', `Plugin ${owner} is not active.`, { lasting: true });
     }
 
     async status(): Promise<ActivationStatus> {

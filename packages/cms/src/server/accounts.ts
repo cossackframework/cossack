@@ -185,7 +185,11 @@ export class CmsAccounts {
 
     /** Record that the account is a member of the site; sites call this when they add or remove members. */
     async join(id: string, site: string): Promise<void> {
-        await this.#db.write([{ rql: 'INSERT INTO cms_memberships (account_id, site_id, created_at) SELECT $id, $site, $now WHERE 1 = 1 ON CONFLICT (account_id, site_id) DO NOTHING', params: { $id: id, $site: site, $now: this.#now() } }], WRITE);
+        // Only while the account exists: one deleted meanwhile (a turned-down registration) gets no membership.
+        const result = await this.#db.write([{ rql: 'INSERT INTO cms_memberships (account_id, site_id, created_at) SELECT $id, $site, $now WHERE EXISTS (SELECT 1 FROM cms_accounts WHERE id = $id) ON CONFLICT (account_id, site_id) DO NOTHING', params: { $id: id, $site: site, $now: this.#now() } }], WRITE);
+        if (result.results[0]!.affected === 1n) return;
+        const found = await this.#db.read([{ rql: 'SELECT 1 FROM cms_accounts WHERE id = $id', params: { $id: id } }]);
+        if (!found.results[0]!.rows.length) throw new CmsError('CMS_NOT_FOUND', 'The account no longer exists.');
     }
 
     async leave(id: string, site: string): Promise<void> {
@@ -270,6 +274,26 @@ export class CmsAccounts {
             { rql: `DELETE FROM cms_memberships WHERE account_id = $id AND ${gone}`, params },
         ], WRITE);
         if (result.results[0]!.affected !== 1n) return this.#refuseLastAdmin(id, 'deleted');
+        await this.#ended({ user: id });
+        return true;
+    }
+
+    /**
+     * Delete an account made for a registration that was turned down: only while it is still
+     * disabled, never signed in, no network admin, and a member of no site, all checked in the
+     * delete itself, so a site that adds it meanwhile keeps it. False when it stays.
+     */
+    async deleteUnused(id: string): Promise<boolean> {
+        if (!ACCOUNT_ID.test(id)) return false;
+        const params = { $id: id };
+        const gone = 'NOT EXISTS (SELECT 1 FROM cms_accounts WHERE id = $id)';
+        const result = await this.#db.write([
+            { rql: `DELETE FROM cms_accounts WHERE id = $id AND status = 'disabled' AND last_sign_in_at IS NULL AND network_role IS NULL
+                AND NOT EXISTS (SELECT 1 FROM cms_memberships WHERE account_id = $id)`, params },
+            ...['cms_auth_sessions', 'cms_password_resets', 'cms_user_security', 'cms_passkeys', 'cms_auth_challenges', 'cms_api_tokens']
+                .map(table => ({ rql: `DELETE FROM ${table} WHERE user_id = $id AND ${gone}`, params })),
+        ], WRITE);
+        if (result.results[0]!.affected !== 1n) return false;
         await this.#ended({ user: id });
         return true;
     }

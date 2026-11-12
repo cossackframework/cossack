@@ -426,15 +426,22 @@ export function createApp(options: CreateAppOptions = {}) {
   // Hono's getPathNoStrict strips a single trailing slash before route matching,
   // so users get the same page whether or not they type the slash.
   const app = new Hono<{ Bindings: CloudflareBindings; Variables: { user?: User; db?: any; 'cossack.configContext'?: Pick<ConfigRequirementContext, 'runtime' | 'environment'> } }>({ strict: false });
-  app.onError((error, c) => {
+  app.onError(async (error, c) => {
     if (error instanceof HTTPException) return error.getResponse();
     // The route whose chain was running: Hono's matchedRoutes lists every pattern the URL
     // matches (a catch-all included), not the one that ran or was denied.
     // Before any route ran (a global middleware failed), the most specific page route the URL
     // matches: routes are registered most specific first, so the first one, not the catch-all.
-    const ran = runningRoute(c)
-      ?? c.req.matchedRoutes.find(route => route.path !== '*' && pagePathByRoute.has(route.path) && !skipped(c, route.path))?.path
-      ?? c.req.matchedRoutes.findLast(route => route.path !== '*')?.path;
+    // A route of an inactive plugin is no route: the URL is the app's, as for an unknown URL.
+    let ran = runningRoute(c);
+    if (ran === undefined) {
+      for (const route of c.req.matchedRoutes) {
+        if (route.path === '*' || !pagePathByRoute.has(route.path) || skipped(c, route.path) || await inactiveRoute(c, route.path)) continue;
+        ran = route.path;
+        break;
+      }
+    }
+    ran ??= c.req.matchedRoutes.findLast(route => route.path !== '*')?.path;
     const context = createServerFailureContext(c, {
       route: ran ?? 'unknown',
       action: 'request', runtime: options.runtimeAdapter?.name ?? 'cloudflare',
@@ -442,8 +449,8 @@ export function createApp(options: CreateAppOptions = {}) {
     logConfigRequirementFailure(error);
     const denial = getAuthorizationFailure(error);
     if (denial) {
-      if (wantsHtmlDocument(c) && !matchedEndpoint(c)) {
-        const anchor = (ran ? pagePathByRoute.get(ran) : undefined) ?? resolveNotFound(c.req.path)?.path;
+      if (wantsHtmlDocument(c) && !(await matchedEndpoint(c))) {
+        const anchor = (ran ? pagePathByRoute.get(ran) : undefined) ?? (await resolveActiveNotFound(c))?.path;
         return renderDenialDocument(c, denial, anchor, context.requestId);
       }
       return c.json({ error: denial.message, code: denial.code, requestId: context.requestId }, denial.status);
@@ -949,10 +956,20 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
 
   /** Route patterns of functional HTTP handlers. Their failures are never HTML documents. */
   const endpointRoutes = new Set<string>();
+  /** Hono route pattern -> handler file path, for handler routes. */
+  const endpointPathByRoute = new Map<string, string>();
   /** Whether the route that ran is a functional endpoint (not one a skipped plugin route only matched). */
-  const matchedEndpoint = (c: Context) => {
+  /** Whether a route belongs to a plugin the request's host has turned off. */
+  const inactiveRoute = async (c: Context, route: string): Promise<boolean> => {
+    const file = pagePathByRoute.get(route) ?? endpointPathByRoute.get(route);
+    const owner = file ? owners[file] : undefined;
+    return Boolean(owner && options.isPluginActive && !(await options.isPluginActive(owner, c)));
+  };
+  const matchedEndpoint = async (c: Context): Promise<boolean> => {
     const ran = runningRoute(c);
-    return ran !== undefined ? endpointRoutes.has(ran) : c.req.matchedRoutes.some(route => endpointRoutes.has(route.path));
+    if (ran !== undefined) return endpointRoutes.has(ran);
+    for (const route of c.req.matchedRoutes) if (endpointRoutes.has(route.path) && !(await inactiveRoute(c, route.path))) return true;
+    return false;
   };
 
   /** Unknown-URL resolvers without the pages of the given inactive plugins, compiled once per set. */
@@ -975,12 +992,8 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
    * a page path, renders the nearest HTML 404 boundary. A boundary of an
    * inactive plugin does not render; the next source ancestor's does.
    */
-  const renderNotFound = async (c: Context): Promise<Response> => {
-    const accept = c.req.header('accept') ?? '';
-    const wantsJson = /\bapplication\/(?:[\w.+-]+\+)?json\b/i.test(accept) && !/\btext\/html\b/i.test(accept);
-    if (classifyRoute(c.req.path) === 'api' || TRANSPORT_PATH.test(c.req.path) || wantsJson) {
-      return c.json({ error: 'Not Found', code: 'COSSACK_NOT_FOUND' }, 404);
-    }
+  /** The nearest not-found page for the URL, skipping pages of plugins the host turned off. */
+  const resolveActiveNotFound = async (c: Context) => {
     const inactive = new Set<string>();
     let selected = resolveNotFound(c.req.path);
     while (selected && options.isPluginActive) {
@@ -989,6 +1002,15 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       inactive.add(owner);
       selected = resolveNotFoundExcluding(inactive)(c.req.path);
     }
+    return selected;
+  };
+  const renderNotFound = async (c: Context): Promise<Response> => {
+    const accept = c.req.header('accept') ?? '';
+    const wantsJson = /\bapplication\/(?:[\w.+-]+\+)?json\b/i.test(accept) && !/\btext\/html\b/i.test(accept);
+    if (classifyRoute(c.req.path) === 'api' || TRANSPORT_PATH.test(c.req.path) || wantsJson) {
+      return c.json({ error: 'Not Found', code: 'COSSACK_NOT_FOUND' }, 404);
+    }
+    const selected = await resolveActiveNotFound(c);
     if (selected) {
       const chosen = selected;
       const component = getModuleDefault(pages[chosen.path] as object) as new () => Cossack;
@@ -1655,6 +1677,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
     // GET/POST/… exports handle their own (Nuxt/Next style).
     else if (isHttpHandlerExports(module)) {
       endpointRoutes.add(httpRoute);
+      endpointPathByRoute.set(httpRoute, path);
       const owner = owners[path];
       if (owner) app.use(httpRoute, routeGate(path, owner));
       const step = <H extends (c: Context, next: Next) => unknown>(handler: H): H => owner ? skippable(path, handler) : handler;

@@ -51,9 +51,19 @@ const PERSIST_MAX = 5000;
 const EDITORS_EVERY = 30_000;
 /** Editors send their presence at least this often, so the room's timeout never fires on an idle tab. */
 const HEARTBEAT = 15_000;
-/** The entries an editor's access was checked for, by user and entry: a guard runs for every frame to every peer. */
-const RECENT_ACCESS = new Map<string, number>();
+/**
+ * Editors' access by user and entry: a guard runs for every frame to every peer. `checked` is
+ * when the database last answered yes; `until` is when to ask again.
+ */
+const RECENT_ACCESS = new Map<string, { checked: number; until: number }>();
 const ACCESS_TTL = 5000;
+/** While the database cannot answer, an earlier yes holds this long after it was given, then the editor is refused. */
+export const ACCESS_GRACE = 3 * ACCESS_TTL;
+/** While the database cannot answer, frames ask again at most this often. */
+export const ACCESS_BACKOFF = 1000;
+
+/** Forget every kept access decision (tests). */
+export function clearRoomAccess(): void { RECENT_ACCESS.clear(); }
 
 const forbidden = (c: Context) => c.json({ error: 'Forbidden', code: 'COSSACK_RPC_FORBIDDEN' }, 403);
 
@@ -76,7 +86,7 @@ export const requireEntryEditor: MiddlewareHandler = defineServerMiddleware(asyn
     const key = `${principal.id}:${(c.get('site') as { id?: string } | undefined)?.id ?? 'main'}:${route}:${id}`;
     const now = Date.now();
     const previous = RECENT_ACCESS.get(key);
-    if ((previous ?? 0) <= now) {
+    if (!previous || previous.until <= now) {
         let allowed = false;
         try {
             const { resource } = routeResource(cms, route);
@@ -84,17 +94,18 @@ export const requireEntryEditor: MiddlewareHandler = defineServerMiddleware(asyn
             const record = await repository.get(id, { principal });
             allowed = record !== null && repository.canUpdate(record, principal);
         } catch (error) {
-            // Only a definite answer closes an editor's socket: a lost entry, collection or right.
-            // A database hiccup keeps the earlier decision, checked again on the next frame.
-            if (isCmsError(error) && error.code !== 'CMS_UNAVAILABLE' && error.code !== 'CMS_UNCERTAIN') return forbidden(c);
-            if (previous === undefined) return forbidden(c);
-            console.warn('[cms] the room could not check access again; it keeps the last answer', error);
+            // Only a passing database error keeps an earlier yes, and only for a while: a lost
+            // entry, collection or right, an inactive plugin or a pending migration refuses.
+            const passing = !isCmsError(error) || ((error.code === 'CMS_UNAVAILABLE' || error.code === 'CMS_UNCERTAIN') && !error.lasting);
+            if (!passing || !previous || now - previous.checked > ACCESS_GRACE) { RECENT_ACCESS.delete(key); return forbidden(c); }
+            console.warn('[cms] the room could not check access again; it keeps the last answer for now', error);
+            RECENT_ACCESS.set(key, { checked: previous.checked, until: now + ACCESS_BACKOFF });
             await next();
             return;
         }
         if (!allowed) { RECENT_ACCESS.delete(key); return forbidden(c); }
-        if (RECENT_ACCESS.size >= 1000) for (const [entry, until] of RECENT_ACCESS) if (until <= now) RECENT_ACCESS.delete(entry);
-        RECENT_ACCESS.set(key, now + ACCESS_TTL);
+        if (RECENT_ACCESS.size >= 1000) for (const [entry, kept] of RECENT_ACCESS) if (now - kept.checked > ACCESS_GRACE) RECENT_ACCESS.delete(entry);
+        RECENT_ACCESS.set(key, { checked: now, until: now + ACCESS_TTL });
     }
     await next();
 });
