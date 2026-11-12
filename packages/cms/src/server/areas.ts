@@ -9,6 +9,7 @@ import { htmlBlocksChanged, type Block } from '../blocks';
 import { CmsError } from '../errors';
 import { MENU_LOCATION } from '../menus';
 import { hasPermission, PERMISSIONS, principalId, type Principal } from '../permissions';
+import { readPaged } from './budget';
 
 export interface AreaShape {
     readonly name: string;
@@ -94,7 +95,8 @@ export class CmsAreas {
     async #read(): Promise<Map<string, AreaShape>> {
         let rows: readonly (readonly unknown[])[] = [];
         try {
-            rows = (await this.#db.read([{ rql: 'SELECT name, blocks, revision, updated_at FROM cms_areas ORDER BY name LIMIT 200' }])).results[0]!.rows;
+            // Each area holds its blocks: a few large ones may come in smaller reads.
+            rows = await readPaged(this.#db, (size, at) => ({ rql: 'SELECT name, blocks, revision, updated_at FROM cms_areas ORDER BY name LIMIT $limit OFFSET $offset', params: { $limit: size, $offset: at } }), 200, 0);
         } catch (error) {
             // Before setup, or before the host step that adds the table.
             if (error instanceof ClientError && /cms_areas|no such table|not found/i.test(error.message)) return new Map();

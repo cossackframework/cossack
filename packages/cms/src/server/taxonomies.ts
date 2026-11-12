@@ -12,7 +12,7 @@ import type { TermDraft, TermWriteInput, WriteActor } from '../hooks';
 import type { TaxonomyDeclaration, TermShape } from '../taxonomy';
 import { containsPattern, inList } from './users';
 import { uuidv7 } from '@cossackframework/core';
-import { readBatches } from './budget';
+import { readBatches, readByIds, readPaged } from './budget';
 
 export type { TaxonomyDeclaration, TermShape };
 
@@ -102,9 +102,9 @@ export class CmsTaxonomies {
     async getMany(ids: readonly string[]): Promise<Map<string, TermShape>> {
         const wanted = [...new Set(ids.filter(id => typeof id === 'string' && ID.test(id)))].slice(0, 200);
         if (!wanted.length) return new Map();
-        const list = inList('t', wanted);
-        const result = await this.#db.read([{ rql: `SELECT ${COLUMNS} FROM cms_terms WHERE id IN ${list.rql}`, params: list.params }]);
-        return new Map(result.results[0]!.rows.map(row => { const term = termOf(row); return [term.id, term]; }));
+        // Terms hold a description and meta: many may come in smaller reads.
+        const rows = await readByIds(this.#db, wanted, slice => { const list = inList('t', slice); return { rql: `SELECT ${COLUMNS} FROM cms_terms WHERE id IN ${list.rql}`, params: list.params }; });
+        return new Map(rows.map(row => { const term = termOf(row); return [term.id, term]; }));
     }
 
     async bySlug(taxonomy: string, slug: string): Promise<TermShape | null> {
@@ -121,19 +121,16 @@ export class CmsTaxonomies {
         const params: { [key: string]: Value } = { $taxonomy: taxonomy };
         let where = 'taxonomy = $taxonomy';
         if (options.search?.trim()) { where += " AND (lower(name) LIKE $q ESCAPE '\\' OR slug LIKE $q ESCAPE '\\')"; params.$q = containsPattern(options.search.trim().slice(0, 100)); }
-        const result = await this.#db.read([
-            { rql: `SELECT ${COLUMNS} FROM cms_terms WHERE ${where} ORDER BY lower(name), id LIMIT $limit OFFSET $offset`,
-                params: { ...params, $limit: Math.min(Math.max(options.limit ?? 50, 1), 200), $offset: Math.max(options.offset ?? 0, 0) } },
-            { rql: `SELECT count(*) FROM cms_terms WHERE ${where}`, params },
-        ]);
-        return { items: result.results[0]!.rows.map(termOf), total: Number(result.results[1]!.rows[0]![0] as bigint) };
+        const counted = await this.#db.read([{ rql: `SELECT count(*) FROM cms_terms WHERE ${where}`, params }]);
+        const rows = await readPaged(this.#db, (size, at) => ({ rql: `SELECT ${COLUMNS} FROM cms_terms WHERE ${where} ORDER BY lower(name), id LIMIT $limit OFFSET $offset`, params: { ...params, $limit: size, $offset: at } }),
+            Math.min(Math.max(options.limit ?? 50, 1), 200), Math.max(options.offset ?? 0, 0), { afterSequence: counted.sequence });
+        return { items: rows.map(termOf), total: Number(counted.results[0]!.rows[0]![0] as bigint) };
     }
 
     /** Every term in tree order: each parent before its children, siblings by name. */
     async tree(taxonomy: string): Promise<TermShape[]> {
         this.declaration(taxonomy);
-        const result = await this.#db.read([{ rql: `SELECT ${COLUMNS} FROM cms_terms WHERE taxonomy = $taxonomy ORDER BY path LIMIT ${MAX_TERMS}`, params: { $taxonomy: taxonomy } }]);
-        const terms = result.results[0]!.rows.map(termOf);
+        const terms = (await readPaged(this.#db, (size, at) => ({ rql: `SELECT ${COLUMNS} FROM cms_terms WHERE taxonomy = $taxonomy ORDER BY path LIMIT $limit OFFSET $offset`, params: { $taxonomy: taxonomy, $limit: size, $offset: at } }), MAX_TERMS, 0)).map(termOf);
         const children = new Map<string | null, TermShape[]>();
         const known = new Set(terms.map(term => term.id));
         for (const term of terms) {

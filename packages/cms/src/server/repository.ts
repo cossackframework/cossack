@@ -18,7 +18,7 @@ import { searchedAsText, searchTextPath } from './schema';
 import { isSearchSyntaxError, searchQuery } from '../search';
 import { afterCommit, beforeWrite, type Draft, type ResourceEvent, type WriteActor } from '../hooks';
 import { sharedOp, type SharedFieldsEvent } from './shared-fields';
-import { readPaged } from './budget';
+import { readByIds, readPaged } from './budget';
 import { isLockedRecord, lockedView } from './locked';
 import { ANONYMOUS, evaluateRule, hasPermission, PERMISSIONS, principalId, ruleScope, type Principal, type RecordScope } from '../permissions';
 import type { FieldFilter, ListFilter, ListOptions, RecordPage, RecordShape, RevisionShape } from '../records';
@@ -74,16 +74,21 @@ export class ResourceRepository {
         return document ? this.#public(document, context.principal) : null;
     }
 
-    /** Records by ID in one read, for those the principal may read. Invalid IDs are skipped; at most 200. */
+    /**
+     * Records by ID, for those the principal may read. Invalid IDs are skipped; at most 200. Whole
+     * documents: a set of long entries can pass the result budget, so it may come in smaller reads.
+     */
     async getMany(ids: readonly string[], context: OperationContext): Promise<Map<string, RecordShape>> {
         const access = await this.#authorize('read', context.principal);
         const wanted = [...new Set(ids.filter(id => typeof id === 'string' && KEY.test(id)))].slice(0, 200);
         if (!wanted.length) return new Map();
-        const params: { [key: string]: Value } = {};
-        const list = wanted.map((id, index) => { params[`$k${index}`] = id; return `type::record('${this.resource.storage}', $k${index})`; }).join(', ');
-        const { rql, params: bound } = this.#conditions(access, context.principal, [`id IN (${list})`], params);
-        const result = await this.#host.db.read([{ rql: `SELECT * FROM ${this.resource.storage} WHERE ${rql} LIMIT ${wanted.length}`, params: bound }], this.#readOptions(context));
-        return new Map(result.results[0]!.rows.map(row => { const record = this.#public(row[0] as Document, context.principal); return [record.id, record]; }));
+        const rows = await readByIds(this.#host.db, wanted, slice => {
+            const params: { [key: string]: Value } = {};
+            const list = slice.map((id, index) => { params[`$k${index}`] = id; return `type::record('${this.resource.storage}', $k${index})`; }).join(', ');
+            const { rql, params: bound } = this.#conditions(access, context.principal, [`id IN (${list})`], params);
+            return { rql: `SELECT * FROM ${this.resource.storage} WHERE ${rql} LIMIT ${slice.length}`, params: bound };
+        }, this.#readOptions(context));
+        return new Map(rows.map(row => { const record = this.#public(row[0] as Document, context.principal); return [record.id, record]; }));
     }
 
     async list(options: ListOptions, context: OperationContext): Promise<RecordPage> {
@@ -157,23 +162,24 @@ export class ResourceRepository {
         const text = options.match === 'any' ? parsed.any ?? parsed.all : parsed.all;
         const filtered = access !== 'allow' || options.where !== undefined || options.owner !== undefined;
         // Hits are checked again in the outer query; fetch more when some may be filtered out.
-        const params: { [key: string]: Value } = { $query: text, $limit: Math.min(filtered ? (offset + limit) * 4 : offset + limit, 10_000) };
-        let source = `search::text('${this.resource.storage}__text', $query, $limit)`;
+        const params: { [key: string]: Value } = { $query: text, $hits: Math.min(filtered ? (offset + limit) * 4 : offset + limit, 10_000) };
+        let source = `search::text('${this.resource.storage}__text', $query, $hits)`;
         if (access !== 'allow' && access.owner && !access.where.length) {
             const owned = await this.#host.db.read([{ rql: `SELECT id FROM ${this.resource.storage} WHERE "_owner" = $owner LIMIT 4097`, params: { $owner: principalId(context.principal) } }], this.#readOptions(context));
             if (owned.results[0]!.rows.length > 4096) throw new CmsError('CMS_LIMIT', 'Search over more than 4096 owned records needs a separate collection per owner.');
             params.$allowed = owned.results[0]!.rows.map(row => row[0]!);
-            source = `search::text('${this.resource.storage}__text', $query, $limit, $allowed)`;
+            source = `search::text('${this.resource.storage}__text', $query, $hits, $allowed)`;
         }
         const where = this.#conditions(access, context.principal, this.#filters(options, context.principal, params, 'd.'), params, 'd.');
-        const result = await this.#host.db.read([bound(
-            `SELECT d FROM ${source} h JOIN ${this.resource.storage} d ON d.id = h.id${where.rql ? ` WHERE ${where.rql}` : ''} ORDER BY h.score DESC, h.id LIMIT ${limit}${offset ? ` OFFSET ${offset}` : ''}`,
-            where.params,
-        )], this.#readOptions(context)).catch(error => {
+        // Whole documents: a page of long entries can pass the result budget, so it may come in smaller reads.
+        const rows = await readPaged(this.#host.db, (size, at) => bound(
+            `SELECT d FROM ${source} h JOIN ${this.resource.storage} d ON d.id = h.id${where.rql ? ` WHERE ${where.rql}` : ''} ORDER BY h.score DESC, h.id LIMIT $limit OFFSET $offset`,
+            { ...where.params, $limit: size, $offset: at },
+        ), limit, offset, this.#readOptions(context)).catch(error => {
             if (isSearchSyntaxError(error)) throw new CmsError('CMS_VALIDATION', 'That search could not be read.');
             throw error;
         });
-        return result.results[0]!.rows.map(row => this.#public(row[0] as Document, context.principal));
+        return rows.map(row => this.#public(row[0] as Document, context.principal));
     }
 
     async revisions(id: string, context: OperationContext, options: { limit?: number } = {}): Promise<RevisionShape[]> {

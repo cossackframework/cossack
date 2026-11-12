@@ -943,10 +943,15 @@ function commentHtml(text: string): string {
 async function commentsView(cms: CmsHost, collection: CollectionDefinition, record: RecordShape, url: string, settings: SiteSettings, options: EntryViewOptions): Promise<CommentsView> {
     const open = cms.commentsOpen(collection, record, settings);
     let comments: CommentShape[] = [];
-    // The entry still shows when its comments cannot be read.
-    try { comments = await cms.comments.forEntry(`cms/${collection.name}`, record.id); }
-    catch (error) { console.warn(`[cms] the comments of ${collection.name}/${record.id} were left off the page: ${error instanceof Error ? error.message : String(error)}`); }
-    const users = await cms.users.getMany(comments.map(comment => comment.userId).filter((id): id is string => !!id));
+    let users = new Map<string, CmsUser>();
+    // The entry still shows when its comments or their authors cannot be read.
+    try {
+        comments = await cms.comments.forEntry(`cms/${collection.name}`, record.id);
+        users = await cms.users.getMany(comments.map(comment => comment.userId).filter((id): id is string => !!id));
+    } catch (error) {
+        comments = [];
+        console.warn(`[cms] the comments of ${collection.name}/${record.id} were left off the page: ${error instanceof Error ? error.message : String(error)}`);
+    }
     const depth = settings['discussion.threadDepth'];
     const byParent = new Map<string | null, CommentShape[]>();
     const known = new Set(comments.map(comment => comment.id));

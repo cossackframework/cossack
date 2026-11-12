@@ -346,9 +346,10 @@ export async function registerUser(email: string, password: string, name?: strin
   }
   await replaceUnconfirmed(host, email, site !== null);
   try {
-    const user = await host.users.create({ email, password, name: draft.name, roles: draft.roles, ...(site ? { network: true } : {}), ...(verify && !draft.approval ? { status: 'disabled' as const } : {}) });
+    // Held for approval, the account is created disabled with its place in the queue, in one write.
+    const user = await host.users.create({ email, password, name: draft.name, roles: draft.roles, ...(site ? { network: true } : {}),
+      ...(draft.approval ? { approval: { verified: !verify } } : verify ? { status: 'disabled' as const } : {}) });
     const bare = { id: user.id, email: user.email, name: user.name, avatar: user.avatar, meta: null, roles: [], principal: ANONYMOUS };
-    if (draft.approval) await host.users.holdForApproval(user.id, { verified: !verify });
     await host.userRegistered(user, verify ? 'verification' : draft.approval ? 'approval' : 'active').catch(() => undefined);
     if (verify) {
       await sendVerification(cms(), user.id, user.email, user.name, siteRecord?.id ?? null);

@@ -89,7 +89,12 @@ await Post.deleteAll({ force: true });
 
 `Post.softDelete(where)` is the explicit form of `delete()` and only touches live
 rows; `restore(where)` only touches soft-deleted rows. Both reject an empty
-`where`, and both throw on an entity without a `@DeleteDateColumn()`.
+`where`, and both throw on an entity without a `@DeleteDateColumn()`. A condition
+of your own on `deletedAt` is kept alongside that guard: `restore({ deletedAt:
+MoreThan(since) })` restores only rows deleted after `since`. A soft delete by
+`deletedAt` matches no live row and is refused, so purge old soft-deleted rows with
+`Post.delete({ deletedAt: LessThan(cutoff) }, { force: true })`. `reload()` reads
+the entity's row even when it is soft-deleted.
 Relation loading (`relations: [...]`) skips soft-deleted children. `update()` and
 `updateAll()` do not filter: name `deletedAt: IsNull()` in `where` to limit them
 to live rows. `IsNull()` and `IsNotNull()` fit any nullable column without a cast.

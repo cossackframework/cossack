@@ -8,6 +8,7 @@ import { CmsError } from '../errors';
 import { randomToken } from './tokens';
 import { WEBHOOK_EVENTS, webhookUrlProblem, type Webhook, type WebhookDelivery, type WebhookEvent, type WebhookInput, type WebhookPayload } from '../webhooks';
 import { uuidv7 } from '@cossackframework/core';
+import { readPaged } from './budget';
 
 const WRITE = { kind: 'cms.webhooks', retryConflicts: 5 } as const;
 /** A dispatcher holds claimed deliveries this long; each send takes at most 10 seconds. */
@@ -132,13 +133,14 @@ export class CmsWebhooks {
                 WHERE id IN (SELECT id FROM cms_webhook_deliveries WHERE status = 'pending' AND next_attempt_at <= $now AND lease_until <= $now ORDER BY next_attempt_at, id LIMIT $limit)`,
             params: { $token: token, $until: now + LEASE_MS, $now: now, $limit: limit },
         }], WRITE);
-        const claimed = await this.#db.read([{
+        // Payloads hold whole records: the claimed rows may come in smaller reads.
+        const claimed = await readPaged(this.#db, (size, at) => ({
             rql: `SELECT d.id, d.event, d.payload, d.attempts, w.url, w.secret, w.active FROM cms_webhook_deliveries d LEFT JOIN cms_webhooks w ON w.id = d.webhook_id
-                WHERE d.lease_token = $token ORDER BY d.next_attempt_at, d.id`,
-            params: { $token: token },
-        }]);
+                WHERE d.lease_token = $token ORDER BY d.next_attempt_at, d.id LIMIT $limit OFFSET $offset`,
+            params: { $token: token, $limit: size, $offset: at },
+        }), limit, 0);
         const report = { delivered: 0, failed: 0, retrying: 0 };
-        for (const [id, event, payload, attempts, url, secret, active] of claimed.results[0]!.rows) {
+        for (const [id, event, payload, attempts, url, secret, active] of claimed) {
             // Serial sends can outlast the batch lease. Near its end, extend this delivery's lease
             // before sending; one another dispatcher claimed meanwhile is its to send, not ours.
             if (this.#now() > now + LEASE_MS - LEASE_MARGIN_MS) {

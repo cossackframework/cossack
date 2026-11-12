@@ -186,6 +186,43 @@ describe.skipIf(!live)('RomeDB limits', () => {
         expect(await cms.comments.forEntry('cms/posts', post.id)).toHaveLength(count);
     }, 120_000);
 
+    it('reads lists of large rows past the result budget in pages: search, records, users, comments, menus, areas, terms', async () => {
+        clock += 1000;
+        const posts = cms.resource('cms/posts');
+        // Rows of about a twentieth of the result budget, half again as many as one read can carry.
+        const size = Math.floor(resultLimit / 20);
+        const count = 30;
+        const text = (i: number) => `${i} `.padEnd(size, 'x');
+        const perWrite = Math.max(1, Math.floor(requestLimit / (2 * size)));
+        const insert = async (statement: (i: number) => { rql: string; params: Record<string, string | number> }) => {
+            for (let i = 0; i < count; i += perWrite) await cms.db.write(Array.from({ length: Math.min(perWrite, count - i) }, (_, j) => statement(i + j)) as never);
+        };
+        // Posts must each fit one save request, so they are half as large and twice as many.
+        let sections = 1;
+        while (JSON.stringify(richContent(sections + 1)).length < size / 2) sections++;
+        const ids: string[] = [];
+        for (let i = 0; i < 2 * count; i++) ids.push((await posts.create({ title: `Budgetword ${i}`, content: richContent(sections), status: 'published' }, { principal: admin })).id);
+        expect(await posts.search('Budgetword', { limit: 2 * count }, { principal: admin })).toHaveLength(2 * count);
+        expect((await posts.getMany(ids, { principal: admin })).size).toBe(2 * count);
+        await insert(i => ({ rql: "INSERT INTO cms_users (id, email, name, avatar, status, created_at, updated_at, last_sign_in_at, meta, slug) VALUES ($id, $email, 'Wide', NULL, 'active', $at, $at, NULL, $meta, NULL)",
+            params: { $id: `wide-user-${i}`, $email: `wide${i}@example.com`, $meta: JSON.stringify({ bio: text(i) }), $at: clock + i } }));
+        expect((await cms.users.getMany(Array.from({ length: count }, (_, i) => `wide-user-${i}`))).size).toBe(count);
+        await insert(i => ({ rql: "INSERT INTO cms_comments (id, resource, record_id, parent_id, user_id, author_name, author_email, author_url, content, status, created_at, updated_at) VALUES ($id, 'cms/posts', $record, NULL, NULL, 'Spammer', 'spam@example.com', '', $content, 'pending', $at, $at)",
+            params: { $id: `pending-${i}`, $record: ids[0]!, $content: text(i), $at: clock + i } }));
+        expect((await cms.comments.list({ status: 'pending', limit: count })).items).toHaveLength(count);
+        const item = (i: number) => ({ id: `m${i}`, kind: 'custom', label: text(i).slice(0, 200), url: '/', children: [] });
+        await insert(i => ({ rql: 'INSERT INTO cms_menus (id, name, items, revision, created_at, updated_at) VALUES ($id, $name, $items, 1, $at, $at)',
+            params: { $id: `wide-menu-${i}`, $name: `Wide ${i}`, $items: JSON.stringify(Array.from({ length: Math.ceil(size / 260) }, (_, j) => item(j))), $at: clock + i } }));
+        expect((await cms.menus.list()).filter(menu => menu.name.startsWith('Wide '))).toHaveLength(count);
+        await insert(i => ({ rql: 'INSERT INTO cms_areas (name, blocks, revision, updated_at) VALUES ($name, $blocks, 1, $at)',
+            params: { $name: `wide-area-${i}`, $blocks: JSON.stringify([{ _id: `p${i}`, type: 'core/paragraph', data: { text: text(i) } }]), $at: clock + i } }));
+        expect((await cms.areas.get('wide-area-0')).blocks).toHaveLength(1);
+        await insert(i => ({ rql: "INSERT INTO cms_terms (id, taxonomy, name, slug, description, parent_id, path, depth, created_at, updated_at, icon, meta) VALUES ($id, 'categories', $name, $slug, $description, NULL, $path, 0, $at, $at, '', '{}')",
+            params: { $id: `wide-term-${i}`, $name: `Wide ${i}`, $slug: `wide-${i}`, $description: text(i), $path: `/wide-term-${i}`, $at: clock + i } }));
+        expect((await cms.taxonomies.list('categories', { search: 'Wide', limit: count })).items).toHaveLength(count);
+        expect((await cms.taxonomies.getMany(Array.from({ length: count }, (_, i) => `wide-term-${i}`))).size).toBe(count);
+    }, 180_000);
+
     it('saves and reads forty collections while other writes land, and plans nothing more after', async () => {
         await cms.db.write([{ rql: 'CREATE TABLE limits_noise (id INTEGER PRIMARY KEY, at INTEGER NOT NULL)' }]);
         let done = false;

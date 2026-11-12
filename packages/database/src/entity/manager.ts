@@ -5,7 +5,7 @@ import type { ORM } from "../orm.js";
 import { matchesEveryRow, MutationQueryBuilder, SelectQueryBuilder } from "../query/builder.js";
 import { ConfigurationError } from "../errors.js";
 import { SQLFragment } from "../sql/fragment.js";
-import { IsNotNull, IsNull, type DeleteOptions, type EntityShape, type FindOptions, type FindWhere, type OrderDirection, type ReadOptions } from "../query/types.js";
+import { IsNotNull, IsNull, type DeleteOptions, type FindOperator, type EntityShape, type FindOptions, type FindWhere, type OrderDirection, type ReadOptions } from "../query/types.js";
 
 export class ModelManager<T extends BaseEntity> {
   constructor(
@@ -162,13 +162,31 @@ export class ModelManager<T extends BaseEntity> {
       return this.orm.sql.fragment`(${where}) AND ${deleted ? this.orm.sql.fragment`${id} IS NOT NULL` : this.orm.sql.fragment`${id} IS NULL`}`;
     }
     const guard = { [column.propertyName]: deleted ? IsNotNull() : IsNull() } as FindWhere<T>;
+    // The guard is ANDed with the caller's own condition on the delete-date column, never put in
+    // its place. SQL comparisons are false for NULL, so a condition there either implies the guard
+    // (restore: any comparison means "set") or contradicts it (softDelete: only live rows have
+    // NULL), and a contradiction is refused rather than turned into "every live row".
+    const narrow = (part: FindWhere<T>): FindWhere<T> => {
+      const key = column.propertyName as keyof FindWhere<T>;
+      if (!Object.hasOwn(part, key)) return { ...part, ...guard };
+      const condition = part[key] as unknown;
+      const isNull = condition === null || (isFindOperator(condition) && condition.operator === "is-null");
+      if (deleted ? !isNull : isNull) return deleted ? part : { ...part, ...guard };
+      throw new ConfigurationError(deleted
+        ? `${this.metadata.modelName}.restore() with ${column.propertyName} IS NULL matches no deleted row.`
+        : `${this.metadata.modelName}.${operation}() of rows by their ${column.propertyName} matches no live row; pass { force: true } to delete soft-deleted rows for real.`);
+    };
     return Array.isArray(where)
-      ? (where as readonly FindWhere<T>[]).map((part) => ({ ...part, ...guard }))
-      : { ...(where as FindWhere<T>), ...guard };
+      ? (where as readonly FindWhere<T>[]).map(narrow)
+      : narrow(where as FindWhere<T>);
   }
 
   /** Updates every row in the table. */
   updateAll(values: Partial<EntityShape<T>>): Promise<QueryResult> {
     return new MutationQueryBuilder(this.orm, this.metadata, "update", [values], undefined, undefined, { all: true }).execute();
   }
+}
+
+function isFindOperator(value: unknown): value is FindOperator<unknown> {
+  return typeof value === "object" && value !== null && !(value instanceof Date) && typeof (value as { operator?: unknown }).operator === "string";
 }

@@ -12,6 +12,7 @@ import { containsPattern } from './users';
 import { IMAGE_WIDTHS, imageEditsProblems, transformable, variantRect, variantWidth, type ImageEdits } from '../images';
 import { FORMAT_TYPES, negotiateFormat, type ImageFormat, type ImageTransformer } from './images';
 import { uuidv7 } from '@cossackframework/core';
+import { readByIds, readPaged } from './budget';
 
 export interface CmsFile {
     readonly id: string;
@@ -549,9 +550,12 @@ export class FileService {
     async getMany(ids: readonly string[]): Promise<Map<string, CmsFile>> {
         const wanted = [...new Set(ids.filter(id => typeof id === 'string' && ID.test(id)))].slice(0, 200);
         if (!wanted.length) return new Map();
-        const params = Object.fromEntries(wanted.map((id, index) => [`$f${index}`, id]));
-        const result = await this.#db.read([{ rql: `SELECT ${COLUMNS} FROM cms_files WHERE status = 'ready' AND ${LIBRARY_KEYS} AND id IN (${wanted.map((_, index) => `$f${index}`).join(', ')})`, params }]);
-        return new Map(result.results[0]!.rows.map(row => { const file = fileOf(row); return [file.id, file]; }));
+        // Files hold captions, descriptions, edits and a placeholder: many may come in smaller reads.
+        const rows = await readByIds(this.#db, wanted, slice => ({
+            rql: `SELECT ${COLUMNS} FROM cms_files WHERE status = 'ready' AND ${LIBRARY_KEYS} AND id IN (${slice.map((_, index) => `$f${index}`).join(', ')})`,
+            params: Object.fromEntries(slice.map((id, index) => [`$f${index}`, id])),
+        }));
+        return new Map(rows.map(row => { const file = fileOf(row); return [file.id, file]; }));
     }
 
     /** Ready files, newest first, filtered by kind, owner and a search over name and title. */
@@ -571,12 +575,10 @@ export class FileService {
         }
         if (options.owner) { conditions.push('owner_id = $owner'); params.$owner = options.owner; }
         const where = conditions.join(' AND ');
-        const result = await this.#db.read([
-            { rql: `SELECT ${COLUMNS} FROM cms_files WHERE ${where} ORDER BY created_at DESC, id DESC LIMIT $limit OFFSET $offset`,
-                params: { ...params, $limit: Math.min(Math.max(options.limit ?? 40, 1), 100), $offset: Math.min(Math.max(options.offset ?? 0, 0), 100_000) } },
-            Object.keys(params).length ? { rql: `SELECT count(*) FROM cms_files WHERE ${where}`, params } : { rql: `SELECT count(*) FROM cms_files WHERE ${where}` },
-        ]);
-        return { items: result.results[0]!.rows.map(fileOf), total: Number(result.results[1]!.rows[0]![0] as bigint) };
+        const counted = await this.#db.read([Object.keys(params).length ? { rql: `SELECT count(*) FROM cms_files WHERE ${where}`, params } : { rql: `SELECT count(*) FROM cms_files WHERE ${where}` }]);
+        const rows = await readPaged(this.#db, (size, at) => ({ rql: `SELECT ${COLUMNS} FROM cms_files WHERE ${where} ORDER BY created_at DESC, id DESC LIMIT $limit OFFSET $offset`, params: { ...params, $limit: size, $offset: at } }),
+            Math.min(Math.max(options.limit ?? 40, 1), 100), Math.min(Math.max(options.offset ?? 0, 0), 100_000), { afterSequence: counted.sequence });
+        return { items: rows.map(fileOf), total: Number(counted.results[0]!.rows[0]![0] as bigint) };
     }
 
     /** Change title, alt text, caption or description. The owner or a media manager may edit. */

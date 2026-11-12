@@ -4,6 +4,19 @@
  * go with every command.
  */
 
+/**
+ * A positional value as one path segment: encoded, and refused when it could name another path
+ * (a `/`, `?` or `#`, or `.`/`..`, which URL resolution walks), so a command reaches only the
+ * resource its noun names.
+ */
+export function seg(value) {
+  const text = String(value ?? '');
+  if (!text || text === '.' || text === '..' || /[/?#\\]/.test(text)) {
+    throw Object.assign(new Error(`"${text}" is not a valid ID or name here.`), { code: 'COSSACK_CMS_INVALID_ARGUMENT' });
+  }
+  return encodeURIComponent(text);
+}
+
 const COMMON = ['url', 'site', 'allow-http'];
 const PAGED = ['q', 'page', 'per-page'];
 const str = (description, extra = {}) => ({ type: 'string', description, ...extra });
@@ -81,86 +94,86 @@ export const CMS_COMMANDS = [
   { noun: 'collections', verb: 'list', summary: 'The content types and their fields.', positionals: [], flags: [],
     request: () => ({ method: 'GET', path: '/api/cms/collections' }), table: { rows: data => data.items, columns: ['name', 'label', 'publishable', { name: 'fields', value: row => row.fields.map(field => field.name).join(' ') }] } },
   { noun: 'collections', verb: 'schema', summary: 'The JSON Schema of a collection\'s entries.', positionals: ['collection'], flags: [],
-    request: ([collection]) => ({ method: 'GET', path: `/api/cms/schema/${collection}` }) },
+    request: ([collection]) => ({ method: 'GET', path: `/api/cms/schema/${seg(collection)}` }) },
 
   { noun: 'taxonomies', verb: 'list', summary: 'The taxonomies, such as categories and tags.', positionals: [], flags: [],
     request: () => ({ method: 'GET', path: '/api/cms/taxonomies' }), table: { rows: data => data.items, columns: ['name', 'label', 'hierarchical'] } },
 
   { noun: 'terms', verb: 'list', summary: 'A taxonomy\'s terms.', positionals: ['taxonomy'], flags: PAGED,
-    request: ([taxonomy], flags) => ({ method: 'GET', path: `/api/cms/terms/${taxonomy}`, query: paged(flags) }), table: { rows: data => data.items, columns: ['id', 'name', 'slug', 'parent'], total: true } },
+    request: ([taxonomy], flags) => ({ method: 'GET', path: `/api/cms/terms/${seg(taxonomy)}`, query: paged(flags) }), table: { rows: data => data.items, columns: ['id', 'name', 'slug', 'parent'], total: true } },
   { noun: 'terms', verb: 'get', summary: 'One term.', positionals: ['taxonomy', 'id'], flags: [],
-    request: ([taxonomy, id]) => ({ method: 'GET', path: `/api/cms/terms/${taxonomy}/${id}` }) },
+    request: ([taxonomy, id]) => ({ method: 'GET', path: `/api/cms/terms/${seg(taxonomy)}/${seg(id)}` }) },
   { noun: 'terms', verb: 'create', summary: 'Create a term.', positionals: ['taxonomy'], flags: ['name', 'slug', 'parent', 'description', 'data', 'set'], ...WRITE,
-    request: ([taxonomy], flags, body) => ({ method: 'POST', path: `/api/cms/terms/${taxonomy}`, body: { ...body, ...picked(flags, ['name', 'slug', 'parent', 'description']) } }) },
+    request: ([taxonomy], flags, body) => ({ method: 'POST', path: `/api/cms/terms/${seg(taxonomy)}`, body: { ...body, ...picked(flags, ['name', 'slug', 'parent', 'description']) } }) },
   { noun: 'terms', verb: 'update', summary: 'Rename or move a term.', positionals: ['taxonomy', 'id'], flags: ['name', 'slug', 'parent', 'description', 'data', 'set'], ...WRITE,
-    request: ([taxonomy, id], flags, body) => ({ method: 'PATCH', path: `/api/cms/terms/${taxonomy}/${id}`, body: { ...body, ...picked(flags, ['name', 'slug', 'parent', 'description']) } }) },
+    request: ([taxonomy, id], flags, body) => ({ method: 'PATCH', path: `/api/cms/terms/${seg(taxonomy)}/${seg(id)}`, body: { ...body, ...picked(flags, ['name', 'slug', 'parent', 'description']) } }) },
   { noun: 'terms', verb: 'delete', summary: 'Delete a term; entries keep their other terms.', positionals: ['taxonomy', 'id'], flags: ['yes'], destructive: true,
-    request: ([taxonomy, id]) => ({ method: 'DELETE', path: `/api/cms/terms/${taxonomy}/${id}` }) },
+    request: ([taxonomy, id]) => ({ method: 'DELETE', path: `/api/cms/terms/${seg(taxonomy)}/${seg(id)}` }) },
 
   { noun: 'entries', verb: 'list', summary: 'Entries of a collection; --status any lists drafts and the rest.', positionals: ['collection'], flags: ['status', ...PAGED, 'locale', 'term', 'filter', 'format'],
-    request: ([collection], flags) => ({ method: 'GET', path: `/api/cms/content/${collection}`, query: { ...paged(flags), status: flags.status, locale: flags.locale, term: flags.term, format: flags.format === 'html' ? 'html' : undefined, ...filters(flags.filter) } }),
+    request: ([collection], flags) => ({ method: 'GET', path: `/api/cms/content/${seg(collection)}`, query: { ...paged(flags), status: flags.status, locale: flags.locale, term: flags.term, format: flags.format === 'html' ? 'html' : undefined, ...filters(flags.filter) } }),
     table: { rows: data => data.items, columns: ['id', 'status', 'title', 'slug', { name: 'updated', value: row => when(row.updatedAt) }], total: true } },
   { noun: 'entries', verb: 'get', summary: 'One entry by ID, or a published entry by slug, with its rev.', positionals: ['collection', 'id'], flags: ['format'],
-    request: ([collection, id], flags) => ({ method: 'GET', path: `/api/cms/content/${collection}/${id}`, query: { format: flags.format === 'html' ? 'html' : undefined } }) },
+    request: ([collection, id], flags) => ({ method: 'GET', path: `/api/cms/content/${seg(collection)}/${seg(id)}`, query: { format: flags.format === 'html' ? 'html' : undefined } }) },
   { noun: 'entries', verb: 'create', summary: 'Create an entry from --data or --set fields (status draft unless set).', positionals: ['collection'], flags: ['data', 'set'], ...WRITE,
-    request: ([collection], _flags, body) => ({ method: 'POST', path: `/api/cms/content/${collection}`, body }) },
+    request: ([collection], _flags, body) => ({ method: 'POST', path: `/api/cms/content/${seg(collection)}`, body }) },
   { noun: 'entries', verb: 'update', summary: 'Change an entry\'s fields.', positionals: ['collection', 'id'], flags: ['data', 'set', 'rev'], ...WRITE,
-    request: ([collection, id], flags, body) => ({ method: 'PATCH', path: `/api/cms/content/${collection}/${id}`, body, rev: revision(flags, `/api/cms/content/${collection}/${id}`) }) },
+    request: ([collection, id], flags, body) => ({ method: 'PATCH', path: `/api/cms/content/${seg(collection)}/${seg(id)}`, body, rev: revision(flags, `/api/cms/content/${seg(collection)}/${seg(id)}`) }) },
   { noun: 'entries', verb: 'delete', summary: 'Delete an entry permanently (trash keeps it recoverable).', positionals: ['collection', 'id'], flags: ['rev', 'yes'], destructive: true,
-    request: ([collection, id], flags) => ({ method: 'DELETE', path: `/api/cms/content/${collection}/${id}`, rev: revision(flags, `/api/cms/content/${collection}/${id}`, 'query') }) },
+    request: ([collection, id], flags) => ({ method: 'DELETE', path: `/api/cms/content/${seg(collection)}/${seg(id)}`, rev: revision(flags, `/api/cms/content/${seg(collection)}/${seg(id)}`, 'query') }) },
   { noun: 'entries', verb: 'publish', summary: 'Publish an entry now, or schedule it with --at.', positionals: ['collection', 'id'], flags: ['at', 'rev'],
-    request: ([collection, id], flags) => ({ method: 'POST', path: `/api/cms/content/${collection}/${id}/publish`, body: { ...(flags.at ? { at: flags.at } : {}), ...(flags.rev ? { rev: Number(flags.rev) } : {}) } }) },
+    request: ([collection, id], flags) => ({ method: 'POST', path: `/api/cms/content/${seg(collection)}/${seg(id)}/publish`, body: { ...(flags.at ? { at: flags.at } : {}), ...(flags.rev ? { rev: Number(flags.rev) } : {}) } }) },
   { noun: 'entries', verb: 'unpublish', summary: 'Take an entry off the site, back to a draft.', positionals: ['collection', 'id'], flags: ['rev'],
-    request: ([collection, id], flags) => ({ method: 'POST', path: `/api/cms/content/${collection}/${id}/unpublish`, body: flags.rev ? { rev: Number(flags.rev) } : {} }) },
+    request: ([collection, id], flags) => ({ method: 'POST', path: `/api/cms/content/${seg(collection)}/${seg(id)}/unpublish`, body: flags.rev ? { rev: Number(flags.rev) } : {} }) },
   { noun: 'entries', verb: 'trash', summary: 'Move an entry to the trash.', positionals: ['collection', 'id'], flags: ['rev'],
-    request: ([collection, id], flags) => ({ method: 'PATCH', path: `/api/cms/content/${collection}/${id}`, body: { status: 'trash' }, rev: revision(flags, `/api/cms/content/${collection}/${id}`) }) },
+    request: ([collection, id], flags) => ({ method: 'PATCH', path: `/api/cms/content/${seg(collection)}/${seg(id)}`, body: { status: 'trash' }, rev: revision(flags, `/api/cms/content/${seg(collection)}/${seg(id)}`) }) },
   { noun: 'entries', verb: 'revisions', summary: 'An entry\'s revisions, newest first.', positionals: ['collection', 'id'], flags: ['limit'],
-    request: ([collection, id], flags) => ({ method: 'GET', path: `/api/cms/content/${collection}/${id}/revisions`, query: { limit: flags.limit } }),
+    request: ([collection, id], flags) => ({ method: 'GET', path: `/api/cms/content/${seg(collection)}/${seg(id)}/revisions`, query: { limit: flags.limit } }),
     table: { rows: data => data.items, columns: ['revision', { name: 'at', value: row => when(row.at) }, 'actor', 'status', 'title'] } },
   { noun: 'entries', verb: 'revision', summary: 'The content of one revision.', positionals: ['collection', 'id', 'revision'], flags: [],
-    request: ([collection, id, revision]) => ({ method: 'GET', path: `/api/cms/content/${collection}/${id}/revisions/${revision}` }) },
+    request: ([collection, id, revision]) => ({ method: 'GET', path: `/api/cms/content/${seg(collection)}/${seg(id)}/revisions/${seg(revision)}` }) },
   { noun: 'entries', verb: 'revert', summary: 'Restore a revision\'s fields as a new revision.', positionals: ['collection', 'id', 'revision'], flags: ['rev'],
-    request: ([collection, id, revision], flags) => ({ method: 'POST', path: `/api/cms/content/${collection}/${id}/revisions/${revision}/restore`, body: flags.rev ? { rev: Number(flags.rev) } : {} }) },
+    request: ([collection, id, revision], flags) => ({ method: 'POST', path: `/api/cms/content/${seg(collection)}/${seg(id)}/revisions/${seg(revision)}/restore`, body: flags.rev ? { rev: Number(flags.rev) } : {} }) },
 
   { noun: 'entries', verb: 'search', summary: 'Search the site as visitors do: published entries of every collection, best first, with snippets.', positionals: ['words...'], flags: ['collection', 'page', 'per-page', 'locale'],
     request: (words, flags) => ({ method: 'GET', path: '/api/cms/search', query: { q: words.join(' '), collection: flags.collection, page: flags.page, perPage: flags['per-page'], locale: flags.locale } }),
     table: { rows: data => data.items, columns: ['collection', 'id', 'title', 'url', { name: 'snippet', value: row => row.snippet.map(part => part.match ? `*${part.text}*` : part.text).join('') }] } },
   { noun: 'notes', verb: 'list', summary: 'An entry\'s review notes, or the entries with notes across the site.', positionals: ['collection?', 'id?'], flags: ['status', 'limit'],
     request: ([collection, id], flags) => collection && id
-      ? { method: 'GET', path: `/api/cms/content/${collection}/${id}/notes`, query: { status: flags.status } }
+      ? { method: 'GET', path: `/api/cms/content/${seg(collection)}/${seg(id)}/notes`, query: { status: flags.status } }
       : { method: 'GET', path: '/api/cms/notes', query: { status: flags.status, limit: flags.limit } },
     table: { rows: data => data.threads ? data.threads.map(thread => ({ ...thread.root, replies: thread.replies.length })) : data.items.flatMap(item => item.threads.map(thread => ({ collection: item.collection, entry: item.entryId, ...thread.root, replies: thread.replies.length }))),
       columns: ['id', 'collection', 'entry', 'status', 'target', { name: 'body', value: row => String(row.body ?? '').slice(0, 60) }, 'replies'] } },
   { noun: 'notes', verb: 'add', summary: 'Leave a note on an entry, or reply with --reply-to.', positionals: ['collection', 'id'], flags: ['body', 'target', 'quote', 'reply-to'],
-    request: ([collection, id], flags) => ({ method: 'POST', path: `/api/cms/content/${collection}/${id}/notes`, body: { body: flags.body ?? '', ...(flags['reply-to'] ? { parentId: flags['reply-to'] } : { target: flags.target ?? 'entry', ...(flags.quote ? { quote: flags.quote } : {}) }) } }) },
+    request: ([collection, id], flags) => ({ method: 'POST', path: `/api/cms/content/${seg(collection)}/${seg(id)}/notes`, body: { body: flags.body ?? '', ...(flags['reply-to'] ? { parentId: flags['reply-to'] } : { target: flags.target ?? 'entry', ...(flags.quote ? { quote: flags.quote } : {}) }) } }) },
   { noun: 'notes', verb: 'resolve', summary: 'Resolve a thread by its root note.', positionals: ['noteId'], flags: [],
-    request: ([noteId]) => ({ method: 'PATCH', path: `/api/cms/notes/${noteId}`, body: { status: 'resolved' } }) },
+    request: ([noteId]) => ({ method: 'PATCH', path: `/api/cms/notes/${seg(noteId)}`, body: { status: 'resolved' } }) },
   { noun: 'notes', verb: 'reopen', summary: 'Reopen a resolved thread.', positionals: ['noteId'], flags: [],
-    request: ([noteId]) => ({ method: 'PATCH', path: `/api/cms/notes/${noteId}`, body: { status: 'open' } }) },
+    request: ([noteId]) => ({ method: 'PATCH', path: `/api/cms/notes/${seg(noteId)}`, body: { status: 'open' } }) },
   { noun: 'notes', verb: 'edit', summary: 'Change a note\'s text (its author).', positionals: ['noteId'], flags: ['body'],
-    request: ([noteId], flags) => ({ method: 'PATCH', path: `/api/cms/notes/${noteId}`, body: { body: flags.body ?? '' } }) },
+    request: ([noteId], flags) => ({ method: 'PATCH', path: `/api/cms/notes/${seg(noteId)}`, body: { body: flags.body ?? '' } }) },
   { noun: 'notes', verb: 'delete', summary: 'Remove a note; a root takes its replies.', positionals: ['noteId'], flags: ['yes'], destructive: true,
-    request: ([noteId]) => ({ method: 'DELETE', path: `/api/cms/notes/${noteId}` }) },
+    request: ([noteId]) => ({ method: 'DELETE', path: `/api/cms/notes/${seg(noteId)}` }) },
 
   { noun: 'users', verb: 'list', summary: 'The site\'s users and their roles.', positionals: [], flags: [...PAGED, 'role'],
     request: (_args, flags) => ({ method: 'GET', path: '/api/cms/users', query: { ...paged(flags), role: list(flags.role)[0] } }),
     table: { rows: data => data.items, columns: ['id', 'email', 'name', { name: 'roles', value: row => row.roles.map(role => role.id).join(' ') }, { name: 'last sign-in', value: row => when(row.lastSignedInAt) }], total: true } },
   { noun: 'users', verb: 'get', summary: 'One user, by ID or email.', positionals: ['id'], flags: [],
-    request: ([id]) => ({ method: 'GET', path: `/api/cms/users/${id}` }) },
+    request: ([id]) => ({ method: 'GET', path: `/api/cms/users/${seg(id)}` }) },
   { noun: 'users', verb: 'create', summary: 'Create a user with --email, --password, --name and --role.', positionals: [], flags: ['email', 'password', 'name', 'role', 'data', 'set'], ...WRITE,
     request: (_args, flags, body) => ({ method: 'POST', path: '/api/cms/users', body: { ...body, ...picked(flags, ['email', 'password', 'name']), ...(flags.role ? { roles: list(flags.role) } : {}) } }) },
   { noun: 'users', verb: 'update', summary: 'Change a user\'s name, email, password, roles or status.', positionals: ['id'], flags: ['email', 'password', 'name', 'role', 'status', 'data', 'set'], ...WRITE,
-    request: ([id], flags, body) => ({ method: 'PATCH', path: `/api/cms/users/${id}`, body: { ...body, ...picked(flags, ['email', 'password', 'name', 'status']), ...(flags.role ? { roles: list(flags.role) } : {}) } }) },
+    request: ([id], flags, body) => ({ method: 'PATCH', path: `/api/cms/users/${seg(id)}`, body: { ...body, ...picked(flags, ['email', 'password', 'name', 'status']), ...(flags.role ? { roles: list(flags.role) } : {}) } }) },
   { noun: 'users', verb: 'delete', summary: 'Delete a user (on an added site, remove the member).', positionals: ['id'], flags: ['yes'], destructive: true,
-    request: ([id]) => ({ method: 'DELETE', path: `/api/cms/users/${id}` }) },
+    request: ([id]) => ({ method: 'DELETE', path: `/api/cms/users/${seg(id)}` }) },
   { noun: 'roles', verb: 'list', summary: 'The roles and their permissions.', positionals: [], flags: [],
     request: () => ({ method: 'GET', path: '/api/cms/roles' }), table: { rows: data => data.items, columns: ['id', 'name', 'users', { name: 'permissions', value: row => row.permissions.join(' ') }] } },
 
   { noun: 'settings', verb: 'get', summary: 'The settings document, or one group with its fields.', positionals: ['group?'], flags: [],
-    request: ([group]) => ({ method: 'GET', path: group ? `/api/cms/settings/${group}` : '/api/cms/settings' }),
+    request: ([group]) => ({ method: 'GET', path: group ? `/api/cms/settings/${seg(group)}` : '/api/cms/settings' }),
     table: { rows: data => data.values ? Object.entries(data.values).map(([field, value]) => ({ field, value: JSON.stringify(value), label: data.fields.find(entry => entry.name === field)?.label ?? '' })) : null, columns: ['field', 'value', 'label'] } },
   { noun: 'settings', verb: 'set', summary: 'Change fields of a group: --set siteTitle="My site".', positionals: ['group'], flags: ['data', 'set'], ...WRITE,
-    request: ([group], _flags, body) => ({ method: 'PATCH', path: `/api/cms/settings/${group}`, body }),
+    request: ([group], _flags, body) => ({ method: 'PATCH', path: `/api/cms/settings/${seg(group)}`, body }),
     table: { rows: data => Object.entries(data.values).map(([field, value]) => ({ field, value: JSON.stringify(value) })), columns: ['field', 'value'] } },
   { noun: 'settings', verb: 'export', summary: 'The settings document as JSON, to stdout or --out.', positionals: [], flags: ['out'],
     request: () => ({ method: 'GET', path: '/api/cms/settings' }), raw: data => data.document },
@@ -174,29 +187,29 @@ export const CMS_COMMANDS = [
   { noun: 'menus', verb: 'list', summary: 'The navigation menus and where they show.', positionals: [], flags: [],
     request: () => ({ method: 'GET', path: '/api/cms/appearance/menus' }), table: { rows: data => data.items, columns: ['id', 'name', 'items', { name: 'locations', value: row => row.locations.join(' ') }, { name: 'updated', value: row => when(row.updatedAt) }] } },
   { noun: 'menus', verb: 'get', summary: 'One menu: its items tree, rev and locations.', positionals: ['id'], flags: [],
-    request: ([id]) => ({ method: 'GET', path: `/api/cms/appearance/menus/${id}` }) },
+    request: ([id]) => ({ method: 'GET', path: `/api/cms/appearance/menus/${seg(id)}` }) },
   { noun: 'menus', verb: 'create', summary: 'Create a menu from --data \'{"items":[…]}\' and show it with --location.', positionals: ['name'], flags: ['location', 'data', 'set'], ...WRITE,
     request: ([name], flags, body) => ({ method: 'POST', path: '/api/cms/appearance/menus', body: { ...body, name, ...(flags.location ? { locations: list(flags.location) } : {}) } }) },
   { noun: 'menus', verb: 'update', summary: 'Rename a menu (--name), replace its items (--data) or move it (--location).', positionals: ['id'], flags: ['name', 'location', 'data', 'set', 'rev'], ...WRITE,
-    request: ([id], flags, body) => ({ method: 'PATCH', path: `/api/cms/appearance/menus/${id}`, body: { ...body, ...picked(flags, ['name']), ...(flags.location ? { locations: list(flags.location) } : {}) }, rev: revision(flags, `/api/cms/appearance/menus/${id}`) }) },
+    request: ([id], flags, body) => ({ method: 'PATCH', path: `/api/cms/appearance/menus/${seg(id)}`, body: { ...body, ...picked(flags, ['name']), ...(flags.location ? { locations: list(flags.location) } : {}) }, rev: revision(flags, `/api/cms/appearance/menus/${seg(id)}`) }) },
   { noun: 'menus', verb: 'delete', summary: 'Delete a menu; its locations show none.', positionals: ['id'], flags: ['yes'], destructive: true,
-    request: ([id]) => ({ method: 'DELETE', path: `/api/cms/appearance/menus/${id}` }) },
+    request: ([id]) => ({ method: 'DELETE', path: `/api/cms/appearance/menus/${seg(id)}` }) },
 
   { noun: 'locations', verb: 'list', summary: 'The themes\' menu locations and the menu at each.', positionals: [], flags: [],
     request: () => ({ method: 'GET', path: '/api/cms/appearance/locations' }), table: { rows: data => data.items, columns: ['name', 'label', 'theme', 'active', 'menu'] } },
   { noun: 'locations', verb: 'set', summary: 'Show a menu at a location.', positionals: ['location', 'menu'], flags: [],
-    request: ([location, menu]) => ({ method: 'PATCH', path: `/api/cms/appearance/locations/${location}`, body: { menu } }) },
+    request: ([location, menu]) => ({ method: 'PATCH', path: `/api/cms/appearance/locations/${seg(location)}`, body: { menu } }) },
   { noun: 'locations', verb: 'clear', summary: 'Show no menu at a location.', positionals: ['location'], flags: [],
-    request: ([location]) => ({ method: 'PATCH', path: `/api/cms/appearance/locations/${location}`, body: { menu: null } }) },
+    request: ([location]) => ({ method: 'PATCH', path: `/api/cms/appearance/locations/${seg(location)}`, body: { menu: null } }) },
 
   { noun: 'areas', verb: 'list', summary: 'The themes\' widget areas and the blocks each shows.', positionals: [], flags: [],
     request: () => ({ method: 'GET', path: '/api/cms/appearance/areas' }), table: { rows: data => data.items, columns: ['name', 'label', 'theme', 'active', 'rev', 'saved', { name: 'blocks', value: row => row.blocks.length }] } },
   { noun: 'areas', verb: 'get', summary: 'One widget area with its blocks and rev (0 while the theme\'s defaults show).', positionals: ['name'], flags: [],
-    request: ([name]) => ({ method: 'GET', path: `/api/cms/appearance/areas/${name}` }) },
+    request: ([name]) => ({ method: 'GET', path: `/api/cms/appearance/areas/${seg(name)}` }) },
   { noun: 'areas', verb: 'set', summary: 'Replace an area\'s blocks from --data \'{"blocks":[…]}\'.', positionals: ['name'], flags: ['data', 'set', 'rev'], ...WRITE,
-    request: ([name], flags, body) => ({ method: 'PUT', path: `/api/cms/appearance/areas/${name}`, body, rev: revision(flags, `/api/cms/appearance/areas/${name}`, 'body', 0) }) },
+    request: ([name], flags, body) => ({ method: 'PUT', path: `/api/cms/appearance/areas/${seg(name)}`, body, rev: revision(flags, `/api/cms/appearance/areas/${seg(name)}`, 'body', 0) }) },
   { noun: 'areas', verb: 'reset', summary: 'Forget an area\'s saved blocks; the theme\'s defaults show again.', positionals: ['name'], flags: ['yes'], destructive: true,
-    request: ([name]) => ({ method: 'DELETE', path: `/api/cms/appearance/areas/${name}` }) },
+    request: ([name]) => ({ method: 'DELETE', path: `/api/cms/appearance/areas/${seg(name)}` }) },
 
   { noun: 'media', verb: 'list', summary: 'Files in the media library.', positionals: [], flags: ['q', 'kind'],
     request: (_args, flags) => ({ method: 'GET', path: '/api/cms/media', query: { q: flags.q, kind: flags.kind } }), table: { rows: data => data.items, columns: ['id', 'name', 'kind', 'url'] } },
@@ -206,15 +219,15 @@ export const CMS_COMMANDS = [
   { noun: 'sites', verb: 'list', summary: 'The network\'s sites (network admins, on the network host).', positionals: [], flags: ['status', ...PAGED],
     request: (_args, flags) => ({ method: 'GET', path: '/api/cms/network/sites', query: { ...paged(flags), status: flags.status } }), table: { rows: data => data.items, columns: ['id', 'name', 'host', 'status'] } },
   { noun: 'sites', verb: 'get', summary: 'One site with its domains.', positionals: ['id'], flags: [],
-    request: ([id]) => ({ method: 'GET', path: `/api/cms/network/sites/${id}` }) },
+    request: ([id]) => ({ method: 'GET', path: `/api/cms/network/sites/${seg(id)}` }) },
   { noun: 'sites', verb: 'create', summary: 'Add a site: a name and --host, with --admin, --language, --id and --no-starter.', positionals: ['name'], flags: ['host', 'admin', 'language', 'id', 'no-starter'],
     request: ([name], flags) => ({ method: 'POST', path: '/api/cms/network/sites', body: { name, ...picked(flags, ['host', 'admin', 'language', 'id']), ...(flags['no-starter'] ? { starter: false } : {}) } }) },
   { noun: 'sites', verb: 'archive', summary: 'Archive a site: visitors get 503, members keep the dashboard.', positionals: ['id'], flags: [],
-    request: ([id]) => ({ method: 'PATCH', path: `/api/cms/network/sites/${id}`, body: { status: 'archived' } }) },
+    request: ([id]) => ({ method: 'PATCH', path: `/api/cms/network/sites/${seg(id)}`, body: { status: 'archived' } }) },
   { noun: 'sites', verb: 'restore', summary: 'Make an archived or deleted site active again.', positionals: ['id'], flags: [],
-    request: ([id]) => ({ method: 'PATCH', path: `/api/cms/network/sites/${id}`, body: { status: 'active' } }) },
+    request: ([id]) => ({ method: 'PATCH', path: `/api/cms/network/sites/${seg(id)}`, body: { status: 'active' } }) },
   { noun: 'sites', verb: 'delete', summary: 'Delete a site; it can be restored for 30 days.', positionals: ['id'], flags: ['yes'], destructive: true,
-    request: ([id]) => ({ method: 'PATCH', path: `/api/cms/network/sites/${id}`, body: { status: 'deleted' } }) },
+    request: ([id]) => ({ method: 'PATCH', path: `/api/cms/network/sites/${seg(id)}`, body: { status: 'deleted' } }) },
 ];
 
 export const NOUNS = [...new Set(CMS_COMMANDS.map(command => command.noun))];

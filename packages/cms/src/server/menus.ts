@@ -11,6 +11,7 @@ import { MENU_LIMITS, MENU_LOCATION, menuProblems, menuSize, normalizeMenu, type
 import { hasPermission, PERMISSIONS, principalId, type Principal } from '../permissions';
 import type { MenuWriteInput } from '../hooks';
 import { uuidv7 } from '@cossackframework/core';
+import { readPaged } from './budget';
 
 export interface MenuSummary {
     readonly id: string;
@@ -58,13 +59,12 @@ export class CmsMenus {
     }
 
     async list(): Promise<MenuSummary[]> {
-        const result = await this.#db.read([
-            { rql: `SELECT ${COLUMNS} FROM cms_menus ORDER BY lower(name), id LIMIT 200` },
-            { rql: 'SELECT location, menu_id FROM cms_menu_locations ORDER BY location LIMIT 200' },
-        ]);
+        const result = await this.#db.read([{ rql: 'SELECT location, menu_id FROM cms_menu_locations ORDER BY location LIMIT 200' }]);
         const locations = new Map<string, string[]>();
-        for (const [location, menu] of result.results[1]!.rows) locations.set(menu as string, [...(locations.get(menu as string) ?? []), location as string]);
-        return result.results[0]!.rows.map(row => {
+        for (const [location, menu] of result.results[0]!.rows) locations.set(menu as string, [...(locations.get(menu as string) ?? []), location as string]);
+        // Each menu holds up to 300 items: a few large ones may come in smaller reads.
+        const rows = await readPaged(this.#db, (size, at) => ({ rql: `SELECT ${COLUMNS} FROM cms_menus ORDER BY lower(name), id LIMIT $limit OFFSET $offset`, params: { $limit: size, $offset: at } }), 200, 0, { afterSequence: result.sequence });
+        return rows.map(row => {
             const menu = menuOf(row);
             return { id: menu.id, name: menu.name, items: menuSize(menu.items), locations: locations.get(menu.id) ?? [], updatedAt: menu.updatedAt };
         });

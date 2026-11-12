@@ -96,8 +96,7 @@ describe.skipIf(!live)('account flows', () => {
 
     it('tells an account waiting for approval so, once its password is right', async () => {
         const cms = state.cms!;
-        const user = await cms.users.create({ email: 'waiting@example.com', name: 'Waiting', password: 'long password', roles: ['subscriber'] });
-        await cms.users.holdForApproval(user.id, { verified: true });
+        const user = await cms.users.create({ email: 'waiting@example.com', name: 'Waiting', password: 'long password', roles: ['subscriber'], approval: { verified: true } });
         request('https://site.example/auth/login', { APP_URL: 'https://site.example' });
         await expect(loginUser('waiting@example.com', 'long password', '198.51.100.1')).rejects.toBeInstanceOf(SignInPendingError);
         expect(await loginUser('waiting@example.com', 'wrong password', '198.51.100.1')).toBeNull();

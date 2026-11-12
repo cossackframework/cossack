@@ -259,7 +259,14 @@ async function invoke(entry: Entry, value: unknown, input: unknown, point: Exten
     }
 }
 
-/** Deep-copy plain objects and arrays, then freeze them. Other objects are shared as-is. */
+/** Keys a copy never takes: assigning `__proto__` would set the copy's prototype from payload data. */
+const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/**
+ * Deep-copy plain objects and arrays, then freeze them. Other objects are shared as-is. A
+ * `__proto__`, `constructor` or `prototype` key (own keys `JSON.parse` makes) is left out, so
+ * request JSON passed as a payload cannot give handlers inherited properties.
+ */
 function snapshot<T>(value: T, depth = 0): T {
     if (depth > 64) throw new RangeError('Hook payload nesting exceeds 64');
     if (value === null || typeof value !== 'object') return value;
@@ -267,6 +274,6 @@ function snapshot<T>(value: T, depth = 0): T {
     const prototype = Object.getPrototypeOf(value);
     if (prototype !== Object.prototype && prototype !== null) return value;
     const copy: { [key: string]: unknown } = {};
-    for (const [key, entry] of Object.entries(value)) copy[key] = snapshot(entry, depth + 1);
+    for (const [key, entry] of Object.entries(value)) if (!UNSAFE_KEYS.has(key)) copy[key] = snapshot(entry, depth + 1);
     return Object.freeze(copy) as T;
 }

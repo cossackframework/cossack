@@ -10,10 +10,11 @@ import { dispatch } from '../src/dispatch.js';
 import { setResultSink } from '../src/output.js';
 import { parseValue } from '../src/cms/input.js';
 import { formatTable } from '../src/cms/output.js';
-import { cmsDiagnostics } from '../src/cms/catalog.js';
+import { cmsDiagnostics, findCommand, seg } from '../src/cms/catalog.js';
 import { mimeType } from '../src/cms/mime.js';
 import { assertCredentialTarget, isLocalAddress, resolveTarget } from '../src/cms/client.js';
 import { loginCommand, logoutCommand } from '../src/cms/login.js';
+import { passwordResetCommand } from '../src/cms/recovery.js';
 import { loginKey, readLogins, rememberLogin } from '../src/cms/logins.js';
 
 const TOKEN = `cms_0123456789abcdef.${'s'.repeat(43)}`;
@@ -409,7 +410,26 @@ describe('cms helpers', () => {
       expect(asked.map(question => question.message)).toEqual([expect.stringContaining('Send your password'), 'Email for https://evil.example', 'Password for https://evil.example']);
       expect(refused).toHaveBeenCalled();
       expect(never).not.toHaveBeenCalled();
+      // A typed recovery code is held to the same rule as a typed password.
+      asked.length = 0;
+      await expect(passwordResetCommand({ flags: { email: 'ada@example.com' }, env: { COSSACK_CONFIG_DIR: project }, cwd: project, fetch: never, ask: decline })).rejects.toMatchObject({ code: 'COSSACK_CMS_URL_UNCONFIRMED' });
+      expect(asked).toEqual([expect.objectContaining({ type: 'confirm', message: expect.stringContaining('recovery code') })]);
+      asked.length = 0;
+      const reset = vi.fn(async () => new Response(JSON.stringify({ email: 'ada@example.com', resetUrl: 'https://evil.example/r' }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      await passwordResetCommand({ flags: { email: 'ada@example.com' }, env: { COSSACK_CONFIG_DIR: project }, cwd: project, fetch: reset, ask: accept });
+      expect(asked.map(question => question.message)).toEqual([expect.stringContaining('Send your recovery code'), 'Recovery code (CMS_RECOVERY_CODE) for https://evil.example']);
+      expect(never).not.toHaveBeenCalled();
     } finally { await fs.rm(project, { recursive: true, force: true }); }
+  });
+
+  it('puts positional IDs in paths as one encoded segment, and refuses ones that name another path', () => {
+    expect(findCommand('entries', 'get').request(['posts', 'a b%2e'], {}).path).toBe('/api/cms/content/posts/a%20b%252e');
+    for (const id of ['../../users/u1', '..', '.', 'x?y', 'x#y', 'a/b', 'a\\b', '']) {
+      expect(() => findCommand('entries', 'delete').request(['posts', id], {})).toThrow(expect.objectContaining({ code: 'COSSACK_CMS_INVALID_ARGUMENT' }));
+    }
+    expect(() => seg('cms/posts')).toThrow();
+    // Names that go in the body are left as typed.
+    expect(findCommand('menus', 'create').request(['Main menu / top'], {}, {}).body.name).toBe('Main menu / top');
   });
 
   it('logs out of the stored login in use, and ends a network login only with --network', async () => {

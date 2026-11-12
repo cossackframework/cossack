@@ -12,6 +12,7 @@ import { holdsAll, NETWORK_ADMIN, userPrincipal, type Principal } from '../permi
 import { parseMeta, type MetaCheck } from './taxonomies';
 import { ACCOUNT_ID, normalizeEmail, type AccountProfile, type CmsAccount, type CmsAccounts } from './accounts';
 import { MAIN_SITE } from './sites';
+import { readByIds } from './budget';
 
 export interface CmsUser {
     readonly id: string;
@@ -98,16 +99,21 @@ export class CmsUsers {
      * A new account that is a member of this site with these roles: a site account on an added
      * site, unless `network` asks for a network account, and a network account on the main site.
      */
-    async create(input: AccountProfile & { email: string; name: string; password?: string; roles?: readonly string[]; id?: string; meta?: unknown; networkRole?: typeof NETWORK_ADMIN; network?: boolean; status?: 'active' | 'disabled' }): Promise<CmsUser> {
+    /**
+     * Create an account and its membership. With `approval`, the account starts disabled and waits
+     * for approval: its registrations row is written with its member row, so no failure leaves an
+     * active account that skipped approval, or a disabled one missing from the queue.
+     */
+    async create(input: AccountProfile & { email: string; name: string; password?: string; roles?: readonly string[]; id?: string; meta?: unknown; networkRole?: typeof NETWORK_ADMIN; network?: boolean; status?: 'active' | 'disabled'; approval?: { verified: boolean } }): Promise<CmsUser> {
         const meta = await this.#meta(input.meta, null);
         for (const role of input.roles ?? []) if (!ID.test(role)) throw new CmsError('CMS_VALIDATION', `Invalid role ${role}.`);
         const store = input.network || !this.#siteAccounts ? this.#accounts : this.#siteAccounts;
         if (store === this.#siteAccounts && input.networkRole) throw new CmsError('CMS_VALIDATION', 'Network admins have network accounts.');
         // Members' emails are unique on a site, whichever kind their account is.
         if (await this.findByEmail(input.email).catch(() => null)) throw new CmsError('CMS_CONFLICT', 'An account with this email already exists.', { fields: { email: 'is taken.' } });
-        const { network: _network, ...profile } = input;
-        const account = await store.create(profile);
-        try { return await this.#join(account, input.roles ?? [], meta, store === this.#accounts); }
+        const { network: _network, approval, ...profile } = input;
+        const account = await store.create(approval ? { ...profile, status: 'disabled' } : profile);
+        try { return await this.#join(account, input.roles ?? [], meta, store === this.#accounts, approval); }
         catch (error) {
             await store.delete(account.id).catch(() => undefined);
             throw error;
@@ -124,14 +130,15 @@ export class CmsUsers {
     }
 
     /** Copy the account in as a member with these roles. The network records the memberships of its own accounts. */
-    async #join(account: CmsAccount, roles: readonly string[], meta: { readonly [field: string]: unknown }, network: boolean): Promise<CmsUser> {
+    async #join(account: CmsAccount, roles: readonly string[], meta: { readonly [field: string]: unknown }, network: boolean, approval?: { verified: boolean }): Promise<CmsUser> {
         const now = this.#now();
         const slug = await this.#freeSlug(account.name, account.id);
         try {
             await this.#db.write([{
                 rql: 'INSERT INTO cms_users (id, email, name, avatar, status, created_at, updated_at, meta, slug) VALUES ($id, $email, $name, $avatar, $status, $now, $now, $meta, $slug)',
-                params: { $id: account.id, $email: account.email, $name: account.name, $avatar: account.avatar, $status: account.status, $now: now, $meta: JSON.stringify(meta), $slug: slug },
-            }, ...roleStatements(account.id, roles)], WRITE);
+                params: { $id: account.id, $email: account.email, $name: account.name, $avatar: account.avatar, $status: approval ? 'disabled' : account.status, $now: now, $meta: JSON.stringify(meta), $slug: slug },
+            }, ...roleStatements(account.id, roles),
+            ...(approval ? [{ rql: 'INSERT INTO cms_registrations (user_id, verified, created_at) VALUES ($id, $verified, $now)', params: { $id: account.id, $verified: approval.verified ? 1 : 0, $now: now } }] : [])], WRITE);
         } catch (error) { throw memberError(error); }
         if (network) {
             // Without the network's record of the membership the member row is an orphan that
@@ -139,6 +146,7 @@ export class CmsUsers {
             try { await this.#accounts.join(account.id, this.#site); }
             catch (error) {
                 await this.#db.write([
+                    { rql: 'DELETE FROM cms_registrations WHERE user_id = $id', params: { $id: account.id } },
                     { rql: 'DELETE FROM cms_user_roles WHERE user_id = $id', params: { $id: account.id } },
                     { rql: 'DELETE FROM cms_users WHERE id = $id', params: { $id: account.id } },
                 ], WRITE).catch(() => undefined);
@@ -161,27 +169,31 @@ export class CmsUsers {
         return (await this.getMany([id])).get(id) ?? null;
     }
 
-    /** Users by ID in one read. Missing IDs are absent from the map. */
+    /** Users by ID, in reads that fit the result budget. Missing IDs are absent from the map. */
     async getMany(ids: readonly string[]): Promise<Map<string, CmsUser>> {
         const wanted = [...new Set(ids.filter(id => ID.test(id)))].slice(0, USERS_PER_READ);
         if (!wanted.length) return new Map();
         const list = inList('u', wanted);
+        // Profiles hold their meta (bio, links): many users may come in smaller reads.
+        const userRows = await readByIds(this.#db, wanted, slice => {
+            const part = inList('u', slice);
+            return { rql: `SELECT id, email, name, avatar, status, created_at, last_sign_in_at, meta, slug FROM cms_users WHERE id IN ${part.rql}`, params: part.params };
+        });
         const result = await this.#db.read([
-            { rql: `SELECT id, email, name, avatar, status, created_at, last_sign_in_at, meta, slug FROM cms_users WHERE id IN ${list.rql}`, params: list.params },
             // network_admin comes from the account alone (resolve): a site role row of that name, as a crafted import could add, grants nothing.
             { rql: `SELECT ur.user_id, r.id, r.name, r.permissions FROM cms_user_roles ur JOIN cms_roles r ON r.id = ur.role_id WHERE ur.user_id IN ${list.rql} AND r.id <> $networkAdmin ORDER BY r.id`, params: { ...list.params, $networkAdmin: NETWORK_ADMIN } },
             // On an added site, accounts in its own database are site accounts.
             ...(this.#siteAccounts ? [{ rql: `SELECT id FROM cms_accounts WHERE id IN ${list.rql}`, params: list.params }] : []),
         ]);
-        const local = new Set((result.results[2]?.rows ?? []).map(row => row[0] as string));
+        const local = new Set((result.results[1]?.rows ?? []).map(row => row[0] as string));
         const roles = new Map<string, CmsUser['assignments'][number][]>();
-        for (const [user, role, name, permissions] of result.results[1]!.rows) {
+        for (const [user, role, name, permissions] of result.results[0]!.rows) {
             const entry = roles.get(user as string) ?? [];
             entry.push(Object.freeze({ id: role as string, name: name as string, permissions: Object.freeze(JSON.parse(permissions as string) as string[]) }));
             roles.set(user as string, entry);
         }
         const users = new Map<string, CmsUser>();
-        for (const row of result.results[0]!.rows) {
+        for (const row of userRows) {
             const assignments = roles.get(row[0] as string) ?? [];
             users.set(row[0] as string, Object.freeze({
                 id: row[0] as string, email: row[1] as string, name: row[2] as string, avatar: row[3] as string | null,
@@ -351,15 +363,6 @@ export class CmsUsers {
         if (user?.account === 'site') await this.#siteAccounts!.delete(id);
         else await this.#accounts.leave(id, this.#site);
         return result.results[1]!.affected === 1n;
-    }
-
-    /**
-     * Hold a new member for approval: their account is disabled until an administrator approves
-     * it. `verified` says their email address is confirmed already, or the site asks for none.
-     */
-    async holdForApproval(id: string, options: { verified: boolean }): Promise<void> {
-        await this.setStatus(id, 'disabled');
-        await this.#db.write([{ rql: 'INSERT INTO cms_registrations (user_id, verified, created_at) VALUES ($id, $verified, $now)', params: { $id: id, $verified: options.verified ? 1 : 0, $now: this.#now() } }], WRITE);
     }
 
     /** Whether a member waits for approval. */

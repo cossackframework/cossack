@@ -67,11 +67,12 @@ export class CmsComments {
         const { where, params } = conditions(options);
         const limit = Math.min(Math.max(options.limit ?? 20, 1), 100);
         const offset = Math.min(Math.max(options.offset ?? 0, 0), 10_000);
-        const result = await this.#db.read([
-            { rql: `SELECT ${COLUMNS} FROM cms_comments${where} ORDER BY created_at DESC, id DESC LIMIT ${limit} OFFSET ${offset}`, ...(Object.keys(params).length ? { params } : {}) },
-            { rql: `SELECT count(*) FROM cms_comments${where}`, ...(Object.keys(params).length ? { params } : {}) },
-        ]);
-        return { items: result.results[0]!.rows.map(commentOf), total: Number(result.results[1]!.rows[0]![0] as bigint) };
+        const counted = await this.#db.read([{ rql: `SELECT count(*) FROM cms_comments${where}`, ...(Object.keys(params).length ? { params } : {}) }]);
+        // Comments hold up to 5000 characters each: a page of long ones may come in smaller reads.
+        const rows = await readPaged(this.#db, (size, at) => ({
+            rql: `SELECT ${COLUMNS} FROM cms_comments${where} ORDER BY created_at DESC, id DESC LIMIT $limit OFFSET $offset`, params: { ...params, $limit: size, $offset: at },
+        }), limit, offset, { afterSequence: counted.sequence });
+        return { items: rows.map(commentOf), total: Number(counted.results[0]!.rows[0]![0] as bigint) };
     }
 
     /** How many comments have each status. */

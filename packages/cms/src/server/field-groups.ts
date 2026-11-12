@@ -8,6 +8,7 @@ import { ClientError, type RomeDB, type Statement } from '@cossackframework/rome
 import { CmsError } from '../errors';
 import { groupsForTarget, type FieldGroup, type FieldGroupTarget } from '../field-groups';
 import { principalId, type Principal } from '../permissions';
+import { readPaged } from './budget';
 
 const WRITE = { kind: 'cms.fieldGroups', retryConflicts: 5 } as const;
 const LIMIT = 200;
@@ -71,7 +72,8 @@ export class CmsFieldGroups {
     async #read(): Promise<FieldGroup[]> {
         let rows: readonly (readonly unknown[])[] = [];
         try {
-            rows = (await this.#db.read([{ rql: `SELECT definition FROM cms_field_groups ORDER BY sort, id LIMIT ${LIMIT}` }])).results[0]!.rows;
+            // Definitions are JSON of many fields: they may come in smaller reads.
+            rows = await readPaged(this.#db, (size, at) => ({ rql: 'SELECT definition FROM cms_field_groups ORDER BY sort, id LIMIT $limit OFFSET $offset', params: { $limit: size, $offset: at } }), LIMIT, 0);
         } catch (error) {
             // Before setup the table does not exist; there are no groups.
             if (!(error instanceof ClientError) || !/cms_field_groups|no such table|not found/i.test(error.message)) throw new CmsError('CMS_UNAVAILABLE', 'Field groups could not be read.', { cause: error });

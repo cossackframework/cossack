@@ -7,6 +7,8 @@ import {
   Entity,
   IsNotNull,
   IsNull,
+  LessThan,
+  MoreThan,
   ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
@@ -169,5 +171,31 @@ describe("soft delete", () => {
     await expect((await Plain.findOne({ where: { title: "p" } }))!.restore()).rejects.toThrow(/requires a @DeleteDateColumn/);
     await Plain.delete({ title: "p" });
     expect(await Plain.count()).toBe(0);
+  }));
+
+  it("keeps the caller's own condition on the delete date next to the guard", () => setup(async () => {
+    await Document.delete({ title: "one" });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const between = new Date();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await Document.delete({ title: "two" });
+    // A soft delete by the delete date matches no live row: refused, and nothing is stamped.
+    await expect(Document.delete({ deletedAt: LessThan(new Date(Date.now() + 60_000)) })).rejects.toThrow(/force: true/);
+    await expect(Document.softDelete([{ title: "three" }, { deletedAt: IsNotNull() }])).rejects.toThrow(/matches no live row/);
+    expect(titles(await Document.find())).toEqual(["three"]);
+    // Restore by the delete date restores only the rows deleted after it.
+    expect((await Document.restore({ deletedAt: MoreThan(between) })).meta.rowsAffected).toBe(1);
+    expect(titles(await Document.find())).toEqual(["three", "two"]);
+    await expect(Document.restore({ deletedAt: IsNull() })).rejects.toThrow(/matches no deleted row/);
+    // A purge by the delete date is a forced delete.
+    await Document.delete({ deletedAt: LessThan(new Date(Date.now() + 60_000)) }, { force: true });
+    expect(titles(await Document.find({ withDeleted: true }))).toEqual(["three", "two"]);
+  }));
+
+  it("reloads a soft-deleted entity", () => setup(async () => {
+    const document = (await Document.findOne({ where: { title: "one" } }))!;
+    await document.remove();
+    await document.reload();
+    expect(document.deletedAt).toBeInstanceOf(Date);
   }));
 });

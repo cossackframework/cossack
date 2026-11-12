@@ -120,4 +120,18 @@ describe('hook registry', () => {
         expect(() => hooks.addAction(afterCommit, () => {}, { plugin: 'late' })).toThrow(/frozen/);
         expect(() => defineAction('Bad Name')).toThrow(TypeError);
     });
+
+    it('leaves prototype keys out of payload copies, so request JSON gives handlers no inherited properties', async () => {
+        const hooks = createHookRegistry();
+        const seen: unknown[] = [];
+        hooks.addAction(afterCommit, payload => { seen.push(payload); }, { plugin: 'a' });
+        const payload = JSON.parse('{"id":"p1","__proto__":{"isAdmin":true},"nested":{"constructor":{"prototype":{"x":1}},"ok":1}}');
+        await hooks.doAction(afterCommit, payload);
+        const copy = seen[0] as Record<string, unknown> & { nested: Record<string, unknown> };
+        expect(copy.isAdmin).toBeUndefined();
+        expect(Object.getPrototypeOf(copy)).toBe(Object.prototype);
+        expect(Object.keys(copy)).toEqual(['id', 'nested']);
+        expect(copy.nested).toEqual({ ok: 1 });
+        expect(({} as Record<string, unknown>).isAdmin).toBeUndefined();
+    });
 });

@@ -71,3 +71,27 @@ export async function readPaged(db: RomeDB, statement: (limit: number, offset: n
     }
     return rows;
 }
+
+/**
+ * Read the rows for `ids` with one statement per slice of them, in as few reads as the result
+ * budget allows: a slice whose result is too large is read again in halves. For `WHERE id IN`
+ * reads of rows with large columns.
+ */
+export async function readByIds<T>(db: RomeDB, ids: readonly T[], statement: (slice: readonly T[]) => Statement, options: ReadOptions = {}): Promise<Row[]> {
+    const rows: Row[] = [];
+    let size = Math.max(ids.length, 1);
+    let after = options.afterSequence;
+    for (let index = 0; index < ids.length;) {
+        const slice = ids.slice(index, index + size);
+        let result: Awaited<ReturnType<RomeDB['read']>>;
+        try { result = await db.read([statement(slice)], { ...options, ...(after === undefined ? {} : { afterSequence: after }) }); }
+        catch (error) {
+            if (isResultTooLarge(error) && size > 1) { size = Math.ceil(size / 2); continue; }
+            throw error;
+        }
+        after ??= result.sequence;
+        rows.push(...result.results[0]!.rows);
+        index += slice.length;
+    }
+    return rows;
+}

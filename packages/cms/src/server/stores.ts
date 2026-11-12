@@ -6,6 +6,7 @@
 import { createSqlJobStore, type JobStore } from '@cossackframework/core/jobs';
 import { createSqlNotificationStore, type NotificationStore } from '@cossackframework/core/notifications';
 import { rqlDatabase, type RomeDB, type Statement, type Value } from '@cossackframework/romedb';
+import { readPaged } from './budget';
 
 const TOKEN = /^[A-Za-z0-9_-]{1,191}$/;
 const n = (value: Value | undefined) => Number(value as bigint);
@@ -232,8 +233,9 @@ export function createSessionStore(db: RomeDB, options: { ttlMs?: number; now?: 
     const live = 'EXISTS (SELECT 1 FROM cms_sessions WHERE id = $id AND expires_at > $now)';
     const read = async (sessionId: string): Promise<Record<string, unknown>> => {
         if (!TOKEN.test(sessionId)) return {};
-        const result = await db.read([{ rql: `SELECT key, value FROM cms_session_values WHERE session_id = $id AND ${live} ORDER BY key LIMIT 1000`, params: { $id: sessionId, $now: now() } }]);
-        return Object.fromEntries(result.results[0]!.rows.map(([key, value]) => [key as string, JSON.parse(value as string)]));
+        const at = now();
+        const rows = await readPaged(db, (size, offset) => ({ rql: `SELECT key, value FROM cms_session_values WHERE session_id = $id AND ${live} ORDER BY key LIMIT $limit OFFSET $offset`, params: { $id: sessionId, $now: at, $limit: size, $offset: offset } }), 1000, 0);
+        return Object.fromEntries(rows.map(([key, value]) => [key as string, JSON.parse(value as string)]));
     };
     return {
         async create(ttlMs = defaultTtl) {

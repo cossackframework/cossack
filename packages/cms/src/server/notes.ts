@@ -199,12 +199,13 @@ export class CmsNotes {
     /** Open threads a person started or is mentioned in, newest activity first. */
     async forUser(userId: string, limit = 20): Promise<Note[]> {
         if (!ID.test(userId)) return [];
-        const result = await this.#db.read([{
+        // Notes hold up to 4000 characters each: a page may come in smaller reads.
+        const rows = await readPaged(this.#db, (size, at) => ({
             rql: `SELECT ${COLUMNS} FROM cms_notes WHERE parent_id IS NULL AND status = 'open' AND (user_id = $user OR id IN (SELECT thread_id FROM cms_note_mentions WHERE user_id = $user))
-                ORDER BY updated_at DESC, id DESC LIMIT ${Math.min(Math.max(limit, 1), 100)}`,
-            params: { $user: userId },
-        }]);
-        return result.results[0]!.rows.map(noteOf);
+                ORDER BY updated_at DESC, id DESC LIMIT $limit OFFSET $offset`,
+            params: { $user: userId, $limit: size, $offset: at },
+        }), Math.min(Math.max(limit, 1), 100), 0);
+        return rows.map(noteOf);
     }
 
     /** Mentions of a person in open threads they have not opened yet. */

@@ -412,7 +412,8 @@ export class ORM {
     const defaults = new Set(defaultSelectColumns(state.metadata));
     const columns = state.metadata.columns.filter((column) =>
       defaults.has(column) || record[column.propertyName] !== undefined || state.original[column.propertyName] !== undefined);
-    const fresh = await this.model(state.metadata.target).query()
+    // A soft-deleted row is still the entity's row: reload it too.
+    const fresh = await this.model(state.metadata.target).query().withDeleted()
       .addSelect(...columns.map((column) => column.propertyName) as never[])
       .where(this.primaryWhere(entity, state.metadata) as never)
       .getOne();

@@ -5,6 +5,7 @@
  */
 import type { RomeDB, Statement, Value } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
+import { readByIds } from './budget';
 
 const WRITE = { kind: 'cms.cache', retryConflicts: 5 } as const;
 const KEY = /^[\x21-\x7e]{1,200}$/;
@@ -29,11 +30,14 @@ export class CmsCache {
     async getMany<T = unknown>(keys: string[]): Promise<(T | undefined)[]> {
         const wanted = keys.filter(key => KEY.test(key));
         if (!wanted.length) return keys.map(() => undefined);
-        const params: { [name: string]: Value } = Object.fromEntries(wanted.map((key, index) => [`$k${index}`, key]));
-        const result = await this.#db.read([{ rql: `SELECT key, value, expires_at FROM cms_cache WHERE key IN (${wanted.map((_, index) => `$k${index}`).join(', ')})`, params }]);
+        // Cached values can be large: many may come in smaller reads.
+        const rows = await readByIds(this.#db, wanted, slice => ({
+            rql: `SELECT key, value, expires_at FROM cms_cache WHERE key IN (${slice.map((_, index) => `$k${index}`).join(', ')})`,
+            params: Object.fromEntries(slice.map((key, index) => [`$k${index}`, key])) as { [name: string]: Value },
+        }));
         const now = this.#now();
         const found = new Map<string, T>();
-        for (const [key, value, expires] of result.results[0]!.rows) {
+        for (const [key, value, expires] of rows) {
             if (expires !== null && Number(expires as bigint) <= now) continue;
             try { found.set(key as string, JSON.parse(value as string) as T); } catch { /* a corrupt row reads as missing */ }
         }

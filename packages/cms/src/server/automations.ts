@@ -15,6 +15,7 @@ import { CmsError } from '../errors';
 import { hasPermission, PERMISSIONS, principalId, systemPrincipal, type Principal } from '../permissions';
 import type { CmsMailer } from './mail';
 import { randomToken } from './tokens';
+import { readPaged } from './budget';
 
 const WRITE = { kind: 'cms.automations', retryConflicts: 5 } as const;
 const COLUMNS = 'id, name, event, conditions, action, active, runs, last_run_at, last_error, created_at, updated_at, author';
@@ -42,8 +43,9 @@ export class CmsAutomations {
     }
 
     async list(): Promise<Automation[]> {
-        const result = await this.#db.read([{ rql: `SELECT ${COLUMNS} FROM cms_automations ORDER BY created_at, id LIMIT 500` }]);
-        return result.results[0]!.rows.map(rowOf);
+        // Conditions and actions are JSON: many automations may come in smaller reads.
+        const rows = await readPaged(this.#db, (size, at) => ({ rql: `SELECT ${COLUMNS} FROM cms_automations ORDER BY created_at, id LIMIT $limit OFFSET $offset`, params: { $limit: size, $offset: at } }), 500, 0);
+        return rows.map(rowOf);
     }
 
     async get(id: string): Promise<Automation | null> {

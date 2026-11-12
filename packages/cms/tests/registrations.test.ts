@@ -37,8 +37,7 @@ describe.skipIf(!live)('registration approval, members-only entries and the user
     }, 30_000);
 
     it('holds an account until its email is confirmed and an administrator approves it', async () => {
-        const user = await cms.users.create({ email: 'new@example.com', name: 'New', password: 'correct horse battery', roles: [] });
-        await cms.users.holdForApproval(user.id, { verified: false });
+        const user = await cms.users.create({ email: 'new@example.com', name: 'New', password: 'correct horse battery', roles: [], approval: { verified: false } });
         expect(await cms.users.awaitingApproval(user.id)).toBe(true);
         expect((await cms.users.get(user.id))!.status).toBe('disabled');
         expect(await cms.users.registrationCount()).toBe(1);
@@ -68,8 +67,7 @@ describe.skipIf(!live)('registration approval, members-only entries and the user
         });
         const other = createCMS({ db: faulty, modules: [contentModule, plugin], now: () => clock, siteUrl: 'https://members.example' });
         await other.ready();
-        const user = await other.users.create({ email: 'held@example.com', name: 'Held', password: 'correct horse battery', roles: [] });
-        await other.users.holdForApproval(user.id, { verified: true });
+        const user = await other.users.create({ email: 'held@example.com', name: 'Held', password: 'correct horse battery', roles: [], approval: { verified: true } });
         failing = /DELETE FROM cms_registrations/;
         await expect(other.users.approve(user.id)).rejects.toThrow('write lost');
         // Active already, and still in the queue: approving again finishes it.
@@ -82,11 +80,19 @@ describe.skipIf(!live)('registration approval, members-only entries and the user
         await expect(other.users.create({ email: 'orphan@example.com', name: 'Orphan', roles: ['subscriber'] })).rejects.toThrow('write lost');
         expect(await other.users.findByEmail('orphan@example.com')).toBeNull();
         expect((await other.users.create({ email: 'orphan@example.com', name: 'Orphan', roles: ['subscriber'] })).email).toBe('orphan@example.com');
+        // A held account starts disabled with its place in the queue, written with its member row:
+        // when that write fails, no account is left, active or out of the queue.
+        const waiting = await other.users.create({ email: 'waiting@example.com', name: 'Waiting', roles: ['subscriber'], approval: { verified: false } });
+        expect([(await other.users.get(waiting.id))!.status, await other.users.awaitingApproval(waiting.id)]).toEqual(['disabled', true]);
+        failing = /INSERT INTO cms_registrations/;
+        await expect(other.users.create({ email: 'skipped@example.com', name: 'Skipped', roles: ['subscriber'], approval: { verified: false } })).rejects.toThrow('write lost');
+        expect(await other.users.findByEmail('skipped@example.com')).toBeNull();
+        expect(await other.accounts.findByEmail('skipped@example.com')).toBeNull();
+        await other.users.delete(waiting.id);
     });
 
     it('forgets a held registration when the account is deleted', async () => {
-        const user = await cms.users.create({ email: 'gone@example.com', name: 'Gone', roles: [] });
-        await cms.users.holdForApproval(user.id, { verified: true });
+        const user = await cms.users.create({ email: 'gone@example.com', name: 'Gone', roles: [], approval: { verified: true } });
         await cms.users.delete(user.id);
         expect(await cms.users.awaitingApproval(user.id)).toBe(false);
         expect(await cms.users.registrationCount()).toBe(0);

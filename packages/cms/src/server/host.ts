@@ -2077,12 +2077,9 @@ export class CmsHost {
         let collections: readonly (readonly unknown[])[] = [];
         let taxonomies: readonly (readonly unknown[])[] = [];
         try {
-            const result = await this.db.read([
-                { rql: 'SELECT name, definition FROM cms_collections ORDER BY name LIMIT 200' },
-                { rql: 'SELECT name, definition FROM cms_taxonomies ORDER BY name LIMIT 200' },
-            ]);
-            collections = result.results[0]!.rows;
-            taxonomies = result.results[1]!.rows;
+            // Definitions are JSON of many fields: forty large collections may come in smaller reads.
+            collections = await readPaged(this.db, (size, at) => ({ rql: 'SELECT name, definition FROM cms_collections ORDER BY name LIMIT $limit OFFSET $offset', params: { $limit: size, $offset: at } }), 200, 0);
+            taxonomies = await readPaged(this.db, (size, at) => ({ rql: 'SELECT name, definition FROM cms_taxonomies ORDER BY name LIMIT $limit OFFSET $offset', params: { $limit: size, $offset: at } }), 200, 0);
         } catch (error) {
             // Before setup the tables do not exist; built-ins apply.
             if (!(error instanceof ClientError) || !/cms_collections|cms_taxonomies|no such table|not found/i.test(error.message)) throw error;

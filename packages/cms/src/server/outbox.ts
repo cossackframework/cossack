@@ -13,6 +13,7 @@ import { collectionDeleted } from './comments';
 import { sharedFields } from './shared-fields';
 import { noteAnnounced } from './notes';
 import { pathsMoved } from './path-moves';
+import { readPaged } from './budget';
 
 /** The action an outbox row runs, by its topic; resource events run `cms.resource.after-commit`. */
 const POINTS: { readonly [topic: string]: ActionPoint<unknown> } = { 'form.submitted': formSubmitted as ActionPoint<unknown>, 'cache.purge': cachePurge as ActionPoint<unknown>, 'plugin.job': pluginJob as ActionPoint<unknown>, 'payment.event': paymentEvent as ActionPoint<unknown>, 'user.registered': userRegistered as ActionPoint<unknown>, 'user.signed-in': userSignedIn as ActionPoint<unknown>, 'search.rebuild': searchRebuild as ActionPoint<unknown>, 'collection.deleted': collectionDeleted as ActionPoint<unknown>, 'resource.shared': sharedFields as ActionPoint<unknown>, 'note.announced': noteAnnounced as ActionPoint<unknown>, 'paths.moved': pathsMoved as ActionPoint<unknown> };
@@ -88,11 +89,12 @@ export class Outbox {
                 WHERE id IN (SELECT id FROM cms_outbox WHERE delivered_at IS NULL AND available_at <= $now AND lease_until <= $now ORDER BY created_at, id LIMIT $limit)`,
             params: { $token: token, $until: now + this.#leaseMs, $now: now, $limit: limit },
         }], { ...call, kind: 'cms.outbox', retryConflicts: 5 });
-        const claimed = await this.#db.read([{ rql: 'SELECT id, payload, pending_plugins, attempts, topic FROM cms_outbox WHERE lease_token = $token ORDER BY created_at, id', params: { $token: token } }], call);
+        // Payloads hold whole records: the claimed rows may come in smaller reads.
+        const claimed = await readPaged(this.#db, (size, at) => ({ rql: 'SELECT id, payload, pending_plugins, attempts, topic FROM cms_outbox WHERE lease_token = $token ORDER BY created_at, id LIMIT $limit OFFSET $offset', params: { $token: token, $limit: size, $offset: at } }), limit, 0, call);
         const delivered: string[] = [];
         const retrying: { id: string; plugins: readonly string[] }[] = [];
         const deadLettered: string[] = [];
-        for (const [id, payload, pending, attempts, topic] of claimed.results[0]!.rows) {
+        for (const [id, payload, pending, attempts, topic] of claimed) {
             // Handlers run one row at a time and can outlast the batch lease. Past half of it,
             // extend this row's lease first; a row another dispatcher claimed meanwhile is its to run.
             if (this.#now() > now + this.#leaseMs / 2) {

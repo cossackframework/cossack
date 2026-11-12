@@ -7,7 +7,7 @@ import { getModuleDefault } from './module-default.js';
 import { getForwardedServerMethodClass } from '@cossackframework/core';
 // src/router.ts
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { Hono, type Context, type Handler } from 'hono';
+import { Hono, type Context, type Handler, type Next } from 'hono';
 import { renderRoot, TemplateHelpers } from './root.js';
 import { Page, PageOptions, Cossack, User, setPublicUserProjection, toPublicUser, type CossackRuntimeInfo, type Middleware, type PublicUserProjection } from '@cossackframework/core';
 import {
@@ -466,6 +466,22 @@ export function createApp(options: CreateAppOptions = {}) {
     if (!options.isPluginActive || await options.isPluginActive(plugin, c)) return next();
     return renderNotFound(c);
   });
+  /**
+   * A route of a plugin that is off for this request steps aside, as an unknown URL would: its
+   * first middleware marks the route skipped, and every middleware and handler of that route
+   * (its layouts' guards included) then calls `next()`, so a broader route (the app's catch-all)
+   * answers, or Hono's not-found when nothing else matches.
+   */
+  const skippedRoutes = Symbol('cossack:skipped-plugin-routes');
+  const skipped = (c: Context, path: string) => (c as Context & { [skippedRoutes]?: Set<string> })[skippedRoutes]?.has(path) === true;
+  const routeGate = (path: string, plugin: string): Middleware => async (c, next) => {
+    if (options.isPluginActive && !(await options.isPluginActive(plugin, c))) {
+      ((c as Context & { [skippedRoutes]?: Set<string> })[skippedRoutes] ??= new Set()).add(path);
+    }
+    return next();
+  };
+  const skippable = <H extends (c: Context, next: Next) => unknown>(path: string, handler: H): H =>
+    (async (c: Context, next: Next) => skipped(c, path) ? next() : handler(c, next)) as unknown as H;
   const getMiddlewares = (componentPath: string): Middleware[] => {
     const paths = new Set([...getLayoutStack(componentPath), componentPath]);
     return [...paths].flatMap(path => {
@@ -1576,8 +1592,11 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       // on this route. Hono types route handlers as a fixed-length tuple, so a
       // variable-length middleware spread can't be type-checked — `app.use` avoids that
       // and lets the handlers below be registered as plain single-handler routes.
+      const pageOwner = owners[path];
+      if (pageOwner) app.use(httpRoute, routeGate(path, pageOwner));
+      const step = <H extends (c: Context, next: Next) => unknown>(handler: H): H => pageOwner ? skippable(path, handler) : handler;
       for (const middleware of combinedMiddlewares) {
-        app.use(httpRoute, middleware);
+        app.use(httpRoute, step(middleware));
       }
       // A class that does not override render() is a pure API route: GET must
       // return JSON (via the API handler) rather than render HTML. A class that
@@ -1590,10 +1609,10 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       if (isApiRoute) {
         // GET -> JSON. `get()` is the canonical HTTP-GET handler; `init()` is
         // kept as a server-side alias for backward compatibility.
-        app.get(httpRoute, createApiHandler(PageComponent, ['get', 'init'], apiHandlerOptions(path)));
+        app.get(httpRoute, step(createApiHandler(PageComponent, ['get', 'init'], apiHandlerOptions(path))));
       } else {
         const ssrHandler = createSsrHandler(PageComponent, path, pageOptions);
-        app.get(httpRoute, ssrHandler);
+        app.get(httpRoute, step(ssrHandler));
       }
 
       // Handle class-based HTTP method handlers for hybrid pages
@@ -1604,7 +1623,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
           // Only authored methods (stopping before Cossack.prototype) become
           // routes; a framework default can never expose a public verb.
           if (typeof getAuthoredRouteMember(PageComponent, method)?.value === 'function') {
-            (app as any)[method](httpRoute, createApiHandler(PageComponent, method, apiHandlerOptions(path)));
+            (app as any)[method](httpRoute, step(createApiHandler(PageComponent, method, apiHandlerOptions(path))));
           }
         }
       }
@@ -1615,10 +1634,11 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
     else if (isHttpHandlerExports(module)) {
       endpointRoutes.add(httpRoute);
       const owner = owners[path];
-      if (owner) app.use(httpRoute, pluginGate(owner));
-      if (isHandlerFunction(mainExport)) app.all(httpRoute, mainExport);
+      if (owner) app.use(httpRoute, routeGate(path, owner));
+      const step = <H extends (c: Context, next: Next) => unknown>(handler: H): H => owner ? skippable(path, handler) : handler;
+      if (isHandlerFunction(mainExport)) app.all(httpRoute, step(mainExport));
       for (const method of HTTP_HANDLER_EXPORTS) {
-        if (isHandlerFunction(module[method])) (app as any)[method.toLowerCase()](httpRoute, module[method]);
+        if (isHandlerFunction(module[method])) (app as any)[method.toLowerCase()](httpRoute, step(module[method]));
       }
     }
   }
