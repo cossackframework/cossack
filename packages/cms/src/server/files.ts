@@ -276,12 +276,15 @@ export class FileService {
     }
 
     /**
-     * Make and keep one variant. A file keeps at most `MAX_FILE_VARIANTS`: past that the original
-     * is served (null), so requests for many shapes, widths and formats cannot fill storage.
+     * Make and keep one variant. A file keeps at most `MAX_FILE_VARIANTS`: a new one past that
+     * replaces the oldest. Storage stays bounded however many shapes, widths and formats are
+     * asked for, and the theme's own sizes are made again when someone asks for them, never
+     * shut out by sizes asked for first (round 12 refused new variants for good once full).
      */
     async #makeVariant(file: CmsFile, key: string, shape: { rect: { x: number; y: number; width: number; height: number }; width: number; height: number; format: ImageFormat; contentType: string; quality: number }): Promise<Uint8Array | null> {
-        const kept = await this.#db.read([{ rql: `SELECT key FROM cms_file_variants WHERE file_id = $id LIMIT ${MAX_FILE_VARIANTS}`, params: { $id: file.id } }]);
-        if (kept.results[0]!.rows.length >= MAX_FILE_VARIANTS) return null;
+        const kept = await this.#db.read([{ rql: `SELECT key FROM cms_file_variants WHERE file_id = $id ORDER BY created_at, key LIMIT ${MAX_FILE_VARIANTS}`, params: { $id: file.id } }]);
+        const keys = kept.results[0]!.rows.map(row => row[0] as string);
+        if (keys.length >= MAX_FILE_VARIANTS) await this.#evictVariants(file.id, keys.slice(0, keys.length - MAX_FILE_VARIANTS + 1));
         const original = await this.#storage.get(`cms/files/${file.id}`);
         if (!original) return null;
         let bytes: Uint8Array;
@@ -304,12 +307,18 @@ export class FileService {
             const result = await this.#db.read([{ rql: 'SELECT key FROM cms_file_variants WHERE file_id = $id ORDER BY key LIMIT 500', params: { $id: id } }]);
             const keys = result.results[0]!.rows.map(row => row[0] as string);
             if (!keys.length) return;
-            for (const key of keys) await this.#storage.delete(key).catch(() => undefined);
-            const params: { [name: string]: string } = { $id: id };
-            keys.forEach((key, index) => { params[`$k${index}`] = key; });
-            await this.#db.write([{ rql: `DELETE FROM cms_file_variants WHERE file_id = $id AND key IN (${keys.map((_, index) => `$k${index}`).join(', ')})`, params }], WRITE);
+            await this.#evictVariants(id, keys);
             if (keys.length < 500) return;
         }
+    }
+
+    /** Delete these variant rows of a file, with their stored objects: only keys under the file's own variant prefix are deleted from storage. */
+    async #evictVariants(id: string, keys: readonly string[]): Promise<void> {
+        if (!keys.length) return;
+        for (const key of keys) if (isVariantKey(key, id)) await this.#storage.delete(key).catch(() => undefined);
+        const params: { [name: string]: string } = { $id: id };
+        keys.forEach((key, index) => { params[`$k${index}`] = key; });
+        await this.#db.write([{ rql: `DELETE FROM cms_file_variants WHERE file_id = $id AND key IN (${keys.map((_, index) => `$k${index}`).join(', ')})`, params }], WRITE);
     }
 
     /**
@@ -602,14 +611,19 @@ export class FileService {
     /** Delete every stored file and resized copy, for a site that is being deleted. The rows stay. */
     async purgeStorage(): Promise<number> {
         let removed = 0;
-        for (const table of ['cms_files', 'cms_file_variants']) {
+        // Only keys the service gives files and variants: a row from an imported export cannot name another object.
+        for (const [table, id] of [['cms_files', 'id'], ['cms_file_variants', 'file_id']] as const) {
             let after = '';
             for (;;) {
-                const result = await this.#db.read([{ rql: `SELECT key FROM ${table} WHERE key > $after ORDER BY key LIMIT 500`, params: { $after: after } }]);
-                const keys = result.results[0]!.rows.map(row => row[0] as string);
-                for (const key of keys) { await this.#storage.delete(key); removed++; }
-                if (keys.length < 500) break;
-                after = keys[keys.length - 1]!;
+                const result = await this.#db.read([{ rql: `SELECT key, ${id} FROM ${table} WHERE key > $after ORDER BY key LIMIT 500`, params: { $after: after } }]);
+                const rows = result.results[0]!.rows.map(row => [row[0] as string, row[1] as string] as const);
+                for (const [key, owner] of rows) {
+                    if (!(table === 'cms_files' ? isFileKey(key, owner) : isVariantKey(key, owner))) continue;
+                    await this.#storage.delete(key);
+                    removed++;
+                }
+                if (rows.length < 500) break;
+                after = rows[rows.length - 1]![0];
             }
         }
         return removed;
@@ -643,12 +657,21 @@ export class FileService {
         const key = row.results[0]!.rows[0]?.[0];
         await this.#dropVariants(id);
         // Only a key the service gives a file: a row from an imported export cannot name another object.
-        const own = typeof key === 'string' && (key === `cms/files/${id}` || (key.startsWith(PRIVATE_PREFIX) && !key.includes('..') && key.endsWith(`/${id}`)));
-        await this.#storage.delete(own ? key : `cms/files/${id}`);
+        await this.#storage.delete(typeof key === 'string' && isFileKey(key, id) ? key : `cms/files/${id}`);
         // A browser upload that never finished left its bytes in staging.
         await this.#storage.delete(stagingKey(id)).catch(() => undefined);
         await this.#db.write([{ rql: "DELETE FROM cms_files WHERE id = $id AND status = 'deleting'", params: { $id: id } }], WRITE);
     }
+}
+
+/** A key the service gives file `id`: its library key, or a private one ending in its ID. */
+function isFileKey(key: string, id: string): boolean {
+    return key === `cms/files/${id}` || (key.startsWith(PRIVATE_PREFIX) && !key.includes('..') && key.endsWith(`/${id}`));
+}
+
+/** A key under file `id`'s own variant prefix. */
+function isVariantKey(key: string, id: string): boolean {
+    return key.startsWith(`cms/variants/${id}/`) && !key.includes('..');
 }
 
 /** Where a browser upload's bytes wait for complete(): never a served key, and never written to after it. */

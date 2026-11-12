@@ -911,6 +911,11 @@ export class ResourceRepository {
             `INSERT INTO cms_audit (id, actor, action, resource, record_id, revision, at) SELECT $op, $actor, $action, $resource, $key, $revision, $at WHERE ${guard}`,
             { ...params, $action: action },
         ));
+        // A deleted record takes its revisions along, so an ID used again starts its history afresh.
+        // Guarded by the audit row above (a relational DELETE takes no RomeQL functions).
+        if (this.resource.revisions && action === 'delete') {
+            statements.push({ rql: 'DELETE FROM cms_revisions WHERE resource = $resource AND record_id = $key AND EXISTS (SELECT 1 FROM cms_audit WHERE id = $op)', params: { $resource: this.resource.id, $key: key, $op: op } });
+        }
         // The site's search index, guarded by the audit row above.
         statements.push(...this.#host.siteSearch.statements(this.resource, key, op, record && this.canRead(record, ANONYMOUS) ? record : null));
         const event: ResourceEvent = {

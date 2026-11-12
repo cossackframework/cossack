@@ -153,6 +153,8 @@ export async function deleteUser(id: string): Promise<void> {
   const c = getRequestContext();
   const cms = currentCms();
   if (c?.get('site')?.id && c.get('site').id !== MAIN_SITE) { await visible(cms.users.delete(id)); return; }
+  // Deleting on the main site removes the account from every site it belongs to.
+  if (!(await manageableHere(id))) throw new ClientVisibleError(NETWORK_ACCOUNT_LOCKED);
   await visible(networkFor(c!.env as CmsBindings).deleteAccount(id, { principal: systemPrincipal('users') }));
 }
 

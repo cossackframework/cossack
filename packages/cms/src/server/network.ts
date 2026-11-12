@@ -402,20 +402,30 @@ export class CmsNetwork {
      * another's, nor an admin's answer.
      */
     async #updateExports(change: (stored: StoredExportRequests) => void): Promise<void> {
-        for (let attempt = 0; attempt < 8; attempt++) {
-            const read = await this.db.read([{ rql: 'SELECT value FROM cms_network WHERE key = $key', params: { $key: EXPORTS } }]);
-            const previous = read.results[0]!.rows[0]?.[0] as string | undefined;
-            const stored: StoredExportRequests = previous === undefined ? {} : JSON.parse(previous) as StoredExportRequests;
+        await this.#updateValue<StoredExportRequests>(EXPORTS, stored => {
             // Expired approvals go with the next change.
             for (const [id, value] of Object.entries(stored)) if (value.approvedAt && value.approvedAt + EXPORT_APPROVAL_MS <= this.#now()) delete stored[id];
             change(stored);
-            const params = { $key: EXPORTS, $value: JSON.stringify(stored), $now: this.#now(), ...(previous === undefined ? {} : { $previous: previous }) };
+        }, 'Export requests changed meanwhile. Try again.');
+    }
+
+    /**
+     * Change one of the network's values, written only while it is still the value read, read
+     * again when another change landed first, so two changes never drop one another.
+     */
+    async #updateValue<T extends object>(key: string, change: (stored: T) => void, conflict: string): Promise<void> {
+        for (let attempt = 0; attempt < 8; attempt++) {
+            const read = await this.db.read([{ rql: 'SELECT value FROM cms_network WHERE key = $key', params: { $key: key } }]);
+            const previous = read.results[0]!.rows[0]?.[0] as string | undefined;
+            const stored = (previous === undefined ? {} : JSON.parse(previous)) as T;
+            change(stored);
+            const params = { $key: key, $value: JSON.stringify(stored), $now: this.#now(), ...(previous === undefined ? {} : { $previous: previous }) };
             const written = await this.db.write([previous === undefined
                 ? { rql: 'INSERT INTO cms_network (key, value, updated_at) VALUES ($key, $value, $now) ON CONFLICT (key) DO NOTHING', params }
                 : { rql: 'UPDATE cms_network SET value = $value, updated_at = $now WHERE key = $key AND value = $previous', params }], { kind: 'cms.network', retryConflicts: 5 });
             if (written.results[0]!.affected === 1n) return;
         }
-        throw new CmsError('CMS_CONFLICT', 'Export requests changed meanwhile. Try again.');
+        throw new CmsError('CMS_CONFLICT', conflict);
     }
 
     /** The network's plugin and theme states. */
@@ -434,10 +444,10 @@ export class CmsNetwork {
         if (!plugin) throw new CmsError('CMS_NOT_FOUND', `Unknown plugin ${name}.`);
         if (state === 'network' && plugin.reason?.startsWith('Invalid manifest')) throw new CmsError('CMS_VALIDATION', `${name} cannot be activated: ${plugin.reason}`);
         if (state === 'network' && plugin.unrestricted && !context.unrestricted) throw new CmsError('CMS_CONFLICT', `Plugin ${name} was not enabled: unrestricted access has to be confirmed on its own.`);
-        const stored: StoredPluginStates = { ...await this.state<StoredPluginStates>(POLICY_KEYS.plugins) };
-        if (state === 'available') delete stored[name];
-        else stored[name] = state === 'network' ? { state, grants: plugin.requests.filter(grant => grant !== PLUGIN_ENABLED) } : { state };
-        await this.setState(POLICY_KEYS.plugins, stored);
+        await this.#updateValue<StoredPluginStates>(POLICY_KEYS.plugins, stored => {
+            if (state === 'available') delete stored[name];
+            else stored[name] = state === 'network' ? { state, grants: plugin.requests.filter(grant => grant !== PLUGIN_ENABLED) } : { state };
+        }, 'Plugin states changed meanwhile. Try again.');
         if (state === 'network' && plugin.unrestricted) await this.main.db.write([unrestrictedGrantAudit(name, principalId(context.principal), this.#now())], { kind: 'cms.grants' });
         this.#expireHosts();
         await this.main.ready();
@@ -448,10 +458,10 @@ export class CmsNetwork {
     async setThemeState(name: string, state: NetworkThemeState, context: { principal: Principal }): Promise<void> {
         requireNetworkAdmin(context.principal);
         if (!this.main.themes().some(theme => theme.name === name)) throw new CmsError('CMS_NOT_FOUND', `Unknown theme ${name}.`);
-        const stored: StoredThemeStates = { ...await this.state<StoredThemeStates>(POLICY_KEYS.themes) };
-        if (state === 'hidden') stored[name] = 'hidden';
-        else delete stored[name];
-        await this.setState(POLICY_KEYS.themes, stored);
+        await this.#updateValue<StoredThemeStates>(POLICY_KEYS.themes, stored => {
+            if (state === 'hidden') stored[name] = 'hidden';
+            else delete stored[name];
+        }, 'Theme states changed meanwhile. Try again.');
         this.#expireHosts();
     }
 

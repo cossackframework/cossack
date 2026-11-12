@@ -760,12 +760,19 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         await cms.files!.variant(file.id, { width: 640, accept: 'image/webp' });
         expect(transforms.length - before).toBe(1);
         expect(keys()).toHaveLength(1);
-        // Past the cap, a request is served the original (null) and nothing more is kept.
+        // Past the cap, a new variant replaces the oldest: storage stays bounded, and sizes asked for later are still made.
         for (let height = 1; keys().length < MAX_FILE_VARIANTS && height < 2000; height += 7) await cms.files!.variant(file.id, { width: 320, height, accept: 'image/png' });
         expect(keys()).toHaveLength(MAX_FILE_VARIANTS);
+        const full = keys();
         const made = transforms.length;
-        expect(await cms.files!.variant(file.id, { width: 1280, height: 77, accept: 'image/png' })).toBeNull();
-        expect(transforms).toHaveLength(made);
+        expect(await cms.files!.variant(file.id, { width: 1280, height: 77, accept: 'image/png' })).not.toBeNull();
+        expect(transforms).toHaveLength(made + 1);
+        expect(keys()).toHaveLength(MAX_FILE_VARIANTS);
+        expect(full.filter(key => !keys().includes(key))).toHaveLength(1);
+        // A variant row naming another file's object (as an edited export could) never deletes it.
+        const foreign = 'cms/variants/someone-else/x/1x1.png';
+        storage.objects.set(foreign, new Uint8Array([1]));
+        await cms.db.write([{ rql: 'INSERT INTO cms_file_variants (key, file_id, created_at, size) VALUES ($key, $id, 0, 1)', params: { $key: foreign, $id: file.id } }]);
         // Rows past one page (500) are removed with their objects too.
         const extra = Array.from({ length: 520 }, (_, i) => `cms/variants/${file.id}/legacy/${i}.webp`);
         for (const key of extra) storage.objects.set(key, new Uint8Array([1]));
@@ -775,6 +782,8 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         await cms.files!.delete(file.id, { principal: editor });
         expect(keys()).toEqual([]);
         expect((await cms.db.read([{ rql: 'SELECT count(*) FROM cms_file_variants WHERE file_id = $id', params: { $id: file.id } }])).results[0]!.rows[0]![0]).toBe(0n);
+        expect(storage.objects.has(foreign)).toBe(true);
+        storage.objects.delete(foreign);
     });
 
     it('deletes only a file\'s own stored object, whatever key its row names', async () => {

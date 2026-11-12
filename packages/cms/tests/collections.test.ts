@@ -124,6 +124,11 @@ describe.skipIf(!live)('collections built in the dashboard', () => {
         // A comment guarded on its entry is not added once the entry is gone.
         await expect(cms.comments.create({ ...comment, id: 'c-gone-1' }, { rql: 'EXISTS (SELECT 1 FROM cms_comments WHERE id = $missing)', params: { $missing: 'none' } })).rejects.toMatchObject({ code: 'CMS_NOT_FOUND' });
         expect(await cms.comments.get('c-gone-1')).toBeNull();
+        // And its entries' revisions.
+        await cms.db.write([
+            { rql: "INSERT INTO cms_revisions (id, resource, record_id, revision, data, actor, at) VALUES ('cms/products:p1:1', 'cms/products', 'p1', 1, '{}', 'admin-1', 1)" },
+            { rql: "INSERT INTO cms_revisions (id, resource, record_id, revision, data, actor, at) VALUES ('cms/posts:kept:1', 'cms/posts', 'kept', 1, '{}', 'admin-1', 1)" },
+        ]);
         await cms.deleteCollection('products', admin);
         // From the outbox, queued in the batch that dropped the collection. A comment posted
         // after the delete belongs to a collection made again under the name, and stays.
@@ -134,6 +139,8 @@ describe.skipIf(!live)('collections built in the dashboard', () => {
         expect(await cms.comments.get('c-products-1')).toBeNull();
         expect(await cms.comments.get('c-products-again')).not.toBeNull();
         expect(await cms.comments.get('c-posts-1')).not.toBeNull();
+        const revisions = await cms.db.read([{ rql: "SELECT id FROM cms_revisions WHERE id IN ('cms/products:p1:1', 'cms/posts:kept:1')" }]);
+        expect(revisions.results[0]!.rows.map(row => row[0])).toEqual(['cms/posts:kept:1']);
         // Posts were relabelled Articles above, so they sort first.
         expect(cms.collections().map(collection => collection.name)).toEqual(['posts', 'pages', 'patterns']);
         expect(() => cms.resource('cms/products')).toThrow(/Unknown resource/);

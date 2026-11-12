@@ -160,6 +160,32 @@ describe.skipIf(!live)('editorial access', () => {
         } finally { clearInterval(room.editorsTimer); clearTimeout(room.persistTimer); }
     }, 120_000);
 
+    it('keeps a timed-out tab its ID, so nobody who heard it can take it over', async () => {
+        const room = new EntryRoom() as unknown as { c: unknown; broadcastEvent: () => void; join: EntryRoom['join']; set: EntryRoom['set']; presence: EntryRoom['presence']; roomPeers: Map<string, { at: number }>; presenceChanged: () => void; editorsTimer?: ReturnType<typeof setInterval>; persistTimer?: ReturnType<typeof setTimeout> };
+        room.broadcastEvent = () => {};
+        let principal = alice;
+        const app = new Hono();
+        app.use('*', async (c, next) => { c.set('cms' as never, cms as never); c.set('principal' as never, principal as never); room.c = c; await next(); });
+        app.get('/:collection/:id/join/:peer', requireEntryEditor, async c => c.json(await room.join(c.req.param('peer'), {}).then(() => true, () => false)));
+        app.get('/:collection/:id/presence/:peer', requireEntryEditor, async c => { await room.presence(c.req.param('peer'), {}); return c.json(null); });
+        app.get('/:collection/:id/set/:peer', requireEntryEditor, async c => c.json(await room.set(c.req.param('peer'), 'title', c.req.query('title'))));
+        try {
+            expect(await (await app.request('/app.articles/one/join/peer_sleepy')).json()).toBe(true);
+            // Her background tab falls silent and times out of the room.
+            room.roomPeers.get('peer_sleepy')!.at = 0;
+            room.presenceChanged();
+            expect(room.roomPeers.has('peer_sleepy')).toBe(false);
+            principal = editor;
+            await app.request('/app.articles/one/presence/peer_sleepy');
+            expect(await (await app.request('/app.articles/one/join/peer_sleepy')).json()).toBe(false);
+            expect(await (await app.request('/app.articles/one/set/peer_sleepy?title=Forged')).json()).toEqual({ applied: false });
+            // Her tab wakes up and takes its place again.
+            principal = alice;
+            expect(await (await app.request('/app.articles/one/join/peer_sleepy')).json()).toBe(true);
+            expect(await (await app.request('/app.articles/one/set/peer_sleepy?title=Back')).json()).toEqual({ applied: true });
+        } finally { clearInterval(room.editorsTimer); clearTimeout(room.persistTimer); }
+    });
+
     it('lets a tab that left free its ID, and a user reuse their share', async () => {
         const room = new EntryRoom() as unknown as { c: unknown; broadcastEvent: () => void; join: EntryRoom['join']; leave: EntryRoom['leave']; editorsTimer?: ReturnType<typeof setInterval>; persistTimer?: ReturnType<typeof setTimeout> };
         room.broadcastEvent = () => {};

@@ -38,6 +38,8 @@ const PEER = /^[A-Za-z0-9_-]{8,64}$/;
 /** Peer IDs one user may hold in a room at once (a tab each), and in all. */
 const PEERS_PER_USER = 50;
 const PEER_OWNERS_MAX = 10_000;
+/** How long a silent peer ID stays its owner's before another user's claim may free it, when the room is full of IDs. */
+const PEER_GRACE = 24 * 60 * 60 * 1000;
 /** A scalar value or a block op, as JSON, at most. */
 const VALUE_MAX = 64 * 1024;
 /** Steps in one batch, at most; a paste is one step. */
@@ -185,6 +187,8 @@ export class EntryRoom extends Cossack {
     private peerOwners = new Map<string, string>();
     /** How many peer IDs each user holds in `peerOwners`. */
     private ownedPeers = new Map<string, number>();
+    /** When each owned peer ID was last used by its owner. */
+    private peerSeen = new Map<string, number>();
     /** The entry's notes as the room holds them, the authority while it lives; `cms.notes` keeps them. */
     private notes: Note[] = [];
     /** Who the notes and the peers name, so tabs show names without looking anyone up. */
@@ -345,7 +349,8 @@ export class EntryRoom extends Cossack {
     private presenceChanged(): void {
         for (const id of expiredPeers(this.roomPeers.values(), Date.now())) {
             this.roomPeers.delete(id);
-            this.releasePeer(id);
+            // The ID stays its owner's: an idle tab that wakes up takes its place again, and
+            // nobody else who heard the ID in presence can claim it meanwhile.
             this.broadcastEvent('left', id);
         }
         const participants = groupPeers(this.roomPeers.values());
@@ -394,20 +399,28 @@ export class EntryRoom extends Cossack {
     private ownPeer(peer: unknown, principal: Principal & { kind: 'user' }): string | null {
         if (typeof peer !== 'string' || !PEER.test(peer)) return null;
         const owner = this.peerOwners.get(peer);
-        if (owner !== undefined) return owner === principal.id ? peer : null;
+        if (owner !== undefined) {
+            if (owner !== principal.id) return null;
+            this.peerSeen.set(peer, Date.now());
+            return peer;
+        }
         // A user claims a few IDs (one per tab); claims past that first give up the user's own
         // silent ones. A peer still in the room is never given up, so its ID cannot be taken over.
         if ((this.ownedPeers.get(principal.id) ?? 0) >= PEERS_PER_USER && !this.releaseSilent(owned => owned === principal.id)) return null;
-        if (this.peerOwners.size >= PEER_OWNERS_MAX && !this.releaseSilent(() => true)) return null;
+        if (this.peerOwners.size >= PEER_OWNERS_MAX && !this.releaseSilent(() => true, Date.now() - PEER_GRACE)) return null;
         this.peerOwners.set(peer, principal.id);
+        this.peerSeen.set(peer, Date.now());
         this.ownedPeers.set(principal.id, (this.ownedPeers.get(principal.id) ?? 0) + 1);
         return peer;
     }
 
-    /** Give up the oldest claimed ID whose peer is not in the room and whose owner matches; false when there is none. */
-    private releaseSilent(matches: (owner: string) => boolean): boolean {
+    /**
+     * Give up the oldest claimed ID whose peer is not in the room, whose owner matches and, with
+     * `silentSince`, that was last used before then; false when there is none.
+     */
+    private releaseSilent(matches: (owner: string) => boolean, silentSince = Infinity): boolean {
         for (const [id, owner] of this.peerOwners) {
-            if (this.roomPeers.has(id) || !matches(owner)) continue;
+            if (this.roomPeers.has(id) || !matches(owner) || (this.peerSeen.get(id) ?? 0) >= silentSince) continue;
             this.releasePeer(id);
             return true;
         }
@@ -419,6 +432,7 @@ export class EntryRoom extends Cossack {
         const owner = this.peerOwners.get(id);
         if (owner === undefined) return;
         this.peerOwners.delete(id);
+        this.peerSeen.delete(id);
         const count = (this.ownedPeers.get(owner) ?? 1) - 1;
         if (count > 0) this.ownedPeers.set(owner, count); else this.ownedPeers.delete(owner);
     }

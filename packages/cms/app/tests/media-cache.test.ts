@@ -35,6 +35,6 @@ describe('media answers', () => {
 
     it('keep an original for an hour, not for good; a resized copy is named by its version', async () => {
         expect((await app().request('/media/f1/photo.jpg')).headers.get('cache-control')).toBe('public, max-age=3600');
-        expect((await app().request('/media/f1/photo.jpg?w=320')).headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+        expect((await app().request('/media/f1/photo.jpg?w=320')).headers.get('cache-control')).toBe('public, max-age=3600');
     });
 });

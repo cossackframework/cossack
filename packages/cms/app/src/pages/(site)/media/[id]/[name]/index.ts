@@ -30,7 +30,7 @@ export default class MediaFile extends Cossack {
                 width, ...(Number.isSafeInteger(height) && height > 0 ? { height } : {}), accept: this.c.req.header('accept') ?? '', signal: this.c.req.raw.signal,
             });
             if (variant) return new Response(variant.body, {
-                headers: { ...HEADERS, 'content-type': variant.contentType, 'content-length': String(variant.size), 'cache-control': 'public, max-age=31536000, immutable', 'cache-tag': tag, vary: 'Accept' },
+                headers: { ...HEADERS, 'content-type': variant.contentType, 'content-length': String(variant.size), 'cache-control': 'public, max-age=3600', 'cache-tag': tag, vary: 'Accept' },
             });
             // Files that are not resized, such as SVG and GIF, answer as uploaded.
         }

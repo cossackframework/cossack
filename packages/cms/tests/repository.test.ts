@@ -110,9 +110,14 @@ describe.skipIf(!live)('resource repositories', () => {
         await expect(repository.delete('stale', { principal: editor, expectedRevision: 7 })).rejects.toMatchObject({ code: 'CMS_CONFLICT' });
         expect(await count('SELECT count(*) FROM cms_audit')).toBe(audit);
         expect(await count('SELECT count(*) FROM cms_outbox')).toBe(outbox);
+        expect(await count("SELECT count(*) FROM cms_revisions WHERE record_id = 'stale'")).toBe(1);
         await repository.delete('stale', { principal: editor, expectedRevision: 1 });
         expect(await repository.get('stale', { principal: editor })).toBeNull();
         expect(await count("SELECT count(*) FROM cms_audit WHERE record_id = 'stale' AND action = 'delete'")).toBe(1);
+        // The delete takes the record's revisions along, so its ID can be used again.
+        expect(await count("SELECT count(*) FROM cms_revisions WHERE record_id = 'stale'")).toBe(0);
+        expect(await repository.create({ title: 'Stale again' }, { principal: alice, id: 'stale' })).toMatchObject({ id: 'stale', rev: 1 });
+        expect((await repository.revisions('stale', { principal: editor })).map(entry => entry.data.title)).toEqual(['Stale again']);
     });
 
     it('enforces ownership in queries, updates and search', async () => {

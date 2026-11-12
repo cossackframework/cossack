@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createHookRegistry } from '@cossackframework/core/hooks';
 import {
-    ANONYMOUS, contentModule, createCMS, DEFAULT_ROLES, formsModule, formSubmitted, formValidate, isCmsError,
+    afterCommit, ANONYMOUS, contentModule, createCMS, DEFAULT_ROLES, formsModule, formSubmitted, formValidate, isCmsError,
     type Block, type CmsHost, type FormSubmittedEvent, type Principal, type RecordShape,
 } from '../src/server/index';
 import { romedbService, live } from './helpers';
@@ -181,6 +181,22 @@ describe.skipIf(!live)('forms', () => {
         expect((await cms.forms.list(form, { limit: 20 }, editor)).items).toHaveLength(3);
     });
 
+    it('takes first sends that arrive together, from two isolates, before the form has a table', async () => {
+        const forms = cms.resource('cms/forms');
+        const draft = await forms.create({ title: 'Duo', body: [input('e', 'email', { name: 'email', required: true })] }, { principal: editor });
+        await forms.update(draft.id, { status: 'published' }, { principal: editor, expectedRevision: draft.rev });
+        // A second isolate on the same database, with its own copy of the forms.
+        const other = createCMS({ db: service.database(), modules: [contentModule, formsModule], now: () => clock });
+        await other.ready({ force: true });
+        const results = await Promise.allSettled([
+            ...Array.from({ length: 4 }, (_, i) => cms.forms.submit('duo', { email: `a${i}@example.com` }, { principal: ANONYMOUS, ip: `10.8.0.${i}` })),
+            ...Array.from({ length: 4 }, (_, i) => other.forms.submit('duo', { email: `b${i}@example.com` }, { principal: ANONYMOUS, ip: `10.8.1.${i}` })),
+        ]);
+        expect(results.filter(result => result.status === 'rejected').map(result => String((result as PromiseRejectedResult).reason))).toEqual([]);
+        const form = (await cms.forms.get('duo'))!;
+        expect((await cms.forms.list(form, { limit: 20 }, editor)).items).toHaveLength(8);
+    });
+
     it('closes forms by their settings', async () => {
         const forms = cms.resource('cms/forms');
         const draft = await forms.create({
@@ -243,6 +259,10 @@ describe.skipIf(!live)('forms', () => {
         const info = await cms.db.read([{ rql: 'INFO FOR DB' }]);
         expect(((info.results[0]!.rows[0]![0] as { tables: { name: string }[] }).tables).map(table => table.name)).not.toContain(contactForm.resource.storage);
         expect(await cms.forms.get('contact')).toBeNull();
+        // An update's event retried after the delete does not make the table again.
+        await cms.hooks.doAction(afterCommit, { eventId: 'late-update', topic: 'resource.updated', at: clock, resource: 'cms/forms', id: contact.id, revision: latest.rev, record: latest, previousStatus: 'published', actor: null } as never);
+        const after = await cms.db.read([{ rql: 'INFO FOR DB' }]);
+        expect(((after.results[0]!.rows[0]![0] as { tables: { name: string }[] }).tables).map(table => table.name)).not.toContain(contactForm.resource.storage);
     });
 
     it('keeps post results once and cleans up', async () => {

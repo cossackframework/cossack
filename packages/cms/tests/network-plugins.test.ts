@@ -145,6 +145,40 @@ describe.skipIf(!live)('network plugin and theme states', () => {
         expect(await network.policy()).toMatchObject({ hiddenThemes: new Set() });
     });
 
+    it('keeps a plugin or theme state another admin set between this change\'s read and its write', async () => {
+        let raced = 0;
+        const db = service.database();
+        // Each first read of a state is followed by another admin's change to it.
+        const racing = new Proxy(db, {
+            get(target, property) {
+                if (property === 'read') return async (statements: Parameters<RomeDB['read']>[0], options?: Parameters<RomeDB['read']>[1]) => {
+                    const result = await target.read(statements, options);
+                    const key = statements[0]?.params?.$key;
+                    if (statements[0]?.rql.includes('FROM cms_network') && (key === 'plugins' || key === 'themes') && raced < 2 && !(raced === 1 && key === 'plugins')) {
+                        raced++;
+                        const value = { ...(JSON.parse(String(result.results[0]!.rows[0]?.[0] ?? '{}')) as Record<string, unknown>), [key === 'plugins' ? 'other-plugin' : 'other-theme']: key === 'plugins' ? { state: 'hidden' } : 'hidden' };
+                        await target.write([{ rql: 'INSERT INTO cms_network (key, value, updated_at) VALUES ($key, $value, 1) ON CONFLICT (key) DO UPDATE SET value = excluded.value', params: { $key: key as string, $value: JSON.stringify(value) } }]);
+                    }
+                    return result;
+                };
+                const value = Reflect.get(target, property, target) as unknown;
+                return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+            },
+        });
+        const second = new CmsNetwork({ db: racing, open: () => other.db, networkHost: () => 'example.com', host: (site, siteDb) => createCMS({ db: siteDb, network: racing, site: site.id, modules: [contentModule], plugins }) });
+        await second.setPluginState('promo', 'hidden', { principal: networkAdmin });
+        await second.setThemeState('plain', 'hidden', { principal: networkAdmin });
+        expect(raced).toBe(2);
+        const stored = await network.state<Record<string, unknown>>('plugins');
+        expect(stored).toMatchObject({ promo: { state: 'hidden' }, 'other-plugin': { state: 'hidden' } });
+        expect(await network.state<Record<string, unknown>>('themes')).toMatchObject({ plain: 'hidden', 'other-theme': 'hidden' });
+        await db.write([
+            { rql: "UPDATE cms_network SET value = $value WHERE key = 'plugins'", params: { $value: JSON.stringify(Object.fromEntries(Object.entries(stored!).filter(([name]) => name !== 'promo' && name !== 'other-plugin'))) } },
+            { rql: "UPDATE cms_network SET value = '{}' WHERE key = 'themes'" },
+        ]);
+        network.main.expire();
+    });
+
     it('applies to the main site too, which reads the same table', async () => {
         await network.setPluginState('promo', 'network', { principal: networkAdmin });
         await network.main.ready();

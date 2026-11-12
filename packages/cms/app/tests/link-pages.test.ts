@@ -13,7 +13,7 @@ vi.mock('../src/auth', () => ({
     linkAccountEmail: async (_kind: string, token: string) => token.startsWith('a') ? 'ada@example.com' : null,
     authSessions: { create: async () => ({ headers: new Headers({ 'set-cookie': 'session=1' }) }) },
 }));
-vi.mock('../src/cms/index', () => ({ networkFor: () => ({}), siteUrl: () => undefined }));
+vi.mock('../src/cms/index', () => ({ networkFor: () => ({ memberSites: async () => [{ id: 'main' }] }), siteUrl: () => undefined }));
 
 const { default: MagicLinkPage } = await import('../src/pages/auth/magic/index');
 const { default: VerifyPage } = await import('../src/pages/auth/verify/index');

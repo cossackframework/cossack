@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { contentModule, createCMS, systemPrincipal, type CmsHost } from '../../src/server/index';
 import { live, romedbService } from '../../tests/helpers';
 const state = vi.hoisted(() => ({ cms: undefined as CmsHost | undefined }));
-vi.mock('../src/cms/index', () => ({ currentCms: () => state.cms, networkFor: () => ({}), siteUrl: () => undefined }));
+vi.mock('../src/cms/index', () => ({ currentCms: () => state.cms, networkFor: () => ({ memberSites: async () => [{ id: 'main' }] }), siteUrl: () => undefined }));
 const { loginUser, beginTwoFactor, SignInPasskeyError, secondFactorRequired, accountNeedsSecondFactor } = await import('../src/auth');
 describe.skipIf(!live)('mandatory two-step sign-in with a passkey', () => {
     const service = romedbService();

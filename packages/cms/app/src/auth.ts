@@ -13,7 +13,7 @@ import {
     type AuthenticationResponseJSON, type PasskeyConfig, type PublicKeyCredentialCreationOptionsJSON, type PublicKeyCredentialRequestOptionsJSON, type RegistrationResponseJSON,
 } from '@cossackframework/auth/passkeys';
 import { ClientVisibleError, getClientIp, getRequestContext } from '@cossackframework/core';
-import { ANONYMOUS, hasPermission, isCmsError, isNetworkAdmin, PERMISSIONS, type Principal } from '@cossackframework/cms';
+import { ANONYMOUS, hasPermission, holdsAll, isCmsError, isNetworkAdmin, PERMISSIONS, type Principal } from '@cossackframework/cms';
 import { MAIN_SITE, networkSite, randomToken, RESET_REQUESTS, sha256Hex, type ApiToken, type CmsHost, type CmsMember, type SecurityStatus as AccountSecurity } from '@cossackframework/cms/server';
 import { renderSVG } from 'uqr';
 import { currentCms, networkFor, type CmsBindings } from './cms/index';
@@ -251,20 +251,35 @@ export async function passwordMatches(userId: string, password: string): Promise
 export const NETWORK_ACCOUNT_LOCKED = 'A network account: its name, email, password and sign-in methods change on the network, by the person or a network admin. This site manages its roles.';
 
 /**
- * Whether the request's user may change this account's profile, password, second factors and
- * application passwords here. On an added site a network account is the person's or a network
- * admin's to change; the dashboard's user permissions govern the rest.
+ * Whether the request's user may change this account's profile, password, second factors,
+ * application passwords, status and membership here. On an added site a network account is the
+ * person's or a network admin's to change; on the main site, theirs, a network admin's, or one who
+ * holds every permission the account has on each of its sites. The dashboard's user permissions
+ * govern the rest.
  */
 export async function manageableHere(userId: string): Promise<boolean> {
   const host = cms();
-  if (!host.siteAccounts) return true;
   const request = getRequestContext();
   // The signed-in person's own account, read from the session: until they add a second factor
   // that General settings require, their request principal is anonymous, yet adding one is theirs to do.
   if ((request?.get('user') as PublicUser | undefined)?.id === userId) return true;
   const principal = (request?.get('principal') as Principal | undefined) ?? ANONYMOUS;
   if (principal.kind === 'user' && (principal.id === userId || isNetworkAdmin(principal))) return true;
-  return (await host.users.get(userId))?.account !== 'network';
+  if (host.siteAccounts) return (await host.users.get(userId))?.account !== 'network';
+  // On the main site the account signs in everywhere: whoever changes it must hold every
+  // permission it holds on each site it belongs to, or setting its password takes those sites too.
+  return request ? heldOnEverySite(networkFor(request.env as CmsBindings), principal, userId) : true;
+}
+
+async function heldOnEverySite(network: ReturnType<typeof networkFor>, principal: Principal, userId: string): Promise<boolean> {
+  try {
+    for (const site of await network.memberSites(userId)) {
+      if (site.id === MAIN_SITE) continue;
+      const member = await network.hostOf(site).users.get(userId);
+      if (member && !holdsAll(principal, member.permissions)) return false;
+    }
+    return true;
+  } catch { return false; }
 }
 
 async function requireManageable(userId: string): Promise<void> {

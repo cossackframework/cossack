@@ -176,11 +176,28 @@ export class CmsForms {
         this.#resources.set(resource.id, resource);
         const hash = await declarationHash(resource);
         if (this.#synced.get(resource.id) === hash) return;
-        const state = await this.#host.db.read([{ rql: 'SELECT declaration_hash FROM cms_schema_state WHERE resource = $id', params: { $id: resource.id } }]);
-        if (state.results[0]!.rows[0]?.[0] !== hash) {
+        // Sends arriving together share one migration in this isolate.
+        const key = `${resource.id}:${hash}`;
+        let syncing = this.#syncing.get(key);
+        if (!syncing) {
+            syncing = this.#migrate(resource, hash).finally(() => this.#syncing.delete(key));
+            this.#syncing.set(key, syncing);
+        }
+        await syncing;
+    }
+
+    readonly #syncing = new Map<string, Promise<void>>();
+
+    async #migrate(resource: Resource, hash: string): Promise<void> {
+        // Another isolate can migrate the same table at the same moment, and one of the two
+        // then fails: read the recorded hash again, and migrate once more only when it is still old.
+        for (let attempt = 0; ; attempt++) {
+            const state = await this.#host.db.read([{ rql: 'SELECT declaration_hash FROM cms_schema_state WHERE resource = $id', params: { $id: resource.id } }]);
+            if (state.results[0]!.rows[0]?.[0] === hash) break;
             const report = await migrate(this.#host.db, [resource], { now: () => this.#host.now(), only: [resource.id] });
             const blocked = report.blocked.filter(problem => problem.resource === resource.id);
-            if (report.failed || blocked.length) throw new CmsError('CMS_UNAVAILABLE', `The form's submissions table could not be updated: ${report.failed?.message ?? blocked.map(problem => problem.message).join(' ')}`);
+            if (!report.failed && !blocked.length) break;
+            if (attempt >= 2) throw new CmsError('CMS_UNAVAILABLE', `The form's submissions table could not be updated: ${report.failed?.message ?? blocked.map(problem => problem.message).join(' ')}`);
         }
         this.#synced.set(resource.id, hash);
         // Activation caches the recorded hashes; read them again.
@@ -333,14 +350,13 @@ export class CmsForms {
                         ...(spam ? [] : [bound(`INSERT INTO cms_outbox (id, topic, payload, created_at, available_at, attempts, lease_until) SELECT $op, 'form.submitted', $payload, $at, $at, 0, 0 WHERE ${guard.rql}`, { ...guard.params, ...eventParams })]),
                         // The receipt is the guard: RomeQL's UPDATE takes a relational row, not the record's.
                         ...(stashed.length ? [this.#host.files!.privateReady(stashed, { rql: 'EXISTS (SELECT 1 FROM cms_form_sends WHERE id = $op)', params: { $op: op } })] : []),
+                        // Past the limit, no receipt was written: the record goes in the same batch, so it is never kept.
+                        ...(limited ? [{ rql: `DELETE FROM ${form.resource.storage} WHERE id = type::record('${form.resource.storage}', $id) AND NOT EXISTS (SELECT 1 FROM cms_form_sends WHERE id = $op)`, params: { $id: id, $op: op } }] : []),
                         ];
                     },
                 }));
-                if (limited && !await this.#received(op)) {
-                    // Past the limit: the record goes again, with its files, and the send is refused as closed.
-                    await this.#host.db.write([{ rql: `DELETE FROM ${form.resource.storage} WHERE id = type::record('${form.resource.storage}', $id)`, params: { $id: id } }], { kind: 'cms.forms' });
-                    throw new CmsError('CMS_FORBIDDEN', settings.closedMessage);
-                }
+                // Past the limit: the batch removed the record; its files go below, and the send is refused as closed.
+                if (limited && !await this.#received(op)) throw new CmsError('CMS_FORBIDDEN', settings.closedMessage);
             } catch (error) {
                 await release();
                 if (stashed.length) await this.#host.files?.discardPrivate(stashed).catch(() => undefined);

@@ -1,4 +1,5 @@
 // src/shared/context.ts
+import { HTTPException } from 'hono/http-exception';
 import type { Context } from 'hono';
 import { createContext } from '@cossackframework/renderer';
 import { parseFormData } from './forms';
@@ -57,7 +58,48 @@ function resolveFlashOptions(flash: FlashOptions | undefined): { input: readonly
 export type GetFormDataOptions<T> = {
     rules?: StoreRuleMap<T>;
     flash?: FlashOptions;
+    /** Largest body read, files included; a larger one answers 413. Default: 32 MiB (the `/upload` limit). */
+    maxBytes?: number;
 };
+
+/** Default `getFormData` body limit, the same as the `/upload` route's. */
+export const FORM_DATA_MAX_BYTES = 32 * 1024 * 1024;
+
+/**
+ * The request's form data, read into memory up to `limit` bytes. A body that
+ * says or turns out to be larger answers 413 before it is buffered whole.
+ */
+async function boundedFormData(req: Context['req'], limit: number): Promise<FormData> {
+    const raw = req.raw;
+    const tooLarge = () => new HTTPException(413, { message: 'The form is too large.' });
+    const declared = Number(raw.headers.get('content-length'));
+    // Refused unread: the adapter discards the body (cancelling it here races the runtime's own body pump,
+    // which then fails enqueueing into a closed stream).
+    if (Number.isFinite(declared) && declared > limit) throw tooLarge();
+    if (!raw.body) return raw.formData();
+    const reader = raw.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+        while (true) {
+            const next = await reader.read();
+            if (next.done) break;
+            size += next.value.byteLength;
+            // The rest stays unread for the adapter to discard, as above.
+            if (size > limit) throw tooLarge();
+            chunks.push(next.value);
+        }
+    } finally {
+        reader.releaseLock();
+    }
+    const body = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.byteLength; }
+    const headers = new Headers();
+    const type = raw.headers.get('content-type');
+    if (type) headers.set('content-type', type);
+    return new Request('http://form.invalid/', { method: 'POST', headers, body }).formData();
+}
 
 /**
  * `getFormData<T>()` with NO rules returns the parsed data typed as `T`.
@@ -97,7 +139,7 @@ export function createCossackContext(
                     // `target` is `Context | HydratedContext`; only the server
                     // Context has a real `req.formData()`. Cast narrowly.
                     const req = (target as Context).req;
-                    const data = parseFormData(await req.formData()) as T;
+                    const data = parseFormData(await boundedFormData(req, opts?.maxBytes ?? FORM_DATA_MAX_BYTES)) as T;
                     const { input: flashInputOn, errors: flashErrorsOn } = resolveFlashOptions(opts?.flash);
                     if (!opts?.rules) {
                         // No validation: flash the parsed input only (if enabled).

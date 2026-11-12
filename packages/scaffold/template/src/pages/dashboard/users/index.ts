@@ -1,4 +1,4 @@
-import { Cossack, Page, State, Server, Client } from '@cossackframework/core';
+import { ClientVisibleError, Cossack, Page, State, Server, Client } from '@cossackframework/core';
 import { input } from '@cossackframework/core/input';
 import { Avatar, Badge, NativeSelect, AlertDialog } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
@@ -129,7 +129,11 @@ export default class UsersPage extends Cossack {
         for (const id of [...new Set(ids)].slice(0, 100)) {
             const target = await getUser(id);
             if (!target || id === actor?.id || !canManageUser(actor, target)) { skipped++; continue; }
-            if (roleId) await syncUserRoles(id, [roleId]); else await deleteUser(id);
+            if (roleId) await syncUserRoles(id, [roleId]);
+            else {
+                // An account the user service keeps (a stronger network account) is skipped like the others.
+                try { await deleteUser(id); } catch (error) { if (error instanceof ClientVisibleError) { skipped++; continue; } throw error; }
+            }
             done++;
         }
         this.selected = [];

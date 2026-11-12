@@ -601,6 +601,8 @@ export class CmsHost {
         // A deleted entry takes its comments along; under its own name, so its retries are its alone.
         this.hooks.addAction(afterCommit, async event => { if (event.topic === 'resource.deleted') await this.comments.deleteForEntry(event.resource, event.id); }, { plugin: 'cms-comments' });
         this.hooks.addAction(collectionDeleted, event => this.comments.deleteForResource(event.resource, event.at), { plugin: 'cms-comments' });
+        // And its entries' revisions, a thousand at a time; under its own name, so its retries are its alone.
+        this.hooks.addAction(collectionDeleted, event => this.#deleteRevisions(event.resource, event.at), { plugin: 'cms-revisions' });
         // Shared fields' rows for an entry's other translations; under its own name, so its retries are its alone.
         // A collection or taxonomy that moved: its old links redirect. Under its own name, so its retries are its alone.
         this.hooks.addAction(pathsMoved, async event => {
@@ -629,8 +631,12 @@ export class CmsHost {
         // A saved form brings its submissions table up to date; a deleted one takes its table along.
         this.hooks.addAction(afterCommit, async event => {
             if (event.resource !== 'cms/forms') return;
-            if (event.topic === 'resource.deleted') await this.forms.dropTable(event.id);
-            else if (event.record) await this.forms.load(event.record);
+            if (event.topic === 'resource.deleted') { await this.forms.dropTable(event.id); return; }
+            if (!event.record) return;
+            // A retry can run after the form was deleted or saved again: only the form as it stands
+            // now, at this event's revision, loads (and so makes its table); a later save's event loads its own.
+            const current = await this.resource('cms/forms').get(event.id, { principal: systemPrincipal('forms') });
+            if (current && current.rev === event.revision) await this.forms.load(current);
         }, { plugin: 'cms' });
         // Submissions send the form's notifications and queue webhooks; both retry with the outbox.
         this.hooks.addAction(formSubmitted, event => this.forms.notify(event), { plugin: 'cms' });
@@ -712,6 +718,14 @@ export class CmsHost {
     now(): number { return this.#now(); }
 
     get resources(): readonly Resource[] { return [...this.#resources.values()]; }
+
+    /** Revisions of a dropped collection's entries written up to `before`. */
+    async #deleteRevisions(resource: string, before: number): Promise<void> {
+        for (;;) {
+            const result = await this.db.write([{ rql: 'DELETE FROM cms_revisions WHERE id IN (SELECT id FROM cms_revisions WHERE resource = $resource AND at <= $before LIMIT 1000)', params: { $resource: resource, $before: before } }], { kind: 'cms.revisions', retryConflicts: 5 });
+            if (Number(result.results[0]!.affected) < 1000) return;
+        }
+    }
 
     /** A translated resource's fields that are the same in every language. */
     #sharedFields(id: string): readonly string[] {

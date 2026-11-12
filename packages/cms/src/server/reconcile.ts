@@ -30,7 +30,7 @@ export function cmsReconcilers(): { [kind: string]: Reconciler } {
         // The rest are writes a person repeats (a dashboard save, a sign-in) or that are fenced by
         // their own keys; once replay is impossible, the pending write is dropped and the action runs again.
         'cms.accounts': drop, 'cms.areas': drop, 'cms.audit': drop, 'cms.automations': drop, 'cms.autosaves': drop,
-        'cms.cache': drop, 'cms.comments': drop, 'cms.drafts': drop, 'cms.grants': drop, 'cms.handoffs': drop,
+        'cms.cache': drop, 'cms.comments': drop, 'cms.revisions': drop, 'cms.drafts': drop, 'cms.grants': drop, 'cms.handoffs': drop,
         'cms.menus': drop, 'cms.network': drop, 'cms.notes': drop, 'cms.previews': drop, 'cms.redirects': drop,
         'cms.schedules': drop, 'cms.search': drop, 'cms.security': drop, 'cms.settings': drop, 'cms.sites': drop,
         'cms.terms': drop, 'cms.tokens': drop, 'cms.traffic': drop, 'cms.webhooks': drop,

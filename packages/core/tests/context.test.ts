@@ -29,7 +29,7 @@ function mockContext(pairs: [string, string][]): Context {
   const fd = new FormData();
   for (const [k, v] of pairs) fd.append(k, v);
   return {
-    req: { formData: async () => fd },
+    req: { raw: new Request('http://test.local/', { method: 'POST', body: fd }) },
   } as unknown as Context;
 }
 
@@ -53,6 +53,26 @@ describe('createCossackContext — native receivers', () => {
 });
 
 describe('createCossackContext — getFormData', () => {
+  it('answers 413 for a body over the limit, declared or streamed', async () => {
+    const big = mockContext([['note', 'x'.repeat(2048)]]);
+    const ctx = createCossackContext(big, true) as unknown as CossackContext;
+    await expect(ctx.getFormData({ maxBytes: 1024 })).rejects.toMatchObject({ status: 413 });
+    // No Content-Length: the stream is cut off past the limit.
+    let sent = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent++ < 20) controller.enqueue(new Uint8Array(512).fill(97));
+        else controller.close();
+      },
+    });
+    const raw = { body: stream, headers: new Headers({ 'content-type': 'application/x-www-form-urlencoded' }) };
+    const streamed = createCossackContext({ req: { raw } } as unknown as Context, true) as unknown as CossackContext;
+    await expect(streamed.getFormData({ maxBytes: 4096 })).rejects.toMatchObject({ status: 413 });
+    // Under the limit it parses as before.
+    const small = createCossackContext(mockContext([['a[b]', '1']]), true) as unknown as CossackContext;
+    expect(await small.getFormData({ maxBytes: 4096 })).toEqual({ a: { b: '1' } });
+  });
+
   it('parses nested form data (server side)', async () => {
     const ctx = createCossackContext(
       mockContext([

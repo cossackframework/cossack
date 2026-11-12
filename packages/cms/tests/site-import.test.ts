@@ -82,6 +82,33 @@ describe.skipIf(!live)('importing a site export into a new site', () => {
         expect(names.findIndex(name => !/^(cms|cossack)_/.test(name))).toBeGreaterThan(names.findLastIndex(name => /^(cms|cossack)_/.test(name)));
     });
 
+    it('pages each table by its key, so writes during an export neither repeat nor skip rows', async () => {
+        const before = (await blog.db.read([{ rql: 'SELECT path FROM cms_not_found ORDER BY path' }])).results[0]!.rows.map(row => row[0] as string);
+        let reads = 0;
+        // After the first page, a row sorting before it arrives: read by offset, the page's last row would come again.
+        const db = new Proxy(blog.db, {
+            get(target, property) {
+                if (property === 'read') return async (statements: { rql: string }[], options?: unknown) => {
+                    const result = await target.read(statements as never, options as never);
+                    if (statements[0]!.rql.includes('FROM cms_not_found') && ++reads === 1) {
+                        await target.write([{ rql: "INSERT INTO cms_not_found (path, hits, first_at, last_hit_at, referrer) VALUES ('/', 1, 1, 1, '')" }]);
+                    }
+                    return result;
+                };
+                const value = Reflect.get(target, property, target) as unknown;
+                return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+            },
+        });
+        let text = '';
+        for await (const chunk of siteExport(db, { site: { id: 'blog', name: 'Blog', host: null }, pageSize: 5 })) text += chunk;
+        const table = (JSON.parse(text) as { tables: { name: string; columns: string[]; rows: unknown[][] }[] }).tables.find(entry => entry.name === 'cms_not_found')!;
+        const paths = table.rows.map(row => (row[table.columns.indexOf('path')] as { value: string }).value);
+        expect(reads).toBeGreaterThan(2);
+        expect(new Set(paths).size).toBe(paths.length);
+        expect(paths).toEqual(before);
+        await blog.db.write([{ rql: "DELETE FROM cms_not_found WHERE path = '/'" }]);
+    });
+
     it('imports into a new added site: settings, collections and entries, members with accounts', async () => {
         const copy = await hostOf('copy.example.com');
         // A plugin's grants come along, but unrestricted access is granted where it runs.

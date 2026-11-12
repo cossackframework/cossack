@@ -190,9 +190,13 @@ export default class CollectionBuilder extends Cossack {
     }
 
     @Server()
-    async save(draft: CollectionDraft, groups: string[], template: EditorBlock[] = [], layout: EditorLayoutDraft | null = null) {
+    async save(input: CollectionDraft, groups: string[], template: EditorBlock[] = [], layout: EditorLayoutDraft | null = null) {
         this.error = '';
         this.message = '';
+        // The collection is the one this address edits, whatever the draft names; new ones start on their own page.
+        const name = this.c.req.param('name') ?? '';
+        if (!this.c.get('cms').collections().some(collection => collection.name === name)) { this.error = __('Collection not found.'); return; }
+        const draft: CollectionDraft = { ...input, name };
         // The block types are read again here: the template is checked against what the host has.
         const options = await blockOptions(this.c.get('cms'));
         const types = new Map(options.map(option => [option.name, option]));

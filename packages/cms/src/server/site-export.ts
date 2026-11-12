@@ -4,7 +4,7 @@
  * binary values come back exactly with `decodeValue`. Media files are not included: `cms_files`
  * rows name their storage keys.
  */
-import { ClientError, encodeValue, type DatabaseFile, type RomeDB, type Statement, type Value } from '@cossackframework/romedb';
+import { ClientError, encodeValue, type DatabaseFile, type RecordId, type RomeDB, type Statement, type Value } from '@cossackframework/romedb';
 import { HOST_TABLES } from './host-schema';
 
 /**
@@ -18,6 +18,8 @@ export const EXPORT_SKIPPED_TABLES: ReadonlySet<string> = new Set([
     'cms_accounts', 'cms_sites', 'cms_site_domains', 'cms_memberships', 'cms_network',
     // The search index is built from the entries; an import rebuilds it.
     'cms_search',
+    // Resized copies are made again on request; an imported row could name any stored object.
+    'cms_file_variants',
     // Each database counts its own schema changes.
     'cms_schema_generations',
 ]);
@@ -38,6 +40,7 @@ export const FILE_EXPORT_EMPTIED_TABLES: readonly string[] = [
     'cms_user_security', 'cms_api_tokens',
     'cms_auth_sessions', 'cms_sessions', 'cms_session_values', 'cms_session_sites', 'cms_oauth_states', 'cms_password_resets', 'cms_auth_challenges',
     'cms_preview_tokens', 'cms_handoffs', 'cms_cache', 'cms_attempts', 'cms_outbox', 'cms_webhooks', 'cms_webhook_deliveries', 'cossack_jobs', 'cms_schedules',
+    'cms_file_variants',
 ];
 
 /** RomeDB's longest wait for a copy to start arriving. On Cloud a job builds it first. */
@@ -89,31 +92,50 @@ export async function* siteExport(db: RomeDB, options: SiteExportOptions): Async
     for (const [index, table] of tables.entries()) {
         const name = quote(table.name);
         let columns: string[] = [];
-        let order = 'id';
+        // Pages follow the key, each read after the last row's key, so a row a write moves or
+        // removes meanwhile neither repeats nor pushes another row past a page boundary.
+        let keys: string[] = [];
         if (table.model === 'relational') {
             const described = (await read([{ rql: `INFO FOR TABLE ${name}` }], sequence)).results[0]!.rows[0]![0] as unknown as { columns: { name: string; pk: bigint | number }[] };
             columns = described.columns.map(column => column.name);
-            const keys = described.columns.filter(column => Number(column.pk) > 0).sort((a, b) => Number(a.pk) - Number(b.pk)).map(column => quote(column.name));
-            order = keys.length ? keys.join(', ') : 'rowid';
+            keys = described.columns.filter(column => Number(column.pk) > 0).sort((a, b) => Number(a.pk) - Number(b.pk)).map(column => column.name);
         }
         const redacted = new Set(EXPORT_REDACTED_COLUMNS[table.name] ?? []);
         yield `${index ? ',' : ''}{"name":${json(table.name)},"model":${json(table.model)},${table.model === 'relational' ? `"columns":${json(columns)},` : ''}"rows":[`;
         let count = 0;
         let size = pageSize;
+        const rowid = table.model === 'relational' && !keys.length;
+        const order = table.model === 'document' ? 'id' : rowid ? 'rowid' : keys.map(quote).join(', ');
+        let last: Value[] | null = null;
         for (;;) {
-            const select = table.model === 'relational' ? columns.map(quote).join(', ') : '*';
+            const select = table.model === 'relational' ? [...columns.map(quote), ...(rowid ? ['rowid'] : [])].join(', ') : '*';
+            const params: { [key: string]: Value } = { $limit: size };
+            let after = '';
+            if (last) {
+                if (table.model === 'document') after = `WHERE id > type::record('${table.name.replaceAll("'", "''")}', $k0)`;
+                else if (rowid) after = 'WHERE rowid > $k0';
+                // (a > $k0) OR (a = $k0 AND b > $k1) …: after the last row in key order.
+                else after = `WHERE ${keys.map((_, i) => `(${[...keys.slice(0, i).map((key, j) => `${quote(key)} = $k${j}`), `${quote(keys[i]!)} > $k${i}`].join(' AND ')})`).join(' OR ')}`;
+                last.forEach((value, i) => { params[`$k${i}`] = value; });
+            }
             let page;
-            try { page = (await read([{ rql: `SELECT ${select} FROM ${name} ORDER BY ${order} LIMIT $limit OFFSET $offset`, params: { $limit: size, $offset: count } }], sequence)).results[0]!; }
+            try { page = (await read([{ rql: `SELECT ${select} FROM ${name} ${after} ORDER BY ${order} LIMIT $limit`, params }], sequence)).results[0]!; }
             catch (error) {
                 // A page of large rows can pass the limit on one response: read fewer.
                 if (error instanceof ClientError && (error.code === 'RDB_LIMIT' || error.code === 'RDB_RESULT_TOO_LARGE') && size > 1) { size = Math.max(1, Math.floor(size / 2)); continue; }
                 throw error;
             }
             const rows = page.rows.map(row => table.model === 'relational'
-                ? json(row.map((value, column) => encodeValue(redacted.has(columns[column]!) ? null : value as Value)))
+                ? json(row.slice(0, columns.length).map((value, column) => encodeValue(redacted.has(columns[column]!) ? null : value as Value)))
                 : json(encodeValue(row[0] as Value)));
             if (rows.length) yield `${count ? ',' : ''}${rows.join(',')}`;
             count += rows.length;
+            const end = page.rows.at(-1);
+            if (end) {
+                if (table.model === 'document') last = [((end[0] as { id: RecordId }).id).key as Value];
+                else if (rowid) last = [end[columns.length] as Value];
+                else last = keys.map(key => end[columns.indexOf(key)] as Value);
+            }
             if (page.rows.length < size) break;
         }
         yield ']}';
