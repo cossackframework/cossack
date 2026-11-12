@@ -439,12 +439,16 @@ interface MergedSpreads {
 
 /**
  * A spread key's name, after any `?`, `.` or `@` prefix, as the HTML attribute
- * name grammar allows it: no whitespace, quotes, `>`, `/`, `=` or control
- * characters (plus `<`, which no real attribute uses). Other keys are dropped
- * on both sides, so a key such as `x onmouseover=alert(1)` from user data
- * cannot write its own markup in SSR (the client's `setAttribute` would throw).
+ * name grammar allows it: at least one character, none of them whitespace,
+ * quotes, `>`, `/`, `=` or control characters (plus `<`, which no real
+ * attribute uses), and not a second prefix. Other keys are dropped on both
+ * sides, so a malformed key cannot write its own markup in SSR (where the
+ * client's `setAttribute` would throw). This keeps the markup well formed; it
+ * does not make keys safe to take from users: a valid name such as
+ * `onmouseover` or `.innerHTML` still runs script. Spread keys must come from
+ * the developer.
  */
-const SPREAD_KEY = /^[?.@]?[^\s"'<>/=\u0000-\u001f\u007f-\u009f]+$/u;
+const SPREAD_KEY = /^[?.@]?(?![?.@])[^\s"'<>/=\u0000-\u001f\u007f-\u009f]+$/u;
 
 const mergeSpreads = (values: readonly unknown[]): MergedSpreads => {
   const merged: MergedSpreads = { entries: new Map(), classes: [], events: new Map() };

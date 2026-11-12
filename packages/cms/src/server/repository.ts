@@ -178,11 +178,12 @@ export class ResourceRepository {
 
     async revisions(id: string, context: OperationContext, options: { limit?: number } = {}): Promise<RevisionShape[]> {
         const { editor, since } = await this.#historyOf(id, context);
-        const result = await this.#host.db.read([{
-            rql: 'SELECT revision, at, actor, data FROM cms_revisions WHERE resource = $resource AND record_id = $key AND at >= $since ORDER BY revision DESC LIMIT $limit',
-            params: { $resource: this.resource.id, $key: id, $since: since, $limit: options.limit ?? 50 },
-        }], this.#readOptions(context));
-        return result.results[0]!.rows.map(([revision, at, actor, data]) => this.#historyRow(revision, at, actor, data, editor, context.principal))
+        // Each row is a whole snapshot: read in pages that fit the result budget.
+        const rows = await readPaged(this.#host.db, (size, at) => ({
+            rql: 'SELECT revision, at, actor, data FROM cms_revisions WHERE resource = $resource AND record_id = $key AND at >= $since ORDER BY revision DESC LIMIT $limit OFFSET $offset',
+            params: { $resource: this.resource.id, $key: id, $since: since, $limit: size, $offset: at },
+        }), options.limit ?? 50, 0, this.#readOptions(context));
+        return rows.map(([revision, at, actor, data]) => this.#historyRow(revision, at, actor, data, editor, context.principal))
             .filter((row): row is RevisionShape => row !== null);
     }
 

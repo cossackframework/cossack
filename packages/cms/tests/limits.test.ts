@@ -164,6 +164,28 @@ describe.skipIf(!live)('RomeDB limits', () => {
         await cms.saveLanguages({ default: 'en', others: [] }, admin);
     }, 120_000);
 
+    it('reads an entry\'s revisions, notes and comments past the result budget in pages', async () => {
+        clock += 1000;
+        const post = await cms.resource('cms/posts').create({ title: 'Discussed' }, { principal: admin });
+        // Rows of about a twentieth of the result budget, half again as many as one read can carry.
+        const size = Math.floor(resultLimit / 20);
+        const count = 30;
+        const text = (i: number) => `${i} `.padEnd(size, 'x');
+        const insert = async (statement: (i: number) => { rql: string; params: Record<string, string | number> }) => {
+            const perWrite = Math.max(1, Math.floor(requestLimit / (2 * size)));
+            for (let i = 0; i < count; i += perWrite) await cms.db.write(Array.from({ length: Math.min(perWrite, count - i) }, (_, j) => statement(i + j)) as never);
+        };
+        await insert(i => ({ rql: "INSERT INTO cms_revisions (id, resource, record_id, revision, data, actor, at) VALUES ($id, 'cms/posts', $record, $revision, $data, NULL, $at)",
+            params: { $id: `cms/posts:${post.id}:${100 + i}`, $record: post.id, $revision: 100 + i, $data: JSON.stringify({ title: 'Discussed', excerpt: text(i) }), $at: clock + i } }));
+        await insert(i => ({ rql: "INSERT INTO cms_notes (id, resource, record_id, parent_id, user_id, target, text_range, quoted, body, status, created_at, updated_at) VALUES ($id, 'cms/posts', $record, NULL, 'admin-1', 'entry', NULL, '', $body, 'open', $at, $at)",
+            params: { $id: `note-${i}`, $record: post.id, $body: text(i), $at: clock + i } }));
+        await insert(i => ({ rql: "INSERT INTO cms_comments (id, resource, record_id, parent_id, user_id, author_name, author_email, author_url, content, status, created_at, updated_at) VALUES ($id, 'cms/posts', $record, NULL, NULL, 'Reader', 'reader@example.com', '', $content, 'approved', $at, $at)",
+            params: { $id: `comment-${i}`, $record: post.id, $content: text(i), $at: clock + i } }));
+        expect((await cms.resource('cms/posts').revisions(post.id, { principal: admin }, { limit: 50 })).length).toBeGreaterThanOrEqual(count);
+        expect(await cms.notes.forEntry('cms/posts', post.id)).toHaveLength(count);
+        expect(await cms.comments.forEntry('cms/posts', post.id)).toHaveLength(count);
+    }, 120_000);
+
     it('saves and reads forty collections while other writes land, and plans nothing more after', async () => {
         await cms.db.write([{ rql: 'CREATE TABLE limits_noise (id INTEGER PRIMARY KEY, at INTEGER NOT NULL)' }]);
         let done = false;

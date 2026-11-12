@@ -8,6 +8,7 @@ import type { RomeDB, Statement, Value } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
 import { checkNoteBody, checkNoteQuote, checkNoteRange, mentionsIn, NOTE_LIMITS, NOTE_STATUSES, parseNoteTarget, type Note, type NoteRange, type NoteStatus } from '../notes';
 import { inList } from './users';
+import { readPaged } from './budget';
 import { defineAction } from '@cossackframework/core/hooks';
 
 /** What a note's announcement names besides the note: worked out by the caller, which knows the request and the entry. */
@@ -80,11 +81,12 @@ export class CmsNotes {
     /** An entry's notes, roots and replies, oldest first. */
     async forEntry(resource: string, recordId: string): Promise<Note[]> {
         check(recordId);
-        const result = await this.#db.read([{
-            rql: `SELECT ${COLUMNS} FROM cms_notes WHERE resource = $resource AND record_id = $record ORDER BY created_at, id LIMIT ${NOTE_LIMITS.perEntry}`,
-            params: { $resource: resource, $record: recordId },
-        }]);
-        return result.results[0]!.rows.map(noteOf);
+        // Notes hold up to a few thousand characters each: read in pages that fit the result budget.
+        const rows = await readPaged(this.#db, (limit, offset) => ({
+            rql: `SELECT ${COLUMNS} FROM cms_notes WHERE resource = $resource AND record_id = $record ORDER BY created_at, id LIMIT $limit OFFSET $offset`,
+            params: { $resource: resource, $record: recordId, $limit: limit, $offset: offset },
+        }), NOTE_LIMITS.perEntry, 0);
+        return rows.map(noteOf);
     }
 
     /**

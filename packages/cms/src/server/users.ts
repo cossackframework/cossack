@@ -133,7 +133,18 @@ export class CmsUsers {
                 params: { $id: account.id, $email: account.email, $name: account.name, $avatar: account.avatar, $status: account.status, $now: now, $meta: JSON.stringify(meta), $slug: slug },
             }, ...roleStatements(account.id, roles)], WRITE);
         } catch (error) { throw memberError(error); }
-        if (network) await this.#accounts.join(account.id, this.#site);
+        if (network) {
+            // Without the network's record of the membership the member row is an orphan that
+            // blocks the email: take it back out.
+            try { await this.#accounts.join(account.id, this.#site); }
+            catch (error) {
+                await this.#db.write([
+                    { rql: 'DELETE FROM cms_user_roles WHERE user_id = $id', params: { $id: account.id } },
+                    { rql: 'DELETE FROM cms_users WHERE id = $id', params: { $id: account.id } },
+                ], WRITE).catch(() => undefined);
+                throw error;
+            }
+        }
         return (await this.get(account.id))!;
     }
 
@@ -386,8 +397,11 @@ export class CmsUsers {
         const row = result.results[0]!.rows[0];
         if (!row) return false;
         if (Number(row[0] as bigint) !== 1) throw new CmsError('CMS_VALIDATION', 'This member has not confirmed their email address yet.');
+        // Active first, then out of the queue: a failure between the two leaves the member
+        // waiting, and approving again finishes it.
+        if (!(await this.setStatus(id, 'active'))) return false;
         await this.#db.write([{ rql: 'DELETE FROM cms_registrations WHERE user_id = $id', params: { $id: id } }], WRITE);
-        return this.setStatus(id, 'active');
+        return true;
     }
 
     /**

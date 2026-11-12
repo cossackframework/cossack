@@ -166,12 +166,8 @@ export default class SitePath extends Cossack {
             this.languages = links;
             this.site = await siteInfo(cms, resolved.locale, { url: this.c.req.url, page: resolved });
             const usage = { user: false };
-            const signedIn = this.c.get('principal');
-            const readerRoles = signedIn.kind === 'user' ? signedIn.roles : [];
             const viewOptions = {
-                // Signed in means the principal is a user: a session still owing its second factor is a visitor here.
-                comment: commentResult(this.c.req.query('comment')), user: signedIn.kind === 'user' && this.user ? { name: this.user.name } : null,
-                roles: readerRoles,
+                comment: commentResult(this.c.req.query('comment')), ...this.readerOptions(),
                 forms: { query: this.c.req.query(), principal: this.c.get('principal'), url: base }, usage,
             };
             /** The entry the page shows, which its editor may edit in place: an entry, or the static front page. */
@@ -442,7 +438,14 @@ export default class SitePath extends Cossack {
         const draft = this.draft;
         this.draft = null;
         const found = draft ? await editableRecord(cms, draft.collection, draft.id, this.c.get('principal')) : null;
-        if (found) this.entry = (await entryViews(cms, found.collection, [found.record], { full: true, forms: this.formRequest() }))[0]!;
+        // As init shows it to this reader: an editor reads the protected or members-only entry, and user bindings resolve.
+        if (found) this.entry = (await entryViews(cms, found.collection, [found.record], { ...this.readerOptions(), full: true, forms: this.formRequest(), editable: new Set([found.record.id]) }))[0]!;
+    }
+
+    /** Who reads the page, for entry views: signed in means the principal is a user (a session still owing its second factor is a visitor here). */
+    private readerOptions(): { user: { name: string } | null; roles: readonly string[] } {
+        const reader = this.c.get('principal');
+        return { user: reader.kind === 'user' && this.user ? { name: this.user.name } : null, roles: reader.kind === 'user' ? reader.roles : [] };
     }
 
     /** What the entry's forms need in edit mode, whose server methods run under /crpc: the editor and the entry's page. */

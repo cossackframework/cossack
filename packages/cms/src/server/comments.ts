@@ -7,7 +7,7 @@ import { CmsError } from '../errors';
 import { containsPattern, inList } from './users';
 import { checkComment, COMMENT_STATUSES, type CommentRow, type CommentShape, type CommentStatus } from '../comments';
 import { defineAction } from '@cossackframework/core/hooks';
-import { requestBatches } from './budget';
+import { readPaged, requestBatches } from './budget';
 
 /** A deleted collection, queued in the batch that drops it, so its comments go in a retried job. */
 export interface CollectionDeletedEvent {
@@ -80,13 +80,13 @@ export class CmsComments {
         return Object.fromEntries(COMMENT_STATUSES.map((status, index) => [status, Number(result.results[index]!.rows[0]![0] as bigint)])) as { [K in CommentStatus]: number };
     }
 
-    /** An entry's comments with one status, oldest first, at most 500. */
+    /** An entry's comments with one status, oldest first, at most 500, read in pages that fit the result budget. */
     async forEntry(resource: string, recordId: string, status: CommentStatus = 'approved'): Promise<CommentShape[]> {
-        const result = await this.#db.read([{
-            rql: `SELECT ${COLUMNS} FROM cms_comments WHERE resource = $resource AND record_id = $record AND status = $status ORDER BY created_at, id LIMIT 500`,
-            params: { $resource: resource, $record: recordId, $status: status },
-        }]);
-        return result.results[0]!.rows.map(commentOf);
+        const rows = await readPaged(this.#db, (limit, offset) => ({
+            rql: `SELECT ${COLUMNS} FROM cms_comments WHERE resource = $resource AND record_id = $record AND status = $status ORDER BY created_at, id LIMIT $limit OFFSET $offset`,
+            params: { $resource: resource, $record: recordId, $status: status, $limit: limit, $offset: offset },
+        }), 500, 0);
+        return rows.map(commentOf);
     }
 
     /** Approved comment counts of entries, for archive lists. */

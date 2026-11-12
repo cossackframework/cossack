@@ -80,7 +80,7 @@ describe('Cossack Syntax Extensions', () => {
     });
 
     it('drops spread keys that are not attribute names, in SSR and on the client', () => {
-        const hostile = { 'x onmouseover=alert(1)': 'y', '"><script>alert(1)</script>': 'z', '?a b': true, '.x=y': 1, title: 'Kept' };
+        const hostile = { 'x onmouseover=alert(1)': 'y', '"><script>alert(1)</script>': 'z', '?a b': true, '.x=y': 1, '?': true, '.': 1, '@': 'x', '??x': true, title: 'Kept' };
         const output = renderToString(html`<div ...=${hostile}></div>`);
         expect(output).toContain('title="Kept"');
         expect(output).not.toContain('onmouseover');

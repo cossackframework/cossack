@@ -53,6 +53,37 @@ describe.skipIf(!live)('registration approval, members-only entries and the user
         expect(await cms.users.confirmRegistration(user.id)).toBe(false);
     });
 
+    it('finishes an approval interrupted after activating, and leaves no member behind a failed membership', async () => {
+        // The same database through a binding that fails writes matching `failing`.
+        let failing: RegExp | null = null;
+        const faulty = new Proxy(service.database(), {
+            get(target, property) {
+                if (property === 'write') return async (statements: { rql: string }[], options?: unknown) => {
+                    if (failing && statements.some(statement => failing!.test(statement.rql))) { failing = null; throw new Error('write lost'); }
+                    return target.write(statements as never, options as never);
+                };
+                const value = Reflect.get(target, property, target) as unknown;
+                return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+            },
+        });
+        const other = createCMS({ db: faulty, modules: [contentModule, plugin], now: () => clock, siteUrl: 'https://members.example' });
+        await other.ready();
+        const user = await other.users.create({ email: 'held@example.com', name: 'Held', password: 'correct horse battery', roles: [] });
+        await other.users.holdForApproval(user.id, { verified: true });
+        failing = /DELETE FROM cms_registrations/;
+        await expect(other.users.approve(user.id)).rejects.toThrow('write lost');
+        // Active already, and still in the queue: approving again finishes it.
+        expect((await other.users.get(user.id))!.status).toBe('active');
+        expect(await other.users.awaitingApproval(user.id)).toBe(true);
+        expect(await other.users.approve(user.id)).toBe(true);
+        expect(await other.users.awaitingApproval(user.id)).toBe(false);
+        // A membership the network could not record takes the member row with it, so the email stays free.
+        failing = /INSERT INTO cms_memberships/;
+        await expect(other.users.create({ email: 'orphan@example.com', name: 'Orphan', roles: ['subscriber'] })).rejects.toThrow('write lost');
+        expect(await other.users.findByEmail('orphan@example.com')).toBeNull();
+        expect((await other.users.create({ email: 'orphan@example.com', name: 'Orphan', roles: ['subscriber'] })).email).toBe('orphan@example.com');
+    });
+
     it('forgets a held registration when the account is deleted', async () => {
         const user = await cms.users.create({ email: 'gone@example.com', name: 'Gone', roles: [] });
         await cms.users.holdForApproval(user.id, { verified: true });

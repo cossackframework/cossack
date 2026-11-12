@@ -97,12 +97,16 @@ export const POST = async (c: Context) => {
     const address = getClientIp(c);
     const ip = address && address !== 'anonymous' ? address : undefined;
     /**
-     * Return to the page with a one-time result. Each result is a stored row written before any
-     * bot check (a list edit, a refusal), so one address saves at most RESULTS_PER_ADDRESS of
-     * them in the window; past that it returns to the page plainly.
+     * Return to the page with a one-time result, a stored row. List edits and refusals are
+     * stored before any bot check, and errors may be (a form without Turnstile checks none), so
+     * one address stores at most RESULTS_PER_ADDRESS of each kind in the window; past that it
+     * returns to the page plainly. Each kind counts apart, so a burst of list edits does not hide
+     * a visitor's errors, and confirmations, which follow a whole accepted submission, are not
+     * limited here.
      */
     const saveBack = async (page: string, result: FormResult) => {
-        const allowed = await cms.security.attempt('form-result', ip ?? 'anonymous', RESULTS_PER_ADDRESS, RESULTS_WINDOW_MS).catch(() => false);
+        const bucket = result.kind === 'success' ? null : result.kind === 'error' ? 'form-error' : 'form-result';
+        const allowed = bucket === null || await cms.security.attempt(bucket, ip ?? 'anonymous', RESULTS_PER_ADDRESS, RESULTS_WINDOW_MS).catch(() => false);
         const query = allowed ? `?form=${encodeURIComponent(loaded.ref.slug)}&result=${await cms.forms.saveResult(loaded.ref.id, result)}` : '';
         return c.redirect(`${page}${query}#form-${loaded.ref.slug}`, 303);
     };
