@@ -358,8 +358,9 @@ export class CmsUsers {
     }
 
     /**
-     * Remove the member and their roles from this site. A network account stays; a site account
-     * is deleted with what signs it in. Their records keep their owner ID.
+     * Remove the member and their roles from this site. A network account stays, unless it was
+     * made for a registration turned down here; a site account is deleted with what signs it
+     * in. Their records keep their owner ID.
      */
     async delete(id: string): Promise<boolean> {
         if (!ID.test(id)) return false;
@@ -371,7 +372,16 @@ export class CmsUsers {
             { rql: 'DELETE FROM cms_registrations WHERE user_id = $id', params },
         ], WRITE);
         if (user?.account === 'site') await this.#siteAccounts!.delete(id);
-        else await this.#accounts.leave(id, this.#site);
+        else {
+            await this.#accounts.leave(id, this.#site);
+            // A turned-down registration: the account was made for it, never used, and belongs to
+            // no other site, so it goes too, and the email can register again.
+            if (result.results[2]!.affected === 1n) {
+                const account = await this.#accounts.get(id);
+                const sites = (await this.#accounts.memberships([id])).get(id) ?? [];
+                if (account && account.status === 'disabled' && account.lastSignInAt === null && !sites.length) await this.#accounts.delete(id);
+            }
+        }
         return result.results[1]!.affected === 1n;
     }
 

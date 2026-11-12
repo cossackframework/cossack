@@ -22,7 +22,7 @@ import type { Context, MiddlewareHandler } from 'hono';
 import { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { Step } from '@tiptap/pm/transform';
 import {
-    applyTreeOp, checkNoteAction, checkPresence, CmsError, expiredPeers, findBlock, groupPeers, hasPermission, htmlBlocksChanged, livePeers, parseRichTextPath, participantColor, PERMISSIONS, richTextProblem, stableJson, StepLog, systemPrincipal, treeHash, updateBlock,
+    applyTreeOp, checkNoteAction, checkPresence, CmsError, expiredPeers, findBlock, groupPeers, hasPermission, htmlBlocksChanged, isCmsError, livePeers, parseRichTextPath, participantColor, PERMISSIONS, richTextProblem, stableJson, StepLog, systemPrincipal, treeHash, updateBlock,
     type Block, type Note, type NoteAction, type NoteRange, type Participant, type PeerPresence, type PeerState, type Principal, type RichTextDoc, type TreeOp,
 } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
@@ -75,15 +75,24 @@ export const requireEntryEditor: MiddlewareHandler = defineServerMiddleware(asyn
     if (!cms || !principal || principal.kind !== 'user' || !route || !id || id === 'new') return forbidden(c);
     const key = `${principal.id}:${(c.get('site') as { id?: string } | undefined)?.id ?? 'main'}:${route}:${id}`;
     const now = Date.now();
-    if ((RECENT_ACCESS.get(key) ?? 0) <= now) {
+    const previous = RECENT_ACCESS.get(key);
+    if ((previous ?? 0) <= now) {
         let allowed = false;
         try {
             const { resource } = routeResource(cms, route);
             const repository = cms.resource(resource.id);
             const record = await repository.get(id, { principal });
             allowed = record !== null && repository.canUpdate(record, principal);
-        } catch { allowed = false; }
-        if (!allowed) return forbidden(c);
+        } catch (error) {
+            // Only a definite answer closes an editor's socket: a lost entry, collection or right.
+            // A database hiccup keeps the earlier decision, checked again on the next frame.
+            if (isCmsError(error) && error.code !== 'CMS_UNAVAILABLE' && error.code !== 'CMS_UNCERTAIN') return forbidden(c);
+            if (previous === undefined) return forbidden(c);
+            console.warn('[cms] the room could not check access again; it keeps the last answer', error);
+            await next();
+            return;
+        }
+        if (!allowed) { RECENT_ACCESS.delete(key); return forbidden(c); }
         if (RECENT_ACCESS.size >= 1000) for (const [entry, until] of RECENT_ACCESS) if (until <= now) RECENT_ACCESS.delete(entry);
         RECENT_ACCESS.set(key, now + ACCESS_TTL);
     }

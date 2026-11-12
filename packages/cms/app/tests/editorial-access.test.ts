@@ -261,4 +261,36 @@ describe.skipIf(!live)('editorial access', () => {
         const burst = await Promise.allSettled(Array.from({ length: 8 }, (_, i) => cms.postComment({ collection: 'posts', entry: 'noted', content: `Burst ${i}`, authorName: 'B', authorEmail: 'b@example.com' }, { principal: ANONYMOUS, ip: '203.0.113.10' })));
         expect(burst.filter(result => result.status === 'fulfilled')).toHaveLength(1);
     });
+    it('keeps an editor in the room through a failed access check, and closes it on a definite refusal', async () => {
+        const app = new Hono();
+        let principal = alice;
+        app.use('*', async (c, next) => { c.set('cms' as never, cms as never); c.set('principal' as never, principal as never); await next(); });
+        app.get('/:collection/:id', requireEntryEditor, c => c.text('ok'));
+        const resource = cms.resource('app/articles');
+        const now = vi.spyOn(Date, 'now');
+        let clock = Date.UTC(2031, 0, 1);
+        now.mockImplementation(() => clock);
+        try {
+            expect((await app.request('/app.articles/one')).status).toBe(200);
+            // Past the cached answer, the entry read fails once: the earlier answer stands.
+            clock += 10_000;
+            const get = vi.spyOn(resource, 'get').mockRejectedValueOnce(new Error('connection reset'));
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+            expect((await app.request('/app.articles/one')).status).toBe(200);
+            expect(warn).toHaveBeenCalled();
+            warn.mockRestore();
+            // The next check reads again and still allows.
+            expect((await app.request('/app.articles/one')).status).toBe(200);
+            expect(get).toHaveBeenCalledTimes(2);
+            get.mockRestore();
+            // A user without a cached answer is refused when the check fails.
+            principal = userPrincipal('room-newcomer', ['editor'], ['cms:dashboard', 'cms/*']);
+            vi.spyOn(resource, 'get').mockRejectedValueOnce(new Error('connection reset'));
+            expect((await app.request('/app.articles/one')).status).not.toBe(200);
+            // A missing entry is a definite refusal, even with an earlier answer.
+            principal = alice;
+            clock += 10_000;
+            expect((await app.request('/app.articles/missing-entry')).status).not.toBe(200);
+        } finally { now.mockRestore(); vi.restoreAllMocks(); }
+    });
 });

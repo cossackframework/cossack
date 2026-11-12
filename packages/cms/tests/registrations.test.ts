@@ -96,6 +96,18 @@ describe.skipIf(!live)('registration approval, members-only entries and the user
         await cms.users.delete(user.id);
         expect(await cms.users.awaitingApproval(user.id)).toBe(false);
         expect(await cms.users.registrationCount()).toBe(0);
+        // The account made for the turned-down registration goes too: the email registers again.
+        expect(await cms.accounts.findByEmail('gone@example.com')).toBeNull();
+        const again = await cms.users.create({ email: 'gone@example.com', name: 'Gone again', roles: [], approval: { verified: true } });
+        expect(await cms.users.awaitingApproval(again.id)).toBe(true);
+        await cms.users.delete(again.id);
+    });
+
+    it('keeps an account that signed in or belongs to another site when a member leaves', async () => {
+        const kept = await cms.users.create({ email: 'kept@example.com', name: 'Kept', roles: [] });
+        await cms.users.delete(kept.id);
+        expect(await cms.accounts.findByEmail('kept@example.com')).not.toBeNull();
+        await cms.accounts.delete(kept.id);
     });
 
     it('lets before-register filters refuse, rename, choose roles and hold for approval', async () => {

@@ -430,7 +430,11 @@ export function createApp(options: CreateAppOptions = {}) {
     if (error instanceof HTTPException) return error.getResponse();
     // The route whose chain was running: Hono's matchedRoutes lists every pattern the URL
     // matches (a catch-all included), not the one that ran or was denied.
-    const ran = runningRoute(c) ?? c.req.matchedRoutes.findLast(route => route.path !== '*')?.path;
+    // Before any route ran (a global middleware failed), the most specific page route the URL
+    // matches: routes are registered most specific first, so the first one, not the catch-all.
+    const ran = runningRoute(c)
+      ?? c.req.matchedRoutes.find(route => route.path !== '*' && pagePathByRoute.has(route.path) && !skipped(c, route.path))?.path
+      ?? c.req.matchedRoutes.findLast(route => route.path !== '*')?.path;
     const context = createServerFailureContext(c, {
       route: ran ?? 'unknown',
       action: 'request', runtime: options.runtimeAdapter?.name ?? 'cloudflare',
@@ -1005,7 +1009,8 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
     c: Context, denial: { status: 401 | 403; message: string }, anchorPath: string | undefined, requestId: string,
   ): Promise<Response> => {
     c.header('X-Cossack-Request-Id', requestId);
-    if (!c.res.headers.has('Cache-Control')) c.header('Cache-Control', 'private, no-store');
+    // A denial is never cached, whatever an earlier middleware set.
+    c.header('Cache-Control', 'private, no-store');
     const errorPage = anchorPath ? findNearestSpecialPage(anchorPath, 'error') : null;
     if (errorPage && anchorPath !== errorPage.path) {
       try {
