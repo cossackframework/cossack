@@ -102,6 +102,22 @@ describe.skipIf(!live)('account flows', () => {
         expect(await loginUser('waiting@example.com', 'wrong password', '198.51.100.1')).toBeNull();
     });
 
+    it('never replaces an account held for approval on another site when its email registers here', async () => {
+        const cms = state.cms!;
+        await cms.settings.update('general', { usersCanRegister: true, verifyEmail: true }, { principal: systemPrincipal('test') });
+        // Held for site A's approval: a disabled network account, never signed in, whose queue row
+        // is in site A's database, not this one.
+        const held = await cms.accounts.create({ email: 'held@example.com', name: 'Held', password: 'long password', held: true });
+        expect(held).toMatchObject({ status: 'disabled', unconfirmed: false });
+        expect(await cms.users.awaitingApproval(held.id)).toBe(false);
+        request('https://site.example/auth/register', { APP_URL: 'https://site.example' });
+        await expect(registerUser('held@example.com', 'another password', 'Someone')).rejects.toThrow(/already exists/);
+        expect(await cms.accounts.get(held.id)).toMatchObject({ email: 'held@example.com', status: 'disabled' });
+        // Held on this site too, through the queue: still not unconfirmed.
+        const local = await cms.users.create({ email: 'held-here@example.com', name: 'Held here', password: 'long password', roles: ['subscriber'], approval: { verified: false } });
+        expect((await cms.accounts.get(local.id))?.unconfirmed).toBe(false);
+    });
+
     it('ends the account\'s other sessions when its password changes, keeping the caller\'s own', async () => {
         const cms = state.cms!;
         const user = await cms.users.create({ email: 'change@example.com', name: 'Change', password: 'long password', roles: ['subscriber'] });

@@ -12,7 +12,7 @@ const ROOT = join(import.meta.dirname, '..');
 const SOURCES = ['src/server', 'app/src/cms'];
 
 /** Columns or selections that can be large: whole rows, interpolated column lists, text and JSON. */
-const LARGE = /SELECT\s+\*|SELECT\s+[^F]*\$\{|\b(data|content|meta|items|blocks|payload|body|document|value|values|text|logs|recovery|description|settings|config|record|snapshot|definition|declaration|plan|state|fields|schema)\b/i;
+const LARGE = /SELECT\s+\*|SELECT\s+[^F]*\$\{|\b(data|content|meta|items|blocks|payload|body|document|value|values|text|logs|recovery|description|settings|config|record|snapshot|definition|declaration|plan|state|fields|schema|permissions)\b/i;
 
 /**
  * Multi-row reads of large-looking selections that were reviewed and stay direct, by file and the

@@ -12,7 +12,7 @@ import { holdsAll, NETWORK_ADMIN, userPrincipal, type Principal } from '../permi
 import { parseMeta, type MetaCheck } from './taxonomies';
 import { ACCOUNT_ID, normalizeEmail, type AccountProfile, type CmsAccount, type CmsAccounts } from './accounts';
 import { MAIN_SITE } from './sites';
-import { readByIds } from './budget';
+import { readByIds, readPaged } from './budget';
 
 export interface CmsUser {
     readonly id: string;
@@ -112,7 +112,7 @@ export class CmsUsers {
         // Members' emails are unique on a site, whichever kind their account is.
         if (await this.findByEmail(input.email).catch(() => null)) throw new CmsError('CMS_CONFLICT', 'An account with this email already exists.', { fields: { email: 'is taken.' } });
         const { network: _network, approval, ...profile } = input;
-        const account = await store.create(approval ? { ...profile, status: 'disabled' } : profile);
+        const account = await store.create(approval ? { ...profile, status: 'disabled', held: true } : profile);
         try { return await this.#join(account, input.roles ?? [], meta, store === this.#accounts, approval); }
         catch (error) {
             await store.delete(account.id).catch(() => undefined);
@@ -180,17 +180,27 @@ export class CmsUsers {
             return { rql: `SELECT id, email, name, avatar, status, created_at, last_sign_in_at, meta, slug FROM cms_users WHERE id IN ${part.rql}`, params: part.params };
         });
         const result = await this.#db.read([
+            // Which roles each user has, narrowly: the roles' permissions are read once below, not once per user.
             // network_admin comes from the account alone (resolve): a site role row of that name, as a crafted import could add, grants nothing.
-            { rql: `SELECT ur.user_id, r.id, r.name, r.permissions FROM cms_user_roles ur JOIN cms_roles r ON r.id = ur.role_id WHERE ur.user_id IN ${list.rql} AND r.id <> $networkAdmin ORDER BY r.id`, params: { ...list.params, $networkAdmin: NETWORK_ADMIN } },
+            { rql: `SELECT user_id, role_id FROM cms_user_roles WHERE user_id IN ${list.rql} AND role_id <> $networkAdmin ORDER BY role_id`, params: { ...list.params, $networkAdmin: NETWORK_ADMIN } },
             // On an added site, accounts in its own database are site accounts.
             ...(this.#siteAccounts ? [{ rql: `SELECT id FROM cms_accounts WHERE id IN ${list.rql}`, params: list.params }] : []),
         ]);
         const local = new Set((result.results[1]?.rows ?? []).map(row => row[0] as string));
+        const pairs = result.results[0]!.rows.map(([user, role]) => [user as string, role as string] as const);
+        const roleIds = [...new Set(pairs.map(([, role]) => role))];
+        const roleRows = roleIds.length ? await readByIds(this.#db, roleIds, slice => {
+            const part = inList('r', slice);
+            return { rql: `SELECT id, name, permissions FROM cms_roles WHERE id IN ${part.rql}`, params: part.params };
+        }, { afterSequence: result.sequence }) : [];
+        const byId = new Map(roleRows.map(([id, name, permissions]) => [id as string, Object.freeze({ id: id as string, name: name as string, permissions: Object.freeze(JSON.parse(permissions as string) as string[]) })]));
         const roles = new Map<string, CmsUser['assignments'][number][]>();
-        for (const [user, role, name, permissions] of result.results[0]!.rows) {
-            const entry = roles.get(user as string) ?? [];
-            entry.push(Object.freeze({ id: role as string, name: name as string, permissions: Object.freeze(JSON.parse(permissions as string) as string[]) }));
-            roles.set(user as string, entry);
+        for (const [user, role] of pairs) {
+            const assignment = byId.get(role);
+            if (!assignment) continue;
+            const entry = roles.get(user) ?? [];
+            entry.push(assignment);
+            roles.set(user, entry);
         }
         const users = new Map<string, CmsUser>();
         for (const row of userRows) {
@@ -580,14 +590,15 @@ export class CmsUsers {
 
     /** Roles in creation order, each with its user count. */
     async roles(options: { search?: string; limit?: number; offset?: number } = {}): Promise<CmsRole[]> {
-        const params: { [key: string]: Value } = { $limit: Math.min(Math.max(options.limit ?? 200, 1), 200), $offset: Math.max(options.offset ?? 0, 0) };
+        const params: { [key: string]: Value } = {};
         let where = '';
         if (options.search?.trim()) { where = " WHERE lower(r.name) LIKE $q ESCAPE '\\'"; params.$q = containsPattern(options.search.trim().slice(0, 100)); }
-        const result = await this.#db.read([{
+        // Roles hold their permission lists: many roles may come in smaller reads.
+        const rows = await readPaged(this.#db, (limit, offset) => ({
             rql: `SELECT r.id, r.name, r.permissions, r.created_at, (SELECT count(*) FROM cms_user_roles ur WHERE ur.role_id = r.id) FROM cms_roles r${where} ORDER BY r.created_at, r.id LIMIT $limit OFFSET $offset`,
-            params,
-        }]);
-        return result.results[0]!.rows.map(row => ({ ...roleOf(row), userCount: Number(row[4] as bigint) }));
+            params: { ...params, $limit: limit, $offset: offset },
+        }), Math.min(Math.max(options.limit ?? 200, 1), 200), Math.max(options.offset ?? 0, 0));
+        return rows.map(row => ({ ...roleOf(row), userCount: Number(row[4] as bigint) }));
     }
 
     async countRoles(options: { search?: string } = {}): Promise<number> {

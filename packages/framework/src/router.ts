@@ -428,16 +428,18 @@ export function createApp(options: CreateAppOptions = {}) {
   const app = new Hono<{ Bindings: CloudflareBindings; Variables: { user?: User; db?: any; 'cossack.configContext'?: Pick<ConfigRequirementContext, 'runtime' | 'environment'> } }>({ strict: false });
   app.onError((error, c) => {
     if (error instanceof HTTPException) return error.getResponse();
+    // The route whose chain was running: Hono's matchedRoutes lists every pattern the URL
+    // matches (a catch-all included), not the one that ran or was denied.
+    const ran = runningRoute(c) ?? c.req.matchedRoutes.findLast(route => route.path !== '*')?.path;
     const context = createServerFailureContext(c, {
-      route: c.req.matchedRoutes.findLast(route => route.path !== '*')?.path ?? 'unknown',
+      route: ran ?? 'unknown',
       action: 'request', runtime: options.runtimeAdapter?.name ?? 'cloudflare',
     });
     logConfigRequirementFailure(error);
     const denial = getAuthorizationFailure(error);
     if (denial) {
       if (wantsHtmlDocument(c) && !matchedEndpoint(c)) {
-        const route = c.req.matchedRoutes.findLast(route => route.path !== '*')?.path;
-        const anchor = (route ? pagePathByRoute.get(route) : undefined) ?? resolveNotFound(c.req.path)?.path;
+        const anchor = (ran ? pagePathByRoute.get(ran) : undefined) ?? resolveNotFound(c.req.path)?.path;
         return renderDenialDocument(c, denial, anchor, context.requestId);
       }
       return c.json({ error: denial.message, code: denial.code, requestId: context.requestId }, denial.status);
@@ -482,6 +484,16 @@ export function createApp(options: CreateAppOptions = {}) {
   };
   const skippable = <H extends (c: Context, next: Next) => unknown>(path: string, handler: H): H =>
     (async (c: Context, next: Next) => skipped(c, path) ? next() : handler(c, next)) as unknown as H;
+  /**
+   * The route whose middleware and handlers are running, set as each route's chain starts (a
+   * skipped plugin route never sets it): the route a denial or failure belongs to.
+   */
+  const runningRoutes = Symbol('cossack:running-route');
+  const markRoute = (httpRoute: string): Middleware => async (c, next) => {
+    (c as Context & { [runningRoutes]?: string })[runningRoutes] = httpRoute;
+    return next();
+  };
+  const runningRoute = (c: Context): string | undefined => (c as Context & { [runningRoutes]?: string })[runningRoutes];
   const getMiddlewares = (componentPath: string): Middleware[] => {
     const paths = new Set([...getLayoutStack(componentPath), componentPath]);
     return [...paths].flatMap(path => {
@@ -933,7 +945,11 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
 
   /** Route patterns of functional HTTP handlers. Their failures are never HTML documents. */
   const endpointRoutes = new Set<string>();
-  const matchedEndpoint = (c: Context) => c.req.matchedRoutes.some(route => endpointRoutes.has(route.path));
+  /** Whether the route that ran is a functional endpoint (not one a skipped plugin route only matched). */
+  const matchedEndpoint = (c: Context) => {
+    const ran = runningRoute(c);
+    return ran !== undefined ? endpointRoutes.has(ran) : c.req.matchedRoutes.some(route => endpointRoutes.has(route.path));
+  };
 
   /** Unknown-URL resolvers without the pages of the given inactive plugins, compiled once per set. */
   const resolversExcluding = new Map<string, ReturnType<typeof createNotFoundResolver>>();
@@ -1595,6 +1611,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       const pageOwner = owners[path];
       if (pageOwner) app.use(httpRoute, routeGate(path, pageOwner));
       const step = <H extends (c: Context, next: Next) => unknown>(handler: H): H => pageOwner ? skippable(path, handler) : handler;
+      app.use(httpRoute, step(markRoute(httpRoute)));
       for (const middleware of combinedMiddlewares) {
         app.use(httpRoute, step(middleware));
       }
@@ -1636,6 +1653,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       const owner = owners[path];
       if (owner) app.use(httpRoute, routeGate(path, owner));
       const step = <H extends (c: Context, next: Next) => unknown>(handler: H): H => owner ? skippable(path, handler) : handler;
+      app.use(httpRoute, step(markRoute(httpRoute)));
       if (isHandlerFunction(mainExport)) app.all(httpRoute, step(mainExport));
       for (const method of HTTP_HANDLER_EXPORTS) {
         if (isHandlerFunction(module[method])) (app as any)[method.toLowerCase()](httpRoute, step(module[method]));

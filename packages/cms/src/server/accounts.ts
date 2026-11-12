@@ -38,11 +38,11 @@ export interface AccountProfile {
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}$/;
 export const ACCOUNT_ID = /^[A-Za-z0-9_-]{1,80}$/;
 const TOKEN = /^[A-Za-z0-9_-]{32,128}$/;
-const COLUMNS = 'id, email, name, avatar, status, network_role, created_at, last_sign_in_at, updated_at';
+const COLUMNS = 'id, email, name, avatar, status, network_role, created_at, last_sign_in_at, updated_at, held';
 const WRITE = { kind: 'cms.accounts', retryConflicts: 5 } as const;
 /** What moves with an account to another database: the row, second factors and application passwords. */
 const MOVED = {
-    cms_accounts: ['id', 'email', 'name', 'password_hash', 'avatar', 'status', 'network_role', 'created_at', 'updated_at', 'last_sign_in_at'],
+    cms_accounts: ['id', 'email', 'name', 'password_hash', 'avatar', 'status', 'network_role', 'created_at', 'updated_at', 'last_sign_in_at', 'held'],
     cms_user_security: ['user_id', 'totp_secret', 'totp_confirmed_at', 'totp_last_step', 'recovery', 'updated_at'],
     cms_api_tokens: ['id', 'user_id', 'name', 'secret_hash', 'scope', 'created_at', 'last_used_at', 'expires_at'],
 } as const;
@@ -95,8 +95,11 @@ export class CmsAccounts {
         return this.get(row[0] as string);
     }
 
-    /** A new account; `status: 'disabled'` for one that waits for its email's confirmation (`unconfirmed`). */
-    async create(input: AccountProfile & { email: string; name: string; password?: string; id?: string; networkRole?: typeof NETWORK_ADMIN | null; status?: 'active' | 'disabled' }): Promise<CmsAccount> {
+    /**
+     * A new account; `status: 'disabled'` for one that waits for its email's confirmation
+     * (`unconfirmed`), and `held` as well for one that waits for a site's approval.
+     */
+    async create(input: AccountProfile & { email: string; name: string; password?: string; id?: string; networkRole?: typeof NETWORK_ADMIN | null; status?: 'active' | 'disabled'; held?: boolean }): Promise<CmsAccount> {
         const email = normalizeEmail(input.email);
         checkProfile({ email, name: input.name, avatar: input.avatar ?? null });
         if (input.password !== undefined) checkPassword(input.password);
@@ -106,8 +109,8 @@ export class CmsAccounts {
         const now = this.#now();
         try {
             await this.#db.write([{
-                rql: 'INSERT INTO cms_accounts (id, email, name, password_hash, avatar, status, network_role, created_at, updated_at) VALUES ($id, $email, $name, $hash, $avatar, $status, $role, $now, $now)',
-                params: { $id: id, $email: email, $name: input.name.trim(), $hash: hash, $avatar: input.avatar ?? null, $status: input.status === 'disabled' ? 'disabled' : 'active', $role: input.networkRole ?? null, $now: now },
+                rql: 'INSERT INTO cms_accounts (id, email, name, password_hash, avatar, status, network_role, created_at, updated_at, held) VALUES ($id, $email, $name, $hash, $avatar, $status, $role, $now, $now, $held)',
+                params: { $id: id, $email: email, $name: input.name.trim(), $hash: hash, $avatar: input.avatar ?? null, $status: input.status === 'disabled' || input.held ? 'disabled' : 'active', $role: input.networkRole ?? null, $now: now, $held: input.held ? 1 : null },
             }], WRITE);
         } catch (error) { throw uniqueEmail(error); }
         return (await this.get(id))!;
@@ -363,7 +366,8 @@ function accountOf(row: readonly Value[]): CmsAccount {
     return Object.freeze({
         id: row[0] as string, email: row[1] as string, name: row[2] as string, avatar: row[3] as string | null, status: row[4] as CmsAccount['status'],
         networkRole: row[5] === NETWORK_ADMIN ? NETWORK_ADMIN : null, createdAt: Number(row[6] as bigint), lastSignInAt: row[7] === null ? null : Number(row[7] as bigint),
-        unconfirmed: row[4] === 'disabled' && row[7] === null && row[8] !== undefined && Number(row[8] as bigint) === Number(row[6] as bigint),
+        // Held for approval is not unconfirmed: another registration of the email never replaces it.
+        unconfirmed: row[4] === 'disabled' && row[7] === null && row[8] !== undefined && Number(row[8] as bigint) === Number(row[6] as bigint) && !row[9],
     });
 }
 

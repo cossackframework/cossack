@@ -288,6 +288,13 @@ export const HOST_STEPS: readonly HostStep[] = [{
         // 1 when the sign-in that made the session used an authenticator code, a recovery code or a passkey: required two-step sign-in asks it of the session, not only of the account.
         { rql: 'ALTER TABLE cms_auth_sessions ADD COLUMN second_factor INTEGER' },
     ],
+}, {
+    version: 13,
+    description: 'Accounts record a hold for approval',
+    statements: [
+        // 1 for an account created waiting for a site's approval: it is not an unconfirmed registration, so another registration of its email never replaces it.
+        { rql: 'ALTER TABLE cms_accounts ADD COLUMN held INTEGER' },
+    ],
 }];
 
 /**
