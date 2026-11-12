@@ -16,6 +16,7 @@ const forbidden = () => Object.assign(new Error('PRIVATE'), { authorizationCode:
 // An app middleware that denies the shop before any route runs.
 globals.push(async (c: any, next: any) => {
     if (c.req.path.startsWith('/shop')) throw forbidden();
+    if (c.req.path.startsWith('/broken')) throw new Error('database down');
     await next();
 });
 
@@ -57,5 +58,23 @@ describe('denials from an app-wide middleware with an inactive plugin on the URL
         const response = await app(true).request('/shop/cart', { headers: { accept: 'text/html' } }, {} as any);
         expect(response.status).toBe(403);
         expect(await response.text()).toContain('Shop plugin error page');
+    });
+
+    it('answer the denial when the host\'s plugin hook throws, asking it once per plugin', async () => {
+        const asked: string[] = [];
+        const throwing = createApp({ isPluginActive: (plugin: string) => { asked.push(plugin); throw new Error('state unreadable'); } } as any);
+        const response = await throwing.request('/shop/cart', { headers: { accept: 'text/html' } }, {} as any);
+        expect(response.status).toBe(403);
+        // A hook that throws counts as off: the app's page, not the plugin's.
+        expect(await response.text()).toContain('Root error page');
+        expect(asked.filter(plugin => plugin === 'shop').length).toBe(1);
+    });
+
+    it('leave the plugin hook alone for a failure that is no denial', async () => {
+        const asked: string[] = [];
+        const counting = createApp({ isPluginActive: (plugin: string) => { asked.push(plugin); return true; } } as any);
+        const response = await counting.request('/broken', {}, {} as any);
+        expect(response.status).toBe(500);
+        expect(asked).toEqual([]);
     });
 });

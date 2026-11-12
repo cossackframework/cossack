@@ -433,10 +433,12 @@ export function createApp(options: CreateAppOptions = {}) {
     // Before any route ran (a global middleware failed), the most specific page route the URL
     // matches: routes are registered most specific first, so the first one, not the catch-all.
     // A route of an inactive plugin is no route: the URL is the app's, as for an unknown URL.
+    // Only a denial asks the host which plugins are active: other failures name a route for the log alone.
+    const denial = getAuthorizationFailure(error);
     let ran = runningRoute(c);
     if (ran === undefined) {
       for (const route of c.req.matchedRoutes) {
-        if (route.path === '*' || !pagePathByRoute.has(route.path) || skipped(c, route.path) || await inactiveRoute(c, route.path)) continue;
+        if (route.path === '*' || !pagePathByRoute.has(route.path) || skipped(c, route.path) || (denial && await inactiveRoute(c, route.path))) continue;
         ran = route.path;
         break;
       }
@@ -447,7 +449,6 @@ export function createApp(options: CreateAppOptions = {}) {
       action: 'request', runtime: options.runtimeAdapter?.name ?? 'cloudflare',
     });
     logConfigRequirementFailure(error);
-    const denial = getAuthorizationFailure(error);
     if (denial) {
       if (wantsHtmlDocument(c) && !(await matchedEndpoint(c))) {
         const anchor = (ran ? pagePathByRoute.get(ran) : undefined) ?? (await resolveActiveNotFound(c))?.path;
@@ -959,11 +960,28 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
   /** Hono route pattern -> handler file path, for handler routes. */
   const endpointPathByRoute = new Map<string, string>();
   /** Whether the route that ran is a functional endpoint (not one a skipped plugin route only matched). */
+  /**
+   * Whether the host has the plugin on, asked once per request and plugin. While answering a
+   * failure, a hook that throws counts as off (as the CMS hook answers), so the error handler
+   * itself never fails.
+   */
+  const pluginAnswers = Symbol('cossack.pluginActive');
+  const pluginActiveOnce = (c: Context, owner: string): Promise<boolean> => {
+    if (!options.isPluginActive) return Promise.resolve(true);
+    const store = c as unknown as { [pluginAnswers]?: Map<string, Promise<boolean>> };
+    const answers = store[pluginAnswers] ??= new Map();
+    let answer = answers.get(owner);
+    if (!answer) {
+      answer = Promise.resolve().then(() => options.isPluginActive!(owner, c)).then(Boolean, () => false);
+      answers.set(owner, answer);
+    }
+    return answer;
+  };
   /** Whether a route belongs to a plugin the request's host has turned off. */
   const inactiveRoute = async (c: Context, route: string): Promise<boolean> => {
     const file = pagePathByRoute.get(route) ?? endpointPathByRoute.get(route);
     const owner = file ? owners[file] : undefined;
-    return Boolean(owner && options.isPluginActive && !(await options.isPluginActive(owner, c)));
+    return Boolean(owner && !(await pluginActiveOnce(c, owner)));
   };
   const matchedEndpoint = async (c: Context): Promise<boolean> => {
     const ran = runningRoute(c);
@@ -998,7 +1016,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
     let selected = resolveNotFound(c.req.path);
     while (selected && options.isPluginActive) {
       const owner = owners[selected.path];
-      if (!owner || await options.isPluginActive(owner, c)) break;
+      if (!owner || await pluginActiveOnce(c, owner)) break;
       inactive.add(owner);
       selected = resolveNotFoundExcluding(inactive)(c.req.path);
     }
