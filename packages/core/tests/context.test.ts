@@ -96,7 +96,7 @@ describe('createCossackContext — getFormData', () => {
     }
   });
 
-  it('reads a declared length into one buffer, and a body longer than it declared as well', async () => {
+  it('reads a body longer than it declared, within the limit', async () => {
     const body = new TextEncoder().encode('a=1&b=2');
     const chunks = [body.subarray(0, 3), body.subarray(3)];
     let index = 0;
@@ -105,6 +105,56 @@ describe('createCossackContext — getFormData', () => {
     const raw = { body: stream, headers: new Headers({ 'content-type': 'application/x-www-form-urlencoded', 'content-length': '3' }) };
     const ctx = createCossackContext({ req: { raw } } as unknown as Context, true) as unknown as CossackContext;
     expect(await ctx.getFormData({ maxBytes: 4096 })).toEqual({ a: '1', b: '2' });
+  });
+
+  it('grows its buffer as bytes arrive, never from the declared length alone', async () => {
+    const allocations: number[] = [];
+    const Real = Uint8Array;
+    // A declared 8 MiB body that sends one small chunk allocates only the first, small buffer.
+    class Tracking extends Real {
+      constructor(...args: unknown[]) {
+        super(...(args as [number]));
+        if (typeof args[0] === 'number') allocations.push(args[0]);
+      }
+    }
+    globalThis.Uint8Array = Tracking as unknown as typeof Uint8Array;
+    try {
+      const body = new TextEncoder().encode('a=1');
+      let sent = false;
+      const stream = new ReadableStream<Uint8Array>({ pull(controller) { if (!sent) { sent = true; controller.enqueue(body); } else controller.close(); } });
+      const raw = { body: stream, headers: new Headers({ 'content-type': 'application/x-www-form-urlencoded', 'content-length': String(8 * 1024 * 1024) }) };
+      const ctx = createCossackContext({ req: { raw } } as unknown as Context, true) as unknown as CossackContext;
+      expect(await ctx.getFormData()).toEqual({ a: '1' });
+    } finally { globalThis.Uint8Array = Real; }
+    expect(Math.max(0, ...allocations)).toBeLessThanOrEqual(64 * 1024);
+    // Many chunks past the first buffer still arrive whole.
+    const pairs = Array.from({ length: 2000 }, (_, i) => `k${i}=${'v'.repeat(60)}`).join('&');
+    const bytes = new TextEncoder().encode(pairs);
+    let offset = 0;
+    const chunked = new ReadableStream<Uint8Array>({ pull(controller) { if (offset < bytes.length) { controller.enqueue(bytes.subarray(offset, offset + 1000)); offset += 1000; } else controller.close(); } });
+    const raw = { body: chunked, headers: new Headers({ 'content-type': 'application/x-www-form-urlencoded' }) };
+    const ctx = createCossackContext({ req: { raw } } as unknown as Context, true) as unknown as CossackContext;
+    const data = await ctx.getFormData<Record<string, string>>();
+    expect(Object.keys(data)).toHaveLength(2000);
+    expect(data.k1999).toBe('v'.repeat(60));
+  });
+
+  it('reads a body Hono cached as text as a form, and refuses one cached as JSON', async () => {
+    const app = new Hono();
+    app.post('/text', async c => {
+      await c.req.text();
+      const ctx = createCossackContext(c, true) as unknown as CossackContext;
+      return c.json(await ctx.getFormData());
+    });
+    app.post('/json', async c => {
+      await c.req.json();
+      const ctx = createCossackContext(c, true) as unknown as CossackContext;
+      return c.json(await ctx.getFormData());
+    });
+    const text = await app.request('/text', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'a=1' });
+    expect(await text.json()).toEqual({ a: '1' });
+    const json = await app.request('/json', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"a":1}' });
+    expect(json.status).toBe(400);
   });
 
   it('defaults to an 8 MiB limit', async () => {

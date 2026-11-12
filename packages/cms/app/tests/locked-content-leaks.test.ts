@@ -104,6 +104,18 @@ describe('locked entries stay locked outside their page', () => {
         expect(JSON.stringify(members)).not.toContain('secret');
     });
 
+    it('binds theme options on site pages only through bindableEntry', async () => {
+        // Theme options resolve in the layout and again in the catch-all page (its @State, sent to
+        // the browser): each binds `$` to the reader's view, never to the stored record.
+        const { readFile } = await import('node:fs/promises');
+        for (const file of ['../src/pages/(site)/layout.ts', '../src/pages/(site)/[...path]/index.ts']) {
+            const source = await readFile(new URL(file, import.meta.url), 'utf8');
+            const scopes = [...source.matchAll(/bindingScopes\(settings, \{ entry(?:: ([^,}]+))?[,}]/g)].map(match => match[1] ?? 'entry');
+            expect(scopes.length, file).toBeGreaterThan(0);
+            for (const entry of scopes) expect(entry, file).not.toMatch(/record/);
+        }
+    });
+
     it('never finds or replaces in an entry\'s password', () => {
         const names = replaceableFields({ ...resource.fields, password: { kind: 'string', max: 100 } } as never).map(([name]) => name);
         expect(names).not.toContain('password');

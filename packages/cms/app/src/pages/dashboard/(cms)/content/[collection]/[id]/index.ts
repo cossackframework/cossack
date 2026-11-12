@@ -8,6 +8,7 @@ import { describeBlockError } from '../../../../../../cms/block-errors';
 import { blockIdOf, styleValues, withStyle, type BlockTab, type StyleValues } from '../../../../../../cms/style-controls';
 import { renderMarkdown, type CmsHost } from '@cossackframework/cms/server';
 import { openMatches } from '../../../../../../cms/site';
+import { mentionableUsers } from '../../../../../../cms/site-editing';
 import { applyEntryJson, editorView, entryJson, entryValues, fieldErrors, mediaPreviews, parentOptions, patternBlocks, routeResource, saveEntry, termOptions, type MediaPreview, type SaveIntent } from '../../../../../../cms/content';
 import { blockDefaults, contentField, controlValue, editorBlocks, editorInput, entryUrl, suggestedSlug, type EditorBlock, type EditorField, type EditorValues, type EditorView, type TermOption } from '../../../../../../cms/editor';
 import { collabEditors, RichTextField, richTextEditors, type RichTextFieldProps } from '../../../../../../cms/rich-text-field';
@@ -241,7 +242,7 @@ export default class EntryEditor extends Cossack {
                 this.notes = await cms.notes.forEntry(resource.id, record.id).catch(() => []);
                 const authors = await cms.users.getMany([...new Set([principal.id, ...this.notes.map(note => note.userId)])]);
                 this.noteAuthors = Object.fromEntries([...authors.values()].map(user => [user.id, { user: user.id, name: user.name || user.email, avatar: user.avatar, color: participantColor(user.id) }]));
-                this.mentionable = (await cms.users.list({ limit: 100 }).catch(() => ({ items: [] }))).items.filter(user => user.id !== principal.id).map(user => ({ id: user.id, name: user.name || user.email }));
+                this.mentionable = await mentionableUsers(cms, principal);
                 this.notesGate = await cms.settings.get('writing.requireResolvedNotes');
                 this.notesOpen = this.c.req.query('notes') === 'open';
                 await cms.notes.markSeen(principal.id, resource.id, record.id).catch(() => undefined);

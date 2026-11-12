@@ -126,10 +126,11 @@ export interface CreateDesktopAppOptions {
   startPath?: string;
   window?: SafeBrowserWindowOptions;
   /**
-   * Electron permissions the app's own pages may use, such as `media`
-   * (camera and microphone), `geolocation`, `notifications` or
-   * `clipboard-sanitized-write`. Every other permission request and check is
-   * denied, and so is any request from a page outside `cossack://app`.
+   * Electron permissions the app's own pages may use besides the defaults
+   * (`DESKTOP_DEFAULT_PERMISSIONS`: copying to the clipboard and fullscreen),
+   * such as `media` (camera and microphone), `geolocation` or `notifications`.
+   * Every other permission request and check is denied, and so is any request
+   * from a page outside `cossack://app`.
    */
   permissions?: readonly string[];
 }
@@ -543,7 +544,7 @@ async function initializeDesktopApp(options: CreateDesktopAppOptions): Promise<D
   const requestToken = randomUUID();
   // Chromium grants camera, microphone, location and the rest by default: deny all
   // but the permissions the app names, and only to its own windows' app pages.
-  const allowedPermissions = new Set(options.permissions ?? []);
+  const allowedPermissions = new Set([...DESKTOP_DEFAULT_PERMISSIONS, ...(options.permissions ?? [])]);
   const appPage = (url: string | undefined) => {
     try { return url !== undefined && isDesktopAppUrl(new URL(url)); } catch { return false; }
   };
@@ -676,6 +677,14 @@ async function initializeDesktopApp(options: CreateDesktopAppOptions): Promise<D
 }
 
 /** Initialize the process-wide Desktop application exactly once. */
+/**
+ * Permissions every app page has without naming them: writing to the clipboard
+ * (copy buttons) and fullscreen (video, `requestFullscreen`). Opening external
+ * protocol handlers (`openExternal`) is not among them: http(s) links already
+ * open in the browser, and other schemes need the app to name it.
+ */
+export const DESKTOP_DEFAULT_PERMISSIONS: readonly string[] = ['clipboard-sanitized-write', 'fullscreen'];
+
 export function createDesktopApp(options: CreateDesktopAppOptions): Promise<DesktopApplication> {
   assertElectron();
   return activeApplication ??= initializeDesktopApp(options).catch((error) => {

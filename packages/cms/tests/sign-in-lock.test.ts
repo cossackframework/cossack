@@ -42,6 +42,26 @@ describe.skipIf(!live)('sign-in lock', () => {
         }
     });
 
+    it('goes on when giving an attempt back keeps conflicting, leaving it counted', async () => {
+        const db = service.database();
+        const busy = new Proxy(db, {
+            get(target, property) {
+                if (property === 'write') return async (statements: { rql: string }[], options?: unknown) => {
+                    if (statements.some(statement => /count - 1|^DELETE FROM cms_attempts WHERE key = \$key$/.test(statement.rql))) throw Object.assign(new Error('engine: Write-write conflict'), { code: 'RDB_WRITE_CONFLICT' });
+                    return target.write(statements as never, options as never);
+                };
+                const value = Reflect.get(target, property, target) as unknown;
+                return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+            },
+        });
+        const contended = createCMS({ db: busy, now: () => clock });
+        expect((await contended.security.signInBegin('busy@example.com', '10.4.4.4')).ok).toBe(true);
+        await expect(contended.security.signInSucceeded('busy@example.com', '10.4.4.4')).resolves.toBeUndefined();
+        // The address refuses; giving the email's attempt back conflicts, and the refusal still answers.
+        for (let i = 0; i < SIGN_IN_LOCK.perAddress; i++) await contended.security.signInBegin(`fill${i}@example.com`, '10.4.4.5');
+        expect((await contended.security.signInBegin('other@example.com', '10.4.4.5')).ok).toBe(false);
+    });
+
     it('counts attempts of a kind within a window', async () => {
         for (let i = 0; i < RESET_REQUESTS.perEmail; i++) expect(await cms.security.attempt('reset', 'e:ada@example.com', RESET_REQUESTS.perEmail, RESET_REQUESTS.windowMs)).toBe(true);
         expect(await cms.security.attempt('reset', 'e:ada@example.com', RESET_REQUESTS.perEmail, RESET_REQUESTS.windowMs)).toBe(false);

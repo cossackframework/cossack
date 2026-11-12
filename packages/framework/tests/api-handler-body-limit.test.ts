@@ -29,6 +29,15 @@ class LargeApi extends Cossack {
     }
 }
 
+@Page({ transport: 'http' })
+class RawApi extends Cossack {
+    static seen: Request | undefined;
+    async post() {
+        RawApi.seen = this.c.req.raw;
+        return this.c.json({ size: (await this.c.req.arrayBuffer()).byteLength });
+    }
+}
+
 function streamOf(bytes: number) {
     let sent = 0;
     return new ReadableStream<Uint8Array>({
@@ -71,5 +80,28 @@ describe('createApiHandler — body limit', () => {
         expect(res.status).toBe(200);
         expect(await res.json()).toEqual({ size: 3000 });
         expect((await app.request('/large', { method: 'POST', body: streamOf(5000), duplex: 'half' } as RequestInit)).status).toBe(413);
+    });
+
+    it('leaves a body a middleware already read to Hono\'s cache', async () => {
+        const read = new Hono();
+        read.use('/read', async (c, next) => { await c.req.json(); await next(); });
+        read.post('/read', createApiHandler(JsonApi, 'post', { maxBodyBytes: 1024 }));
+        const res = await read.request('/read', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ a: 1 }) });
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({ keys: 1 });
+    });
+
+    it('keeps the request as it is when its declared length is within the limit', async () => {
+        const kept = new Hono();
+        let original: Request | undefined;
+        kept.use('/raw', async (c, next) => { original = c.req.raw; await next(); });
+        kept.post('/raw', createApiHandler(RawApi, 'post', { maxBodyBytes: 1024 }));
+        const res = await kept.request('/raw', { method: 'POST', headers: { 'content-length': '10' }, body: streamOf(10), duplex: 'half' } as RequestInit);
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({ size: 10 });
+        expect(RawApi.seen).toBe(original);
+        // Without a declared length the body is wrapped, and bounded.
+        await kept.request('/raw', { method: 'POST', body: streamOf(10), duplex: 'half' } as RequestInit);
+        expect(RawApi.seen).not.toBe(original);
     });
 });

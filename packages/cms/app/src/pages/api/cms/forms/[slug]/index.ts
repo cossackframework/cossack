@@ -69,6 +69,10 @@ function editList(inputs: readonly FormField[], holder: { [name: string]: unknow
     holder[name] = add ? (items.length < max ? [...items, ''] : items) : items.filter((_, index) => String(index + 1) !== rest[0]);
 }
 
+/** One-time results (list edits, refusals, confirmations) an address may store in a window. */
+const RESULTS_PER_ADDRESS = 60;
+const RESULTS_WINDOW_MS = 10 * 60_000;
+
 /** A path on this site to go back to: the form's page, or the home page. */
 function samePath(value: string | undefined): string {
     return value && /^\/(?![/\\])[^\s]*$/.test(value) && value.length <= 2048 ? value.replace(/[?#].*$/, '') : '/';
@@ -88,14 +92,27 @@ export const POST = async (c: Context) => {
     let form: LoadedForm | null;
     try { form = await cms.forms.get(c.req.param('slug') ?? ''); } catch (error) { return apiError(c, error); }
     if (!form?.published) return c.json({ error: 'This form does not exist.', code: 'CMS_NOT_FOUND' }, 404);
+    const loaded = form;
+    // The address the deployment trusts (TRUSTED_PROXY_HEADER, or the socket), not a header anyone can send.
+    const address = getClientIp(c);
+    const ip = address && address !== 'anonymous' ? address : undefined;
+    /**
+     * Return to the page with a one-time result. Each result is a stored row written before any
+     * bot check (a list edit, a refusal), so one address saves at most RESULTS_PER_ADDRESS of
+     * them in the window; past that it returns to the page plainly.
+     */
+    const saveBack = async (page: string, result: FormResult) => {
+        const allowed = await cms.security.attempt('form-result', ip ?? 'anonymous', RESULTS_PER_ADDRESS, RESULTS_WINDOW_MS).catch(() => false);
+        const query = allowed ? `?form=${encodeURIComponent(loaded.ref.slug)}&result=${await cms.forms.saveResult(loaded.ref.id, result)}` : '';
+        return c.redirect(`${page}${query}#form-${loaded.ref.slug}`, 303);
+    };
     // A post is read whole, files included: one far over the files' limit is refused, declared or not, before it is parsed.
     const posted = await cappedRequest(c, (FORM_UPLOAD_LIMIT_MB + 1) * 1024 * 1024);
     if (!posted) {
         const message = `The form is too large to send: its files add up to at most ${FORM_UPLOAD_LIMIT_MB} MB.`;
         if (json) return c.json({ error: message, code: 'CMS_LIMIT' }, 413);
         const page = samePath((() => { try { return new URL(c.req.header('referer') ?? '').pathname; } catch { return undefined; } })());
-        const key = await cms.forms.saveResult(form.ref.id, { kind: 'error', html: messageHtml(message) } satisfies FormResult);
-        return c.redirect(`${page}?form=${encodeURIComponent(form.ref.slug)}&result=${key}#form-${form.ref.slug}`, 303);
+        return saveBack(page, { kind: 'error', html: messageHtml(message) });
     }
     let values: SubmittedValues;
     let meta: { page?: string; started?: string; trap?: string; token?: string; add?: string; remove?: string };
@@ -113,17 +130,14 @@ export const POST = async (c: Context) => {
         }
     } catch { return c.json({ error: 'Send the form as form data or JSON.', code: 'CMS_VALIDATION' }, 400); }
     const page = samePath(meta.page ?? (() => { try { return new URL(c.req.header('referer') ?? '').pathname; } catch { return undefined; } })());
-    const back = (key: string) => c.redirect(`${page}?form=${encodeURIComponent(form.ref.slug)}&result=${key}#form-${form.ref.slug}`, 303);
+    const back = (result: FormResult) => saveBack(page, result);
     // Without the page's script, the Add and Remove buttons of a repeater or a multiple input post the form back: it returns as typed with the rows or items changed, nothing checked.
     if (!json && (meta.add || meta.remove)) {
         const typed = postedValues(form.ref.inputs, values);
         editList(form.ref.inputs, typed, (meta.add ?? meta.remove ?? '').split('.'), Boolean(meta.add));
         const result: FormResult = { kind: 'edit', html: '', values: typed };
-        return back(await cms.forms.saveResult(form.ref.id, result));
+        return back(result);
     }
-    // The address the deployment trusts (TRUSTED_PROXY_HEADER, or the socket), not a header anyone can send.
-    const address = getClientIp(c);
-    const ip = address && address !== 'anonymous' ? address : undefined;
     const secret = env('TURNSTILE_SECRET_KEY', '');
     const botCheck = secret && env('TURNSTILE_SITE_KEY', '') ? async () => {
         const verifier = createTurnstileVerifier({ secret, expectedHostname: env('TURNSTILE_HOSTNAME', '') || new URL(c.req.url).hostname, expectedAction: 'form' });
@@ -143,13 +157,13 @@ export const POST = async (c: Context) => {
         if (json) return c.json({ submission: { id: submission.id }, confirmation: confirmation.kind === 'redirect' ? { kind: 'redirect', url: target } : { kind: 'message', html: renderMarkdown(confirmation.message) } }, 201);
         if (confirmation.kind === 'redirect') return c.redirect(target, 303);
         const result: FormResult = { kind: 'success', html: renderMarkdown(confirmation.message) };
-        return back(await cms.forms.saveResult(form.ref.id, result));
+        return back(result);
     } catch (error) {
         if (json || !isCmsError(error)) return apiError(c, error);
         const failure = error as CmsError;
         // A closed form's message is the form's own Markdown; other messages are plain text.
         const html = failure.code === 'CMS_FORBIDDEN' && failure.message === form.settings.closedMessage ? renderMarkdown(failure.message) : messageHtml(failure.message);
         const result: FormResult = { kind: 'error', html, ...(failure.fields ? { errors: failure.fields } : {}), values: postedValues(form.ref.inputs, values) };
-        return back(await cms.forms.saveResult(form.ref.id, result));
+        return back(result);
     }
 };

@@ -442,7 +442,9 @@ export function readLocaleCookie(): string | undefined {
     const match = document.cookie.match(
         new RegExp(`(?:^|; )${LOCALE_COOKIE}=([^;]*)`),
     );
-    return match ? decodeURIComponent(match[1]) : undefined;
+    if (!match) return undefined;
+    // A malformed escape (set by hand or by another app on the domain) reads as no locale.
+    try { return decodeURIComponent(match[1]); } catch { return undefined; }
 }
 
 /** @internal Cookie name (exported for the server middleware to read). */

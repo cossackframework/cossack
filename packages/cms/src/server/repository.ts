@@ -177,10 +177,10 @@ export class ResourceRepository {
     }
 
     async revisions(id: string, context: OperationContext, options: { limit?: number } = {}): Promise<RevisionShape[]> {
-        const editor = await this.#historyOf(id, context);
+        const { editor, since } = await this.#historyOf(id, context);
         const result = await this.#host.db.read([{
-            rql: 'SELECT revision, at, actor, data FROM cms_revisions WHERE resource = $resource AND record_id = $key ORDER BY revision DESC LIMIT $limit',
-            params: { $resource: this.resource.id, $key: id, $limit: options.limit ?? 50 },
+            rql: 'SELECT revision, at, actor, data FROM cms_revisions WHERE resource = $resource AND record_id = $key AND at >= $since ORDER BY revision DESC LIMIT $limit',
+            params: { $resource: this.resource.id, $key: id, $since: since, $limit: options.limit ?? 50 },
         }], this.#readOptions(context));
         return result.results[0]!.rows.map(([revision, at, actor, data]) => this.#historyRow(revision, at, actor, data, editor, context.principal))
             .filter((row): row is RevisionShape => row !== null);
@@ -191,16 +191,19 @@ export class ResourceRepository {
      * published record does not show. Those who may change the record read all of it. Holders
      * of the resource's read permission, who read its drafts anyway, read the history of an
      * open record, without passwords or snapshots that were protected or members-only, as
-     * export and the API treat them. Answers whether the principal may change the record.
+     * export and the API treat them. Answers whether the principal may change the record, and
+     * when the record was created: an ID created again after a delete starts a new history, so
+     * rows of the deleted record its cleanup job has not removed yet are not its own.
      */
-    async #historyOf(id: string, context: OperationContext): Promise<boolean> {
+    async #historyOf(id: string, context: OperationContext): Promise<{ editor: boolean; since: number }> {
         const record = await this.get(id, context);
         if (!record) throw new CmsError('CMS_NOT_FOUND', 'Record not found.');
-        if (this.canUpdate(record, context.principal)) return true;
+        const since = record.createdAt;
+        if (this.canUpdate(record, context.principal)) return { editor: true, since };
         if (!hasPermission(context.principal, `${this.resource.id}:read`) || isLockedRecord(record)) {
             throw new CmsError('CMS_FORBIDDEN', 'Only editors read this record\'s revisions.');
         }
-        return false;
+        return { editor: false, since };
     }
 
     #historyRow(revision: unknown, at: unknown, actor: unknown, data: unknown, editor: boolean, principal: Principal): RevisionShape | null {
@@ -212,11 +215,11 @@ export class ResourceRepository {
 
     /** One revision's snapshot of a record the principal may change, or null. */
     async revision(id: string, revision: number, context: OperationContext): Promise<RevisionShape | null> {
-        const editor = await this.#historyOf(id, context);
+        const { editor, since } = await this.#historyOf(id, context);
         if (!Number.isSafeInteger(revision) || revision < 1) return null;
         const result = await this.#host.db.read([{
-            rql: 'SELECT revision, at, actor, data FROM cms_revisions WHERE resource = $resource AND record_id = $key AND revision = $revision',
-            params: { $resource: this.resource.id, $key: id, $revision: revision },
+            rql: 'SELECT revision, at, actor, data FROM cms_revisions WHERE resource = $resource AND record_id = $key AND revision = $revision AND at >= $since',
+            params: { $resource: this.resource.id, $key: id, $revision: revision, $since: since },
         }], this.#readOptions(context));
         const row = result.results[0]!.rows[0];
         return row ? this.#historyRow(row[0], row[1], row[2], row[3], editor, context.principal) : null;

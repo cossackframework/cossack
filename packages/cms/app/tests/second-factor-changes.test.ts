@@ -16,7 +16,7 @@ vi.mock('@cossackframework/core', async original => ({
     getRequestContext: () => ({ env: {}, get: (key: string) => key === 'user' ? state.user : key === 'cms.sessionSecondFactor' ? state.secondFactor : undefined }),
 }));
 vi.stubGlobal('env', (_name: string, fallback: string) => fallback);
-const { disableAuthenticator, newRecoveryCodes, removePasskey, PASSKEY_CHALLENGES, passkeySignIn } = await import('../src/auth');
+const { disableAuthenticator, newRecoveryCodes, removePasskey, revokeApiToken, PASSKEY_CHALLENGES, passkeySignIn } = await import('../src/auth');
 
 describe.skipIf(!live)('second factors changed from a session', () => {
     const service = romedbService();
@@ -43,6 +43,7 @@ describe.skipIf(!live)('second factors changed from a session', () => {
         await expect(removePasskey(accountId, 'owner-key')).rejects.toThrow(/sign in again/);
         await expect(disableAuthenticator(accountId, code)).rejects.toThrow(/sign in again/);
         await expect(newRecoveryCodes(accountId, code)).rejects.toThrow(/sign in again/);
+        await expect(revokeApiToken(accountId, 'owner-token')).rejects.toThrow(/sign in again/);
         expect(await state.cms!.security.status(accountId)).toMatchObject({ totp: true, passkeys: [expect.objectContaining({ id: 'owner-key' })] });
     });
 

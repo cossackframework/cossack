@@ -438,6 +438,12 @@ describe('Electron Desktop runtime', () => {
     expect(ask(own, 'notifications', 'cossack://app/settings')).toBe(true);
     expect(ask(own, 'media', 'cossack://app/settings')).toBe(false);
     expect(ask(own, 'geolocation', 'cossack://app/')).toBe(false);
+    // Copy buttons and fullscreen work without naming them; other schemes' handlers do not.
+    expect(ask(own, 'clipboard-sanitized-write', 'cossack://app/')).toBe(true);
+    expect(ask(own, 'fullscreen', 'cossack://app/')).toBe(true);
+    expect(ask(own, 'openExternal', 'cossack://app/')).toBe(false);
+    expect(ask(own, 'clipboard-sanitized-write', 'https://example.com/')).toBe(false);
+    expect(handlers.check(own, 'clipboard-sanitized-write', 'cossack://app')).toBe(true);
     expect(ask(own, 'notifications', 'https://example.com/')).toBe(false);
     expect(ask({ id: -5, getURL: () => 'cossack://app/' }, 'notifications', 'cossack://app/')).toBe(false);
     expect(handlers.check(own, 'notifications', 'cossack://app')).toBe(true);

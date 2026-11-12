@@ -32,6 +32,19 @@ export async function siteEditable(cms: CmsHost, collection: string, id: string,
     return found ? { collection: found.collection.name, id, dashboard: `/dashboard/content/${found.collection.name}/${id}` } : null;
 }
 
+/**
+ * Who a new note could mention: the site's active users other than the viewer, by name. Their
+ * email addresses show only to a viewer who may manage users (anyone who may edit one entry
+ * opens this list); a user without a name is listed as such.
+ */
+export async function mentionableUsers(cms: CmsHost, principal: Principal): Promise<{ id: string; name: string }[]> {
+    if (principal.kind !== 'user') return [];
+    const emails = hasPermission(principal, PERMISSIONS.manageUsers);
+    const users = (await cms.users.list({ limit: 100 }).catch(() => ({ items: [] }))).items;
+    return users.filter(user => user.id !== principal.id && user.status === 'active')
+        .map(user => ({ id: user.id, name: user.name || (emails ? user.email : __('Unnamed user')) }));
+}
+
 /** A draft of the saved entry: its editor view and control values, blocks' data as control values too. */
 export async function siteDraft(cms: CmsHost, collection: CollectionDefinition, record: RecordShape, principal: Principal): Promise<SiteDraft> {
     const view = await editorView(cms, collection.name, principal);
@@ -49,7 +62,7 @@ export async function siteDraft(cms: CmsHost, collection: CollectionDefinition, 
     const me = principal.kind === 'user' ? principal.id : '';
     const notes = await cms.notes.forEntry(`cms/${collection.name}`, record.id).catch(() => []);
     const users = await cms.users.getMany([...new Set([me, ...notes.map(note => note.userId)].filter(Boolean))]);
-    const mentionable = me ? (await cms.users.list({ limit: 100 }).catch(() => ({ items: [] }))).items.filter(user => user.id !== me).map(user => ({ id: user.id, name: user.name || user.email })) : [];
+    const mentionable = await mentionableUsers(cms, principal);
     return {
         collection: collection.name, id: record.id, rev: record.rev, view, values, previews: await mediaPreviews(cms, values, view), references,
         blocksField, bodyField, documents: await pageDocuments(cms, view, values, principal), changed: false, error: '', errors: {}, conflict: false, chooser: closedChooser(),

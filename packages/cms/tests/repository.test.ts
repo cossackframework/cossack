@@ -144,6 +144,20 @@ describe.skipIf(!live)('resource repositories', () => {
         expect(await count("SELECT count(*) FROM cms_preview_tokens WHERE record_id = 'long'")).toBe(0);
     }, 60_000);
 
+    it('starts a new history for an ID created again before the old one\'s cleanup runs', async () => {
+        const repository = cms.resource('app/articles');
+        let record = await repository.create({ title: 'First life' }, { principal: alice, id: 'again' });
+        for (const title of ['Second', 'Third']) record = await repository.update('again', { title }, { principal: editor, expectedRevision: record.rev });
+        await repository.delete('again', { principal: editor, expectedRevision: record.rev });
+        // Created again at once: rows 2 and 3 of the deleted record are still stored.
+        await new Promise(resolve => setTimeout(resolve, 5));
+        await repository.create({ title: 'New life' }, { principal: alice, id: 'again' });
+        expect(await count("SELECT count(*) FROM cms_revisions WHERE record_id = 'again'")).toBe(3);
+        expect((await repository.revisions('again', { principal: editor })).map(row => [row.revision, row.data.title])).toEqual([[1, 'New life']]);
+        expect(await repository.revision('again', 3, { principal: editor })).toBeNull();
+        await expect(repository.restore('again', 3, { principal: editor, expectedRevision: 1 })).rejects.toMatchObject({ code: 'CMS_NOT_FOUND' });
+    });
+
     it('enforces ownership in queries, updates and search', async () => {
         const repository = cms.resource('app/notes');
         await repository.create({ text: 'alice secret plan' }, { principal: alice, id: 'n-alice' });
@@ -199,7 +213,9 @@ describe.skipIf(!live)('resource repositories', () => {
             deliveries.push(`webhook:${event.id}`);
             if (failing) throw new Error('webhook down');
         }, { plugin: 'webhook' });
-        const dispatcher = createCMS({ db: service.database(), resources: [articles, notes], hooks: outboxHooks, outbox: { baseDelayMs: 0 } });
+        // The dispatcher's clock runs a second ahead: a wall clock stepped back under load (as WSL's
+        // can) would otherwise leave a row just written not yet due.
+        const dispatcher = createCMS({ db: service.database(), resources: [articles, notes], hooks: outboxHooks, outbox: { baseDelayMs: 0, now: () => Date.now() + 1000 } });
         // Deliver earlier tests' events first.
         for (let round = 0; round < 10; round++) {
             const drained = await dispatcher.outbox.dispatch({ limit: 100 });
@@ -210,7 +226,7 @@ describe.skipIf(!live)('resource repositories', () => {
         failing = true;
         await dispatcher.resource('app/articles').create({ title: 'Event' }, { principal: alice, id: 'event' });
         const first = await dispatcher.outbox.dispatch();
-        expect(first.retrying).toEqual([{ id: expect.any(String), plugins: ['webhook'] }]);
+        expect(first.retrying, JSON.stringify({ delivered: first.delivered, pending: await dispatcher.outbox.pending(), deliveries })).toEqual([{ id: expect.any(String), plugins: ['webhook'] }]);
         expect(deliveries).toEqual(['search:event', 'webhook:event']);
         failing = false;
         const second = await dispatcher.outbox.dispatch();

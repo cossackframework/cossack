@@ -26,15 +26,24 @@ export const API_HANDLER_BODY_MAX_BYTES = 32 * 1024 * 1024;
 
 /**
  * Bound the request body every reader of `c.req` sees. A body that declares a
- * larger size is refused before the handler runs; one that streams past the
- * limit errors its readers, and the handler answers 413.
+ * larger size is refused before the handler runs. A body that declares a size
+ * within the limit is left as it is: the runtime holds it to that length, and
+ * its stream keeps a known length (which R2 `put()` and similar need). Only a
+ * body with no declared length is wrapped: past the limit its readers error,
+ * and the handler answers 413. A handler that returns a response streaming
+ * the request body on sees that stream error past the limit instead. A body a
+ * middleware already read (locked, used, or in Hono's body cache) is the
+ * middleware's: it is left alone.
  */
 function boundRequestBody(c: Context, limit: number): { refused: boolean; exceeded: () => boolean } {
     const raw = c.req.raw;
-    let exceeded = false;
-    if (!raw.body) return { refused: false, exceeded: () => false };
+    const unbounded = { refused: false, exceeded: () => false };
+    if (!raw.body) return unbounded;
     const declared = raw.headers.get('content-length')?.trim();
-    if (declared && /^\d+$/.test(declared) && Number(declared) > limit) return { refused: true, exceeded: () => true };
+    if (declared && /^\d+$/.test(declared)) return Number(declared) > limit ? { refused: true, exceeded: () => true } : unbounded;
+    const cache = (c.req as unknown as { bodyCache?: Record<string, unknown> }).bodyCache;
+    if (raw.bodyUsed || raw.body.locked || (cache && Object.keys(cache).length > 0)) return unbounded;
+    let exceeded = false;
     let size = 0;
     const bounded = raw.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
         transform(chunk, controller) {

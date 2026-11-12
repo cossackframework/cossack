@@ -96,9 +96,16 @@ async function discardBody(request: Request, limit = 64 * 1024): Promise<void> {
             if (next.done || (size += next.value.byteLength) > limit) break;
         }
     } catch { /* the connection is already gone */ } finally {
-        await Promise.race([reader.cancel().catch(() => {}), new Promise(resolve => setTimeout(resolve, 1000))]);
+        await settledCancel(reader);
         reader.releaseLock();
     }
+}
+
+/** Cancel the rest of a stream, waiting at most a second for the runtime to settle it. */
+async function settledCancel(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([reader.cancel().catch(() => {}), new Promise(resolve => { timer = setTimeout(resolve, 1000); })]);
+    clearTimeout(timer);
 }
 
 /** Credentials are a few small fields: a login body over this is refused unread. */
@@ -108,7 +115,9 @@ class BodyTooLarge extends Error {}
 
 /**
  * Read a JSON body of at most `limit` bytes. A declared or streamed size over
- * the limit throws `BodyTooLarge`; the rest of the stream is cancelled.
+ * the limit throws `BodyTooLarge`. The rest of an oversized stream is left
+ * unread, not cancelled: the framework drains it before the response leaves
+ * (cancelling breaks the next request on a Workers keep-alive connection).
  */
 async function readJsonBody(request: Request, limit: number): Promise<unknown> {
     const declared = request.headers.get('content-length')?.trim();
@@ -126,7 +135,6 @@ async function readJsonBody(request: Request, limit: number): Promise<unknown> {
             chunks.push(next.value);
         }
     } finally {
-        await Promise.race([reader.cancel().catch(() => {}), new Promise(resolve => setTimeout(resolve, 1000))]);
         reader.releaseLock();
     }
     const bytes = new Uint8Array(size);

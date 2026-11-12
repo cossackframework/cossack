@@ -42,4 +42,17 @@ describe('discardRequestBody', () => {
         expect(await request.text()).toBe('done');
         await discardRequestBody(request, 1024);
     });
+
+    it('cancels a body that trickles in past its time limit', async () => {
+        let cancelled = false;
+        const stream = new ReadableStream<Uint8Array>({
+            async pull(controller) { await new Promise(resolve => setTimeout(resolve, 50)); controller.enqueue(new Uint8Array(1)); },
+            cancel() { cancelled = true; },
+        });
+        const request = new Request('http://test.local/', { method: 'POST', body: stream, duplex: 'half' } as RequestInit);
+        const started = Date.now();
+        await discardRequestBody(request, 1024 * 1024, 200);
+        expect(Date.now() - started).toBeLessThan(2000);
+        expect(cancelled).toBe(true);
+    });
 });

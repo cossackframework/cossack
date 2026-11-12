@@ -82,12 +82,24 @@ export class CmsSecurity {
 
     /** A right password: the email's failures are forgotten, and the address gets this attempt back. */
     async signInSucceeded(email: string, address: string): Promise<void> {
-        await this.#db.write([{ rql: 'DELETE FROM cms_attempts WHERE key = $key', params: { $key: await emailKey(email) } }], WRITE);
+        await this.#bestEffort('DELETE FROM cms_attempts WHERE key = $key', await emailKey(email));
         await this.#giveBack(addressKey(address));
     }
 
     async #giveBack(key: string): Promise<void> {
-        await this.#db.write([{ rql: 'UPDATE cms_attempts SET count = count - 1 WHERE key = $key AND count > 0', params: { $key: key } }], WRITE);
+        await this.#bestEffort('UPDATE cms_attempts SET count = count - 1 WHERE key = $key AND count > 0', key);
+    }
+
+    /**
+     * A write that gives attempts back. Under a burst on the same key it can keep conflicting past
+     * the retries: the attempt then stays counted (the limit errs shut), and the request goes on.
+     */
+    async #bestEffort(rql: string, key: string): Promise<void> {
+        try { await this.#db.write([{ rql, params: { $key: key } }], COUNT); }
+        catch (error) {
+            if ((error as { code?: string }).code !== 'RDB_WRITE_CONFLICT') throw error;
+            console.warn('[cms] a sign-in attempt could not be given back: the key is busy');
+        }
     }
 
     /**

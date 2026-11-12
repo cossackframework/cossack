@@ -5,7 +5,7 @@ import { getCookie } from 'hono/cookie';
 import { component, html } from '@cossackframework/renderer';
 import { hasPermission, isCmsError, isSameOriginPost, PERMISSIONS, type ArchiveView, type EntryView, type LanguageLink, type Note, type RecordShape, type ThemeData } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
-import { archive, authorArchive, authorView, bindingScopes, commentResult, entryLock, entryViews, homeView, isMembersOnly, isProtected, languageLinks, localePrefix, pageNumber, redirectFor, requestLock, resolvePath, searchBase, searchEntries, termArchive, themeData, themeState, unlockCookie, unlockToken, resolvedOptions, type Resolved, type ThemeState, notFoundPage } from '../../../cms/site';
+import { archive, authorArchive, authorView, bindableEntry, bindingScopes, commentResult, entryLock, entryViews, homeView, isMembersOnly, isProtected, languageLinks, localePrefix, pageNumber, redirectFor, requestLock, resolvePath, searchBase, searchEntries, termArchive, themeData, themeState, unlockCookie, unlockToken, resolvedOptions, type Resolved, type ThemeState, notFoundPage } from '../../../cms/site';
 import { archiveTemplate, entryTemplate, siteContent, siteTheme, tagDocument, themeHelpers, unavailable } from '../../../cms/site-view';
 import { authorSeo, entrySeo, homeSeo, listSeo } from '../../../cms/seo';
 import { emptySeo, seoHead, type SeoView } from '../../../cms/seo-head';
@@ -177,7 +177,9 @@ export default class SitePath extends Cossack {
             /** The entry the page shows, which its editor may edit in place: an entry, or the static front page. */
             let shown: { collection: string; record: RecordShape } | null = null;
             // Templates read the theme's options with their bindings resolved, as the layout does.
-            this.theme = { ...this.theme, options: resolvedOptions(this.theme.options, bindingScopes(settings, { entry: resolved.kind === 'entry' ? resolved.record : null, user: viewOptions.user })) };
+            // A locked entry binds as its readers see it unless this reader may read it; the password never binds.
+            const bound = resolved.kind === 'entry' ? await bindableEntry(cms, resolved.collection.name, resolved.record, this.c.get('principal'), getCookie(this.c, unlockCookie(resolved.record))) : null;
+            this.theme = { ...this.theme, options: resolvedOptions(this.theme.options, bindingScopes(settings, { entry: bound, user: viewOptions.user })) };
             if (resolved.kind === 'home') {
                 const home = await homeView(cms, resolved.locale, page, viewOptions);
                 if (home.page && home.record) {

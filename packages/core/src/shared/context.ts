@@ -85,18 +85,17 @@ type BodyCache = Record<string, Promise<unknown> | undefined>;
  */
 async function boundedFormData(req: Context['req'], limit: number): Promise<FormData> {
     const cache = (req as unknown as { bodyCache?: BodyCache }).bodyCache;
-    if (cache && Object.keys(cache).length > 0) return req.formData();
     const raw = req.raw;
+    if (cache && Object.keys(cache).length > 0) return fromBodyCache(req, cache);
     const tooLarge = () => new HTTPException(413, { message: 'The form is too large.' });
     const declaredHeader = raw.headers.get('content-length')?.trim();
     const declared = declaredHeader && /^\d+$/.test(declaredHeader) ? Number(declaredHeader) : undefined;
     if (declared !== undefined && declared > limit) throw tooLarge();
     if (!raw.body) return raw.formData();
     const reader = raw.body.getReader();
-    // A declared length gets one buffer up front; otherwise chunks are kept and
-    // copied once at the end, dropping each as it is copied.
-    let exact: Uint8Array<ArrayBuffer> | null = declared !== undefined ? new Uint8Array(declared) : null;
-    const chunks: Uint8Array[] = [];
+    // One buffer, grown as bytes arrive (never sized from the header alone, so
+    // a request that declares 8 MiB and sends nothing holds next to nothing).
+    let buffer = new Uint8Array(Math.min(INITIAL_FORM_BUFFER, limit));
     let size = 0;
     try {
         while (true) {
@@ -104,37 +103,47 @@ async function boundedFormData(req: Context['req'], limit: number): Promise<Form
             if (next.done) break;
             const end = size + next.value.byteLength;
             if (end > limit) throw tooLarge();
-            if (exact && end <= exact.length) exact.set(next.value, size);
-            else {
-                // The body ran past its declared length: keep what came so far as one chunk.
-                if (exact) { chunks.push(exact.subarray(0, size)); exact = null; }
-                chunks.push(next.value);
+            if (end > buffer.length) {
+                let length = buffer.length || 1;
+                while (length < end) length *= 2;
+                const grown = new Uint8Array(Math.min(length, limit));
+                grown.set(buffer.subarray(0, size));
+                buffer = grown;
             }
+            buffer.set(next.value, size);
             size = end;
         }
     } finally {
         reader.releaseLock();
     }
-    let body: Uint8Array<ArrayBuffer>;
-    if (exact) body = exact.subarray(0, size);
-    else {
-        body = new Uint8Array(size);
-        let offset = 0;
-        for (let i = 0; i < chunks.length; i++) {
-            body.set(chunks[i]!, offset);
-            offset += chunks[i]!.byteLength;
-            chunks[i] = EMPTY;
-        }
-    }
-    const headers = new Headers();
-    const type = raw.headers.get('content-type');
-    if (type) headers.set('content-type', type);
-    const form = new Request('http://form.invalid/', { method: 'POST', headers, body }).formData();
+    const form = formFrom(raw.headers.get('content-type'), buffer.subarray(0, size));
     if (cache) cache.formData = form;
     return form;
 }
 
-const EMPTY = new Uint8Array(0);
+/** First read of a body fills this much; it doubles as more arrives, up to the limit. */
+const INITIAL_FORM_BUFFER = 64 * 1024;
+
+function formFrom(type: string | null, body: BodyInit): Promise<FormData> {
+    const headers = new Headers();
+    if (type) headers.set('content-type', type);
+    return new Request('http://form.invalid/', { method: 'POST', headers, body }).formData();
+}
+
+/**
+ * A body Hono already read, as form data: its cached form, or its cached bytes
+ * or text parsed with the request's content type. A body read as JSON is not
+ * a form, and answers 400.
+ */
+async function fromBodyCache(req: Context['req'], cache: BodyCache): Promise<FormData> {
+    if (cache.formData) return cache.formData as Promise<FormData>;
+    const type = req.raw.headers.get('content-type');
+    const bytes = cache.arrayBuffer ?? cache.blob ?? cache.text;
+    if (!bytes) throw new HTTPException(400, { message: 'This request is not a form.' });
+    const form = bytes.then(body => formFrom(type, body as BodyInit)).catch(() => { throw new HTTPException(400, { message: 'This request is not a form.' }); });
+    cache.formData = form;
+    return form;
+}
 
 /**
  * `getFormData<T>()` with NO rules returns the parsed data typed as `T`.

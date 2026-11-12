@@ -714,6 +714,8 @@ export async function createApiToken(userId: string, name: string, scope: 'read'
 
 export async function revokeApiToken(userId: string, id: string): Promise<void> {
   await requireManageable(userId);
+  // A session that never used the account's second factor may not take its tokens away either.
+  await requireFactorUsed(userId);
   await (await storesOf(userId)).apiTokens.revoke(userId, id).catch(() => undefined);
 }
 

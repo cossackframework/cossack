@@ -437,12 +437,22 @@ interface MergedSpreads {
   events: Map<string, { key: string; value: unknown }>;
 }
 
+/**
+ * A spread key's name, after any `?`, `.` or `@` prefix, as the HTML attribute
+ * name grammar allows it: no whitespace, quotes, `>`, `/`, `=` or control
+ * characters (plus `<`, which no real attribute uses). Other keys are dropped
+ * on both sides, so a key such as `x onmouseover=alert(1)` from user data
+ * cannot write its own markup in SSR (the client's `setAttribute` would throw).
+ */
+const SPREAD_KEY = /^[?.@]?[^\s"'<>/=\u0000-\u001f\u007f-\u009f]+$/u;
+
 const mergeSpreads = (values: readonly unknown[]): MergedSpreads => {
   const merged: MergedSpreads = { entries: new Map(), classes: [], events: new Map() };
   for (let spread = 0; spread < values.length; spread++) {
     const value = values[spread];
     if (typeof value !== 'object' || value === null) continue;
     for (const [key, val] of Object.entries(value)) {
+      if (!SPREAD_KEY.test(key)) continue;
       if (key === 'class' || key === 'className') {
         merged.classes.push(...classTokens(spreadClassText(val)));
       } else if (key.startsWith('@')) {

@@ -584,6 +584,16 @@ describe('readLocaleCookie', () => {
         const { readLocaleCookie } = await import('../src/shared/i18n');
         expect(readLocaleCookie()).toBeUndefined();
     });
+
+    it('reads a malformed escape as no locale instead of throwing', async () => {
+        const { readLocaleCookie, LOCALE_COOKIE_NAME } = await import('../src/shared/i18n');
+        Object.defineProperty(document, 'cookie', {
+            configurable: true,
+            writable: true,
+            value: `${LOCALE_COOKIE_NAME}=%E0%A4%A`,
+        });
+        expect(readLocaleCookie()).toBeUndefined();
+    });
 });
 
 // ---------------------------------------------------------------------------
