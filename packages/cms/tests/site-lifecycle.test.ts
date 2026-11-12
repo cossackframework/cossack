@@ -168,6 +168,31 @@ describe.skipIf(!live)('adding, archiving and deleting sites', () => {
         await network.withdrawExport('the-blog', { principal: siteAdmin });
         expect((await network.exportRequests()).size).toBe(0);
 
+        // Another site's request written between this change's read and its write is kept: the change reads again.
+        await network.requestExport('the-blog', { principal: siteAdmin });
+        const db = service.database();
+        let raced = false;
+        const racing = new Proxy(db, {
+            get(target, property) {
+                if (property === 'read') return async (statements: Parameters<RomeDB['read']>[0], options?: Parameters<RomeDB['read']>[1]) => {
+                    const result = await target.read(statements, options);
+                    if (!raced && statements[0]?.rql.includes('FROM cms_network') && statements[0].params?.$key === 'exports') {
+                        raced = true;
+                        const value = JSON.parse(String(result.results[0]!.rows[0]![0])) as Record<string, unknown>;
+                        await target.write([{ rql: "UPDATE cms_network SET value = $value WHERE key = 'exports'", params: { $value: JSON.stringify({ ...value, 'other-site': { requestedBy: owner, requestedAt: now } }) } }]);
+                    }
+                    return result;
+                };
+                const value = Reflect.get(target, property, target) as unknown;
+                return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+            },
+        });
+        const second = new CmsNetwork({ db: racing, open: () => other.db, networkHost: () => 'example.com', now: () => now, host: (site, siteDb) => createCMS({ db: siteDb, network: racing, site: site.id }) });
+        await second.withdrawExport('the-blog', { principal: siteAdmin });
+        expect(raced).toBe(true);
+        expect([...(await network.exportRequests()).keys()]).toEqual(['other-site']);
+        await network.withdrawExport('other-site', { principal: siteAdmin });
+
         await expect(network.saveSettings({ siteExports: 'everyone' as 'self' }, { principal: admin })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         await network.saveSettings({ siteExports: 'self' }, { principal: admin });
         expect(await network.exportAccess('the-blog')).toEqual({ allowed: true, request: null });

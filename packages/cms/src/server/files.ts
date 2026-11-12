@@ -123,6 +123,8 @@ export class FileService {
     readonly #images: ImageTransformer | undefined;
     readonly #imageSettings: () => Promise<ImageSettings>;
     #warned = false;
+    /** Variants being made, by key: concurrent first requests for one share its transform. */
+    readonly #making = new Map<string, Promise<Uint8Array | null>>();
 
     constructor(db: RomeDB, storage: StorageProvider, options: FileServiceOptions = {}) {
         this.#db = db;
@@ -258,30 +260,56 @@ export class FileService {
         const width = Math.min(variantWidth(request.width, settings.widths), rect.width);
         const height = Math.max(1, Math.round(width * rect.height / rect.width));
         const format = negotiateFormat(request.accept, file.contentType);
-        const key = `cms/variants/${id}/${file.updatedAt}/${width}x${height}${request.height ? 'c' : ''}.${format}`;
+        // Keyed on the image's content and edits, not its version: a new title or alt text makes no new variants.
+        const key = `cms/variants/${id}/${editsKey(file.edits)}/${width}x${height}${request.height ? 'c' : ''}.${format}`;
         const contentType = FORMAT_TYPES[format];
         const stored = await this.#storage.get(key, request.signal ? { signal: request.signal } : {});
         if (stored) return { file, body: stored.body, contentType, size: stored.size };
-        const original = await this.#storage.get(`cms/files/${id}`, request.signal ? { signal: request.signal } : {});
+        let making = this.#making.get(key);
+        if (!making) {
+            making = this.#makeVariant(file, key, { rect, width, height, format, contentType, quality: format === 'avif' ? Math.max(30, settings.quality - 18) : settings.quality })
+                .finally(() => this.#making.delete(key));
+            this.#making.set(key, making);
+        }
+        const bytes = await making;
+        return bytes ? { file, body: streamOf(bytes), contentType, size: bytes.byteLength } : null;
+    }
+
+    /**
+     * Make and keep one variant. A file keeps at most `MAX_FILE_VARIANTS`: past that the original
+     * is served (null), so requests for many shapes, widths and formats cannot fill storage.
+     */
+    async #makeVariant(file: CmsFile, key: string, shape: { rect: { x: number; y: number; width: number; height: number }; width: number; height: number; format: ImageFormat; contentType: string; quality: number }): Promise<Uint8Array | null> {
+        const kept = await this.#db.read([{ rql: `SELECT key FROM cms_file_variants WHERE file_id = $id LIMIT ${MAX_FILE_VARIANTS}`, params: { $id: file.id } }]);
+        if (kept.results[0]!.rows.length >= MAX_FILE_VARIANTS) return null;
+        const original = await this.#storage.get(`cms/files/${file.id}`);
         if (!original) return null;
         let bytes: Uint8Array;
         try {
-            bytes = await this.#images.transform(original.body, { rect, source: { width: file.width, height: file.height }, width, height, format, quality: format === 'avif' ? Math.max(30, settings.quality - 18) : settings.quality });
+            bytes = await this.#images!.transform(original.body, { rect: shape.rect, source: { width: file.width!, height: file.height! }, width: shape.width, height: shape.height, format: shape.format, quality: shape.quality });
         } catch (error) {
             // A transformer that cannot run, such as sharp missing on Node, leaves the original.
             if (!this.#warned) console.warn('[cms] could not resize images; serving originals.', error);
             this.#warned = true;
             return null;
         }
-        await this.#db.write([{ rql: 'INSERT INTO cms_file_variants (key, file_id, created_at, size) VALUES ($key, $id, $now, $size) ON CONFLICT (key) DO NOTHING', params: { $key: key, $id: id, $now: this.#now(), $size: bytes.byteLength } }], WRITE);
-        await this.#storage.put(key, streamOf(bytes), { size: bytes.byteLength, contentType });
-        return { file, body: streamOf(bytes), contentType, size: bytes.byteLength };
+        await this.#db.write([{ rql: 'INSERT INTO cms_file_variants (key, file_id, created_at, size) VALUES ($key, $id, $now, $size) ON CONFLICT (key) DO NOTHING', params: { $key: key, $id: file.id, $now: this.#now(), $size: bytes.byteLength } }], WRITE);
+        await this.#storage.put(key, streamOf(bytes), { size: bytes.byteLength, contentType: shape.contentType });
+        return bytes;
     }
 
+    /** Remove the file's variants, a page at a time: each row goes only with its stored object. */
     async #dropVariants(id: string): Promise<void> {
-        const result = await this.#db.read([{ rql: 'SELECT key FROM cms_file_variants WHERE file_id = $id LIMIT 500', params: { $id: id } }]);
-        for (const [key] of result.results[0]!.rows) await this.#storage.delete(key as string).catch(() => undefined);
-        await this.#db.write([{ rql: 'DELETE FROM cms_file_variants WHERE file_id = $id', params: { $id: id } }], WRITE);
+        for (;;) {
+            const result = await this.#db.read([{ rql: 'SELECT key FROM cms_file_variants WHERE file_id = $id ORDER BY key LIMIT 500', params: { $id: id } }]);
+            const keys = result.results[0]!.rows.map(row => row[0] as string);
+            if (!keys.length) return;
+            for (const key of keys) await this.#storage.delete(key).catch(() => undefined);
+            const params: { [name: string]: string } = { $id: id };
+            keys.forEach((key, index) => { params[`$k${index}`] = key; });
+            await this.#db.write([{ rql: `DELETE FROM cms_file_variants WHERE file_id = $id AND key IN (${keys.map((_, index) => `$k${index}`).join(', ')})`, params }], WRITE);
+            if (keys.length < 500) return;
+        }
     }
 
     /**
@@ -614,7 +642,9 @@ export class FileService {
         const row = await this.#db.read([{ rql: 'SELECT key FROM cms_files WHERE id = $id', params: { $id: id } }]);
         const key = row.results[0]!.rows[0]?.[0];
         await this.#dropVariants(id);
-        await this.#storage.delete(typeof key === 'string' ? key : `cms/files/${id}`);
+        // Only a key the service gives a file: a row from an imported export cannot name another object.
+        const own = typeof key === 'string' && (key === `cms/files/${id}` || (key.startsWith(PRIVATE_PREFIX) && !key.includes('..') && key.endsWith(`/${id}`)));
+        await this.#storage.delete(own ? key : `cms/files/${id}`);
         // A browser upload that never finished left its bytes in staging.
         await this.#storage.delete(stagingKey(id)).catch(() => undefined);
         await this.#db.write([{ rql: "DELETE FROM cms_files WHERE id = $id AND status = 'deleting'", params: { $id: id } }], WRITE);
@@ -700,6 +730,18 @@ function streamOf(bytes: Uint8Array): ReadableStream<Uint8Array> {
  * A variant's shape, snapped to the nearest fraction with a denominator up to 16 between 1:8 and
  * 8:1: the usual shapes (16:9, 4:3, 3:2, 21:9) stay exact, and there are a few hundred at most.
  */
+/** The most variants one file keeps; requests past it are served the original. */
+export const MAX_FILE_VARIANTS = 96;
+
+/** A short, stable name for an image's edits (crop and focus), for its variants' keys. */
+function editsKey(edits: ImageEdits | null | undefined): string {
+    if (!edits) return 'o';
+    const text = JSON.stringify([edits.crop?.x, edits.crop?.y, edits.crop?.width, edits.crop?.height, edits.focus?.x, edits.focus?.y]);
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193) >>> 0;
+    return hash.toString(36);
+}
+
 export function snapAspect(aspect: number): number {
     const target = Math.min(8, Math.max(1 / 8, aspect));
     let best = 1;

@@ -2,6 +2,7 @@ import { Client, Cossack, Page, Server, State, type HeadValue } from '@cossackfr
 import { input } from '@cossackframework/core/input';
 import { Badge, Button, Card, CardBody } from '@cossackframework/ui';
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
+import type { CmsHost } from '@cossackframework/cms/server';
 import { findBlock, flattenBlocks, hasPermission, isCmsError, PERMISSIONS, updateBlock, type RichTextDoc, type ThemePresets } from '@cossackframework/cms';
 import { requireAny } from '../../../../../cms/guards';
 import { notice, pageHeader } from '../../../../../cms/ui';
@@ -18,6 +19,11 @@ import { blockIdOf, styleValues, withStyle, type BlockTab, type StyleValues } fr
 interface AreaRow { name: string; label: string; theme: string; active: boolean; revision: number; blocks: EditorBlock[]; changed: boolean; /** The theme's default blocks show: nothing is saved for this site yet. */ defaulted: boolean; hasDefaults: boolean }
 /** The block being edited in the dialog: its fields' values on the General tab, its style on the Style tab. */
 interface BlockDialog { area: string; id: string; values: Record<string, unknown>; style: StyleValues; tab: BlockTab; errors: Record<string, string> }
+
+/** The blocks widgets take, as the host declares them. Synced patterns belong in entries; widgets hold their own blocks. */
+async function widgetOptions(cms: CmsHost): Promise<BlockOption[]> {
+    return (await blockOptions(cms)).filter(option => option.name !== 'core/pattern');
+}
 
 /**
  * Widgets: the blocks of the themes' widget areas, such as a footer or a sidebar. The active
@@ -50,8 +56,7 @@ export default class WidgetsPage extends Cossack {
     async load() {
         const cms = this.c.get('cms');
         const saved = await cms.areas.all();
-        // Synced patterns belong in entries; widgets hold their own blocks.
-        this.options = (await blockOptions(cms)).filter(option => option.name !== 'core/pattern');
+        this.options = await widgetOptions(cms);
         this.sources = await sourceChoices(cms);
         this.areas = (await cms.areaLocations()).map(area => {
             const stored = saved.get(area.name);
@@ -62,25 +67,29 @@ export default class WidgetsPage extends Cossack {
         this.presets = await activePresets(cms);
     }
 
-    @Server()
+    @Server({ input: input.args(input.string({ maxLength: 200 })) })
     async save(name: string) {
         const cms = this.c.get('cms');
+        // The blocks and the revision they started from are the user's edits; what each block
+        // type takes is the host's, never the page's copy.
         const area = this.areas.find(entry => entry.name === name);
         if (!area) return;
         this.error = '';
-        const converted = blocksInput(area.blocks, new Map(this.options.map(option => [option.name, option])));
+        const options = await widgetOptions(cms);
+        const converted = blocksInput(area.blocks, new Map(options.map(option => [option.name, option])));
         if ('error' in converted) { this.error = converted.error; return; }
         try {
             const known = (await cms.areaLocations()).map(entry => entry.name);
             const saved = await cms.areas.save(name, converted.value, { principal: this.c.get('principal'), expectedRevision: area.revision, known });
-            this.areas = this.areas.map(entry => entry.name === name ? { ...entry, revision: saved.revision, blocks: editorBlocks(saved.blocks as EditorBlock[], this.options), changed: false, defaulted: false } : entry);
+            this.options = options;
+            this.areas = this.areas.map(entry => entry.name === name ? { ...entry, revision: saved.revision, blocks: editorBlocks(saved.blocks as EditorBlock[], options), changed: false, defaulted: false } : entry);
         } catch (error) {
             this.error = isCmsError(error) ? error.message : __('The widgets could not be saved.');
         }
     }
 
     /** Forget what the site saved for an area: the theme's default blocks show again. */
-    @Server()
+    @Server({ input: input.args(input.string({ maxLength: 200 })) })
     async reset(name: string) {
         const cms = this.c.get('cms');
         this.error = '';
@@ -89,6 +98,7 @@ export default class WidgetsPage extends Cossack {
             const areas = await cms.areaLocations();
             await cms.areas.reset(name, { principal: this.c.get('principal'), known: areas.map(entry => entry.name) });
             const area = areas.find(entry => entry.name === name);
+            this.options = await widgetOptions(cms);
             this.areas = this.areas.map(entry => entry.name === name ? { ...entry, revision: 0, blocks: editorBlocks((area?.defaults ?? []) as EditorBlock[], this.options), changed: false, defaulted: true } : entry);
             this.message = __('The area shows the theme’s default blocks again.');
         } catch (error) {

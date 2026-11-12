@@ -167,6 +167,20 @@ describe.skipIf(!live)('forms', () => {
         await cms.outbox.dispatch();
     });
 
+    it('holds a limit when sends arrive at the same moment', async () => {
+        const forms = cms.resource('cms/forms');
+        const draft = await forms.create({ title: 'Raffle', body: [input('e', 'email', { name: 'email', required: true })], settings: { limit: 3, closedMessage: 'All tickets are gone.' } }, { principal: editor });
+        await forms.update(draft.id, { status: 'published' }, { principal: editor, expectedRevision: draft.rev });
+        // The first send sets up the form's table; the rest arrive together.
+        await cms.forms.submit('raffle', { email: 'first@example.com' }, { principal: ANONYMOUS, ip: '10.9.1.1' });
+        const results = await Promise.allSettled(Array.from({ length: 8 }, (_, i) =>
+            cms.forms.submit('raffle', { email: `r${i}@example.com` }, { principal: ANONYMOUS, ip: `10.9.0.${i}` })));
+        expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(2);
+        for (const result of results) if (result.status === 'rejected') expect(result.reason).toMatchObject({ code: 'CMS_FORBIDDEN', message: 'All tickets are gone.' });
+        const form = (await cms.forms.get('raffle'))!;
+        expect((await cms.forms.list(form, { limit: 20 }, editor)).items).toHaveLength(3);
+    });
+
     it('closes forms by their settings', async () => {
         const forms = cms.resource('cms/forms');
         const draft = await forms.create({

@@ -139,6 +139,47 @@ describe.skipIf(!live)('editorial access', () => {
         } finally { clearInterval(room.editorsTimer); clearTimeout(room.persistTimer); }
     });
 
+    it('keeps a live peer its ID however many fresh IDs another user claims', async () => {
+        const room = new EntryRoom() as unknown as { c: unknown; broadcastEvent: (...args: unknown[]) => void; join: EntryRoom['join']; set: EntryRoom['set']; leave: EntryRoom['leave']; presence: EntryRoom['presence']; editorsTimer?: ReturnType<typeof setInterval>; persistTimer?: ReturnType<typeof setTimeout> };
+        room.broadcastEvent = () => {};
+        let principal = alice;
+        const app = new Hono();
+        app.use('*', async (c, next) => { c.set('cms' as never, cms as never); c.set('principal' as never, principal as never); room.c = c; await next(); });
+        app.get('/:collection/:id/join/:peer', requireEntryEditor, async c => c.json(await room.join(c.req.param('peer'), {}).then(() => true, () => false)));
+        app.get('/:collection/:id/presence/:peer', requireEntryEditor, async c => { await room.presence(c.req.param('peer'), {}); return c.json(null); });
+        app.get('/:collection/:id/set/:peer', requireEntryEditor, async c => c.json(await room.set(c.req.param('peer'), 'title', c.req.query('title'))));
+        try {
+            expect(await (await app.request('/app.articles/one/join/peer_victim')).json()).toBe(true);
+            principal = editor;
+            for (let i = 0; i < 10_000; i++) await app.request(`/app.articles/one/presence/flood_${String(i).padStart(5, '0')}`);
+            // Past a user's share, fresh IDs are refused, and the live peer keeps its ID.
+            expect(await (await app.request('/app.articles/one/join/flood_extra_1')).json()).toBe(false);
+            expect(await (await app.request('/app.articles/one/set/peer_victim?title=Forged')).json()).toEqual({ applied: false });
+            principal = alice;
+            expect(await (await app.request('/app.articles/one/set/peer_victim?title=Hers')).json()).toEqual({ applied: true });
+        } finally { clearInterval(room.editorsTimer); clearTimeout(room.persistTimer); }
+    }, 120_000);
+
+    it('lets a tab that left free its ID, and a user reuse their share', async () => {
+        const room = new EntryRoom() as unknown as { c: unknown; broadcastEvent: () => void; join: EntryRoom['join']; leave: EntryRoom['leave']; editorsTimer?: ReturnType<typeof setInterval>; persistTimer?: ReturnType<typeof setTimeout> };
+        room.broadcastEvent = () => {};
+        let principal = alice;
+        const app = new Hono();
+        app.use('*', async (c, next) => { c.set('cms' as never, cms as never); c.set('principal' as never, principal as never); room.c = c; await next(); });
+        app.get('/:collection/:id/join/:peer', requireEntryEditor, async c => c.json(await room.join(c.req.param('peer'), {}).then(() => true, () => false)));
+        app.get('/:collection/:id/leave/:peer', requireEntryEditor, async c => { await room.leave(c.req.param('peer')); return c.json(null); });
+        try {
+            // Tabs that join and leave never use up the user's share.
+            for (let i = 0; i < 60; i++) {
+                expect(await (await app.request(`/app.articles/one/join/tab_${String(i).padStart(4, '0')}`)).json()).toBe(true);
+                await app.request(`/app.articles/one/leave/tab_${String(i).padStart(4, '0')}`);
+            }
+            // An ID given up is free for anyone.
+            principal = editor;
+            expect(await (await app.request('/app.articles/one/join/tab_0000')).json()).toBe(true);
+        } finally { clearInterval(room.editorsTimer); clearTimeout(room.persistTimer); }
+    });
+
     it('refuses Custom HTML from a room editor who may not post HTML', async () => {
         await cms.resource('cms/pages').create({ title: 'Shared page', content: [{ _id: 'h1', type: 'core/html', data: { html: '<p>ok</p>' } }] }, { principal: system, id: 'shared' });
         const room = new EntryRoom() as unknown as { c: unknown; broadcastEvent: () => void; tree: EntryRoom['tree']; editorsTimer?: ReturnType<typeof setInterval>; persistTimer?: ReturnType<typeof setTimeout> };

@@ -71,11 +71,15 @@ export async function projectUrl(cwd) {
   return value && /^https?:\/\//.test(value) ? value : undefined;
 }
 
-/** Whether an address is this machine, where plain HTTP and a project's own `.env` address are fine. */
+/**
+ * Whether an address is this machine, where plain HTTP and a project's own `.env` address are fine:
+ * `localhost` and loopback literals only. A `*.localhost` name is not, since some resolvers send it
+ * on to upstream DNS.
+ */
 export function isLocalAddress(url) {
   let host;
   try { host = new URL(url).hostname.toLowerCase().replace(/^\[|\]$/g, ''); } catch { return false; }
-  return host === 'localhost' || host.endsWith('.localhost') || host === '::1' || host === '0.0.0.0' || /^127(?:\.\d{1,3}){3}$/.test(host);
+  return host === 'localhost' || host === '::1' || host === '0.0.0.0' || /^127(?:\.\d{1,3}){3}$/.test(host);
 }
 
 /** Whether plain HTTP to another machine was allowed: `--allow-http` or `COSSACK_CMS_ALLOW_HTTP=1`. */

@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { StorageProvider } from '@cossackframework/core/storage';
 import { totpCode, totpStep } from '@cossackframework/auth';
 import {
-    ANONYMOUS, contentModule, createCMS, DEFAULT_ROLES, field, imageSrcset, posts, verifyWebhookSignature,
+    ANONYMOUS, contentModule, createCMS, DEFAULT_ROLES, field, imageSrcset, MAX_FILE_VARIANTS, posts, verifyWebhookSignature,
     type CmsHost, type CmsModule, type ImageTransformer, type Principal,
 } from '../src/server/index';
 import { romedbService, live } from './helpers';
@@ -215,6 +215,9 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         expect(await cms.redirects.match('/tag/news')).toMatchObject({ location: '/topic/news' });
         await cms.saveTaxonomy({ ...cms.taxonomies.declaration('tags'), path: 'tag' }, admin);
         await cms.outbox.dispatch({ limit: 100 });
+        // Moving back serves the old path again, with no redirect loop between the two.
+        expect(await cms.redirects.match('/tag/missing-term')).toBeNull();
+        expect(await cms.redirects.match('/topic/news')).toMatchObject({ location: '/tag/news' });
 
         await expect(cms.redirects.save({ source: 'nope', target: '/x' })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         await expect(cms.redirects.save({ source: '/a', target: '/a' })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
@@ -742,6 +745,49 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         expect(clear.placeholder).toBeNull();
         expect(transforms).toHaveLength(made);
         expect((await cms.files!.setEdits(clear.id, { focus: { x: 0.2, y: 0.8 } }, { principal: editor })).placeholder).toBeNull();
+    });
+
+    it('keeps a bounded set of variants per image, made once, and removes every one with the file', async () => {
+        const bytes = png(2000, 1000);
+        const file = await cms.files!.upload({ name: 'bounded.png', contentType: 'image/png', size: bytes.length, body: new Response(bytes).body! }, { principal: editor });
+        const keys = () => [...storage.objects.keys()].filter(key => key.startsWith(`cms/variants/${file.id}/`));
+        // Concurrent first requests share one transform.
+        const before = transforms.length;
+        await Promise.all([1, 2, 3].map(() => cms.files!.variant(file.id, { width: 640, accept: 'image/webp' })));
+        expect(transforms.length - before).toBe(1);
+        // A new title or alt text makes no new variants.
+        await cms.files!.update(file.id, { title: 'Renamed', alt: 'New alt' }, { principal: editor });
+        await cms.files!.variant(file.id, { width: 640, accept: 'image/webp' });
+        expect(transforms.length - before).toBe(1);
+        expect(keys()).toHaveLength(1);
+        // Past the cap, a request is served the original (null) and nothing more is kept.
+        for (let height = 1; keys().length < MAX_FILE_VARIANTS && height < 2000; height += 7) await cms.files!.variant(file.id, { width: 320, height, accept: 'image/png' });
+        expect(keys()).toHaveLength(MAX_FILE_VARIANTS);
+        const made = transforms.length;
+        expect(await cms.files!.variant(file.id, { width: 1280, height: 77, accept: 'image/png' })).toBeNull();
+        expect(transforms).toHaveLength(made);
+        // Rows past one page (500) are removed with their objects too.
+        const extra = Array.from({ length: 520 }, (_, i) => `cms/variants/${file.id}/legacy/${i}.webp`);
+        for (const key of extra) storage.objects.set(key, new Uint8Array([1]));
+        for (let i = 0; i < extra.length; i += 32) {
+            await cms.db.write(extra.slice(i, i + 32).map(key => ({ rql: 'INSERT INTO cms_file_variants (key, file_id, created_at, size) VALUES ($key, $id, 0, 1)', params: { $key: key, $id: file.id } })));
+        }
+        await cms.files!.delete(file.id, { principal: editor });
+        expect(keys()).toEqual([]);
+        expect((await cms.db.read([{ rql: 'SELECT count(*) FROM cms_file_variants WHERE file_id = $id', params: { $id: file.id } }])).results[0]!.rows[0]![0]).toBe(0n);
+    });
+
+    it('deletes only a file\'s own stored object, whatever key its row names', async () => {
+        const bytes = png(10, 10);
+        const forged = await cms.files!.upload({ name: 'forged.png', contentType: 'image/png', size: bytes.length, body: new Response(bytes).body! }, { principal: editor });
+        // A row from an imported export that names an object the file does not own.
+        const other = 'cms/variants/someone-else/o/320x320.webp';
+        storage.objects.set(other, new Uint8Array([1]));
+        await cms.db.write([{ rql: "UPDATE cms_files SET key = $key, status = 'deleting', updated_at = 0 WHERE id = $id", params: { $key: other, $id: forged.id } }]);
+        await cms.files!.sweep();
+        expect(storage.objects.has(other)).toBe(true);
+        expect(storage.objects.has(`cms/files/${forged.id}`)).toBe(false);
+        storage.objects.delete(other);
     });
 
     it('scales down large uploads, resizes in the widths of Settings → Files and counts the library', async () => {

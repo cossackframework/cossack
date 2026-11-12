@@ -610,7 +610,10 @@ export class CmsHost {
             await this.ready({ force: true });
             if (event.kind === 'taxonomy') {
                 const now = this.#taxonomies.get(event.name)?.path;
-                if (now && now !== event.from) await this.redirects.record([{ from: `/${event.from}`, to: `/${now}`, prefix: true }], event.by);
+                if (!now || now === event.from) return;
+                await this.redirects.record([{ from: `/${event.from}`, to: `/${now}`, prefix: true }], event.by);
+                // The new path serves the taxonomy again: an older redirect away from it goes, or moving back would loop.
+                await this.redirects.dropPrefix(`/${now}`);
                 return;
             }
             const after = this.#collections.get(event.name);
@@ -826,21 +829,33 @@ export class CmsHost {
                 { kind: 'unpublished', where: { status: 'published', unpublishAt: { lte: now } }, order: 'unpublishAt', change: { status: 'draft', unpublishAt: null } },
             ] as const;
             for (const step of due) {
-                let records: readonly RecordShape[];
-                try {
-                    records = (await repository.list({ where: step.where, order: { field: step.order, direction: 'asc' }, limit: options.limit ?? 50 }, scheduler)).records;
-                } catch (error) {
-                    if (error instanceof CmsError && error.code === 'CMS_UNAVAILABLE') break;
-                    throw error;
-                }
-                for (const record of records) {
+                const limit = options.limit ?? 50;
+                // An entry that fails each time (a plugin filter refusing it, a size limit) is logged and
+                // passed over: the run goes on, and pages past a full page of such entries.
+                let skipped = 0;
+                for (let round = 0; round < 5; round++) {
+                    let records: readonly RecordShape[];
                     try {
-                        await repository.update(record.id, step.change, { ...scheduler, expectedRevision: record.rev });
-                        done[step.kind]++;
+                        records = (await repository.list({ where: step.where, order: { field: step.order, direction: 'asc' }, limit, offset: skipped }, scheduler)).records;
                     } catch (error) {
-                        // Changed meanwhile: the next run sees the current revision.
-                        if (!(error instanceof CmsError && error.code === 'CMS_CONFLICT')) throw error;
+                        if (error instanceof CmsError && error.code === 'CMS_UNAVAILABLE') break;
+                        throw error;
                     }
+                    let failed = 0;
+                    for (const record of records) {
+                        try {
+                            await repository.update(record.id, step.change, { ...scheduler, expectedRevision: record.rev });
+                            done[step.kind]++;
+                        } catch (error) {
+                            // Changed meanwhile: the next run sees the current revision.
+                            if (error instanceof CmsError && error.code === 'CMS_CONFLICT') continue;
+                            if (error instanceof CmsError && error.code === 'CMS_UNAVAILABLE') throw error;
+                            failed++;
+                            console.error(`[cms] could not ${step.kind === 'published' ? 'publish' : 'unpublish'} the scheduled entry ${collection.name}/${record.id}`, error);
+                        }
+                    }
+                    skipped += failed;
+                    if (records.length < limit || failed < records.length) break;
                 }
             }
         }

@@ -210,6 +210,19 @@ describe('transport security boundary', () => {
         expect(headers.get('Cookie')).toBeNull();
     });
 
+    it.each(['https://evil.example', 'null'])('refuses a cross-site WebSocket upgrade or subscription from %s before any guard runs', async origin => {
+        const guard = vi.fn(async (_c: any, next: () => Promise<void>) => { await next(); });
+        const { app, action } = appFor({ ...ctx, getMiddlewares: () => [guard] });
+        for (const route of ['/ws/target?routePath=/private', '/sse/private']) {
+            const response = await app.request(route, { headers: { origin } });
+            expect(response.status).toBe(403);
+        }
+        // Without an Origin header, an upgrade is refused before the guards too.
+        expect((await app.request('/ws/target?routePath=/private')).status).toBe(403);
+        expect(guard).not.toHaveBeenCalled();
+        expect(action).not.toHaveBeenCalled();
+    });
+
     it('forwards only the user id so non-Latin-1 user data can connect', async () => {
         const forward = vi.fn(async () => new Response('forwarded'));
         const app = new Hono();

@@ -91,6 +91,10 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
                     code: 'COSSACK_RPC_REQUEST_INVALID', requestId }, 400);
             }
         } else if (isTransportPath(c.req.path, 'sse')) {
+            // A cross-site subscription is refused before any guard runs (an
+            // EventSource from the same page may omit Origin).
+            const origin = c.req.header('origin');
+            if (origin && !isOriginAllowed(origin, c.req.url, ctx.allowedOrigins)) return c.text('Origin not allowed', 403);
             // A subscription names a page (or layout) and carries its route
             // params. The guards run once, here, before the stream opens, with
             // the params that the scope key and revalidations use.
@@ -107,6 +111,9 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
             // and page guards; a layout runs its own guard stack. All of them
             // see the page's checked route params, which also name the
             // instance, so the guards decide on the same values.
+            // A cross-site upgrade (a page opening a socket with the victim's
+            // cookies) is refused before any guard runs, as a POST is.
+            if (!isOriginAllowed(c.req.header('origin'), c.req.url, ctx.allowedOrigins)) return c.text('Origin not allowed', 403);
             const resolved = resolveRealtimeConnection(ctx, name => c.req.query(name));
             if ('error' in resolved) {
                 if (resolved.error === 'owner' && resolved.status === 404) return c.json({ error: 'Invalid component ID' }, 400);

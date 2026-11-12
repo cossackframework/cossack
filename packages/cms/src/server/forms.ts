@@ -320,17 +320,29 @@ export class CmsForms {
         const sendParams = { $op: op, $form: form.ref.id, $ip: ipHash, $at: now };
         const eventParams = { $op: op, $payload: JSON.stringify(event), $at: now };
         if (settings.store) {
+            const limited = settings.limit !== null && !spam;
             try {
                 await releasing(() => this.#host.resource(form.resource.id).insert({ ...values, status, ...(Object.keys(meta).length ? { meta } : {}) }, {
                     principal: SYSTEM, id, op, owner: user, kind: 'cms.forms.submit', ...(context.signal ? { signal: context.signal } : {}),
-                    attach: guard => [
+                    attach: written => {
+                        // Under a limit, the receipt and event need the kept count, this one included, within it:
+                        // writes to one database run one at a time, so sends at the same moment cannot pass it together.
+                        const guard = limited ? { rql: `${written.rql} AND (SELECT count(*) FROM ${form.resource.storage} WHERE status IN ('new', 'read')) <= $limit`, params: { ...written.params, $limit: settings.limit! } } : written;
+                        return [
                         bound(`INSERT INTO cms_form_sends (id, form_id, ip_hash, at) SELECT $op, $form, $ip, $at WHERE ${guard.rql}`, { ...guard.params, ...sendParams }),
                         ...(spam ? [] : [bound(`INSERT INTO cms_outbox (id, topic, payload, created_at, available_at, attempts, lease_until) SELECT $op, 'form.submitted', $payload, $at, $at, 0, 0 WHERE ${guard.rql}`, { ...guard.params, ...eventParams })]),
                         // The receipt is the guard: RomeQL's UPDATE takes a relational row, not the record's.
                         ...(stashed.length ? [this.#host.files!.privateReady(stashed, { rql: 'EXISTS (SELECT 1 FROM cms_form_sends WHERE id = $op)', params: { $op: op } })] : []),
-                    ],
+                        ];
+                    },
                 }));
+                if (limited && !await this.#received(op)) {
+                    // Past the limit: the record goes again, with its files, and the send is refused as closed.
+                    await this.#host.db.write([{ rql: `DELETE FROM ${form.resource.storage} WHERE id = type::record('${form.resource.storage}', $id)`, params: { $id: id } }], { kind: 'cms.forms' });
+                    throw new CmsError('CMS_FORBIDDEN', settings.closedMessage);
+                }
             } catch (error) {
+                await release();
                 if (stashed.length) await this.#host.files?.discardPrivate(stashed).catch(() => undefined);
                 throw error;
             }
@@ -403,6 +415,12 @@ export class CmsForms {
             const cause = (error as { cause?: unknown }).cause;
             throw new CmsError('CMS_VALIDATION', cause instanceof Error ? cause.message : 'A plugin rejected the submission.', { cause: error });
         }
+    }
+
+    /** Whether a submission's receipt was written: its batch kept it within the form's limit. */
+    async #received(op: string): Promise<boolean> {
+        const result = await this.#host.db.read([{ rql: 'SELECT 1 FROM cms_form_sends WHERE id = $op', params: { $op: op } }]);
+        return result.results[0]!.rows.length > 0;
     }
 
     async #kept(form: LoadedForm): Promise<number> {

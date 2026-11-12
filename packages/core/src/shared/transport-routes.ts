@@ -115,10 +115,12 @@ export function transportGuardPath(c: { get: (key: any) => unknown }): string | 
 export const TRANSPORT_TARGET_PATH = 'cossack.transportTargetPath';
 
 /**
- * The page or layout file whose code a transport request runs: the component an RPC call names,
- * a service's layout, the stream's page or layout, the realtime owner (a component's page).
- * It differs from {@link transportGuardPath} for a layout's actions, which run under the
- * client's page: a guard that exempts one page's own actions checks both.
+ * What a transport request runs: the file of the component an RPC call names, a service's layout,
+ * the stream's page or layout, or the realtime owner's id (a page's or layout's file, and for a
+ * realtime component its registry id, never the page the client names, so it matches no page
+ * file). It differs from {@link transportGuardPath} for a layout's actions, which run under the
+ * client's page, and for a realtime component: a guard that exempts one page's own actions checks
+ * both, and a guard that matches a page file on this path does not cover component sockets.
  */
 export function transportTargetPath(c: { get: (key: any) => unknown }): string | undefined {
   const value = c.get(TRANSPORT_TARGET_PATH);

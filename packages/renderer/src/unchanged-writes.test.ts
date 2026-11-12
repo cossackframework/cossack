@@ -67,17 +67,30 @@ describe('re-rendering unchanged values', () => {
         expect([button.title, button.disabled, button.getAttribute('aria-label'), button.getAttribute('data-hidden')]).toEqual(['Save', true, 'Save it', 'no']);
     });
 
-    it('puts back an attribute that other code changed, on the next render of the same value', async () => {
+    it('leaves an attribute the user or other code changed until its bound value changes', async () => {
         const container = document.createElement('div');
-        const template = (expanded: string, disabled: boolean) => html`<button aria-expanded=${expanded} ?disabled=${disabled}>Go</button>`;
-        render(template('false', true), container);
-        const button = container.querySelector('button')!;
-        // A component toggles the attributes itself; the parent renders its own values again.
-        button.setAttribute('aria-expanded', 'true');
-        button.removeAttribute('disabled');
-        render(template('false', true), container);
-        expect([button.getAttribute('aria-expanded'), button.disabled]).toEqual(['false', true]);
-        expect(await mutations(container, () => render(template('false', true), container))).toEqual([]);
+        const template = (open: boolean, style: string) => html`<details ?open=${open} style=${style}><summary>More</summary></details>`;
+        render(template(false, 'color: red'), container);
+        const details = container.querySelector('details')!;
+        // The user opens the box, and a drag sets an inline style; the page re-renders the same values.
+        details.open = true;
+        details.style.transform = 'translateX(4px)';
+        expect(await mutations(container, () => render(template(false, 'color: red'), container))).toEqual([]);
+        expect([details.open, details.style.transform]).toEqual([true, 'translateX(4px)']);
+        // A changed binding is the template's again.
+        render(template(true, 'color: blue'), container);
+        render(template(false, 'color: blue'), container);
+        expect([details.open, details.getAttribute('style')]).toEqual([false, 'color: blue']);
+    });
+
+    it('removes a mixed-case SVG attribute under its own name', () => {
+        const container = document.createElement('div');
+        const template = (box: string | undefined) => html`<svg viewBox=${ifDefined(box)}></svg>`;
+        render(template('0 0 10 10'), container);
+        const svg = container.querySelector('svg')!;
+        expect(svg.getAttribute('viewBox')).toBe('0 0 10 10');
+        render(template(undefined), container);
+        expect(svg.hasAttribute('viewBox')).toBe(false);
     });
 
     it('writes spread attributes and classes only when they change, and gives a dropped key back to the template', async () => {

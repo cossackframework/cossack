@@ -2441,16 +2441,18 @@ class AttributePart implements Part {
     this.commit(value);
   }
   /**
-   * Set the attribute, or remove it for null, unless the last commit left it so and it still is:
-   * other code (a component toggling `aria-expanded` or `hidden`) may have changed it since, and
-   * the template's value wins again. `class` is compared with the last commit alone, since a
-   * spread on the element adds tokens of its own.
+   * Set the attribute, or remove it for null, only when the bound value changed since the last
+   * commit. An unchanged binding leaves the attribute as it is, so what the user or other code
+   * set meanwhile stays (a `<details>` the user opened, a style a drag set).
    */
   private writeAttribute(name: string, domName: string, next: string | null) {
-    if (next === this.writtenAttribute && (this.name === 'class' || this.element.getAttribute(name) === next)) return;
+    if (next === this.writtenAttribute) return;
     this.writtenAttribute = next;
-    if (next === null) this.element.removeAttribute(domName);
-    else this.element.setAttribute(name, next);
+    if (next === null) {
+      // Removed under the name it was set with: an SVG keeps `viewBox` in its own case.
+      this.element.removeAttribute(name);
+      if (domName !== name && this.element.hasAttribute(domName)) this.element.removeAttribute(domName);
+    } else this.element.setAttribute(name, next);
     // Rewriting `class` drops the tokens a spread on this element added.
     if (this.name === 'class') reapplySpreadClasses(this.element);
   }

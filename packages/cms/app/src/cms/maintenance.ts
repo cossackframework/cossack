@@ -1,4 +1,4 @@
-import { systemPrincipal } from '@cossackframework/cms';
+import { isCmsError, systemPrincipal } from '@cossackframework/cms';
 import { networkSite, type CmsHost, type CmsNetwork } from '@cossackframework/cms/server';
 
 /** Where the last scheduled run stopped among the added sites, in the network's state. */
@@ -47,25 +47,35 @@ export async function runMaintenance(cms: CmsHost, options: { warm?: boolean } =
         return null;
     });
     if (recovery?.unreadable.length) console.warn(`[cms] ${recovery.unreadable.length} unconfirmed write(s) could not be read: ${recovery.unreadable.join(', ')}`);
-    await cms.runSchedule();
-    await cms.schedules.tick();
-    await cms.outbox.dispatch({ limit: 50 });
-    await cms.webhooks.dispatch({ limit: 20 });
-    await cms.outbox.prune();
-    await cms.webhooks.prune();
-    await cms.sessions.purgeExpired();
-    await cms.oauthStates.purgeExpired(Date.now());
-    await cms.accounts.purgeExpiredResets();
-    await cms.previews.purgeExpired();
-    await cms.security.purgeExpired();
-    await cms.security.purgeAttempts();
-    await cms.autosaves.purge();
-    await cms.drafts.purge();
-    await purgeOrphanNotes(cms);
-    await cms.traffic.prune();
-    await cms.audit.prune();
-    await cms.forms.maintain();
-    await cms.files?.sweep();
+    // Each step runs whatever the others do: one failing (a plugin refusing a scheduled entry,
+    // a webhook endpoint down) must not hold back the rest of upkeep.
+    for (const step of [
+        () => cms.runSchedule(),
+        () => cms.schedules.tick(),
+        () => cms.outbox.dispatch({ limit: 50 }),
+        () => cms.webhooks.dispatch({ limit: 20 }),
+        () => cms.outbox.prune(),
+        () => cms.webhooks.prune(),
+        () => cms.sessions.purgeExpired(),
+        () => cms.oauthStates.purgeExpired(Date.now()),
+        () => cms.accounts.purgeExpiredResets(),
+        () => cms.previews.purgeExpired(),
+        () => cms.security.purgeExpired(),
+        () => cms.security.purgeAttempts(),
+        () => cms.autosaves.purge(),
+        () => cms.drafts.purge(),
+        () => purgeOrphanNotes(cms),
+        () => cms.traffic.prune(),
+        () => cms.audit.prune(),
+        () => cms.forms.maintain(),
+        () => cms.files?.sweep(),
+    ]) {
+        try { await step(); } catch (error) {
+            // An unreachable database fails every step alike: the next run tries again.
+            if (isCmsError(error, 'CMS_UNAVAILABLE')) throw error;
+            console.error('[cms] a maintenance step failed', error);
+        }
+    }
 }
 
 /** Notes of entries that no longer exist go with them: a slice of the noted entries is checked per run, the next run takes the next slice. */

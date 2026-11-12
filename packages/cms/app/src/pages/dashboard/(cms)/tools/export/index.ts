@@ -38,11 +38,19 @@ export default class ExportPage extends Cossack {
         this.access = allowed ? request?.expiresAt ? { kind: 'approved', until: request.expiresAt } : { kind: 'download' }
             : request ? { kind: 'requested', at: request.requestedAt } : { kind: 'request' };
         const principal = this.c.get('principal');
-        const roles = await this.c.get('cms').users.roles();
-        this.exportable = isNetworkAdmin(principal) || (hasPermission(principal, PERMISSIONS.manageUsers) && holdsAll(principal, roles.flatMap(role => role.permissions)));
+        this.exportable = await this.mayExport();
         this.files = this.exportable && (site?.id !== MAIN_SITE || isNetworkAdmin(principal));
         this.message = flashed<string>('export.message') ?? '';
         this.error = flashed<string>('export.error') ?? '';
+    }
+
+    /** A network admin, or someone who manages users and holds every permission a role gives: the export holds them all. */
+    private async mayExport(): Promise<boolean> {
+        const principal = this.c.get('principal');
+        if (isNetworkAdmin(principal)) return true;
+        if (!hasPermission(principal, PERMISSIONS.manageUsers)) return false;
+        const roles = await this.c.get('cms').users.roles();
+        return holdsAll(principal, roles.flatMap(role => role.permissions));
     }
 
     async post() {
@@ -51,6 +59,8 @@ export default class ExportPage extends Cossack {
         const site = this.c.get('site');
         const network = this.c.get('network');
         try {
+            // Asking for an export, or withdrawing a request or an approval, is for those who may download it.
+            if (!await this.mayExport()) throw new Error(__('You cannot export this site.'));
             if (!site || site.id === MAIN_SITE) throw new Error(__('This site downloads its export at once.'));
             if (action === 'request') {
                 await network.requestExport(site.id, { principal: this.c.get('principal') });

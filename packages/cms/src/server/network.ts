@@ -369,35 +369,53 @@ export class CmsNetwork {
         if (context.principal.kind !== 'user') throw new CmsError('CMS_UNAUTHENTICATED', 'Sign in to request an export.');
         const record = await this.sites.get(site);
         if (!record || (record.status !== 'active' && record.status !== 'archived')) throw new CmsError('CMS_NOT_FOUND', 'There is no such site.');
-        const current = (await this.exportRequests()).get(site);
-        if (current && current.approvedAt === null) return current;
-        await this.#setExport(site, { requestedBy: context.principal.id, requestedAt: this.#now() });
+        const by = context.principal.id;
+        await this.#updateExports(stored => {
+            if (stored[site] && !stored[site]!.approvedAt) return;
+            stored[site] = { requestedBy: by, requestedAt: this.#now() };
+        });
         return (await this.exportRequests()).get(site)!;
     }
 
     /** The site withdraws its request, or gives up an approval it no longer needs. */
     async withdrawExport(site: string, context: { principal: Principal }): Promise<void> {
         if (context.principal.kind !== 'user') throw new CmsError('CMS_UNAUTHENTICATED', 'Sign in to withdraw an export request.');
-        await this.#setExport(site, null);
+        await this.#updateExports(stored => { delete stored[site]; });
     }
 
     /** A network admin approves a site's request, for 7 days of downloads, or declines it. */
     async answerExport(site: string, approve: boolean, context: { principal: Principal }): Promise<ExportRequest | null> {
         requireNetworkAdmin(context.principal);
-        const current = (await this.exportRequests()).get(site);
-        if (!current) throw new CmsError('CMS_NOT_FOUND', 'This site has not requested an export.');
-        if (!approve) { await this.#setExport(site, null); return null; }
-        await this.#setExport(site, { requestedBy: current.requestedBy, requestedAt: current.requestedAt, approvedBy: principalId(context.principal), approvedAt: this.#now() });
-        return (await this.exportRequests()).get(site)!;
+        const by = principalId(context.principal);
+        await this.#updateExports(stored => {
+            const current = stored[site];
+            if (!current) throw new CmsError('CMS_NOT_FOUND', 'This site has not requested an export.');
+            if (!approve) delete stored[site];
+            else stored[site] = { requestedBy: current.requestedBy, requestedAt: current.requestedAt, approvedBy: by, approvedAt: this.#now() };
+        });
+        return approve ? (await this.exportRequests()).get(site)! : null;
     }
 
-    async #setExport(site: string, entry: StoredExportRequests[string] | null): Promise<void> {
-        const stored: StoredExportRequests = { ...await this.state<StoredExportRequests>(EXPORTS) };
-        // Expired approvals go with the next change.
-        for (const [id, value] of Object.entries(stored)) if (value.approvedAt && value.approvedAt + EXPORT_APPROVAL_MS <= this.#now()) delete stored[id];
-        if (entry) stored[site] = entry;
-        else delete stored[site];
-        await this.setState(EXPORTS, stored);
+    /**
+     * Change the sites' export requests, which share one value: written only if it is still the
+     * value read, read again and changed again otherwise, so one site's request never drops
+     * another's, nor an admin's answer.
+     */
+    async #updateExports(change: (stored: StoredExportRequests) => void): Promise<void> {
+        for (let attempt = 0; attempt < 8; attempt++) {
+            const read = await this.db.read([{ rql: 'SELECT value FROM cms_network WHERE key = $key', params: { $key: EXPORTS } }]);
+            const previous = read.results[0]!.rows[0]?.[0] as string | undefined;
+            const stored: StoredExportRequests = previous === undefined ? {} : JSON.parse(previous) as StoredExportRequests;
+            // Expired approvals go with the next change.
+            for (const [id, value] of Object.entries(stored)) if (value.approvedAt && value.approvedAt + EXPORT_APPROVAL_MS <= this.#now()) delete stored[id];
+            change(stored);
+            const params = { $key: EXPORTS, $value: JSON.stringify(stored), $now: this.#now(), ...(previous === undefined ? {} : { $previous: previous }) };
+            const written = await this.db.write([previous === undefined
+                ? { rql: 'INSERT INTO cms_network (key, value, updated_at) VALUES ($key, $value, $now) ON CONFLICT (key) DO NOTHING', params }
+                : { rql: 'UPDATE cms_network SET value = $value, updated_at = $now WHERE key = $key AND value = $previous', params }], { kind: 'cms.network', retryConflicts: 5 });
+            if (written.results[0]!.affected === 1n) return;
+        }
+        throw new CmsError('CMS_CONFLICT', 'Export requests changed meanwhile. Try again.');
     }
 
     /** The network's plugin and theme states. */

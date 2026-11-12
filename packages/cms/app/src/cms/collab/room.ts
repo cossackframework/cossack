@@ -35,6 +35,9 @@ import { mailOrigin } from '../seo';
 import { avatarStack, type Someone } from './presence';
 
 const PEER = /^[A-Za-z0-9_-]{8,64}$/;
+/** Peer IDs one user may hold in a room at once (a tab each), and in all. */
+const PEERS_PER_USER = 50;
+const PEER_OWNERS_MAX = 10_000;
 /** A scalar value or a block op, as JSON, at most. */
 const VALUE_MAX = 64 * 1024;
 /** Steps in one batch, at most; a paste is one step. */
@@ -180,6 +183,8 @@ export class EntryRoom extends Cossack {
      * presence broadcasts, so a call naming a peer of another user is refused.
      */
     private peerOwners = new Map<string, string>();
+    /** How many peer IDs each user holds in `peerOwners`. */
+    private ownedPeers = new Map<string, number>();
     /** The entry's notes as the room holds them, the authority while it lives; `cms.notes` keeps them. */
     private notes: Note[] = [];
     /** Who the notes and the peers name, so tabs show names without looking anyone up. */
@@ -340,6 +345,7 @@ export class EntryRoom extends Cossack {
     private presenceChanged(): void {
         for (const id of expiredPeers(this.roomPeers.values(), Date.now())) {
             this.roomPeers.delete(id);
+            this.releasePeer(id);
             this.broadcastEvent('left', id);
         }
         const participants = groupPeers(this.roomPeers.values());
@@ -389,9 +395,32 @@ export class EntryRoom extends Cossack {
         if (typeof peer !== 'string' || !PEER.test(peer)) return null;
         const owner = this.peerOwners.get(peer);
         if (owner !== undefined) return owner === principal.id ? peer : null;
-        if (this.peerOwners.size >= 10_000) this.peerOwners.delete(this.peerOwners.keys().next().value!);
+        // A user claims a few IDs (one per tab); claims past that first give up the user's own
+        // silent ones. A peer still in the room is never given up, so its ID cannot be taken over.
+        if ((this.ownedPeers.get(principal.id) ?? 0) >= PEERS_PER_USER && !this.releaseSilent(owned => owned === principal.id)) return null;
+        if (this.peerOwners.size >= PEER_OWNERS_MAX && !this.releaseSilent(() => true)) return null;
         this.peerOwners.set(peer, principal.id);
+        this.ownedPeers.set(principal.id, (this.ownedPeers.get(principal.id) ?? 0) + 1);
         return peer;
+    }
+
+    /** Give up the oldest claimed ID whose peer is not in the room and whose owner matches; false when there is none. */
+    private releaseSilent(matches: (owner: string) => boolean): boolean {
+        for (const [id, owner] of this.peerOwners) {
+            if (this.roomPeers.has(id) || !matches(owner)) continue;
+            this.releasePeer(id);
+            return true;
+        }
+        return false;
+    }
+
+    /** A peer left: its ID is free again. */
+    private releasePeer(id: string): void {
+        const owner = this.peerOwners.get(id);
+        if (owner === undefined) return;
+        this.peerOwners.delete(id);
+        const count = (this.ownedPeers.get(owner) ?? 1) - 1;
+        if (count > 0) this.ownedPeers.set(owner, count); else this.ownedPeers.delete(owner);
     }
 
     /** A tab's state as the room keeps it: the user's name and picture, looked up when the tab arrives. */
@@ -623,7 +652,10 @@ export class EntryRoom extends Cossack {
     async leave(peer: unknown): Promise<void> {
         const { principal } = this.contextOf();
         const own = this.ownPeer(peer, principal);
-        if (!own || !this.roomPeers.delete(own)) return;
+        if (!own) return;
+        const present = this.roomPeers.delete(own);
+        this.releasePeer(own);
+        if (!present) return;
         this.presenceChanged();
         this.broadcastEvent('left', own);
         void this.reportEditors();

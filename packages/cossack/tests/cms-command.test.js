@@ -373,8 +373,11 @@ describe('cms helpers', () => {
     expect(cmsDiagnostics(['media', 'upload', 'a.png', 'b.png', 'c.png'], {})).toEqual([]);
   });
   it('keeps credentials from addresses only a project .env names, and from plain HTTP', async () => {
-    expect(['http://localhost:5173', 'http://127.0.0.1', 'http://app.localhost', 'http://[::1]:3000'].every(isLocalAddress)).toBe(true);
+    expect(['http://localhost:5173', 'http://127.0.0.1', 'http://[::1]:3000'].every(isLocalAddress)).toBe(true);
     expect(isLocalAddress('http://127.0.0.1.nip.io')).toBe(false);
+    // A resolver may send *.localhost names on to upstream DNS: not this machine for certain.
+    expect(isLocalAddress('http://cms.evil.localhost')).toBe(false);
+    expect(() => assertCredentialTarget('http://cms.evil.localhost', { source: 'project', fromEnvironment: false })).toThrow();
     expect(() => assertCredentialTarget('http://cms.example', { source: 'flag', credential: 'X' })).toThrow(expect.objectContaining({ code: 'COSSACK_CMS_URL_INSECURE' }));
     expect(() => assertCredentialTarget('https://evil.example', { source: 'project', credential: 'X' })).toThrow(expect.objectContaining({ code: 'COSSACK_CMS_URL_UNCONFIRMED' }));
     expect(() => assertCredentialTarget('https://evil.example', { source: 'project', credential: 'X', fromEnvironment: false })).not.toThrow();
