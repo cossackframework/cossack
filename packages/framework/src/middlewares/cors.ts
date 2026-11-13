@@ -10,6 +10,13 @@ export interface CorsConfig {
   exposeHeaders: string[];
   credentials: boolean;
   maxAge: number;
+  /**
+   * Paths outside `/api` the built-in CORS also covers, such as `/webhooks` or
+   * `/feed.xml`: an entry covers that exact path and everything below it.
+   * `/api` and `/api/*` are always covered. Pages and framework transports are
+   * not meant to be listed; an entry without a leading slash never matches.
+   */
+  paths?: string[];
 }
 
 export const defaultCorsConfig: CorsConfig = {
@@ -20,7 +27,17 @@ export const defaultCorsConfig: CorsConfig = {
   exposeHeaders: [],
   credentials: false,
   maxAge: 86400,
+  paths: [],
 };
+
+/** Whether the built-in CORS applies to a request path: `/api`, or a configured path and its descendants. */
+export function isCorsPath(path: string, extra: readonly string[] = []): boolean {
+  if (path === '/api' || path.startsWith('/api/')) return true;
+  return extra.some((entry) => {
+    const prefix = entry.trim().replace(/\/+$/, '');
+    return prefix.startsWith('/') && (path === prefix || path.startsWith(`${prefix}/`));
+  });
+}
 
 type OriginMatcher = (origin: string) => boolean;
 
@@ -75,16 +92,15 @@ function resolvedConfig(value: Partial<CorsConfig> | undefined): CorsConfig {
   return { ...defaultCorsConfig, ...value };
 }
 
-/** Built-in CORS for convention-based API routes (`/api` and `/api/*`). */
+/** Built-in CORS for convention-based API routes (`/api` and `/api/*`) and configured `paths`. */
 export function createCorsMiddleware(
   getConfig: () => Partial<CorsConfig> | undefined = () =>
     // Optional middleware config need not exist in the application's typed registry.
     (config as (key: string) => unknown)('cors') as Partial<CorsConfig> | undefined,
 ): MiddlewareHandler {
   return async (c, next) => {
-    if (c.req.path !== '/api' && !c.req.path.startsWith('/api/')) return next();
-
     const settings = resolvedConfig(getConfig());
+    if (!isCorsPath(c.req.path, settings.paths)) return next();
     if (!settings.enabled) return next();
     if (settings.credentials && settings.origins.some((origin) => origin.trim() === '*')) {
       throw new Error('[Cossack] Invalid CORS configuration: credentials cannot be enabled with the global "*" origin. Configure explicit origins instead.');

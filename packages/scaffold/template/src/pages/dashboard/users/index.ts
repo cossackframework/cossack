@@ -1,21 +1,22 @@
-import { Cossack, Page, State, Server, Client } from '@cossackframework/core';
-import { Card, CardBody, CardHeader, Avatar, Button, Badge, Input, NativeSelect, Pagination, Icon, AlertDialog } from '@cossackframework/ui';
+import { ClientVisibleError, Cossack, Page, State, Server, Client } from '@cossackframework/core';
+import { input } from '@cossackframework/core/input';
+import { Avatar, Badge, NativeSelect, AlertDialog } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
-import { PenNewRoundIcon as editIconSvg } from '@cossackframework/solar-icons/pen-new-round/line';
-import { TrashBinMinimalisticIcon as deleteIconSvg } from '@cossackframework/solar-icons/trash-bin-minimalistic/line';
-import { MagnifierIcon as searchIconSvg } from '@cossackframework/solar-icons/magnifier/line';
-import { guard } from '../../../services/rbac';
+import { canAssignRoles, canGrantRoles, canManageUser, guard } from '../../../services/rbac';
+import type { PublicUser } from '../../../auth';
 import {
+    getUser,
     listUsers,
     deleteUser,
+    syncUserRoles,
     type UserSummary,
     type ListUsersResult,
 } from '../../../services/users';
 import { listRoles, type RoleDetail } from '../../../services/roles';
-
-const editIcon = { line: editIconSvg };
-const deleteIcon = { line: deleteIconSvg };
-const searchIcon = { line: searchIconSvg };
+import { bulkBar, type BulkChoice } from '../../../dashboard/bulk';
+import { timeAgo } from '../../../dashboard/time-ago';
+import { listFilters, listFooter, listTable, rowActions } from '../../../dashboard/list-table';
+import { linkButton, notice, pageHeader } from '@cossackframework/ui/blocks';
 
 const PAGE_SIZE = 20;
 
@@ -34,9 +35,21 @@ export default class UsersPage extends Cossack {
     @State() roleId = '';
     /** User pending deletion confirmation (null = dialog closed). */
     @State() pendingDelete: UserSummary | null = null;
+    /** Role managers set roles in bulk; others only delete accounts they may manage. */
+    @State() canAssignRoles = false;
+    /** Rows that can be selected: not your own account, and only accounts you may manage. */
+    @State() selectable: string[] = [];
+    @State() selected: string[] = [];
+    @State() bulk = '';
+    /** A bulk action waiting for confirmation. */
+    @State() pendingBulk: BulkChoice | null = null;
+    @State() message = '';
+    /** When the page was rendered, for "Last signed in" as time ago. */
+    @State() now = 0;
 
     @Server()
     async init() {
+        this.now = Date.now();
         // Drive initial state from the URL so search + role filter are
         // bookmarkable/shareable. The search form is a native GET; the "View
         // Users" button on the roles page links here as ?role=<role_name>.
@@ -47,6 +60,7 @@ export default class UsersPage extends Cossack {
 
         const roles = await listRoles();
         this.allRoles = roles;
+        this.canAssignRoles = canAssignRoles(this.user as PublicUser | undefined);
         // Resolve role name → id (the URL carries the human-readable name).
         if (this.appliedRoleName) {
             const match = roles.find((r) => r.name === this.appliedRoleName);
@@ -70,6 +84,65 @@ export default class UsersPage extends Cossack {
     private applyResult(result: ListUsersResult) {
         this.users = result.items;
         this.total = result.total;
+        const actor = this.user as PublicUser | undefined;
+        this.selectable = result.items.filter(u => u.id !== actor?.id && canManageUser(actor, u)).map(u => u.id);
+        this.selected = this.selected.filter(id => this.selectable.includes(id));
+    }
+
+    /** Delete, or (for role managers) `role:<id>` to give the selected users that role alone. */
+    private bulkChoices(): BulkChoice[] {
+        return [
+            { key: 'delete', label: __('Delete'), confirm: __('The selected accounts and their sessions will be deleted. This cannot be undone.') },
+            ...(this.canAssignRoles ? this.allRoles.map(role => ({ key: `role:${role.id}`, label: `${__('Change role to')} ${role.name}` })) : []),
+        ];
+    }
+
+    @Client()
+    async submitBulk() {
+        const choice = this.bulkChoices().find(entry => entry.key === this.bulk);
+        if (!choice || !this.selected.length) return;
+        if (choice.confirm) { this.pendingBulk = choice; return; }
+        await this.runBulk(choice.key);
+    }
+
+    @Client()
+    async runBulk(key: string) {
+        this.pendingBulk = null;
+        await this.applyBulk(this.selected, key);
+    }
+
+    /**
+     * Apply a bulk action account by account. Your own account and accounts you may not manage
+     * are skipped, so an administrator always remains: the one acting.
+     */
+    @Server({ input: input.args(input.array(input.string({ minLength: 1, maxLength: 200 }), { maxItems: 1000 }), input.string({ maxLength: 2000 })) })
+    async applyBulk(ids: string[], key: string) {
+        this.error = '';
+        this.message = '';
+        const actor = this.user as PublicUser | undefined;
+        const roleId = key.startsWith('role:') ? key.slice('role:'.length) : '';
+        if (key !== 'delete' && !roleId) return;
+        const granted = roleId ? (await listRoles()).find(role => role.id === roleId) : undefined;
+        if (roleId && (!canAssignRoles(actor) || !granted)) { this.error = __('Only an administrator can change roles.'); return; }
+        if (granted && !canGrantRoles(actor, [granted])) { this.error = __('You cannot give a role with permissions you do not have.'); return; }
+        let done = 0, skipped = 0;
+        for (const id of [...new Set(ids)].slice(0, 100)) {
+            const target = await getUser(id);
+            if (!target || id === actor?.id || !canManageUser(actor, target)) { skipped++; continue; }
+            if (roleId) await syncUserRoles(id, [roleId]);
+            else {
+                // An account the user service keeps (a stronger network account) is skipped like the others.
+                try { await deleteUser(id); } catch (error) { if (error instanceof ClientVisibleError) { skipped++; continue; } throw error; }
+            }
+            done++;
+        }
+        this.selected = [];
+        this.bulk = '';
+        const result = await this.query();
+        const maxPage = Math.max(1, Math.ceil(result.total / PAGE_SIZE));
+        if (this.page > maxPage) { this.page = maxPage; this.applyResult(await this.query()); } else this.applyResult(result);
+        this.message = `${done} ${done === 1 ? __('user updated.') : __('users updated.')}${skipped ? ` ${skipped} ${__('skipped.')}` : ''}`;
+        if (!done && skipped) this.error = __('None of the selected accounts can be changed by you.');
     }
 
     /** Re-run the query (used after mutations). */
@@ -81,12 +154,20 @@ export default class UsersPage extends Cossack {
 
     @Server()
     async remove(id: string) {
+        this.message = '';
+        this.error = '';
         if (id === this.user!.id) {
             this.error = __('You cannot delete your own account from here.');
             return;
         }
         try {
+            const target = await getUser(id);
+            if (target && !canManageUser(this.user as PublicUser | undefined, target)) {
+                this.error = __('Only an administrator can delete this account.');
+                return;
+            }
             await deleteUser(id);
+            this.message = __('User deleted.');
             const result = await this.query();
             const maxPage = Math.max(1, Math.ceil(result.total / PAGE_SIZE));
             if (this.page > maxPage) {
@@ -134,138 +215,70 @@ export default class UsersPage extends Cossack {
         }
     }
 
+    private formatDateTime(iso: string): string {
+        try {
+            return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+        } catch {
+            return iso;
+        }
+    }
+
     render() {
         const totalPages = Math.max(1, Math.ceil(this.total / PAGE_SIZE));
-        const from = this.total === 0 ? 0 : (this.page - 1) * PAGE_SIZE + 1;
-        const to = Math.min(this.total, this.page * PAGE_SIZE);
-        const iconBtn = 'inline-flex items-center justify-center [&_svg]:size-4';
-        const iconBtnClass = 'inline-flex items-center justify-center w-8 h-8 rounded-md transition-colors border-none bg-transparent cursor-pointer';
-        // The select's value mirrors the URL's role name.
-        const selectedRoleName = this.appliedRoleName;
-
+        const bulk = (id: string) => bulkBar({ id, choices: this.bulkChoices(), value: this.bulk, count: this.selected.length,
+            choose: key => { this.bulk = key; }, apply: () => this.submitBulk() });
         return html`
             <div class="space-y-6">
-                <div class="flex items-center justify-between gap-4">
-                    <div>
-                        <h1 class="text-2xl font-bold text-foreground">${__('Users')}</h1>
-                        <p class="mt-1 text-sm text-muted-foreground">${__('Manage user accounts.')}</p>
-                    </div>
-                    <a href="/dashboard/users/new"
-                       class="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity">
-                        ${__('New user')}
-                    </a>
+                ${pageHeader(__('Users'), { description: __('Manage user accounts.'), titleActions: linkButton(__('New user'), '/dashboard/users/new', 'primary', { size: 'sm' }) })}
+                ${this.message && !this.error ? notice(this.message, 'success') : null}
+                ${this.error ? notice(this.error, 'error') : null}
+                <div class="space-y-3">
+                    ${listFilters({ action: '/dashboard/users', id: 'users-filter-form', search: { name: 'search', value: this.appliedSearch, placeholder: __('Search by name or email') },
+                        filters: html`<div class="w-44">${component(NativeSelect, { name: 'role', size: 'sm', 'aria-label': __('Filter by role'),
+                            '@change': (event: Event) => (event.currentTarget as HTMLSelectElement).form?.requestSubmit() }, html`
+                            <option value="" ?selected=${!this.appliedRoleName}>${__('All roles')}</option>
+                            ${this.allRoles.map((r) => html`<option value=${r.name} ?selected=${this.appliedRoleName === r.name}>${r.name}</option>`)}`)}</div>` })}
+                    ${this.selectable.length ? bulk('users-bulk') : null}
                 </div>
+                ${listTable<UserSummary>({
+                    rows: this.users, key: u => u.id, rowAttribute: 'data-user', empty: __('No users found.'),
+                    ...(this.selectable.length ? { selection: { selected: this.selected, selectable: this.selectable, label: u => u.name || u.email, change: ids => { this.selected = ids; } } } : {}),
+                    columns: [
+                        { label: __('User'), cell: u => html`<div class="flex items-start gap-3">
+                            ${component(Avatar, { src: u.avatar ?? undefined, alt: u.name, size: 32 })}
+                            <div class="min-w-0">
+                                <a href="/dashboard/users/${u.id}" class="font-medium text-foreground no-underline hover:text-primary">${u.name || '—'}</a>
+                                ${u.id === this.user!.id ? html` ${component(Badge, { variant: 'secondary' }, __('You'))}` : null}
+                                ${u.badge ? html` ${component(Badge, { variant: 'outline' }, u.badge)}` : null}
+                                <span class="block text-xs text-muted-foreground">${u.email}</span>
+                                ${rowActions([
+                                    { id: `user-${u.id}-edit`, label: __('Edit'), href: `/dashboard/users/${u.id}` },
+                                    ...(u.id !== this.user!.id && this.selectable.includes(u.id) ? [{ id: `user-${u.id}-delete`, label: __('Delete'), danger: true, run: () => this.requestDelete(u) }] : []),
+                                ])}
+                            </div>
+                        </div>` },
+                        { label: __('Roles'), cell: u => html`<div class="flex flex-wrap gap-1">${u.roles.length === 0
+                            ? html`<span class="text-xs text-muted-foreground">—</span>` : u.roles.map((r) => component(Badge, { variant: 'outline' }, r.name))}</div>` },
+                        { label: __('Last signed in'), class: 'text-muted-foreground', cell: u => u.lastSignedInAt
+                            ? html`<time datetime=${u.lastSignedInAt} title=${this.formatDateTime(u.lastSignedInAt)}>${timeAgo(u.lastSignedInAt, this.now)}</time>` : __('Never') },
+                        { label: __('Created'), class: 'text-muted-foreground', cell: u => this.formatDate(u.createdAt) },
+                    ],
+                })}
+                ${this.users.length && this.selectable.length ? bulk('users-bulk-bottom') : null}
+                ${listFooter({ total: this.total, page: this.page, totalPages, href: p => this.pageHref(p) })}
 
-                ${this.error ? html`<div class="text-sm text-destructive">${this.error}</div>` : null}
-
-                ${component(Card, {}, html`
-                    ${component(CardHeader, {}, html`
-                        <div class="flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
-                            <h2 class="text-base font-semibold text-foreground">${__('All users')}</h2>
-                            <!-- Native GET form: submit navigates to ?search=…&role=… (URL reflects state).
-                                 The role <select> submits the form on change via a tiny inline script. -->
-                            <form method="GET" action="/dashboard/users" class="flex flex-col sm:flex-row gap-2 sm:items-center" id="users-filter-form">
-                                <div class="relative w-full sm:w-64">
-                                    <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground ${iconBtn}">${component(Icon, { entry: searchIcon, size: 16 })}</span>
-                                    ${component(Input, {
-                                        type: 'search',
-                                        name: 'search',
-                                        placeholder: __('Search by name or email'),
-                                        value: this.appliedSearch,
-                                        size: 'sm',
-                                        class: 'pl-8 w-full',
-                                    })}
-                                </div>
-                                ${component(NativeSelect, {
-                                    name: 'role',
-                                    size: 'sm',
-                                    'aria-label': __('Filter by role'),
-                                    '@change': (event: Event) => (event.currentTarget as HTMLSelectElement).form?.requestSubmit(),
-                                }, html`
-                                    <option value="" ?selected=${!selectedRoleName}>${__('All roles')}</option>
-                                    ${this.allRoles.map((r) => html`<option value=${r.name} ?selected=${selectedRoleName === r.name}>${r.name}</option>`)}
-                                `)}
-                                ${component(Button, { type: 'submit', size: 'sm', variant: 'outline' }, __('Search'))}
-                            </form>
-                        </div>
-                    `)}
-                    ${component(CardBody, {}, html`
-                        <div class="overflow-x-auto">
-                            <table class="w-full">
-                                <thead>
-                                    <tr class="text-left text-xs uppercase tracking-wide text-muted-foreground">
-                                        <th class="py-2 pr-4 font-medium">${__('User')}</th>
-                                        <th class="py-2 pr-4 font-medium">${__('Roles')}</th>
-                                        <th class="py-2 pr-4 font-medium">${__('Created')}</th>
-                                        <th class="py-2 text-right font-medium">${__('Actions')}</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${this.users.map((u) => html`
-                                        <tr class="border-t border-border">
-                                            <td class="py-3 pr-4">
-                                                <a href="/dashboard/users/${u.id}" class="flex items-center gap-3 hover:underline">
-                                                    ${component(Avatar, { src: u.avatar ?? undefined, alt: u.name, size: 32 })}
-                                                    <span class="flex flex-col">
-                                                        <span class="text-sm font-medium text-foreground">${u.name || '—'}</span>
-                                                        <span class="text-xs text-muted-foreground">${u.email}</span>
-                                                    </span>
-                                                </a>
-                                            </td>
-                                            <td class="py-3 pr-4">
-                                                <div class="flex flex-wrap gap-1">
-                                                    ${u.roles.length === 0
-                                                        ? html`<span class="text-xs text-muted-foreground">—</span>`
-                                                        : u.roles.map((r) => component(Badge, { variant: 'outline' }, r.name))}
-                                                </div>
-                                            </td>
-                                            <td class="py-3 pr-4 text-sm text-muted-foreground">${this.formatDate(u.createdAt)}</td>
-                                            <td class="py-3">
-                                                <div class="flex items-center justify-end gap-1">
-                                                    <a href="/dashboard/users/${u.id}"
-                                                       class="${iconBtnClass} text-muted-foreground hover:bg-muted hover:text-foreground"
-                                                       title=${__('Edit user')}
-                                                       aria-label=${__('Edit user')}>
-                                                        <span class=${iconBtn}>${component(Icon, { entry: editIcon, size: 16 })}</span>
-                                                    </a>
-                                                    ${u.id !== this.user!.id
-                                                        ? html`<button
-                                                              type="button"
-                                                              @click=${() => this.requestDelete(u)}
-                                                              class="${iconBtnClass} text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                                                              title=${__('Delete user')}
-                                                              aria-label=${__('Delete user')}>
-                                                              <span class=${iconBtn}>${component(Icon, { entry: deleteIcon, size: 16 })}</span>
-                                                          </button>`
-                                                        : component(Badge, { variant: 'secondary' }, __('You'))}
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    `)}
-                                </tbody>
-                            </table>
-                            ${this.users.length === 0
-                                ? html`<p class="py-6 text-center text-sm text-muted-foreground">${__('No users found.')}</p>`
-                                : null}
-                        </div>
-                        <div class="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t border-border">
-                            <p class="text-xs text-muted-foreground">
-                                ${__('Showing')} ${from}–${to} ${__('of')} ${this.total}
-                            </p>
-                            ${totalPages > 1
-                                ? component(Pagination, {
-                                      page: this.page,
-                                      totalPages,
-                                      label: __('Pagination'),
-                                      previousLabel: __('Previous page'),
-                                      nextLabel: __('Next page'),
-                                      pageLabel: (p: number) => `${__('Page')} ${p}`,
-                                      href: (p: number) => this.pageHref(p),
-                                  })
-                                : null}
-                        </div>
-                    `)}
-                `)}
+                ${component(AlertDialog, {
+                    id: 'bulk-users-dialog',
+                    open: this.pendingBulk !== null,
+                    // Closed dialogs still need their labels.
+                    title: this.pendingBulk ? `${this.pendingBulk.label} ${this.selected.length} ${this.selected.length === 1 ? __('user') : __('users')}?` : __('Apply'),
+                    description: this.pendingBulk?.confirm ?? '',
+                    cancelLabel: __('Cancel'),
+                    actionLabel: this.pendingBulk?.label || __('Apply'),
+                    actionVariant: this.pendingBulk?.key === 'delete' ? 'destructive' : 'primary',
+                    onAction: () => { if (this.pendingBulk) void this.runBulk(this.pendingBulk.key); },
+                    onOpenChange: () => { this.pendingBulk = null; },
+                })}
 
                 ${component(AlertDialog, {
                     id: 'delete-user-dialog',

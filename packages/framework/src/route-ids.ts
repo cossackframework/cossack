@@ -18,9 +18,14 @@ export const APP_ROUTE_ID = 'cossack_app';
 /** File path the global `App` component is expected at. */
 export const APP_FILE_PATH = '/src/App';
 
-/** Layout ancestry follows source directories, including groups and parameters. */
-export function resolveLayoutPaths(pageFilePath: string, availableLayouts: readonly string[]): string[] {
-  const available = new Set(availableLayouts);
+/**
+ * Layout ancestry follows source directories, including groups and parameters.
+ * A plugin's layout (one in `owners`) wraps only the same plugin's pages: an
+ * application page under the same directory never gets it, nor its guards.
+ */
+export function resolveLayoutPaths(pageFilePath: string, availableLayouts: readonly string[], owners: Readonly<Record<string, string>> = {}): string[] {
+  const owner = owners[pageFilePath];
+  const available = new Set(availableLayouts.filter(layout => owners[layout] === undefined || owners[layout] === owner));
   const parts = pageFilePath.replace('/src/pages/', '').split('/');
   const stack: string[] = [];
   let directory = '/src/pages';
@@ -33,10 +38,14 @@ export function resolveLayoutPaths(pageFilePath: string, availableLayouts: reado
   return stack;
 }
 
-/** Boundaries follow source ancestry, including directories omitted from the URL. */
-export function resolveNearestSpecialPage(pageFilePath: string, pageKeys: readonly string[], type: '404' | 'error'): string | null {
+/**
+ * Boundaries follow source ancestry, including directories omitted from the URL.
+ * With `owners`, a plugin's boundary serves only the same plugin's pages.
+ */
+export function resolveNearestSpecialPage(pageFilePath: string, pageKeys: readonly string[], type: '404' | 'error', owners?: Readonly<Record<string, string>>): string | null {
   const parts = pageFilePath.replace('/src/pages/', '').split('/');
-  const available = new Set(pageKeys);
+  const owner = owners?.[pageFilePath];
+  const available = new Set(owners ? pageKeys.filter(key => owners[key] === undefined || owners[key] === owner) : pageKeys);
   for (let index = parts.length - 1; index >= 0; index--) {
     const directory = parts.slice(0, index).join('/');
     const candidate = `/src/pages/${directory ? `${directory}/` : ''}${type}/index.ts`;
@@ -45,11 +54,30 @@ export function resolveNearestSpecialPage(pageFilePath: string, pageKeys: readon
   return null;
 }
 
-export function classifyRoute(pattern: string): 'page' | 'api' | '404' | 'error' {
+export type RouteKind = 'page' | 'api' | '404' | 'error';
+
+/**
+ * Classify a route by its public pattern alone: boundaries by their last segment,
+ * `/api` and everything below it as endpoints, the rest as pages. Unknown URLs and
+ * request paths have no module, so this is all they can use. A discovered module
+ * is classified with {@link classifyRouteModule}, which also knows its shape.
+ */
+export function classifyRoute(pattern: string): RouteKind {
   if (pattern.endsWith('/404')) return '404';
   if (pattern.endsWith('/error')) return 'error';
   if (pattern === '/api' || pattern.startsWith('/api/')) return 'api';
   return 'page';
+}
+
+/**
+ * Classify a discovered route module. Boundaries follow their pattern. An HTTP
+ * endpoint (`api`) is any module under `/api`, and a functional handler module (a
+ * default function, `defineApi()` or `GET`/`POST`… exports) at any other path,
+ * such as `/webhooks/crm` or `/feed.xml`. Component modules elsewhere are pages.
+ */
+export function classifyRouteModule(pattern: string, functionalHandler: boolean): RouteKind {
+  const kind = classifyRoute(pattern);
+  return kind === 'page' && functionalHandler ? 'api' : kind;
 }
 
 /** Substitute both ordinary and catch-all static parameters without replacement-string expansion. */
@@ -233,7 +261,7 @@ function prefixMatcher(pattern: string) {
     return catchAll ? '(.+)' : '([^/]+)';
   }).join('/');
   const regex = expression ? new RegExp(`^/${expression}(?=/|$)`) : /^/;
-  return { ranks, match(pathname: string) {
+  return { ranks, expression: expression ? `^/${expression}` : '^/', match(pathname: string) {
     const matched = regex.exec(pathname);
     if (!matched) return null;
     const params: Record<string, string> = Object.create(null);
@@ -243,6 +271,25 @@ function prefixMatcher(pattern: string) {
     });
     return { params, depth: matched[0].split('/').filter(Boolean).length };
   } };
+}
+
+/**
+ * The route file a public path reaches, in the router's registration order (most
+ * specific pattern first), or `null`. Boundaries are not addressable and never match.
+ */
+export function createRouteMatcher(pageKeys: readonly string[]): (pathname: string) => string | null {
+  const routes = resolvePageRouteFiles([...pageKeys])
+    .map(path => ({ path, pattern: filePathToHttpRoute(path) }))
+    .filter(route => { const kind = classifyRoute(route.pattern); return kind !== '404' && kind !== 'error'; })
+    .sort((a, b) => compareHttpRoutes(a.pattern, b.pattern))
+    .map(route => ({ path: route.path, regex: new RegExp(`${prefixMatcher(route.pattern).expression}$`) }));
+  return pathname => {
+    // Like Hono: the path is matched decoded (reserved characters kept), and one trailing slash is dropped.
+    let path = pathname;
+    try { path = decodeURI(pathname); } catch { /* Malformed escapes are matched as written. */ }
+    if (path.length > 1 && path.endsWith('/')) path = path.slice(0, -1);
+    return routes.find(route => route.regex.test(path))?.path ?? null;
+  };
 }
 
 /**
@@ -329,6 +376,8 @@ export interface RouterContext {
   routePathToFilePathMap: Map<string, string>;
   pages: Record<string, any>;
   layouts: Record<string, any>;
+  /** Route key -> plugin name for plugin pages and layouts (see {@link resolveLayoutPaths}). */
+  owners?: Readonly<Record<string, string>>;
   /** Allowed Origin values for transport requests. Defaults to same-origin. */
   allowedOrigins?: string[];
   /** Request-body limits for `/crpc` and `/upload`. */
@@ -443,6 +492,10 @@ export interface RoutesManifest {
   filePathToId: Record<string, string>;
   /** Structural facts only. Source decorators and executable policies are not inferred here. */
   routes: RouteDescriptor[];
+  /** Route keys of functional HTTP handler modules outside `/api`, classified by their syntax. */
+  handlers?: string[];
+  /** Route key to real source path, for plugin pages rendered under `src/plugins/<name>/pages`. */
+  sources?: Record<string, string>;
 }
 
 export interface RouteDescriptor {
@@ -451,7 +504,8 @@ export interface RouteDescriptor {
   pattern: string;
   filePath: string;
   routeId: string;
-  kind: 'page' | 'api' | '404' | 'error';
+  /** `api` is an HTTP endpoint: a module under `/api`, or a functional handler module at any path. */
+  kind: RouteKind;
   addressable: boolean;
   parameters: RouteParameter[];
   /** Source layout ancestry. Functional HTTP handlers do not execute component layouts. */
@@ -460,31 +514,43 @@ export interface RouteDescriptor {
   notFoundBoundary: string | null;
 }
 
+export interface RoutesManifestOptions {
+  /**
+   * Route keys of page modules whose syntax is a functional HTTP handler rather
+   * than a component (see `route-codegen`). They are endpoints at any path.
+   */
+  handlers?: Iterable<string>;
+  /** Plugin that owns each route or layout key, so plugin layouts and boundaries cover only its own pages, as in the router. */
+  owners?: Readonly<Record<string, string>>;
+}
+
 /**
  * Build a serializable {@link RoutesManifest} from computed maps, suitable for
  * writing to disk by the Vite plugin and consuming by the SSG CLI.
  */
-export function buildRoutesManifest(pageKeys: string[], layoutKeys: string[], maps: RouteIdMaps): RoutesManifest {
+export function buildRoutesManifest(pageKeys: string[], layoutKeys: string[], maps: RouteIdMaps, options: RoutesManifestOptions = {}): RoutesManifest {
   const filePathToId: Record<string, string> = {};
   for (const [path, id] of maps.routePathToIdMap.entries()) {
     filePathToId[path] = id;
   }
+  const handlers = new Set(options.handlers ?? []);
   return {
     appRouteId: APP_ROUTE_ID,
     pageKeys: resolvePageRouteFiles(pageKeys),
     layoutKeys: [...layoutKeys].sort(),
     filePathToId,
+    ...(handlers.size ? { handlers: [...handlers].sort() } : {}),
     routes: resolvePageRouteFiles(pageKeys).map(filePath => {
       const pattern = filePathToHttpRoute(filePath);
-      const kind = classifyRoute(pattern);
+      const kind = classifyRouteModule(pattern, handlers.has(filePath));
       return {
         name: filePathToRoutePath(filePath), pattern, filePath,
         routeId: filePathToId[filePath]!, kind,
         addressable: kind !== '404' && kind !== 'error',
         parameters: routeParameters(pattern),
-        layoutPaths: resolveLayoutPaths(filePath, layoutKeys),
-        errorBoundary: resolveNearestSpecialPage(filePath, pageKeys, 'error'),
-        notFoundBoundary: resolveNearestSpecialPage(filePath, pageKeys, '404'),
+        layoutPaths: resolveLayoutPaths(filePath, layoutKeys, options.owners),
+        errorBoundary: resolveNearestSpecialPage(filePath, pageKeys, 'error', options.owners),
+        notFoundBoundary: resolveNearestSpecialPage(filePath, pageKeys, '404', options.owners),
       };
     }),
   };

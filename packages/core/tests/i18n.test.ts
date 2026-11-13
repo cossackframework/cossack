@@ -13,6 +13,7 @@ import {
     getDefaultLocale,
     setDefaultLocale,
     setLocaleStoreGetter,
+    setRequestLocale,
     setLocaleLoader,
     normalizeLocale,
     resolveAutoLocale,
@@ -356,6 +357,19 @@ describe('__ with per-request store (server)', () => {
         setLocaleStoreGetter(() => ({ locale: 'es', messages: {} }));
         expect(__('bye')).toBe('Adiós');
     });
+    it('switches the request to a content language with setRequestLocale', () => {
+        const store = { locale: 'en', messages: { hello: 'Hello' }, defaultLocale: 'en', catalogs: { en: { hello: 'Hello', bye: 'Bye' }, FR: { hello: 'Bonjour' } } };
+        setLocaleStoreGetter(() => store);
+        setRequestLocale('fr');
+        // The catalog's own spelling of the code, its messages, and the default's for missing keys.
+        expect([getLocale(), __('hello'), __('bye')]).toEqual(['FR', 'Bonjour', 'Bye']);
+        // A language without a catalog still names the page's language; text falls back to the default.
+        setRequestLocale('vi');
+        expect([getLocale(), __('hello')]).toEqual(['vi', 'Hello']);
+        expect(() => setRequestLocale('<script>')).toThrow(/not a locale code/);
+        setLocaleStoreGetter(null);
+        expect(() => setRequestLocale('fr')).toThrow(/during a request/);
+    });
 });
 
 // ---------------------------------------------------------------------------
@@ -568,6 +582,16 @@ describe('readLocaleCookie', () => {
             value: 'other=1',
         });
         const { readLocaleCookie } = await import('../src/shared/i18n');
+        expect(readLocaleCookie()).toBeUndefined();
+    });
+
+    it('reads a malformed escape as no locale instead of throwing', async () => {
+        const { readLocaleCookie, LOCALE_COOKIE_NAME } = await import('../src/shared/i18n');
+        Object.defineProperty(document, 'cookie', {
+            configurable: true,
+            writable: true,
+            value: `${LOCALE_COOKIE_NAME}=%E0%A4%A`,
+        });
         expect(readLocaleCookie()).toBeUndefined();
     });
 });

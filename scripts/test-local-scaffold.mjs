@@ -1,6 +1,7 @@
 import { verifyAuxiliaryBuildBudgets } from './verify-auxiliary-build-budgets.mjs';
 import { verifyBudgetBuildModes } from './verify-budget-build-modes.mjs';
 import { verifyBuildBudgets } from './verify-build-budgets.mjs';
+import { verifyCmsApplications } from './verify-cms-applications.mjs';
 import { verifyConfigHydration } from './verify-config-hydration.mjs';
 import { verifyDesktopTraceReaders } from '../packages/cossack/tests/fixtures/desktop-trace-readers.js';
 import { writeDesktopRuntimeAcceptance, verifyDesktopRuntimeApplication, verifyDesktopDevelopmentApplication } from '../packages/cossack/tests/fixtures/desktop-runtime-acceptance.js';
@@ -29,6 +30,8 @@ const packageDirectories = [
   'node-adapter',
   'desktop',
   'auth',
+  'romedb',
+  'cms',
   'ui',
   'framework',
   'database',
@@ -100,7 +103,7 @@ async function useTarballs(projectDir, tarballs, { documentation = false } = {})
   // their features into the minimal application.
   if (documentation) for (const name of [
     '@cossackframework/ui', '@cossackframework/auth', '@cossackframework/database',
-    '@cossackframework/node-adapter', '@cossackframework/studio',
+    '@cossackframework/node-adapter', '@cossackframework/studio', '@cossackframework/romedb', '@cossackframework/cms',
   ]) {
     if (!pkg.dependencies?.[name]) pkg.devDependencies[name] = `file:${tarballs.get(name)}`;
   }
@@ -643,6 +646,7 @@ const agentDocsOnly = process.argv.includes('--agent-docs-only');
 const publishedReleaseOnly = process.argv.includes('--published-release-only');
 const deploymentGuideOnly = process.argv.includes('--deployment-guide-only');
 const scaffoldOnly = process.argv.includes('--scaffold-only');
+const cmsOnly = process.argv.includes('--cms-only');
 const reuseDirectory = process.argv.find(argument => argument.startsWith('--reuse-artifacts='))?.slice('--reuse-artifacts='.length);
 const includeDesktop = desktopRuntimeOnly;
 
@@ -677,7 +681,9 @@ try {
   const minimalProjectDir = path.join(temporaryRoot, 'minimal-production');
   await useTarballs(minimalProjectDir, tarballs, { documentation: !desktopRuntimeOnly });
   await installGeneratedProject(minimalProjectDir);
-  if (deploymentGuideOnly) {
+  if (cmsOnly) {
+    await verifyCmsApplications(temporaryRoot, tarballs, { run, useTarballs, install: installGeneratedProject });
+  } else if (deploymentGuideOnly) {
     console.log(JSON.stringify(await verifyDeploymentGuide(minimalProjectDir), null, 2));
   } else if (publishedReleaseOnly) {
     await verifyPublishedRelease(minimalProjectDir);
@@ -705,8 +711,9 @@ try {
       await verifyAuxiliaryBuildBudgets(minimalProjectDir);
     }
   }
-  if (!deploymentGuideOnly && !publishedReleaseOnly && !scaffoldOnly && !desktopRuntimeOnly && !nodeDevelopmentOnly && !agentDocsOnly) {
+  if (!cmsOnly && !deploymentGuideOnly && !publishedReleaseOnly && !scaffoldOnly && !desktopRuntimeOnly && !nodeDevelopmentOnly && !agentDocsOnly) {
     await verifyScaffoldApplications(temporaryRoot, minimalProjectDir, tarballs);
+    await verifyCmsApplications(temporaryRoot, tarballs, { run, useTarballs, install: installGeneratedProject });
   }
 } finally {
   if (keep) {

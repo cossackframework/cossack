@@ -7,8 +7,9 @@ import { Button } from '@cossackframework/ui';
  *
  * This page demonstrates convention-based loading:
  *
- * Because this component has a loadingTemplate() method (and a loading.ts file exists),
- * the framework automatically skips init() during SSR and shows the loading UI immediately.
+ * Because this component defines both loadingTemplate() and clientInit(),
+ * the framework skips init() during SSR and shows the loading UI immediately.
+ * (The loading.ts file next to it only shows during client navigation.)
  *
  * Flow:
  * 1. SSR: Render loading template, send HTML immediately (no wait)
@@ -23,7 +24,7 @@ export default class LifecycleDemo extends Cossack {
 
     /**
      * Server-side initialization
-     * - Skipped during SSR if loadingTemplate() exists (instant HTML response)
+     * - Skipped during SSR because loadingTemplate() and clientInit() exist (instant HTML response)
      * - Called via RPC from clientInit() to fetch data
      * - Also called manually via "Refresh Data" button
      */

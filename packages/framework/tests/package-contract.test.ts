@@ -108,9 +108,10 @@ describe('framework publication contract', () => {
     expect(types).not.toMatch(/import\(["'][^"']*src\/index["']\)/);
   });
 
-  it('declares portable provider and published Markdown dependencies while excluding demo libraries', () => {
+  it('declares portable provider, published Markdown and isolated plugin bundler dependencies while excluding demo libraries', () => {
     expect(Object.keys(frameworkPackage.dependencies).sort()).toEqual([
       '@aws-sdk/client-s3',
+      '@aws-sdk/s3-request-presigner',
       '@cossackframework/core',
       '@cossackframework/renderer',
       '@types/mdast',
@@ -123,11 +124,11 @@ describe('framework publication contract', () => {
       'remark-rehype',
       'remark-sugar-high',
       'remark-toc',
+      // Bundles isolated plugins at build time (plugin-isolation.ts).
+      'rolldown',
       'unified',
       'vfile-matter',
     ]);
-    expect(frameworkPackage.dependencies).not.toHaveProperty('@aws-sdk/s3-request-presigner');
-    expect(frameworkPackage.devDependencies).not.toHaveProperty('@aws-sdk/s3-request-presigner');
     for (const name of [
       '@cossackframework/solar-icons',
       '@cossackframework/ui',
@@ -138,7 +139,7 @@ describe('framework publication contract', () => {
     }
     expect(frameworkPackage.peerDependencies).toMatchObject({
       hono: '^4.13.7',
-      vite: '^8.1.0',
+      vite: '^8.1.6',
     });
   });
 });

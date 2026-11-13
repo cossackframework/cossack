@@ -27,7 +27,19 @@ The framework maps `title`, `description`, and `image` to the matching propertie
 
 ### Layout Support
 
-MDX components support nested layouts. If an MDX file is in a folder with `layout.ts`, that layout wraps the page, as it does for a TypeScript component.
+Markdown pages get layouts the way TypeScript pages do. Each `layout.ts` in the folders above
+the file wraps the page, route groups included: `src/pages/(public)/blog/hello-world.md` is
+wrapped by `(public)/layout.ts`, then `(public)/blog/layout.ts`. A plugin's Markdown page
+follows its path in the page tree, so `src/plugins/<name>/pages/(public)/guide.md` gets the
+`(public)` layout of the application.
+
+The framework renders the content inside `<div class="mdx-content">`. Style that class, or
+the layout around it, to give Markdown pages their typography.
+
+A Markdown page is static by default (`ssg` below). Two kinds are never rendered at build
+time: a plugin's pages, because the application decides per request whether the plugin is
+active, and pages under a layout with `@Page({ ssg: false })`, whose frame comes from the
+request. See [Pages that render per request](./static-site-generation.md#pages-that-render-per-request).
 
 
 ### Typed metadata

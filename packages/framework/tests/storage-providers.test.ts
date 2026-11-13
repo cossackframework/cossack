@@ -104,6 +104,25 @@ describe('S3 upload strategy',()=>{
  });
 });
 
+it('presigns a PutObject whose content type and length the browser must send',async()=>{
+ const config={endpoint:'https://s3.test',region:'us-east-1',credentials:{accessKeyId:'fixture',secretAccessKey:'PRIVATE_TEST_SECRET'},forcePathStyle:true} as const;
+ // The default client signs a checksum of an empty body into the URL; presigning refuses it.
+ await expect(createS3StorageProvider({client:new S3Client(config),bucket:'bucket'}).presign!('key',{size:1,expiresIn:60})).rejects.toMatchObject({code:'COSSACK_STORAGE_CONFIG_INVALID'});
+ const client=new S3Client({...config,requestChecksumCalculation:'WHEN_REQUIRED'});
+ const p=createS3StorageProvider({client,bucket:'bucket'});
+ const upload=await p.presign!('owner/file name',{size:5,contentType:'text/plain',customMetadata:{owner:'a'},expiresIn:60});
+ const url=new URL(upload.url);
+ expect(url.origin+url.pathname).toBe('https://s3.test/bucket/owner/file%20name');
+ expect(url.searchParams.get('X-Amz-Expires')).toBe('60');
+ expect(url.searchParams.get('X-Amz-SignedHeaders')!.split(';').sort()).toEqual(['content-length','content-type','host']);
+ expect(url.searchParams.get('x-amz-meta-owner')).toBe('a');
+ expect([...url.searchParams.keys()].some(name=>name.includes('checksum'))).toBe(false);
+ expect(url.searchParams.get('X-Amz-Signature')).toMatch(/^[0-9a-f]{64}$/);
+ expect(upload.url).not.toContain('PRIVATE_TEST_SECRET');
+ expect(upload).toEqual({url:upload.url,method:'PUT',headers:{'content-length':'5','content-type':'text/plain'}});
+ await expect(p.presign!('key',{size:-1,expiresIn:60})).rejects.toMatchObject({code:'COSSACK_STORAGE_ACCESS_INVALID'});
+ await expect(p.presign!('key',{size:1,expiresIn:0})).rejects.toMatchObject({code:'COSSACK_STORAGE_ACCESS_INVALID'});
+});
 it('uses the real S3 SDK against a loopback multipart protocol endpoint',async()=>{
  const objects=new Map<string,{body:Buffer;type:string;metadata:string}>(),uploads=new Map<string,{key:string;parts:Buffer[];type:string;metadata:string}>();let next=0,abortCount=0,requests=0;
  const server=createServer(async(req,res)=>{requests++;const url=new URL(req.url!,'http://localhost'),key=decodeURIComponent(url.pathname),uploadId=url.searchParams.get('uploadId');const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));const body=Buffer.concat(chunks);res.setHeader('content-type','application/xml');

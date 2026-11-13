@@ -146,6 +146,8 @@ See [Session & Flash](/docs/session.md) for the full flash/old-input API and how
 
 You can validate form data server-side using `this.c.getFormData()` with `storeRules<T>()`. Validation errors are flashed when the form is invalid. Submitted values are retained only when you select public fields with `flash.input`. Redirect back to restore those fields.
 
+`getFormData()` reads at most 8 MiB, files included, and answers 413 above it. Pass `maxBytes` to raise it for a form that posts larger files: the body is held in memory while it is parsed. It shares Hono's body cache, so `c.req.parseBody()` works before or after it.
+
 > `FormData` values are always strings. Add a `coerce` rule to produce typed `data`. For example, `age: { coerce: 'number', min: 18 }` turns `"25"` into `25`. See [Validation → Coercion](/docs/validation.md#coercion).
 
 ```typescript

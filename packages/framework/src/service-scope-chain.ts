@@ -20,6 +20,8 @@ export interface ServiceScopeChainOptions {
     /** Page or layout file path whose enclosing layouts declare services. */
     componentPath: string;
     layouts: Record<string, unknown>;
+    /** Route key -> plugin name: a plugin's layouts wrap only its own pages. */
+    owners?: Readonly<Record<string, string>>;
     routePathToIdMap: Map<string, string>;
     scopeKey?: string;
     /** Request facilities bound to the root and every layout scope. */
@@ -58,7 +60,7 @@ export async function createServiceScopeChain(options: ServiceScopeChainOptions)
     const layouts: ServiceScopeChainLayout[] = [];
     try {
         let scope = root;
-        for (const path of resolveLayoutPaths(options.componentPath, Object.keys(options.layouts))) {
+        for (const path of resolveLayoutPaths(options.componentPath, Object.keys(options.layouts), options.owners)) {
             const component = getModuleDefault(options.layouts[path] as object) as new () => Cossack;
             scope = createLayoutServiceScope(scope, component, {
                 ownerRouteId: options.routePathToIdMap.get(path),

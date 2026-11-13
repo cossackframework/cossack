@@ -70,6 +70,46 @@ describe('ORM and session server-only imports', () => {
     `, '/src/leak.ts')).toThrow(/server-only import/);
   });
 
+  it('removes CMS host and RomeDB imports that only server methods use', () => {
+    const safe = stripClientServerOnlyImports(`
+      import { renderMarkdown } from '@cossackframework/cms/server';
+      import { createRomeDB } from '@cossackframework/romedb';
+      import { connect } from '@romedb/client';
+      import { openEmbedded } from '@romedb/node/embedded-client';
+      import { Float64 } from '@cossackframework/romedb/values';
+      import { Vector } from '@romedb/client/values';
+      import { Record } from '@romedb/node/values';
+      class Page {
+        render() { return Float64.name + Vector.name + Record.name; }
+      }
+    `, '/src/page.ts');
+    expect(safe).not.toContain('@cossackframework/cms/server');
+    expect(safe).not.toContain("from '@cossackframework/romedb'");
+    expect(safe).not.toContain("from '@romedb/client'");
+    expect(safe).not.toContain('@romedb/node/embedded-client');
+    expect(safe).toContain('@cossackframework/romedb/values');
+    expect(safe).toContain('@romedb/client/values');
+    expect(safe).toContain('@romedb/node/values');
+    expect(() => stripClientServerOnlyImports(`
+      import { renderMarkdown } from '@cossackframework/cms/server';
+      export const leaked = renderMarkdown;
+    `, '/src/leak.ts')).toThrow(/server-only import/);
+  });
+
+  it.each(['node', 'cloudflare', 'isolate', 'vite'])('treats @cossackframework/cms/%s as server-only, like the host', entry => {
+    const safe = stripClientServerOnlyImports(`
+      import { pick } from '@cossackframework/cms/${entry}';
+      import { field } from '@cossackframework/cms';
+      class Page { render() { return field.name; } }
+    `, '/src/page.ts');
+    expect(safe).not.toContain(`@cossackframework/cms/${entry}`);
+    expect(safe).toContain("from '@cossackframework/cms'");
+    expect(() => stripClientServerOnlyImports(`
+      import { pick } from '@cossackframework/cms/${entry}';
+      export const leaked = pick;
+    `, '/src/leak.ts')).toThrow(/server-only import/);
+  });
+
   it('ignores type-only imports and type positions when checking server-only references', () => {
     const source = `
       import type { Generated } from '@cossackframework/database';

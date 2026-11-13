@@ -31,6 +31,20 @@ describe('shallow mutation diagnostics (RT-04)', () => {
         expect(panel.config.nested).toBe(nested);
         warn.mockRestore();
     });
+    it('keeps one proxy around a nested value through copies made from the state', () => {
+        // An editor assigns `{ ...this.values, [name]: value }` on every keystroke: the copy holds
+        // the nested proxies, which must not be wrapped again, or every read gets slower.
+        const panel = new Panel();
+        panel.connectedCallback();
+        const nested = panel.config.nested;
+        for (let i = 0; i < 5; i++) panel.config = { ...panel.config, theme: `theme ${i}` };
+        expect(panel.config.theme).toBe('theme 4');
+        expect(panel.config.nested).toBe(nested);
+        const raw = (panel as any)._shallowMutationRaw.get(nested);
+        expect((panel as any)._shallowMutationRaw.has(raw)).toBe(false);
+        expect(raw).toEqual({ depth: 1 });
+    });
+
     it('warns once with the component, field, and fix for plain @State', () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         const panel = new Panel();

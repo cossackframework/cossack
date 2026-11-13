@@ -204,7 +204,8 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       // APIs or platform bindings, without a known server-library import.
       // Keep their export interface in the browser route catalog, but never
       // load their bodies or transitive database/credential dependencies.
-      if (/(?:^|[/\\])src[/\\]pages[/\\].+\.m?ts$/.test(cleanId)) {
+      // Plugin pages under `src/plugins/<name>/pages/` follow the same rule.
+      if (/(?:^|[/\\])src[/\\](?:plugins[/\\][^/\\]+[/\\])?pages[/\\].+\.m?ts$/.test(cleanId)) {
         // An unreadable page fails the build instead of being skipped.
         source = readFileSync(cleanId, 'utf8');
         const pageProgram = parsedModule();
@@ -223,7 +224,8 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       // Match files in the project's `src/config/` directory. Anchored to
       // `/src/config/` so it doesn't catch unrelated `/config/` paths in
       // dependencies or other project subdirectories.
-      if (/(^|\/)src\/config\/[^/]+\.m?ts$/.test(cleanId)) {
+      // Plugin configuration (`src/plugins/<name>/config/`) is server-only too.
+      if (/(^|\/)src\/(?:plugins\/[^/]+\/)?config\/[^/]+\.m?ts$/.test(cleanId)) {
         return `export default {};\n`;
       }
 
@@ -366,8 +368,19 @@ function isServerOnlyImportSource(source: string): boolean {
     source === '@cossackframework/framework/session' ||
     source === '@cossackframework/auth' ||
     source.startsWith('@cossackframework/auth/') ||
+    // RomeDB clients and the CMS host: pages use them only inside @Server methods.
+    ((source === '@cossackframework/romedb' || source.startsWith('@cossackframework/romedb/') ||
+      source === '@romedb/client' || source.startsWith('@romedb/client/') ||
+      source === '@romedb/node' || source.startsWith('@romedb/node/')) && !CLIENT_SAFE_IMPORT_SOURCES.has(source)) ||
+    CMS_SERVER_ENTRIES.has(source) ||
     source.startsWith('node:');
 }
+
+/**
+ * Every server-side entry of the CMS package: the host, the Node and Cloudflare runtime pieces,
+ * the plugin isolate and the Vite plugin. Only `@cossackframework/cms` itself is client-safe.
+ */
+const CMS_SERVER_ENTRIES: ReadonlySet<string> = new Set(['server', 'node', 'cloudflare', 'isolate', 'vite'].map(entry => `@cossackframework/cms/${entry}`));
 
 /** AST child keys that only hold type syntax. */
 const TYPE_ONLY_KEYS: ReadonlySet<string> = new Set([
@@ -915,6 +928,18 @@ function authClientStub(namedExports: string[]): string {
 const SERVER_ONLY_IMPORT_SOURCES = new Set([
   '@cossackframework/database',
   '@cossackframework/framework/session',
+  // RomeDB credentials, pending writes and CMS repositories never reach the client.
+  '@cossackframework/romedb',
+  '@romedb/client',
+  '@romedb/node',
+  ...CMS_SERVER_ENTRIES,
+]);
+
+/** Client-safe subpaths of otherwise server-only packages (typed values and transport codecs). */
+const CLIENT_SAFE_IMPORT_SOURCES = new Set([
+  '@cossackframework/romedb/values',
+  '@romedb/client/values',
+  '@romedb/node/values',
 ]);
 
 /**
@@ -986,6 +1011,7 @@ function isServerOnlyProgram(program: any): boolean {
 
 function isServerOnlyModuleSource(spec: string): boolean {
   if (spec.startsWith('node:')) return true;
+  if (CLIENT_SAFE_IMPORT_SOURCES.has(spec)) return false;
   return [...SERVER_ONLY_IMPORT_SOURCES].some((source) =>
     spec === source || spec.startsWith(`${source}/`),
   );

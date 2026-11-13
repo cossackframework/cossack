@@ -174,15 +174,15 @@ export async function checkAuthFormsAcceptance(request, manifest, browser, brows
   const { token: expired } = await fixture('expired-reset', email);
   secrets.push(expired);
   for (const token of ['invalid-token', expired]) {
-    expect((await rpc('reset-password', 'doReset', [{ token, password }])).body.error).toBe('Invalid or expired reset link');
+    expect((await rpc('reset-password', 'doReset', [{ token, password, confirm: password }])).body.error).toBe('Invalid or expired reset link');
   }
   const { token } = await fixture('reset', email); secrets.push(token);
   await fault('delete', async () => {
-    expect((await rpc('reset-password', 'doReset', [{ token, password }])).body.error)
+    expect((await rpc('reset-password', 'doReset', [{ token, password, confirm: password }])).body.error)
       .toBe('Could not reset the password. Request a new reset link.');
   });
-  const races = await Promise.all([rpc('reset-password', 'doReset', [{ token, password }]),
-    rpc('reset-password', 'doReset', [{ token, password }])]);
+  const races = await Promise.all([rpc('reset-password', 'doReset', [{ token, password, confirm: password }]),
+    rpc('reset-password', 'doReset', [{ token, password, confirm: password }])]);
   expect(races.filter(result => result.body._cossack_redirect === '/auth/login')).toHaveLength(1);
   expect(races.filter(result => result.body.error === 'Invalid or expired reset link')).toHaveLength(1);
 
@@ -246,6 +246,11 @@ export async function checkAuthFormsAcceptance(request, manifest, browser, brows
     await page.waitForFunction(() => window.__cossackReady === true);
     const replacement = 'PRIVATE_FORM_REPLACEMENT_123';
     await page.getByLabel('New Password', { exact: true }).fill(replacement);
+    // A different confirmation stays on the page with its message; the matching one resets.
+    await page.getByLabel('Confirm New Password', { exact: true }).fill(`${replacement}x`);
+    await page.getByRole('button', { name: 'Reset Password', exact: true }).click();
+    await browserExpect(page.getByText('The passwords do not match', { exact: true })).toBeVisible();
+    await page.getByLabel('Confirm New Password', { exact: true }).fill(replacement);
     await page.getByRole('button', { name: 'Reset Password', exact: true }).click();
     await browserExpect(page).toHaveURL(browserOrigin + '/auth/login');
     await page.getByLabel('Email', { exact: true }).fill(email);
@@ -269,7 +274,7 @@ export async function checkAuthFormsAcceptance(request, manifest, browser, brows
       expect(call.action).not.toMatch(/validate/i);
     }
     const resetCall = calls.find(call => call.action === 'doReset');
-    expect(resetCall.payload).toEqual([{ token: browserToken, password: replacement }]);
+    expect(resetCall.payload).toEqual([{ token: browserToken, password: replacement, confirm: replacement }]);
     expect(calls.filter(call => call.action === 'login')).toHaveLength(4);
     expect(errors).toEqual([]);
   } catch (error) { throw new Error(`${error.stack ?? error}`); } finally { await context.close(); }

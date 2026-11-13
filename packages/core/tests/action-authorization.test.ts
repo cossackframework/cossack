@@ -15,6 +15,14 @@ it('runs a typed callback on parsed values and authoritative context',async()=>{
     const parsed=await enforceActionInput(Actions,'save',[{id:'2'}]);
     await enforceActionAuthorization(Actions,'save',parsed,c,active);expect(check).toHaveBeenCalledTimes(1);
 });
+it('authorizes an argument list (input.args) on every parsed argument',async()=>{
+    const c=await context();
+    const check=vi.fn(([id,count]:[string,number])=>id==='own'&&count===3);
+    class Actions { @Server({input:input.args(input.string(),input.number({coerce:true})),authorize:check}) save(id:string,count:number){return [id,count];} }
+    await enforceActionAuthorization(Actions,'save',await enforceActionInput(Actions,'save',['own','3']),c,signal());
+    expect(check.mock.calls[0]![0]).toEqual(['own',3]);
+    await expect(enforceActionAuthorization(Actions,'save',await enforceActionInput(Actions,'save',['other','3']),c,signal())).rejects.toMatchObject({code:'COSSACK_AUTH_FORBIDDEN'});
+});
 it('inherits policy metadata and distinguishes unguarded methods',async()=>{
     class Parent{@Server({authorize:()=>false})save(){} @Server()public(){}}
     class Child extends Parent{}

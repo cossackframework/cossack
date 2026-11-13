@@ -4,7 +4,7 @@ import type { RouterContext } from '../route-ids.js';
 import { readRpcRequest, RPC_JSON_REQUEST_MAX_BYTES } from './http.js';
 import { discardRequestBody } from '../request-body.js';
 import { withRuntimeRouteParams } from '../runtime-websocket.js';
-import { isTransportPath } from '../transport-routes.js';
+import { isTransportPath, TRANSPORT_ACTION, TRANSPORT_GUARD_PATH, TRANSPORT_TARGET_PATH } from '../transport-routes.js';
 import { checkPageRouteParams, checkRouteParams, resolveComponentRpcTarget, resolveServiceRpcTarget } from './rpc-target.js';
 import { realtimeOwnerMiddlewares, resolveRealtimeConnection } from './realtime-target.js';
 
@@ -40,6 +40,8 @@ export function checkSseRouteParams(
 export function protectTransport(ctx: RouterContext): MiddlewareHandler {
     return async (c, next) => {
         let componentPath: string | undefined;
+        let targetPath: string | undefined;
+        let action: string | undefined;
         let ownerMiddlewares: MiddlewareHandler[] = [];
         let guarded: Context = c;
         if (c.req.method === 'POST') {
@@ -61,6 +63,7 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
                 if (!body || typeof body !== 'object' || Array.isArray(body)) {
                     return c.json({ error: 'Invalid transport body' }, 400);
                 }
+                if (typeof body.action === 'string') action = body.action;
                 if (body.service !== undefined) {
                     // A layout service runs under the page the browser is on.
                     // Guard it like SSR of that page: every layout and page
@@ -68,6 +71,7 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
                     const target = resolveServiceRpcTarget(ctx, body);
                     if (!target) return c.json({ error: 'Invalid service target', code: 'COSSACK_RPC_REQUEST_INVALID', requestId }, 400);
                     componentPath = target.pagePath;
+                    targetPath = target.ownerPath;
                     guarded = withRuntimeRouteParams(c, target.params);
                 } else {
                     const resolved = resolveComponentRpcTarget(ctx, body);
@@ -75,6 +79,7 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
                         if (resolved.error === 'params') return c.json({ error: 'Invalid route params', code: 'COSSACK_RPC_REQUEST_INVALID', requestId }, 400);
                     } else {
                         componentPath = resolved.target.guardPath;
+                        targetPath = resolved.target.componentPath;
                         guarded = withRuntimeRouteParams(c, resolved.target.params);
                     }
                 }
@@ -86,6 +91,10 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
                     code: 'COSSACK_RPC_REQUEST_INVALID', requestId }, 400);
             }
         } else if (isTransportPath(c.req.path, 'sse')) {
+            // A cross-site subscription is refused before any guard runs (an
+            // EventSource from the same page may omit Origin).
+            const origin = c.req.header('origin');
+            if (origin && !isOriginAllowed(origin, c.req.url, ctx.allowedOrigins)) return c.text('Origin not allowed', 403);
             // A subscription names a page (or layout) and carries its route
             // params. The guards run once, here, before the stream opens, with
             // the params that the scope key and revalidations use.
@@ -102,16 +111,28 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
             // and page guards; a layout runs its own guard stack. All of them
             // see the page's checked route params, which also name the
             // instance, so the guards decide on the same values.
+            // A cross-site upgrade (a page opening a socket with the victim's
+            // cookies) is refused before any guard runs, as a POST is.
+            if (!isOriginAllowed(c.req.header('origin'), c.req.url, ctx.allowedOrigins)) return c.text('Origin not allowed', 403);
             const resolved = resolveRealtimeConnection(ctx, name => c.req.query(name));
             if ('error' in resolved) {
                 if (resolved.error === 'owner' && resolved.status === 404) return c.json({ error: 'Invalid component ID' }, 400);
                 return c.text(resolved.message, 400);
             }
             componentPath = resolved.target.guardPath;
+            // The owner's own code runs: for a realtime component, its registry id, never the page the
+            // browser names (client input, which only selects the guards).
+            targetPath = resolved.target.owner.id;
             ownerMiddlewares = realtimeOwnerMiddlewares(resolved.target.owner);
             guarded = withRuntimeRouteParams(c, resolved.target.params);
         }
         if (!componentPath) return c.json({ error: 'Invalid component ID' }, 400);
+        // Layout guards see /crpc as the path; this names the page whose guards run.
+        guarded.set(TRANSPORT_GUARD_PATH, componentPath);
+        // ...and this names the file whose code runs: a layout's action runs under the client's page.
+        guarded.set(TRANSPORT_TARGET_PATH, targetPath ?? componentPath);
+        // ...and, for an RPC call, the action it names there.
+        if (action !== undefined) guarded.set(TRANSPORT_ACTION, action);
         // A realtime component's own guards run after its page's guards.
         const middlewares = [...ctx.getMiddlewares?.(componentPath) ?? [], ...ownerMiddlewares];
         // Preserve short-circuit responses and after-next headers without
@@ -123,7 +144,8 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
             const middleware = middlewares[position];
             if (!middleware) return next();
             const response = await middleware(guarded, () => dispatch(position + 1));
-            if (response) c.res = response;
+            // `return next()` resolves to the Context, not a Response; only a Response replaces the reply.
+            if (response instanceof Response) c.res = response;
         };
         await dispatch(0);
         const location = c.res.headers.get('Location');

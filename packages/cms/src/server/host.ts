@@ -1,0 +1,2819 @@
+/**
+ * The CMS host: resource registry, repositories, plugin hooks and commands, schema and
+ * grant activation, outbox, users and stores, all over one RomeDB binding.
+ */
+import { createHookRegistry, type ActionHandler, type ActionPoint, type ActionReport, type ExtensionPoint, type FilterContext, type FilterHandler, type FilterPoint, type HookRegistry, type InvokeOptions } from '@cossackframework/core/hooks';
+import type { StorageProvider } from '@cossackframework/core/storage';
+import { ClientError, MAX_STATEMENTS, type RomeDB, type Statement, type Value, type WorkLimits } from '@cossackframework/romedb';
+import { normalizeRichText, richTextBlocks, withRichTextBlocks } from '../richtext';
+import { blockId, blockMedia, blockProblems, htmlBlocksChanged, textFieldProblem, validateBlocks, type Block, type BlockDeclaration } from '../blocks';
+import { blocksShapeProblem, type FieldDeclaration } from '../fields';
+import { collectionProblems, collectionResource, contentBlocks, entryUrl, extendCollection, languageName, LOCALE, translationGroupOf, orderedFields, RESERVED_FIELDS, type CollectionDefinition } from '../collections';
+import type { EditorLayoutAddition } from '../editor-layout';
+import { fieldGroupDeclarations, fieldGroupProblems, fieldVisibility, flattenGroupFields, groupsForTarget, metaProblems, withTarget, type FieldGroup, type FieldGroupTarget } from '../field-groups';
+import { AUTHOR_FIELDS, collectionSeoProblems } from '../seo';
+import { CmsFieldGroups } from './field-groups';
+import { CmsError } from '../errors';
+import type { CmsModule } from '../module';
+import { analytics as analyticsGroup, appearance, cache as cacheGroup, dashboard as dashboardGroup, email as emailGroup, general, interfaceGroup, media, type SettingsGroup } from '../settings';
+import { pluginSettingsGroupId } from '../plugin-settings';
+import { assembleSiteTheme, entryTemplateChoices, layerPresets, siteThemeProblems, type ArchiveView, type SiteTheme, type EntryView, type SiteView, type ThemeData, type ThemeManifest, type ThemePresets , themeArea } from '../theme';
+import type { MenuItem, ResolvedMenuItem } from '../menus';
+import { recordTitle } from '../forms';
+import type { RecordShape } from '../records';
+import { taxonomyProblems, type TaxonomyDeclaration, type TermShape } from '../taxonomy';
+import { isPluginPoint, manifestProblems, providedPoints, requestedGrants, UNRESTRICTED_GRANT, type CmsPluginManifest, type PluginCommand, type SlotLink } from '../manifest';
+import { ANONYMOUS, evaluateRule, hasPermission, isNetworkAdmin, PERMISSIONS, principalId, systemPrincipal, type Principal } from '../permissions';
+import { AVATAR_TYPES, mediaUrl } from '../media';
+import { canonicalJson, declarationHash, resolveResource, type Resource, type ResourceAction, type ResourceDeclaration } from '../resource';
+import { Outbox, type OutboxOptions } from './outbox';
+import { JOIN_GROUP, ResourceRepository, type FieldFilter, type ListOptions, type OperationContext } from './repository';
+import { migrate, nextGenerationStatement, planSchema, readCatalog, type MigrationReport, type SchemaPlan } from './schema';
+import { FileService, type CmsFile, type FileServiceOptions, type ImageSettings, LIBRARY_KEYS } from './files';
+import { CmsCache } from './cache';
+import { imageWidths } from '../images';
+
+import { HOST_STEPS, HOST_TABLES, hostSchemaMismatch, unknownHostSteps } from './host-schema';
+import { SiteSearch, SITE_SEARCH, searchRebuild } from './site-search';
+import { sharedFields } from './shared-fields';
+import { pathsMoved, pathsMovedStatement } from './path-moves';
+import { noteAnnounced, type NoteAnnouncedEvent } from './notes';
+import { readPaged } from './budget';
+import { isLockedRecord, lockedView } from './locked';
+import { OPEN_POLICY, pluginState, readPolicy, type NetworkPluginState, type NetworkPolicy } from './network-policy';
+import { CmsSettings } from './site-settings';
+import { createAuthSessionStore, createJobStore, createNotificationStore, createOAuthStateStore, createSessionStore, type EndedSessions } from './stores';
+import { CmsMenus } from './menus';
+import { CmsAreas } from './areas';
+import { CmsTaxonomies } from './taxonomies';
+import { CmsUsers } from './users';
+import { CmsAccounts } from './accounts';
+import { CmsPreviews, type PreviewLink } from './previews';
+import { CmsAutosaves, type Autosave } from './autosaves';
+import { CmsDrafts } from './drafts';
+import { CmsNotes } from './notes';
+import { CmsRedirects } from './redirects';
+import { CmsApiTokens, type ApiTokenScope } from './api-tokens';
+import { CmsWebhooks } from './webhooks';
+import { CmsIndexNow } from './indexnow';
+import { CmsPurge, type CachePurger } from './purge';
+import { CmsTraffic } from './traffic';
+import type { WebhookEvent } from '../webhooks';
+import { afterCommit, commentBeforeSave, EXTENSION_POINTS, formSubmitted, menuBeforeSave, pluginJob, termBeforeSave, type FormSubmittedEvent, type ResourceEvent, type WriteActor, paymentEvent, registrationDraftOf, userBeforeRegister, type RegistrationDraft, type UserRef, type UserRegisteredEvent, type UserSignedInEvent } from '../hooks';
+import { ISOLATE_PROTOCOL, type IsolateCall, type IsolatePoint, type IsolateRun } from '../isolation';
+import { serveIsolatedCall, type IsolatedPluginCode, type IsolatedWork, type PluginRunner } from './isolation';
+import { CmsForms } from './forms';
+import { siteMailer, type CmsMailer, type MailTransport } from './mail';
+import { pluginCapabilities, type PluginAi, type PluginCache, type PluginFiles, type PluginJobContext, type PluginJobs, type PluginMail, type PluginPayments, type PluginSecrets, type PluginUsers } from './capabilities';
+import { CmsSchedules, type DueSchedule } from './schedules';
+import { CmsAudit, unrestrictedGrantAudit } from './audit';
+import type { AiProvider } from './ai';
+import type { PaymentsProvider } from './payments';
+import type { PaymentEvent } from '../hooks';
+import { siteBindingScope, type BindingScopes } from '../bindings';
+import { CmsAutomations } from './automations';
+import { CmsComments, collectionDeleted, collectionDeletedStatement } from './comments';
+import { CmsSecurity } from './security';
+import type { ImageTransformer } from './images';
+import { checkComment, COMMENT_STATUSES, type CommentShape, type CommentStatus } from '../comments';
+import { sha256Hex } from './tokens';
+import type { SiteSettings } from '../settings';
+import { getClientIp, uuidv7 } from '@cossackframework/core';
+
+/** Structural plugin registration, as `@cossackframework/framework/plugins` provides it. */
+export interface PluginRegistrationLike {
+    readonly name: string;
+    readonly version: string;
+    readonly manifest?: { readonly [field: string]: unknown };
+    readonly module?: { readonly [name: string]: unknown } | null;
+    readonly ui?: { readonly [name: string]: unknown } | null;
+    /** The plugin's `templates/*.ts` modules by file stem; a theme's templates. */
+    readonly templates?: { readonly [stem: string]: { readonly [name: string]: unknown } };
+    /** URLs of the plugin's images by path, such as `assets/logo.png`. */
+    readonly assets?: { readonly [path: string]: string };
+    /** Where the server code runs, when the application isolates plugins: see `@cossackframework/framework/plugins`. */
+    readonly isolation?: {
+        readonly mode: 'isolated' | 'app';
+        readonly reason?: string;
+        readonly code?: string;
+        readonly hash?: string;
+        readonly bytes?: number;
+    };
+}
+
+export type { CmsModule };
+
+export interface CmsOptions {
+    /** The site's database. */
+    readonly db: RomeDB;
+    /** The site runs in development: webhooks may use plain HTTP and go to this machine or a private network. */
+    readonly localWebhooks?: boolean;
+    /**
+     * The `fetch` webhook deliveries and pings use, default `fetch`. On Node pass `publicOnlyFetch`
+     * from `@cossackframework/cms/node` (unless `localWebhooks`), which refuses names that resolve
+     * to this machine or a private network; Workers' own `fetch` cannot reach them.
+     */
+    readonly webhookFetch?: typeof globalThis.fetch;
+    /**
+     * The network database: accounts and what signs them in (second factors, reset tokens,
+     * application passwords, the main site's sessions). It is the main site's database; default `db`.
+     */
+    readonly network?: RomeDB;
+    /**
+     * Announce a new or resolved note (its webhooks and emails). It runs from the outbox job the
+     * note's write queued, so a note that was saved is announced even after a crash.
+     */
+    readonly announceNote?: (host: CmsHost, event: NoteAnnouncedEvent) => Promise<void>;
+    /** Network sessions ended: end the child sessions that sites made from them. */
+    readonly sessionsEnded?: (ended: EndedSessions) => Promise<void>;
+    /** This site's ID in the network; default `main`. */
+    readonly site?: string;
+    /** Application resources; owner defaults to `app`. */
+    readonly resources?: readonly ResourceDeclaration[];
+    readonly modules?: readonly CmsModule[];
+    /** Rendered plugins from the static registry. */
+    readonly plugins?: readonly PluginRegistrationLike[];
+    readonly hooks?: HookRegistry;
+    readonly now?: () => number;
+    readonly workLimits?: { readonly read?: WorkLimits; readonly write?: WorkLimits };
+    /** How long schema and grant activation stays cached. Default 30 seconds. */
+    readonly activationTtlMs?: number;
+    readonly outbox?: OutboxOptions;
+    /** Network access for plugins, checked against granted hosts. Default `globalThis.fetch`. */
+    readonly fetch?: typeof globalThis.fetch;
+    /**
+     * Runs isolated plugins' server code in Workers of their own (`workerLoaderRunner` on
+     * Cloudflare). Without it an isolated plugin cannot run, and stays inactive with that reason.
+     */
+    readonly runner?: PluginRunner | null;
+    /** The site's public origin, such as `https://example.com` (`APP_URL`), for IndexNow pings. */
+    readonly siteUrl?: string | (() => string | undefined);
+    /** The caches in front of the site that changes purge: the Cloudflare purger, or another CDN's. Plugins add theirs as `cms.cache.purge` handlers. */
+    readonly purgers?: readonly CachePurger[];
+    /** Object storage for media: R2 on Workers, S3 or a local directory on Node. Without it, `files` is null. */
+    readonly storage?: StorageProvider;
+    readonly files?: FileServiceOptions;
+    /** Makes resized image variants: the Images binding on Workers, sharp on Node. */
+    readonly images?: ImageTransformer;
+    /** Taxonomies beyond those of the modules. */
+    readonly taxonomies?: readonly TaxonomyDeclaration[];
+    /** Block types beyond those of the modules and plugins. */
+    readonly blocks?: readonly BlockDeclaration[];
+    /** Settings groups beyond General, Media and those of the modules. */
+    readonly settings?: readonly SettingsGroup[];
+    /**
+     * First path segments the application routes itself, which entries at the site root
+     * cannot take as slugs. Default: api, auth, dashboard, feed, media, preview and search.
+     */
+    readonly reservedPaths?: readonly string[];
+    /** How long a theme loader may run before the page renders without its data. Default 1500 ms. */
+    readonly themeLoaderTimeoutMs?: number;
+    /** The largest JSON a theme loader may return, in characters. Default 65536. */
+    readonly themeDataLimit?: number;
+    /**
+     * Sends the site's emails: Cloudflare's `EMAIL` binding, the Node adapter's SMTP sender, or
+     * any `{ send(message) }` taking `{ to, from, subject, text, html, replyTo? }`. The host lays
+     * each message out as HTML (Settings → Email) and runs `cms.mail.before-send` first. Without
+     * it no email is sent.
+     */
+    readonly mail?: MailTransport;
+    /** The sender of the site's emails. Default `no-reply@example.com`. */
+    readonly mailFrom?: string;
+    /** Bindings plugins name in `permissions.secrets`, read when a granted plugin asks (`context.secrets.get`). Default: none. */
+    readonly secrets?: (name: string) => string | undefined;
+    /** The application's bindings, for a plugin granted unrestricted access (`context.unrestricted()`). Default: none. */
+    readonly env?: Readonly<Record<string, unknown>>;
+    /** The AI provider for the editor's assistant and plugins with `ai`; none without it. */
+    readonly ai?: AiProvider;
+    /** The payments provider for plugins with `payments`; its webhooks come through `receivePayment()`. */
+    readonly payments?: PaymentsProvider;
+}
+
+/** The site's languages: the others under `/<code>/`, and the default one too when `prefixDefault`. */
+export interface SiteLanguages {
+    readonly default: string;
+    readonly others: readonly string[];
+    readonly all: readonly string[];
+    /** More than one language. */
+    readonly multilingual: boolean;
+    /** Settings → Languages → Language in URLs is *Every language*: the default's pages are under `/<code>/` too. */
+    readonly prefixDefault: boolean;
+}
+
+/** A theme from a rendered plugin. */
+export interface ThemeInfo {
+    /** The plugin's name. */
+    readonly name: string;
+    readonly version: string;
+    readonly label: string;
+    readonly description: string;
+    /** From the plugin's manifest; null when it names none. */
+    readonly author: PluginAuthorView | null;
+    readonly locations: readonly { readonly name: string; readonly label: string }[];
+    /** Its widget areas, its parent's first, each with the blocks shown until the site saves its own. */
+    readonly areas: readonly { readonly name: string; readonly label: string; readonly defaults: readonly Block[] }[];
+    /** The theme it extends, or null. */
+    readonly parent: string | null;
+    /** Image URLs from the plugin's assets, or null for the default artwork. */
+    readonly logo: string | null;
+    readonly cover: string | null;
+    /** The settings group of its options (its parent's and its own), named after the plugin, or null. */
+    readonly options: SettingsGroup | null;
+    /** Its presets over its parent's, slug by slug; `resolvePresets` adds the defaults and the site's changes. */
+    readonly presets: ThemePresets;
+    /** Why the theme cannot be used; empty when it can. */
+    readonly problems: readonly string[];
+}
+
+export interface CommandContext {
+    readonly principal: Principal;
+    readonly signal?: AbortSignal;
+}
+
+export type CommandHandler = (input: { readonly [name: string]: string | number | boolean }, context: CommandContext) => unknown | Promise<unknown>;
+
+/** What a plugin's `server.ts` `register()` receives. Everything is limited to the manifest and its grant. */
+export interface PluginContext {
+    readonly name: string;
+    readonly version: string;
+    /** Resource IDs the plugin declares. */
+    readonly resources: readonly string[];
+    readonly hooks: {
+        /** Handle a point the manifest lists in `hooks`: the CMS's own or one another plugin provides. */
+        addAction<P>(point: ActionPoint<P>, handler: ActionHandler<P>, options?: { priority?: number }): void;
+        addFilter<V, I>(point: FilterPoint<V, I>, handler: FilterHandler<V, I>, options?: { priority?: number }): void;
+        /**
+         * A point by name: one the manifest lists in `hooks` or `provides`, as the host built it
+         * from its provider's declaration. Cast it to the payload types the provider documents.
+         */
+        point<P>(name: string, kind: 'action'): ActionPoint<P>;
+        point<V, I = undefined>(name: string, kind: 'filter'): FilterPoint<V, I>;
+        /** Run the handlers of a point the plugin provides. Nothing runs while the plugin is inactive. */
+        doAction<P>(point: ActionPoint<P>, payload: P, options?: InvokeOptions): Promise<ActionReport>;
+        applyFilters<V, I>(point: FilterPoint<V, I>, value: V, input: I, options?: InvokeOptions): Promise<V>;
+    };
+    /** Handlers for the manifest's commands: `cossack <plugin>:<command>`. */
+    readonly commands: { add(name: string, handler: CommandHandler): void };
+    /** Data access limited to the plugin's own resources and its granted ones. */
+    readonly cms: PluginCms;
+    /** Own declared settings, with defaults. Reads require the plugin to be active. */
+    readonly settings: {
+        get(name: string): Promise<unknown>;
+        all(): Promise<Readonly<Record<string, unknown>>>;
+    };
+    /** `fetch` limited to the manifest's granted network hosts. */
+    readonly fetch: typeof globalThis.fetch;
+    /** Library files the plugin owns; needs `permissions.files`. */
+    readonly files: PluginFiles;
+    /** Email from the site's sender; needs `permissions.mail`. */
+    readonly mail: PluginMail;
+    /** Handlers for jobs queued later and for the manifest's `schedules`; needs `permissions.jobs`. */
+    readonly jobs: PluginJobs;
+    /** The site's members; needs `permissions.users`. */
+    readonly users: PluginUsers;
+    /** A namespace in the site's cache; needs `permissions.cache`. */
+    readonly cache: PluginCache;
+    /** The bindings named in `permissions.secrets`. */
+    readonly secrets: PluginSecrets;
+    /** The application's AI provider; needs `permissions.ai`. */
+    readonly ai: PluginAi;
+    /** Checkouts with the application's payments provider; needs `permissions.payments`. */
+    readonly payments: PluginPayments;
+    /**
+     * Everything, with no limits: needs `permissions.unrestricted`, and is refused until the
+     * plugin is active and a network admin has granted it. The grant also lifts the limits of
+     * the members above.
+     */
+    readonly unrestricted: () => Promise<PluginUnrestricted>;
+}
+
+/** What `context.unrestricted()` gives a plugin. Nothing here checks anything. */
+export interface PluginUnrestricted {
+    /** The site's database with no access rules: `read` and `write` take RomeQL statements. */
+    readonly db: RomeDB;
+    /** The whole host: repositories, accounts, settings, files and the outbox. */
+    readonly host: CmsHost;
+    /** Every binding and secret of the application, including what reaches other sites' databases. */
+    readonly env: Readonly<Record<string, unknown>>;
+}
+
+export interface PluginCms {
+    resource(id: string): PluginResource;
+}
+
+/** What a theme loader receives besides the view. Reads go through the plugin's grants as the visitor. */
+export interface ThemeLoaderContext {
+    /** The theme plugin's repositories: its own resources and its granted ones. */
+    readonly cms: PluginCms;
+    /** The visitor; pass it to every read, such as `cms.resource(id).list(query, { principal })`. */
+    readonly principal: Principal;
+    /** Aborts when the loader runs out of time. */
+    readonly signal: AbortSignal;
+    /** The active theme's option values. */
+    readonly options: { readonly [name: string]: unknown };
+    /** The page's language. */
+    readonly locale: string;
+    /** The loader's key, such as `entry-projects`. */
+    readonly template: string;
+}
+
+/**
+ * A theme loader, exported from the theme's `server.ts` as `loaders[<template>]`. `layout`
+ * receives the `SiteView`; entry loaders the `EntryView`; list loaders the `ArchiveView`. It
+ * returns plain JSON, which templates read as `helpers.data`.
+ */
+export type ThemeLoader = { bivarianceHack(view: SiteView | EntryView | ArchiveView, context: ThemeLoaderContext): unknown }['bivarianceHack'];
+export type ThemeLoaders = { readonly [template: string]: ThemeLoader };
+
+export type PluginResource = Pick<ResourceRepository, 'get' | 'list' | 'count' | 'search' | 'create' | 'update' | 'delete'>;
+
+export interface PluginStatus {
+    readonly name: string;
+    readonly version: string;
+    readonly description: string;
+    /** From the manifest; null when it names none. */
+    readonly author: PluginAuthorView | null;
+    /** Image URLs from the plugin's assets, or null for the default artwork. */
+    readonly logo: string | null;
+    readonly cover: string | null;
+    /** Only a theme: nothing to grant, managed under Appearance. */
+    readonly themeOnly: boolean;
+    /** Asks for unrestricted access: the dashboard warns, and granting it takes a separate yes. */
+    readonly unrestricted: boolean;
+    /**
+     * Where its server code runs: `isolated` in a Worker of its own, where its permissions are
+     * enforced, or `app`, where the build's checks are all that holds it (specs/cms-plugin-isolation.md).
+     */
+    readonly runtime: 'isolated' | 'app';
+    /** Why it runs in the application, when the build said. */
+    readonly runtimeReason?: string;
+    readonly active: boolean;
+    readonly reason?: string;
+    /** Grants the manifest requests that are not granted yet. */
+    readonly missing: readonly string[];
+    /** Everything the manifest requests, for a network admin's approval. */
+    readonly requests: readonly string[];
+    /** What the network decides: active on every site, the site's choice, or hidden. */
+    readonly network: NetworkPluginState;
+}
+
+export interface ActivationStatus {
+    readonly resources: { readonly id: string; readonly active: boolean }[];
+    readonly plugins: readonly PluginStatus[];
+}
+
+/** How long an isolated command or job may run; hooks keep their point's deadline. */
+const ISOLATED_WORK_MS = 60_000;
+
+/** The bundle of a plugin the build isolated, or null when its server code runs in the application. */
+function isolatedCode(registration: PluginRegistrationLike): IsolatedPluginCode | null {
+    const isolation = registration.isolation;
+    return isolation?.mode === 'isolated' && typeof isolation.code === 'string' && typeof isolation.hash === 'string'
+        ? { name: registration.name, version: registration.version, code: isolation.code, hash: isolation.hash } : null;
+}
+
+interface HostedPlugin {
+    readonly registration: PluginRegistrationLike;
+    readonly manifest: CmsPluginManifest;
+    readonly problems: readonly string[];
+    readonly resources: readonly string[];
+    readonly requested: readonly string[];
+    readonly commands: Map<string, CommandHandler>;
+}
+
+interface Activation {
+    readonly hashes: ReadonlyMap<string, string>;
+    readonly grants: ReadonlyMap<string, ReadonlySet<string>>;
+    /** Host schema versions in the ledger; empty before setup. */
+    readonly hostVersions: ReadonlySet<number>;
+    /** The network's plugin and theme states. */
+    readonly policy: NetworkPolicy;
+}
+
+/** Every plugin needs this grant; disabling a plugin removes it with the others. */
+export const PLUGIN_ENABLED = 'plugin:enabled';
+
+/** Where an account and what signs it in live: the site's own database, or the network's. */
+export interface AccountStores {
+    readonly kind: 'site' | 'network';
+    readonly accounts: CmsAccounts;
+    readonly security: CmsSecurity;
+    readonly apiTokens: CmsApiTokens;
+}
+
+export class CmsHost {
+    readonly db: RomeDB;
+    /** The network database; the same as `db` on the main site. */
+    readonly network: RomeDB;
+    /** This site's ID in the network: `main`, or the registry ID. */
+    readonly site: string;
+    readonly hooks: HookRegistry;
+    /** Network accounts: who signs in on the network host, on the network database. */
+    readonly accounts: CmsAccounts;
+    /**
+     * Site accounts: people who sign in on this site only, on its own database, with their own
+     * second factors, passkeys and application passwords. Null on the main site, whose accounts
+     * are the network's.
+     */
+    readonly siteAccounts: CmsAccounts | null;
+    /** This site's members and roles. */
+    readonly users: CmsUsers;
+    readonly outbox: Outbox;
+    readonly authSessions: ReturnType<typeof createAuthSessionStore>;
+    readonly oauthStates: ReturnType<typeof createOAuthStateStore>;
+    readonly sessions: ReturnType<typeof createSessionStore>;
+    readonly taxonomies: CmsTaxonomies;
+    readonly settings: CmsSettings;
+    readonly menus: CmsMenus;
+    /** Widget areas of themes: block lists edited under Appearance → Widgets. */
+    readonly areas: CmsAreas;
+    /** Field groups: meta boxes attached to collections, taxonomies, users and menu items. */
+    readonly fieldGroups: CmsFieldGroups;
+    readonly previews: CmsPreviews;
+    readonly autosaves: CmsAutosaves;
+    /** Shared drafts of entries edited together, one per entry. */
+    readonly drafts: CmsDrafts;
+    /** Editors' review notes on entries, fields, blocks and passages. */
+    readonly notes: CmsNotes;
+    readonly redirects: CmsRedirects;
+    readonly apiTokens: CmsApiTokens;
+    readonly webhooks: CmsWebhooks;
+    readonly indexnow: CmsIndexNow;
+    /** Purges of the caches in front of the site, queued by changes and sent from the outbox. */
+    readonly purge: CmsPurge;
+    /** The site's search index over what visitors may read, kept with each entry write. */
+    readonly siteSearch: SiteSearch;
+    readonly traffic: CmsTraffic;
+    readonly comments: CmsComments;
+    /** Forms' submissions: taking them, notifications, and handling them in the dashboard. */
+    readonly forms: CmsForms;
+    /**
+     * Sends email as the site, when the application gave a transport (`createCMS({ mail })`);
+     * null skips every email. Each message gets the HTML layout and `cms.mail.before-send`; say
+     * what it is with `kind`.
+     */
+    readonly mail: CmsMailer | null;
+    /** The sender of the emails the CMS sends. */
+    readonly mailFrom: string;
+    /** Plugin schedules: `tick()` from maintenance queues the due occurrences as jobs. */
+    readonly schedules: CmsSchedules;
+    /** The audit trail of writes, for Tools → Activity. */
+    readonly audit: CmsAudit;
+    /** The application's AI provider, or null. */
+    readonly ai: AiProvider | null;
+    /** The application's payments provider, or null. */
+    readonly payments: PaymentsProvider | null;
+    /** Automations: emails and webhooks run from the site's events (Tools → Automations). */
+    readonly automations: CmsAutomations;
+    readonly #secrets: (name: string) => string | undefined;
+    readonly #env: Readonly<Record<string, unknown>>;
+    /** Second factors and passkeys of network accounts, on the network database. */
+    readonly security: CmsSecurity;
+    /** Second factors and passkeys of site accounts; null on the main site. */
+    readonly siteSecurity: CmsSecurity | null;
+    /** Application passwords of site accounts; null on the main site. */
+    readonly siteApiTokens: CmsApiTokens | null;
+    /** Media files, when the host has object storage. */
+    readonly files: FileService | null;
+    /** A cache shared by every isolate, on RomeDB: values slow to compute, such as the library's summary. */
+    readonly cache: CmsCache;
+    readonly readLimits: WorkLimits;
+    readonly writeLimits: WorkLimits;
+    /** Increments on every committed mutation, so request middleware can schedule delivery. */
+    outboxWrites = 0;
+    /** Code-declared resources: modules, the application and plugins. */
+    readonly #static = new Map<string, Resource>();
+    /** Static resources and the current collections. */
+    #resources = new Map<string, Resource>();
+    readonly #repositories = new Map<string, ResourceRepository>();
+    readonly #plugins = new Map<string, HostedPlugin>();
+    readonly #runner: PluginRunner | null;
+    /** Isolated plugins: the context the bridge serves, and the bundle the runner loads. */
+    readonly #isolated = new Map<string, { readonly context: PluginContext; readonly code: IsolatedPluginCode }>();
+    /** Extension points plugins provide, by name, built from their manifests. */
+    readonly #pluginPoints = new Map<string, { readonly point: ExtensionPoint; readonly plugin: string }>();
+    readonly #builtinCollections = new Map<string, CollectionDefinition>();
+    readonly #builtinTaxonomies = new Map<string, TaxonomyDeclaration>();
+    #collections = new Map<string, CollectionDefinition>();
+    /** Stored field groups, as last loaded; `#apply` merges their fields into the targets. */
+    #groups: readonly FieldGroup[] = [];
+    #taxonomies = new Map<string, TaxonomyDeclaration>();
+    readonly #blocks = new Map<string, BlockDeclaration & { readonly plugin?: string }>();
+    readonly #themes = new Map<string, ThemeInfo>();
+    /** Plugins that are active, as of the last `ready()` or grant: their collections are on the site. */
+    #activePlugins = new Set<string>();
+    readonly #reservedPaths: ReadonlySet<string>;
+    readonly #now: () => number;
+    readonly #activationTtl: number;
+    readonly #fetch: typeof globalThis.fetch;
+    readonly #loaderTimeout: number;
+    readonly #dataLimit: number;
+    #activation: { at: number; state: Promise<Activation> } | undefined;
+    /** The active theme's field groups are being stored: `#refreshPlugins` runs again meanwhile and must not start over. */
+    #seedingTheme = false;
+    #definitions: { at: number; state: Promise<void> } | undefined;
+    #upgrading: Promise<void> | undefined;
+    #installed = false;
+
+    constructor(options: CmsOptions) {
+        this.db = options.db;
+        this.network = options.network ?? options.db;
+        this.site = options.site ?? 'main';
+        this.hooks = options.hooks ?? createHookRegistry();
+        this.#now = options.now ?? Date.now;
+        this.#activationTtl = options.activationTtlMs ?? 30_000;
+        this.#reservedPaths = new Set(options.reservedPaths ?? ['api', 'auth', 'dashboard', 'feed', 'media', 'preview', 'search', 'author', 'indexnow', 'sitemaps']);
+        this.#fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
+        this.#loaderTimeout = options.themeLoaderTimeoutMs ?? 1500;
+        this.#dataLimit = options.themeDataLimit ?? 65_536;
+        this.readLimits = { rowsRead: 50_000, vmSteps: 2_000_000, ...options.workLimits?.read };
+        this.writeLimits = { rowsRead: 50_000, rowMutations: 1_000, vmSteps: 2_000_000, ...options.workLimits?.write };
+        const modules = options.modules ?? [];
+        for (const module of modules) for (const declaration of module.resources) this.#register(resolveResource(declaration, module.owner));
+        for (const declaration of options.resources ?? []) this.#register(resolveResource(declaration, declaration.owner ?? 'app'));
+        this.#runner = options.runner ?? null;
+        for (const registration of options.plugins ?? []) this.#host(registration);
+        this.#resolvePluginPoints();
+        for (const taxonomy of [...modules.flatMap(module => module.taxonomies ?? []), ...(options.taxonomies ?? [])]) {
+            const problems = taxonomyProblems(taxonomy);
+            if (problems.length || this.#builtinTaxonomies.has(taxonomy.name)) throw new Error(`Taxonomy ${taxonomy.name}: ${problems.join(' ') || 'declared twice.'}`);
+            this.#builtinTaxonomies.set(taxonomy.name, Object.freeze({ ...taxonomy, builtin: true }));
+        }
+        for (const definition of modules.flatMap(module => module.collections ?? [])) {
+            const problems = collectionProblems(definition);
+            if (problems.length || this.#builtinCollections.has(definition.name)) throw new Error(`Collection ${definition.name}: ${problems.join(' ') || 'declared twice.'}`);
+            this.#builtinCollections.set(definition.name, Object.freeze({ ...definition, builtin: true }));
+        }
+        // Plugin collections are built in, tagged with the plugin; a name another declares makes the plugin invalid.
+        for (const plugin of [...this.#plugins.values()]) {
+            if (plugin.problems.length) continue;
+            const taken = (plugin.manifest.collections ?? []).filter(definition => this.#builtinCollections.has(definition.name)).map(definition => `Collection ${definition.name} is already declared.`);
+            if (taken.length) { this.#plugins.set(plugin.manifest.name, { ...plugin, problems: taken, requested: [] }); continue; }
+            for (const definition of plugin.manifest.collections ?? []) this.#builtinCollections.set(definition.name, Object.freeze({ ...definition, builtin: true, plugin: plugin.manifest.name }));
+        }
+        const blocks = [...modules.flatMap(module => (module.blocks ?? []).map(block => ({ block, owner: undefined as string | undefined }))), ...(options.blocks ?? []).map(block => ({ block, owner: undefined }))];
+        for (const plugin of this.#plugins.values()) if (!plugin.problems.length) blocks.push(...(plugin.manifest.blocks ?? []).map(block => ({ block, owner: plugin.manifest.name })));
+        for (const { block, owner } of blocks) {
+            const problems = blockProblems(block);
+            if (problems.length || this.#blocks.has(block.name)) throw new Error(`Block ${block.name}: ${problems.join(' ') || 'declared twice.'}`);
+            this.#blocks.set(block.name, Object.freeze({ ...block, ...(owner ? { plugin: owner } : {}) }));
+        }
+        this.#apply(new Map(), new Map());
+        this.fieldGroups = new CmsFieldGroups(this.db, { now: this.#now });
+        this.accounts = new CmsAccounts(this.network, { now: this.#now, ...(options.sessionsEnded ? { sessionsEnded: options.sessionsEnded } : {}) });
+        const added = this.network !== this.db;
+        // A site account's sessions are this site's: ending them ends nothing elsewhere.
+        this.siteAccounts = added ? new CmsAccounts(this.db, { now: this.#now, sessionsEnded: async ended => { if ('user' in ended) await this.authSessions.revokeAllForUser(ended.user, ended.except); } }) : null;
+        this.users = new CmsUsers(this.db, { accounts: this.accounts, ...(this.siteAccounts ? { siteAccounts: this.siteAccounts } : {}), ...(options.site ? { site: options.site } : {}), now: this.#now, checkMeta: (meta, previous, principal) => this.#checkMeta({ kind: 'users' }, meta, previous, principal) });
+        this.redirects = new CmsRedirects(this.db, { now: this.#now, changed: () => this.#purgeSite('redirects') });
+        this.traffic = new CmsTraffic(this.db, { now: this.#now });
+        this.apiTokens = new CmsApiTokens(this.network, { now: this.#now });
+        this.siteApiTokens = added ? new CmsApiTokens(this.db, { now: this.#now }) : null;
+        this.webhooks = new CmsWebhooks(this.db, { now: this.#now, fetch: options.webhookFetch ?? this.#fetch, local: options.localWebhooks === true });
+        this.comments = new CmsComments(this.db, { now: this.#now, changed: entries => this.#purgeLater('comments', { tags: entries.filter(entry => entry.resource.startsWith('cms/')).map(entry => this.purge.tag.entry(entry.resource.slice(4), entry.recordId)) }) });
+        this.mailFrom = options.mailFrom ?? 'no-reply@example.com';
+        this.mail = options.mail ? siteMailer({ transport: options.mail, from: this.mailFrom, site: this.site, hooks: this.hooks, settings: () => this.settings.all(),
+            siteUrl: typeof options.siteUrl === 'function' ? options.siteUrl : () => options.siteUrl as string | undefined }) : null;
+        const mail = this.mail;
+        this.forms = new CmsForms(this, { ...(mail ? { mail: { send: message => mail.send({ ...message, kind: 'form' }) } } : {}), mailFrom: this.mailFrom });
+        this.security = new CmsSecurity(this.network, { now: this.#now });
+        this.siteSecurity = added ? new CmsSecurity(this.db, { now: this.#now }) : null;
+        this.siteSearch = new SiteSearch(this);
+        // Rebuilds of the site's search index run from the outbox, a round of entries at a time.
+        this.hooks.addAction(searchRebuild, (event, context) => this.siteSearch.step(event, context.signal ? { signal: context.signal } : {}), { plugin: 'cms-search' });
+        // Entry events become webhook deliveries; the outbox retries this until they are queued.
+        this.hooks.addAction(afterCommit, event => this.#queueWebhooks(event), { plugin: 'cms' });
+        // Published, changed and unpublished entries are pinged to IndexNow; a failed ping retries with the outbox.
+        this.hooks.addAction(afterCommit, event => this.#pingIndexNow(event), { plugin: 'cms' });
+        // A changed page is purged from the caches in front of the site; the purge itself runs from the outbox too. Its own owner, so a retry of another handler does not queue it twice.
+        this.hooks.addAction(afterCommit, event => this.#queuePurge(event), { plugin: 'cms-cache' });
+        // Automations run from the same events, under their own name, so their retries are theirs alone.
+        this.hooks.addAction(afterCommit, event => this.#automate(event), { plugin: 'cms-automations' });
+        this.hooks.addAction(formSubmitted, async event => { await this.automations.run('form.submitted', { form: event.form.slug, formTitle: event.form.title, submission: event.submission.id, values: event.submission.values, origin: event.origin ?? '' }, await this.#automationScopes(), event.eventId); }, { plugin: 'cms-automations' });
+        this.hooks.addAction(paymentEvent, async event => { if (paymentCompleted(event)) await this.automations.run('payment.completed', { ...event, customerEmail: event.customerEmail ?? '', reference: event.reference ?? '', amount: event.amount ?? '', currency: event.currency ?? '' }, await this.#automationScopes(), event.eventId); }, { plugin: 'cms-automations' });
+        // A completed payment goes to the webhooks that take every collection's events.
+        this.hooks.addAction(paymentEvent, async event => {
+            if (!paymentCompleted(event)) return;
+            if (!(await this.webhooks.wants(['payment.completed'], ''))) return;
+            const { object: _object, ...payment } = event;
+            await this.webhooks.enqueue({ event: 'payment.completed', eventId: `${event.eventId}:payment.completed`, at: this.#now(), collection: '', payment });
+        }, { plugin: 'cms' });
+        // A deleted entry takes its comments along; under its own name, so its retries are its alone.
+        // Only those made up to the delete: an entry made again under the same ID keeps its own.
+        this.hooks.addAction(afterCommit, async event => { if (event.topic === 'resource.deleted') await this.comments.deleteForEntry(event.resource, event.id, event.at); }, { plugin: 'cms-comments' });
+        // And its revisions, drafts, autosaves, notes and preview links, each written up to the delete.
+        this.hooks.addAction(afterCommit, async event => { if (event.topic === 'resource.deleted') await this.#entryDeleted(event.resource, event.id, event.at); }, { plugin: 'cms-revisions' });
+        this.hooks.addAction(collectionDeleted, event => this.comments.deleteForResource(event.resource, event.at), { plugin: 'cms-comments' });
+        // And its entries' revisions, a page at a time; under its own name, so its retries are its alone.
+        this.hooks.addAction(collectionDeleted, event => this.#deleteRevisions(event.resource, event.at), { plugin: 'cms-revisions' });
+        // Shared fields' rows for an entry's other translations; under its own name, so its retries are its alone.
+        // A collection or taxonomy that moved: its old links redirect. Under its own name, so its retries are its alone.
+        this.hooks.addAction(pathsMoved, async event => {
+            // This isolate may hold the collection or taxonomy as it was before the move. Each
+            // move's job redirects its own old path to where the links live now, so a path that
+            // moved again before this job ran still reaches the latest one.
+            await this.ready({ force: true });
+            if (event.kind === 'taxonomy') {
+                const now = this.#taxonomies.get(event.name)?.path;
+                if (!now || now === event.from) return;
+                await this.redirects.record([{ from: `/${event.from}`, to: `/${now}`, prefix: true }], event.by);
+                // The new path serves the taxonomy again: an older redirect away from it goes, or moving back would loop.
+                await this.redirects.dropPrefix(`/${now}`);
+                return;
+            }
+            const after = this.#collections.get(event.name);
+            if (!after || after.path === event.from) return;
+            await this.#pathRedirects({ ...after, path: event.from }, after, event.by);
+        }, { plugin: 'cms-paths' });
+        const announceNote = options.announceNote;
+        if (announceNote) this.hooks.addAction(noteAnnounced, event => announceNote(this, event), { plugin: 'cms-notes' });
+        this.hooks.addAction(sharedFields, async (event, context) => {
+            if (!this.resources.some(resource => resource.id === event.resource)) return;
+            await this.resource(event.resource).sharedSideEffects(event, context.signal ? { signal: context.signal } : {});
+        }, { plugin: 'cms-shared' });
+        // A saved form brings its submissions table up to date; a deleted one takes its table along.
+        this.hooks.addAction(afterCommit, async event => {
+            if (event.resource !== 'cms/forms') return;
+            if (event.topic === 'resource.deleted') { await this.forms.dropTable(event.id); return; }
+            if (!event.record) return;
+            // A retry can run after the form was deleted or saved again: only the form as it stands
+            // now, at this event's revision, loads (and so makes its table); a later save's event loads its own.
+            const current = await this.resource('cms/forms').get(event.id, { principal: systemPrincipal('forms') });
+            if (current && current.rev === event.revision) await this.forms.load(current);
+        }, { plugin: 'cms' });
+        // Submissions send the form's notifications and queue webhooks; both retry with the outbox.
+        this.hooks.addAction(formSubmitted, event => this.forms.notify(event), { plugin: 'cms' });
+        this.hooks.addAction(formSubmitted, event => this.#queueFormWebhooks(event), { plugin: 'cms' });
+        this.outbox = new Outbox(this.db, this.hooks, { now: this.#now, ...options.outbox });
+        // The main site's sessions are the network's; another site's are child sessions handed off from them.
+        this.authSessions = createAuthSessionStore(this.db, { now: this.#now, request: requestMetadata, ...(options.sessionsEnded ? { sessionsEnded: options.sessionsEnded } : {}) });
+        this.oauthStates = createOAuthStateStore(this.network);
+        this.sessions = createSessionStore(this.db, { now: this.#now });
+        this.taxonomies = new CmsTaxonomies(this.db, {
+            taxonomies: () => this.#taxonomies,
+            now: this.#now,
+            beforeSave: (draft, input) => this.hooks.applyFilters(termBeforeSave, draft, input),
+            checkMeta: taxonomy => (meta, previous, principal) => this.#checkMeta({ kind: 'taxonomy', name: taxonomy }, meta, previous, principal),
+            usage: name => this.resources.flatMap(resource => Object.entries(resource.fields)
+                .filter(([, declaration]) => declaration.taxonomy === name).map(([field]) => ({ resource: resource.id, storage: resource.storage, field }))),
+            canAssign: (principal, taxonomy) => this.taxonomies.usage(taxonomy.name).some(({ resource: id }) => {
+                const resource = this.#resources.get(id);
+                return resource !== undefined && (evaluateRule(resource.access.create, principal) !== 'deny' || evaluateRule(resource.access.update, principal) !== 'deny');
+            }),
+            // A term archive keeps answering at its old slug.
+            slugChanged: (taxonomy, from, to, guard) => taxonomy.path ? this.redirects.automatic(`/${taxonomy.path}/${from}`, `/${taxonomy.path}/${to}`, { guard: guard.rql, params: guard.params }) : [],
+            changed: () => this.#purgeSite('terms'),
+        });
+        for (const resource of this.#static.values()) for (const [name, declaration] of Object.entries(resource.fields)) {
+            if (declaration.taxonomy && !this.#builtinTaxonomies.has(declaration.taxonomy)) throw new Error(`${resource.id}.${name} uses taxonomy ${declaration.taxonomy}, which no module declares.`);
+        }
+        const groups = [general, interfaceGroup, media, emailGroup, appearance, dashboardGroup, cacheGroup, analyticsGroup, ...modules.flatMap(module => module.settings ?? []), ...(options.settings ?? [])];
+        for (const group of groups) {
+            if (group.plugin !== undefined || group.id.startsWith('plugin:')) throw new Error('Plugin settings namespaces and ownership are assigned by the CMS host.');
+        }
+        for (const plugin of this.#plugins.values()) {
+            const declaration = plugin.manifest.settings;
+            if (plugin.problems.length || !declaration) continue;
+            groups.push({ ...declaration, id: pluginSettingsGroupId(plugin.manifest.name), plugin: plugin.manifest.name, json: true, permission: PERMISSIONS.manageSettings });
+        }
+        for (const plugin of this.#plugins.values()) {
+            if (!plugin.manifest.theme) continue;
+            const theme = this.#hostTheme(plugin, new Set(groups.map(group => group.id)));
+            if (theme.options && !theme.problems.length) groups.push(theme.options);
+            this.#themes.set(theme.name, theme);
+        }
+        this.settings = new CmsSettings(this.db, groups, { now: this.#now, changed: () => this.#purgeSite('settings') });
+        this.indexnow = new CmsIndexNow(this.settings, { now: this.#now, fetch: this.#fetch, siteUrl: typeof options.siteUrl === 'function' ? options.siteUrl : () => options.siteUrl as string | undefined });
+        this.menus = new CmsMenus(this.db, { now: this.#now, checkMeta: (meta, previous, principal) => this.#checkMeta({ kind: 'menus' }, meta, previous, principal), resolve: (items, locale) => this.#resolveMenu(items, locale), beforeSave: (items, input) => this.hooks.applyFilters(menuBeforeSave, items, input), changed: () => this.#purgeSite('menus') });
+        this.areas = new CmsAreas(this.db, { now: this.#now, check: blocks => this.#checkBlocks(blocks), changed: () => this.#purgeSite('areas') });
+        this.previews = new CmsPreviews(this.db, { now: this.#now });
+        const sharedFieldsOf = (id: string) => this.#sharedFields(id);
+        this.autosaves = new CmsAutosaves(this.db, { now: this.#now, sharedFields: sharedFieldsOf });
+        this.drafts = new CmsDrafts(this.db, { now: this.#now, sharedFields: sharedFieldsOf });
+        this.notes = new CmsNotes(this.db, { now: this.#now });
+        this.files = options.storage ? new FileService(this.db, options.storage, { now: this.#now, ...(options.images ? { images: options.images } : {}), imageSettings: () => this.#imageSettings(), changed: () => this.#purgeSite('media'), ...options.files }) : null;
+        this.cache = new CmsCache(this.db, { now: this.#now });
+        this.#secrets = options.secrets ?? (() => undefined);
+        this.#env = options.env ?? {};
+        this.audit = new CmsAudit(this.db, { now: this.#now });
+        this.ai = options.ai ?? null;
+        this.payments = options.payments ?? null;
+        this.automations = new CmsAutomations(this.db, {
+            mail: this.mail, mailFrom: this.mailFrom, now: this.#now,
+            principal: id => this.users.principal(id),
+            // As the repository answers the author: without the fields their permissions do not read,
+            // and a locked entry as its readers see it unless the author may update it.
+            redact: (collection, record, principal) => {
+                const fields = this.#collections.has(collection) ? this.resourceById(`cms/${collection}`).fields : {};
+                const editor = this.#collections.has(collection) && this.resource(`cms/${collection}`).canUpdate(record as RecordShape, principal);
+                const seen = editor ? record : lockedView(record as RecordShape, fields);
+                const hidden = Object.entries(fields).filter(([, field]) => field.access?.read && !hasPermission(principal, field.access.read)).map(([name]) => name);
+                return hidden.length ? Object.fromEntries(Object.entries(seen).filter(([name]) => !hidden.includes(name))) : seen;
+            },
+        });
+        this.schedules = new CmsSchedules(this.db, { outbox: this.outbox, now: this.#now, schedules: () => this.#dueSchedules(), queued: () => this.outboxWritten() });
+        this.purge = new CmsPurge({ outbox: this.outbox, hooks: this.hooks, cache: this.cache, site: this.site, purgers: options.purgers ?? [], now: this.#now, queued: () => this.outboxWritten() });
+        for (const module of modules) module.register?.({ hooks: this.hooks, settings: this.settings, taxonomies: this.taxonomies, collection: name => this.#collections.get(name), blocks: () => this.#blocks, now: this.#now });
+        for (const plugin of this.#plugins.values()) this.#registerPlugin(plugin);
+        if (!options.hooks) this.hooks.freeze();
+    }
+
+    now(): number { return this.#now(); }
+
+    get resources(): readonly Resource[] { return [...this.#resources.values()]; }
+
+    /** Revisions of a dropped collection's entries written up to `before`. */
+    async #deleteRevisions(resource: string, before: number): Promise<void> {
+        await this.#deletePages('cms_revisions', 'resource = $resource AND at <= $before', { $resource: resource, $before: before });
+    }
+
+    /**
+     * What a deleted entry leaves behind, written up to its delete at `before`: its revisions, the
+     * room's draft, autosaves, notes and preview links. An entry made again under the same ID
+     * (seeded patterns are) starts afresh and keeps whatever it got after the delete.
+     */
+    async #entryDeleted(resource: string, id: string, deletedAt: number): Promise<void> {
+        // Made again already: only what was written before the new record began goes.
+        const again = this.#resources.has(resource) ? await this.resource(resource).get(id, { principal: systemPrincipal('cleanup') }).catch(() => null) : null;
+        const before = again ? Math.min(deletedAt, again.createdAt - 1) : deletedAt;
+        const params = { $resource: resource, $record: id, $before: before };
+        await this.#deletePages('cms_revisions', 'resource = $resource AND record_id = $record AND at <= $before', params);
+        await this.db.write([
+            { rql: 'DELETE FROM cms_drafts WHERE resource = $resource AND record_id = $record AND at <= $before', params },
+            { rql: 'DELETE FROM cms_autosaves WHERE resource = $resource AND record_id = $record AND at <= $before', params },
+            { rql: 'DELETE FROM cms_preview_tokens WHERE resource = $resource AND record_id = $record AND created_at <= $before', params },
+            { rql: 'DELETE FROM cms_note_mentions WHERE thread_id IN (SELECT id FROM cms_notes WHERE resource = $resource AND record_id = $record AND parent_id IS NULL AND created_at <= $before)', params },
+            { rql: 'DELETE FROM cms_notes WHERE resource = $resource AND record_id = $record AND created_at <= $before', params },
+        ], { kind: 'cms.revisions', retryConflicts: 5, workLimits: this.writeLimits });
+    }
+
+    /** Delete matching rows of a table with an `id` key, 500 at a time (under a write's row limit). */
+    async #deletePages(table: 'cms_revisions', where: string, params: { [key: string]: Value }): Promise<void> {
+        for (;;) {
+            const result = await this.db.write([{ rql: `DELETE FROM ${table} WHERE id IN (SELECT id FROM ${table} WHERE ${where} LIMIT 500)`, params }], { kind: 'cms.revisions', retryConflicts: 5, workLimits: this.writeLimits });
+            if (Number(result.results[0]!.affected) < 500) return;
+        }
+    }
+
+    /** A translated resource's fields that are the same in every language. */
+    #sharedFields(id: string): readonly string[] {
+        const resource = this.#resources.get(id);
+        if (!resource?.fields.translationGroup) return [];
+        return Object.entries(resource.fields).filter(([, declaration]) => declaration.translatable === false).map(([name]) => name);
+    }
+
+    resourceById(id: string): Resource {
+        const resource = this.#resources.get(id) ?? this.forms.resourceById(id);
+        if (!resource) throw new CmsError('CMS_NOT_FOUND', `Unknown resource ${id}.`);
+        return resource;
+    }
+
+    resource(id: string): ResourceRepository {
+        let repository = this.#repositories.get(id);
+        if (!repository) {
+            this.resourceById(id);
+            repository = new ResourceRepository(this, id);
+            this.#repositories.set(id, repository);
+        }
+        return repository;
+    }
+
+    /**
+     * Load collection and taxonomy definitions made in the dashboard. Cached like activation;
+     * request middleware awaits this so `resource()` sees current collections.
+     */
+    ready(options: { force?: boolean } = {}): Promise<void> {
+        const now = this.#now();
+        if (options.force || !this.#definitions || now - this.#definitions.at > this.#activationTtl) {
+            const state = this.#loadDefinitions().then(() => options.force ? undefined : this.#upgrade()).then(() => this.#refreshPlugins());
+            this.#definitions = { at: now, state };
+            state.catch(() => { this.#definitions = undefined; });
+        }
+        return this.#definitions.state;
+    }
+
+    /** Current collections: built-in ones first, then by label. Collections of inactive plugins are left out. */
+    collections(): CollectionDefinition[] {
+        return [...this.#collections.values()].filter(collection => this.#shown(collection))
+            .sort((a, b) => Number(!a.builtin) - Number(!b.builtin) || a.label.localeCompare(b.label));
+    }
+
+    #shown(collection: CollectionDefinition): boolean {
+        return !collection.plugin || this.#activePlugins.has(collection.plugin);
+    }
+
+    /** Which plugins are active, for the collections they ship; and the active theme's field groups, stored once the site is set up. */
+    async #refreshPlugins(): Promise<void> {
+        const state = await this.#state().catch(() => null);
+        const active = new Set<string>();
+        if (state) for (const plugin of this.#plugins.values()) if ((await this.#pluginStatus(plugin, state)).active) active.add(plugin.manifest.name);
+        this.#activePlugins = active;
+        // A theme needs no grant, so nothing else would store the groups it ships. Storing them loads the definitions again, hence the guard.
+        if (state?.hostVersions.has(1) && !this.#seedingTheme) {
+            this.#seedingTheme = true;
+            try { await this.#seedThemeGroups(await this.activeTheme().catch(() => null)); }
+            finally { this.#seedingTheme = false; }
+        }
+    }
+
+    /** The module's definition of a built-in collection, without fields an administrator added. */
+    builtinCollection(name: string): CollectionDefinition | undefined {
+        return this.#builtinCollections.get(name);
+    }
+
+    collection(name: string): CollectionDefinition {
+        const definition = this.#collections.get(name);
+        if (!definition || !this.#shown(definition)) throw new CmsError('CMS_NOT_FOUND', `Unknown collection ${name}.`);
+        return definition;
+    }
+
+    /** Block types from modules and active plugins, for the editor's block picker. */
+    async blocks(): Promise<(BlockDeclaration & { readonly plugin?: string })[]> {
+        const available: (BlockDeclaration & { readonly plugin?: string })[] = [];
+        for (const block of this.#blocks.values()) if (!block.plugin || await this.pluginActive(block.plugin)) available.push(block);
+        return available;
+    }
+
+    /** Every registered block type, for validation and rendering. */
+    get blockTypes(): ReadonlyMap<string, BlockDeclaration> { return this.#blocks; }
+
+    /**
+     * Store a profile picture in the media library and set it on the user. The user themself or
+     * a user manager may; still and animated images up to 5 MB. Returns the picture's URL.
+     */
+    async uploadAvatar(userId: string, file: { name: string; contentType: string; size: number; body: ReadableStream<Uint8Array> }, context: { principal: Principal; signal?: AbortSignal }): Promise<string> {
+        const self = context.principal.kind === 'user' && context.principal.id === userId;
+        if (!self && !hasPermission(context.principal, PERMISSIONS.manageUsers)) throw new CmsError(context.principal.kind === 'anonymous' ? 'CMS_UNAUTHENTICATED' : 'CMS_FORBIDDEN', 'Not allowed to change this picture.');
+        if (!this.files) throw new CmsError('CMS_UNAVAILABLE', 'File storage is not configured.');
+        if (!AVATAR_TYPES.includes(file.contentType.split(';')[0]!.trim().toLowerCase())) throw new CmsError('CMS_VALIDATION', 'Choose a PNG, JPEG, GIF, WebP or AVIF image.');
+        const user = await this.users.get(userId);
+        if (!user) throw new CmsError('CMS_NOT_FOUND', 'User not found.');
+        const stored = await this.files.upload({ ...file, title: `Avatar of ${user.name}` }, { principal: systemPrincipal('avatar'), owner: userId, maxBytes: 5 * 1024 * 1024, ...(context.signal ? { signal: context.signal } : {}) });
+        const url = mediaUrl(stored);
+        await this.users.update(userId, { avatar: url });
+        return url;
+    }
+
+    /**
+     * Publish scheduled entries whose publication time has come, and take back to draft the
+     * published entries whose `unpublishAt` has passed, as `system:scheduler`, so their webhooks
+     * and outbox events fire at that moment. Returns how many of each changed.
+     */
+    async runSchedule(options: { limit?: number } = {}): Promise<{ published: number; unpublished: number }> {
+        const scheduler = { principal: systemPrincipal('scheduler') };
+        const done = { published: 0, unpublished: 0 };
+        for (const collection of this.#collections.values()) {
+            if (collection.publishable === false) continue;
+            const repository = this.resource(`cms/${collection.name}`);
+            const now = this.#now();
+            const due = [
+                { kind: 'published', where: { status: 'scheduled', publishedAt: { lte: now } }, order: 'publishedAt', change: { status: 'published' } },
+                { kind: 'unpublished', where: { status: 'published', unpublishAt: { lte: now } }, order: 'unpublishAt', change: { status: 'draft', unpublishAt: null } },
+            ] as const;
+            for (const step of due) {
+                const limit = options.limit ?? 50;
+                // An entry that fails each time (a plugin filter refusing it, a size limit) is logged and
+                // passed over: the run goes on, and pages past a full page of such entries.
+                let skipped = 0;
+                for (let round = 0; round < 5; round++) {
+                    let records: readonly RecordShape[];
+                    try {
+                        records = (await repository.list({ where: step.where, order: { field: step.order, direction: 'asc' }, limit, offset: skipped }, scheduler)).records;
+                    } catch (error) {
+                        if (error instanceof CmsError && error.code === 'CMS_UNAVAILABLE') break;
+                        throw error;
+                    }
+                    let failed = 0;
+                    for (const record of records) {
+                        try {
+                            await repository.update(record.id, step.change, { ...scheduler, expectedRevision: record.rev });
+                            done[step.kind]++;
+                        } catch (error) {
+                            // Changed meanwhile: the next run sees the current revision.
+                            if (error instanceof CmsError && error.code === 'CMS_CONFLICT') continue;
+                            if (error instanceof CmsError && error.code === 'CMS_UNAVAILABLE') throw error;
+                            failed++;
+                            console.error(`[cms] could not ${step.kind === 'published' ? 'publish' : 'unpublish'} the scheduled entry ${collection.name}/${record.id}`, error);
+                        }
+                    }
+                    skipped += failed;
+                    if (records.length < limit || failed < records.length) break;
+                }
+            }
+        }
+        return done;
+    }
+
+    /**
+     * Published, indexable entries of a collection on the site for its XML sitemap, oldest
+     * first, `limit` (at most 1,000) from `offset`: their URLs, last changes and featured images.
+     */
+    async sitemapEntries(name: string, options: { offset?: number; limit?: number } = {}): Promise<{ id: string; url: string; title: string; locale: string | null; translationGroup: string | null; publishedAt: number | null; updatedAt: number; image?: string }[]> {
+        const collection = this.collection(name);
+        if (collection.path === null || collection.path === undefined || collection.slug === false || collection.sitemap === false || collection.robots?.noindex || (collection.publishable === false && collection.visibility !== 'public')) return [];
+        const limit = Math.min(Math.max(options.limit ?? 1000, 1), 1000);
+        const offset = Math.min(Math.max(options.offset ?? 0, 0), 1_000_000);
+        const resource = this.resourceById(`cms/${collection.name}`);
+        await this.assertActive(resource);
+        const taxonomy = collection.permalink === 'category' ? collection.taxonomies?.[0] : undefined;
+        const image = resource.fields.featuredImage?.media ? 'featuredImage' : undefined;
+        // Search engines send no password or session: protected and members-only entries stay out, as in feeds and search.
+        const conditions = [
+            ...(collection.publishable === false ? [] : [`"status" = 'published'`]),
+            ...(resource.fields.password ? [`("password" IS NULL OR "password" = '')`] : []),
+            ...(resource.fields.membersOnly ? ['NOT coalesce("membersOnly", false)'] : []),
+        ];
+        // A thousand entries' SEO fields can pass the result budget: the page may come in smaller reads.
+        const rows = await readPaged(this.db, (size, at) => ({
+            rql: `SELECT id, "slug", "parent", "locale", "seo", "_updatedAt", "_createdAt", "_owner", ${taxonomy ? `"${taxonomy}"` : 'NULL'}, ${image ? `"${image}"` : 'NULL'}, "title", "translationGroup", ${collection.publishable === false ? 'NULL' : '"publishedAt"'} FROM ${resource.storage}${conditions.length ? ` WHERE ${conditions.join(' AND ')}` : ''} ORDER BY "_createdAt", record::id(id) LIMIT $limit OFFSET $offset`,
+            params: { $limit: size, $offset: at },
+        }), limit, offset, { workLimits: this.readLimits });
+        const records = rows.map(([id, slug, parent, locale, seo, updatedAt, createdAt, owner, terms, picture, title, translationGroup, publishedAt]) => Object.freeze({
+            id: String((id as { key: unknown }).key), rev: 0, slug, parent: parent && typeof parent === 'object' && 'key' in parent ? String((parent as { key: unknown }).key) : null,
+            locale, seo, title, translationGroup, publishedAt: publishedAt === null || publishedAt === undefined ? null : Number(publishedAt as bigint), status: 'published', updatedAt: Number(updatedAt as bigint), createdAt: Number(createdAt as bigint), owner: (owner as string | null) ?? null,
+            ...(taxonomy ? { [taxonomy]: Array.isArray(terms) ? terms : [] } : {}),
+            ...(image ? { [image]: typeof picture === 'string' ? picture : null } : {}),
+        }) as RecordShape);
+        const indexable = records.filter(record => !(record.seo && typeof record.seo === 'object' && (record.seo as { noindex?: unknown }).noindex === true));
+        const urls = await this.entryUrls(collection, indexable);
+        // Featured images, as image sitemap entries.
+        const files = image && this.files ? await this.files.getMany(indexable.map(record => record[image]).filter((id): id is string => typeof id === 'string')) : new Map<string, CmsFile>();
+        return indexable.flatMap(record => {
+            const url = urls.get(record.id);
+            if (!url) return [];
+            const file = image ? files.get(String(record[image] ?? '')) : undefined;
+            return [{ id: record.id, url, title: String(record.title ?? ''), locale: typeof record.locale === 'string' ? record.locale : null, translationGroup: typeof record.translationGroup === 'string' ? record.translationGroup : null, publishedAt: record.publishedAt as number | null, updatedAt: record.updatedAt, ...(file && file.contentType.startsWith('image/') ? { image: mediaUrl(file) } : {}) }];
+        });
+    }
+
+    /** A shareable link to preview an entry the principal may edit. */
+    async createPreviewLink(resourceId: string, id: string, principal: Principal, ttlMs?: number): Promise<PreviewLink> {
+        await this.#editable(resourceId, id, principal);
+        return this.previews.create(resourceId, id, principalId(principal), ttlMs);
+    }
+
+    async revokePreviewLinks(resourceId: string, id: string, principal: Principal): Promise<void> {
+        await this.#editable(resourceId, id, principal);
+        await this.previews.revoke(resourceId, id);
+    }
+
+    /** The entry a preview link opens, read whatever its status, or null. */
+    async previewByToken(token: string): Promise<{ resource: Resource; record: RecordShape } | null> {
+        const link = await this.previews.verify(token);
+        if (!link || !this.#resources.has(link.resource)) return null;
+        const record = await this.resource(link.resource).get(link.recordId, { principal: systemPrincipal('preview') });
+        return record ? { resource: this.resourceById(link.resource), record } : null;
+    }
+
+    /** Store the editor's unsaved values of an entry (`new` before its first save) for its user. */
+    async autosave(resourceId: string, id: string, principal: Principal, data: unknown): Promise<number> {
+        const user = await this.#autosaver(resourceId, id, principal);
+        return this.autosaves.save(resourceId, id, user, data);
+    }
+
+    async latestAutosave(resourceId: string, id: string, principal: Principal): Promise<Autosave | null> {
+        if (principal.kind !== 'user') return null;
+        return this.autosaves.get(resourceId, id, principal.id);
+    }
+
+    async discardAutosave(resourceId: string, id: string, principal: Principal): Promise<void> {
+        if (principal.kind === 'user') await this.autosaves.discard(resourceId, id, principal.id);
+    }
+
+    async #autosaver(resourceId: string, id: string, principal: Principal): Promise<string> {
+        if (principal.kind !== 'user') throw new CmsError('CMS_UNAUTHENTICATED', 'Sign in to save drafts.');
+        if (id === 'new') {
+            if (evaluateRule(this.resourceById(resourceId).access.create, principal) === 'deny') throw new CmsError('CMS_FORBIDDEN', `Not allowed to create ${resourceId}.`);
+        } else await this.#editable(resourceId, id, principal);
+        return principal.id;
+    }
+
+    /** The record, when the principal may read and update it. */
+    async #editable(resourceId: string, id: string, principal: Principal): Promise<RecordShape> {
+        const repository = this.resource(resourceId);
+        const record = await repository.get(id, { principal });
+        if (!record) throw new CmsError('CMS_NOT_FOUND', 'Record not found.');
+        if (!repository.canUpdate(record, principal)) throw new CmsError(principal.kind === 'anonymous' ? 'CMS_UNAUTHENTICATED' : 'CMS_FORBIDDEN', 'Not allowed to edit this entry.');
+        return record;
+    }
+
+    /**
+     * The principal of an application password, with its access, or null. Only the content
+     * API accepts these; `read` access may only read.
+     */
+    /**
+     * The stores that sign people in on this host: the site's own on an added site, the
+     * network's on the main site. Sign-in by email, passkey or reset token starts here.
+     */
+    get signIn(): AccountStores {
+        return this.siteAccounts ? { kind: 'site', accounts: this.siteAccounts, security: this.siteSecurity!, apiTokens: this.siteApiTokens! }
+            : { kind: 'network', accounts: this.accounts, security: this.security, apiTokens: this.apiTokens };
+    }
+
+    /** The stores holding a user's account: the site's for a site account, the network's otherwise. */
+    async storesOf(userId: string): Promise<AccountStores> {
+        return this.siteAccounts && await this.siteAccounts.get(userId) ? this.signIn
+            : { kind: 'network', accounts: this.accounts, security: this.security, apiTokens: this.apiTokens };
+    }
+
+    async tokenPrincipal(token: string): Promise<{ principal: Principal; scope: ApiTokenScope; userId: string } | null> {
+        const verified = await this.siteApiTokens?.verify(token) ?? await this.apiTokens.verify(token);
+        if (!verified) return null;
+        const user = await this.users.resolve(verified.userId);
+        return user ? { principal: user.principal, scope: verified.scope, userId: user.id } : null;
+    }
+
+    /** Whether the site has discussions at all (Settings → Discussion → Allow discussions). Off hides every comment; stored ones are kept. */
+    discussions(settings: SiteSettings): boolean {
+        return settings['discussion.enabled'] !== false;
+    }
+
+    /** Whether visitors can comment on the entry: discussions are on, its collection takes comments, it is open, and not too old. */
+    commentsOpen(collection: CollectionDefinition, record: RecordShape, settings: SiteSettings): boolean {
+        if (!this.discussions(settings) || !collection.comments || record.commentsOpen === false) return false;
+        const days = settings['discussion.closeAfterDays'];
+        const since = typeof record.publishedAt === 'number' ? record.publishedAt : record.createdAt;
+        return !days || this.#now() - since < days * 24 * 60 * 60 * 1000;
+    }
+
+    /**
+     * Post a comment on an entry visitors can read and comment on. Discussion settings decide
+     * whether it appears at once, waits for moderation or goes to spam; moderators' comments
+     * appear at once. `trap` is the form's hidden field, which only bots fill in.
+     */
+    async postComment(input: { collection: string; entry: string; parent?: string | null; content?: string; authorName?: string; authorEmail?: string; authorUrl?: string; trap?: string },
+        context: { principal: Principal; ip?: string; userAgent?: string }): Promise<{ comment: CommentShape; collection: CollectionDefinition; entry: RecordShape; url: string | null }> {
+        const collection = this.#collections.get(input.collection);
+        if (!collection?.comments) throw new CmsError('CMS_NOT_FOUND', 'This entry does not take comments.');
+        const resource = `cms/${collection.name}`;
+        const record = await this.resource(resource).get(input.entry, { principal: ANONYMOUS });
+        if (!record || (collection.publishable !== false && record.status !== 'published')) throw new CmsError('CMS_NOT_FOUND', 'This entry does not take comments.');
+        const settings = await this.settings.all();
+        if (!this.discussions(settings)) throw new CmsError('CMS_FORBIDDEN', 'Discussions are turned off on this site.');
+        if (!this.commentsOpen(collection, record, settings)) throw new CmsError('CMS_FORBIDDEN', 'Comments are closed.');
+        const user = context.principal.kind === 'user' ? await this.users.get(context.principal.id) : null;
+        if (settings['discussion.requireSignIn'] && !user) throw new CmsError('CMS_UNAUTHENTICATED', 'Sign in to comment.');
+        const fields = checkComment(user ? { content: input.content, authorName: user.name, authorEmail: user.email, authorUrl: input.authorUrl } : input, !user && settings['discussion.requireNameEmail']);
+        let parentId: string | null = null;
+        if (input.parent) {
+            const parent = await this.comments.get(input.parent);
+            if (!parent || parent.resource !== resource || parent.recordId !== record.id || parent.status !== 'approved') throw new CmsError('CMS_VALIDATION', 'The comment you reply to is gone.');
+            let depth = 1;
+            for (let current: CommentShape | null = parent; current?.parentId && depth <= 10; depth++) current = await this.comments.get(current.parentId);
+            if (depth >= settings['discussion.threadDepth']) throw new CmsError('CMS_VALIDATION', 'Replies cannot nest deeper here.');
+            parentId = parent.id;
+        }
+        const ipHash = context.ip ? await sha256Hex(`cms-comment:${context.ip}`) : null;
+        // One comment per address in 15 seconds, counted in one conditional write so a burst gets one through.
+        if (ipHash && !(await this.security.attempt('comment', ipHash, 1, 15_000))) throw new CmsError('CMS_LIMIT', 'You are posting comments too quickly. Wait a moment and try again.');
+        // "An earlier approved comment" counts for signed-in users only: an anonymous commenter types any email.
+        const status: CommentStatus = input.trap ? 'spam' : hasPermission(context.principal, PERMISSIONS.moderateComments) ? 'approved'
+            : await commentStatus(fields, settings, async () => user !== null && await this.comments.hasApproved(fields.authorEmail));
+        // Plugins check, change or hold the comment: spam filters, profanity lists, extra rules.
+        const filtered = await this.hooks.applyFilters(commentBeforeSave, Object.freeze({ ...fields, status }), Object.freeze({
+            collection: collection.name, entry: record.id, parent: parentId, actor: writeActorOf(context.principal), ...(context.ip ? { ip: context.ip } : {}), ...(context.userAgent ? { userAgent: context.userAgent } : {}),
+        }));
+        if (!filtered || typeof filtered !== 'object' || !(COMMENT_STATUSES as readonly string[]).includes(filtered.status)) throw new CmsError('CMS_VALIDATION', 'A plugin returned an invalid comment.');
+        const checked = checkComment(filtered, !user && settings['discussion.requireNameEmail']);
+        // The entry may have been deleted while plugins checked the comment: then the comment is not added.
+        const storage = this.resourceById(resource).storage;
+        const comment = await this.comments.create({ id: uuidv7(), resource, recordId: record.id, parentId, userId: user?.id ?? null, ...checked,
+            status: filtered.status, ipHash, userAgent: context.userAgent?.slice(0, 300) ?? null },
+            { rql: `EXISTS (SELECT 1 FROM ${storage} WHERE id = type::record('${storage}', $commentEntry))`, params: { $commentEntry: record.id } });
+        const url = (await this.entryUrls(collection, [record])).get(record.id) ?? null;
+        return { comment, collection, entry: record, url };
+    }
+
+    /** Moderate comments; needs `cms:comments`. */
+    async moderateComments(ids: readonly string[], status: CommentStatus | 'delete', principal: Principal): Promise<void> {
+        if (!hasPermission(principal, PERMISSIONS.moderateComments)) throw new CmsError(principal.kind === 'anonymous' ? 'CMS_UNAUTHENTICATED' : 'CMS_FORBIDDEN', 'Not allowed to moderate comments.');
+        if (status === 'delete') await this.comments.delete(ids);
+        else await this.comments.setStatus(ids, status);
+    }
+
+    async #queueFormWebhooks(event: FormSubmittedEvent): Promise<void> {
+        if (!(await this.webhooks.wants(['form.submitted'], 'forms'))) return;
+        const { submission } = event;
+        await this.webhooks.enqueue({
+            event: 'form.submitted', eventId: `${event.eventId}:form.submitted`, at: event.at, collection: 'forms',
+            form: { id: event.form.id, slug: event.form.slug, title: event.form.title },
+            submission: { id: submission.id, status: submission.status, values: submission.values, meta: submission.meta, user: submission.user, createdAt: submission.createdAt, stored: event.stored },
+        });
+    }
+
+    /**
+     * Purge what an entry event changed: its page and the lists of its collection, or the whole
+     * site when a menu names the entry. Drafts and private collections show on no page. Other
+     * resources of the CMS (patterns, forms) may show anywhere, so they purge the site. A plugin's
+     * resources purge nothing: the plugin knows which pages show them (`cms.purge.queue`).
+     */
+    async #queuePurge(event: ResourceEvent): Promise<void> {
+        if (!event.resource.startsWith('cms/')) return;
+        const name = event.resource.slice(4);
+        const collection = this.#collections.get(name);
+        if (!collection) {
+            await this.purge.everything(name);
+            return;
+        }
+        const publishable = collection.publishable !== false;
+        const shown = publishable ? event.previousStatus === 'published' || event.record?.status === 'published' : collection.visibility === 'public';
+        if (!shown) return;
+        if (event.topic !== 'resource.created' && await this.#menusName(name, event.id)) {
+            await this.purge.everything(`entry:${name}`);
+            return;
+        }
+        const origin = this.indexnow.origin();
+        const url = event.record && origin ? (await this.entryUrls(collection, [event.record])).get(event.record.id) : undefined;
+        await this.purge.queue(`entry:${name}`, {
+            tags: [this.purge.tag.entry(name, event.id), this.purge.tag.collection(name)],
+            urls: url ? [`${origin}${url}`, `${origin}${url}${url.includes('?') ? '&' : '?'}format=md`] : [],
+        });
+    }
+
+    /** Whether a menu item links to the entry, whose title or address then shows on every page. */
+    async #menusName(collection: string, id: string): Promise<boolean> {
+        const names = (items: readonly MenuItem[]): boolean => items.some(item => (item.kind === 'entry' && item.collection === collection && item.entry === id) || names(item.children));
+        for (const summary of await this.menus.list()) {
+            const menu = await this.menus.get(summary.id);
+            if (menu && names(menu.items)) return true;
+        }
+        return false;
+    }
+
+    /** Queue a purge of every page after a change that may show anywhere; a failure to queue is logged, never the save's. */
+    #purgeSite(reason: string): Promise<void> {
+        return this.#purgeLater(reason, {});
+    }
+
+    async #purgeLater(reason: string, input: { tags?: readonly string[]; urls?: readonly string[] }): Promise<void> {
+        if (input.tags && !input.tags.length && !input.urls?.length) return;
+        try { await this.purge.queue(reason, input); }
+        catch (error) { console.error(`[cms] could not queue a cache purge (${reason})`, error); }
+    }
+
+    async #pingIndexNow(event: ResourceEvent): Promise<void> {
+        const collection = event.resource.startsWith('cms/') ? this.#collections.get(event.resource.slice(4)) : undefined;
+        if (!collection || !(await this.settings.get('indexnow.enabled'))) return;
+        if (!CmsIndexNow.concerns(event, collection)) return;
+        const url = (await this.entryUrls(collection, [event.record!])).get(event.record!.id);
+        if (url) await this.indexnow.submit([url]);
+    }
+
+    async #queueWebhooks(event: ResourceEvent): Promise<void> {
+        const collection = event.resource.startsWith('cms/') ? this.#collections.get(event.resource.slice(4)) : undefined;
+        if (!collection) return;
+        const publishable = collection.publishable !== false;
+        const was = event.previousStatus === 'published';
+        const is = event.record?.status === 'published';
+        const events: WebhookEvent[] = event.topic === 'resource.created' ? ['entry.created', ...(publishable && is ? ['entry.published' as const] : [])]
+            : event.topic === 'resource.deleted' ? ['entry.deleted']
+            : publishable && !was && is ? ['entry.published'] : publishable && was && !is ? ['entry.unpublished'] : ['entry.updated'];
+        if (!(await this.webhooks.wants(events, collection.name))) return;
+        const url = event.record && (!publishable || is) ? (await this.entryUrls(collection, [event.record])).get(event.record.id) ?? null : null;
+        const entry = event.record ? { ...event.record, url } : { id: event.id };
+        for (const name of events) {
+            await this.webhooks.enqueue({ event: name, eventId: `${event.eventId}:${name}`, at: event.at, collection: collection.name, entry, previousStatus: event.previousStatus ?? null });
+        }
+    }
+
+    /** Themes from rendered plugins, valid ones first, by label. */
+    themes(): ThemeInfo[] {
+        return [...this.#themes.values()].sort((a, b) => Number(a.problems.length > 0) - Number(b.problems.length > 0) || a.label.localeCompare(b.label));
+    }
+
+    /**
+     * The active theme's name: the Appearance setting when it names a usable theme, otherwise
+     * the first usable one. Null when there is none.
+     */
+    async activeTheme(): Promise<string | null> {
+        const chosen = await this.settings.get('appearance.theme').catch(() => '');
+        const usable = (await this.availableThemes()).filter(theme => !theme.problems.length).sort((a, b) => a.name.localeCompare(b.name));
+        return usable.find(theme => theme.name === chosen)?.name ?? usable[0]?.name ?? null;
+    }
+
+    /** The themes this site may choose: every theme the network does not hide. */
+    async availableThemes(): Promise<ThemeInfo[]> {
+        const hidden = (await this.#state().catch(() => null))?.policy.hiddenThemes ?? new Set<string>();
+        return this.themes().filter(theme => !hidden.has(theme.name));
+    }
+
+    async activateTheme(name: string, principal: Principal): Promise<void> {
+        const theme = (await this.availableThemes()).find(entry => entry.name === name);
+        if (!theme) throw new CmsError('CMS_NOT_FOUND', `Unknown theme ${name}.`);
+        if (theme.problems.length) throw new CmsError('CMS_VALIDATION', `${theme.label} cannot be used: ${theme.problems.join(' ')}`);
+        await this.settings.update('appearance', { theme: name }, { principal });
+        await this.#seedThemeGroups(name, { activation: true });
+    }
+
+    /** The field groups the active theme and its parent ship: a theme needs no grant, so they are stored here, once (`#refreshPlugins`, `activateTheme`). */
+    async #seedThemeGroups(name: string | null, options: { activation?: boolean } = {}): Promise<void> {
+        for (const plugin of this.#themeChain(name)) {
+            if (plugin.problems.length) continue;
+            if (plugin.manifest.fieldGroups?.length && !this.#groups.some(group => group.plugin === plugin.manifest.name)) await this.#seedFieldGroups(plugin, systemPrincipal('site')).catch(error => console.error(`[cms] could not add the field groups of ${plugin.manifest.name}`, error));
+            // At a start, the theme's patterns are added only when the site has none of them: a deleted one stays deleted.
+            await this.#seedPatterns(plugin, systemPrincipal('site'), { onlyIfNone: !options.activation }).catch(error => console.error(`[cms] could not add the patterns of ${plugin.manifest.name}`, error));
+        }
+    }
+
+    /**
+     * Templates an editor can choose for one entry: the active theme's `entry-*` templates,
+     * except those named after a collection (`entry-posts`), which apply to it already.
+     */
+    async entryTemplates(): Promise<string[]> {
+        const theme = this.#siteTheme(await this.activeTheme());
+        const collections = new Set([...this.#collections.keys()].map(collection => `entry-${collection}`));
+        return entryTemplateChoices(theme && !siteThemeProblems(theme).length ? theme as SiteTheme : undefined).filter(template => !collections.has(template));
+    }
+
+    /** The keys of a theme's loaders, from its `server.ts` `loaders` export. */
+    themeLoaders(name: string | null): string[] {
+        return [...new Set(this.#themeChain(name).flatMap(plugin => Object.keys(loadersOf(plugin))))];
+    }
+
+    /** A theme's plugin and its parent's, child first. */
+    #themeChain(name: string | null): HostedPlugin[] {
+        const plugin = name ? this.#plugins.get(name) : undefined;
+        if (!plugin?.manifest.theme) return [];
+        const parent = this.#parentOf(plugin);
+        return parent ? [plugin, parent] : [plugin];
+    }
+
+    #parentOf(plugin: HostedPlugin): HostedPlugin | undefined {
+        const name = (plugin.manifest.theme as ThemeManifest | undefined)?.extends;
+        const parent = name && name !== plugin.manifest.name ? this.#plugins.get(name) : undefined;
+        return parent?.manifest.theme ? parent : undefined;
+    }
+
+    /** A usable theme's templates, layered over its parent's; undefined when it has problems. */
+    #siteTheme(name: string | null): SiteTheme | undefined {
+        const info = name ? this.#themes.get(name) : undefined;
+        if (!info || info.problems.length) return undefined;
+        const [plugin, parent] = this.#themeChain(name);
+        return assembleSiteTheme(plugin!.registration, parent?.registration) as SiteTheme;
+    }
+
+    /**
+     * Run the first of the candidates a theme has a loader for, with the theme plugin's grants,
+     * the visitor principal and a time limit. Returns its plain JSON, or `{}` when the theme has
+     * no such loader, is not active, fails, runs out of time or returns too much.
+     */
+    async themeData(name: string | null, candidates: readonly string[], view: SiteView | EntryView | ArchiveView,
+        context: { principal: Principal; options?: { readonly [name: string]: unknown }; locale?: string }): Promise<ThemeData> {
+        // A child's loader wins over its parent's for the same key; each runs with its own plugin's grants.
+        const chain = this.#themeChain(name);
+        let plugin: HostedPlugin | undefined;
+        let template: string | undefined;
+        for (const candidate of candidates) {
+            plugin = chain.find(entry => typeof loadersOf(entry)[candidate] === 'function');
+            if (plugin) { template = candidate; break; }
+        }
+        const loaders = plugin ? loadersOf(plugin) : undefined;
+        if (!plugin || !template || !loaders || plugin.problems.length || this.#themes.get(name!)?.problems.length) return {};
+        if (!(await this.pluginActive(plugin.manifest.name))) return {};
+        const controller = new AbortController();
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timeout = new Promise<never>((_, reject) => {
+            timer = setTimeout(() => { controller.abort(); reject(new Error(`timed out after ${this.#loaderTimeout} ms`)); }, this.#loaderTimeout);
+        });
+        try {
+            const result = await Promise.race([Promise.resolve().then(() => loaders![template]!(view, {
+                cms: this.pluginCms(plugin.manifest.name), principal: context.principal, signal: controller.signal,
+                options: context.options ?? {}, locale: context.locale ?? ('locale' in view && typeof view.locale === 'string' ? view.locale : 'en'), template,
+            })), timeout]);
+            if (result === undefined || result === null) return {};
+            if (typeof result !== 'object' || Array.isArray(result)) throw new Error('it must return an object.');
+            const json = JSON.stringify(result);
+            if (json.length > this.#dataLimit) throw new Error(`it returned ${json.length} characters, more than ${this.#dataLimit}.`);
+            return JSON.parse(json) as ThemeData;
+        } catch (error) {
+            console.warn(`[cms] theme loader ${plugin.manifest.name}.${template} failed: ${(error as Error).message}`);
+            return {};
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
+    /** Widget areas of the active theme, then those only other themes declare. */
+    async areaLocations(): Promise<{ name: string; label: string; defaults: readonly Block[]; theme: string; active: boolean }[]> {
+        const active = await this.activeTheme();
+        const seen = new Set<string>();
+        const areas: { name: string; label: string; defaults: readonly Block[]; theme: string; active: boolean }[] = [];
+        for (const theme of [...this.themes()].sort((a, b) => Number(b.name === active) - Number(a.name === active))) {
+            if (theme.problems.length) continue;
+            for (const area of theme.areas) {
+                if (seen.has(area.name)) continue;
+                seen.add(area.name);
+                areas.push({ ...area, theme: theme.name, active: theme.name === active });
+            }
+        }
+        return areas;
+    }
+
+    /** Blocks for a widget area, checked as a blocks field checks them; their files must be ready. */
+    async #checkBlocks(value: unknown): Promise<Block[]> {
+        const shape = blocksShapeProblem(value);
+        if (shape) throw new CmsError('CMS_VALIDATION', `Widgets ${shape}`, { fields: { blocks: shape } });
+        const { blocks, errors } = validateBlocks(value as Block[], this.#blocks);
+        const first = Object.entries(errors)[0];
+        if (first) throw new CmsError('CMS_VALIDATION', `${first[0]}: ${first[1]}`, { fields: errors });
+        const plugins = [...new Set(blocks.map(block => this.#blocks.get(block.type)?.plugin).filter((plugin): plugin is string => !!plugin))];
+        for (const plugin of plugins) if (!(await this.pluginActive(plugin))) throw new CmsError('CMS_VALIDATION', `Blocks of ${plugin} are not available while the plugin is inactive.`);
+        const files = [...new Set(blockMedia(blocks, this.#blocks))];
+        if (files.length > 100) throw new CmsError('CMS_VALIDATION', 'Widgets name too many files.');
+        if (files.length) {
+            const list = files.map((_, index) => `$m${index}`).join(', ');
+            const found = await this.db.read([{ rql: `SELECT count(*) FROM cms_files WHERE status = 'ready' AND ${LIBRARY_KEYS} AND id IN (${list})`, params: Object.fromEntries(files.map((file, index) => [`$m${index}`, file])) }]);
+            if (Number(found.results[0]!.rows[0]![0] as bigint) !== files.length) throw new CmsError('CMS_VALIDATION', 'Widgets name a missing file.');
+        }
+        return blocks;
+    }
+
+    /** Menu locations of the active theme, then those only other themes declare. */
+    async menuLocations(): Promise<{ name: string; label: string; theme: string; active: boolean }[]> {
+        const active = await this.activeTheme();
+        const seen = new Set<string>();
+        const locations: { name: string; label: string; theme: string; active: boolean }[] = [];
+        for (const theme of [...this.themes()].sort((a, b) => Number(b.name === active) - Number(a.name === active))) {
+            if (theme.problems.length) continue;
+            for (const location of theme.locations) {
+                if (seen.has(location.name)) continue;
+                seen.add(location.name);
+                locations.push({ ...location, theme: theme.name, active: theme.name === active });
+            }
+        }
+        return locations;
+    }
+
+    /**
+     * Slugs an entry of a collection served at the site root cannot take, among `base` and
+     * `base-N`: routes of the application, the first segments of collection and taxonomy
+     * paths, and the slugs of other root collections' entries in the same language.
+     */
+    async rootSlugConflicts(resourceId: string, base: string, locale: string | null = null): Promise<string[]> {
+        const name = resourceId.startsWith('cms/') ? resourceId.slice(4) : '';
+        const collection = this.#collections.get(name);
+        if (!collection || collection.path !== '') return [];
+        const reserved = new Set(this.#reservedPaths);
+        // Language prefixes, such as /fr, on a site with several languages.
+        const languages = await this.languages();
+        if (languages.multilingual) for (const code of languages.all) reserved.add(code);
+        for (const other of this.#collections.values()) if (other.path) reserved.add(other.path.split('/')[0]!);
+        for (const taxonomy of this.#taxonomies.values()) if (taxonomy.path) reserved.add(taxonomy.path);
+        const taken = [...reserved].filter(word => word === base || word.startsWith(`${base}-`));
+        const others = [...this.#collections.values()].filter(other => other.name !== name && other.path === '' && other.slug !== false);
+        const statements = others.map(other => ({
+            rql: `SELECT "slug" FROM ${this.resourceById(`cms/${other.name}`).storage} WHERE ("slug" = $slug OR "slug" LIKE $prefix)${locale ? ' AND "locale" = $locale' : ''} LIMIT 1000`,
+            params: { $slug: base, $prefix: `${base}-%`, ...(locale ? { $locale: locale } : {}) },
+        }));
+        if (statements.length) for (const result of (await this.db.read(statements)).results) for (const row of result.rows) taken.push(row[0] as string);
+        return taken;
+    }
+
+    /**
+     * Where a collection's archive lists its entries: `/<path>`, or for posts served at the site
+     * root, the Reading settings' posts page (or the home page when it shows the latest posts).
+     */
+    async archiveUrl(collection: CollectionDefinition, locale?: string | null): Promise<string | null> {
+        const prefix = this.localePrefix(locale, await this.languages());
+        if (collection.path) return `${prefix}/${collection.path}`;
+        if (collection.path !== '' || collection.name !== 'posts') return null;
+        const settings = await this.settings.all();
+        let page = settings['reading.pageForPosts'] && this.#collections.has('pages')
+            ? await this.resource('cms/pages').get(settings['reading.pageForPosts'], { principal: ANONYMOUS }).catch(() => null) : null;
+        // In another language, the posts page's translation lists that language's posts; without a locale, the default language's.
+        if (page && prefix) page = (await this.translations(this.collection('pages'), page)).get(locale ?? (await this.languages()).default) ?? null;
+        if (page?.status === 'published') return (await this.entryUrls(this.collection('pages'), [page])).get(page.id) ?? null;
+        return settings['reading.showOnFront'] === 'posts' ? prefix || '/' : null;
+    }
+
+    /** The site's languages from Settings → Languages; the first is the default, served without a prefix. */
+    async languages(): Promise<SiteLanguages> {
+        const settings = await this.settings.all().catch(() => null);
+        const configured = settings?.['languages.default'];
+        const main = typeof configured === 'string' && LOCALE.test(configured) ? configured : 'en';
+        const others = [...new Set(String(settings?.['languages.others'] ?? '').split(',').map(code => code.trim()).filter(code => LOCALE.test(code) && code !== main))];
+        return { default: main, others, all: [main, ...others], multilingual: others.length > 0, prefixDefault: others.length > 0 && settings?.['languages.urls'] === 'all' };
+    }
+
+    /** `/<code>` for an entry in another language than the default, or in any language when `prefixDefault`; empty otherwise. */
+    localePrefix(locale: unknown, languages: SiteLanguages): string {
+        if (!languages.multilingual) return '';
+        const code = typeof locale === 'string' && languages.all.includes(locale) ? locale : languages.default;
+        return code !== languages.default || languages.prefixDefault ? `/${code}` : '';
+    }
+
+    /** Change the site's languages. New entries take the default language, so every entry belongs to one. */
+    async saveLanguages(input: { default: string; others: readonly string[]; urls?: 'hide-default' | 'all' }, principal: Principal): Promise<SiteLanguages> {
+        const codes = [input.default, ...input.others].map(code => String(code).trim().toLowerCase());
+        if (codes.some(code => !LOCALE.test(code)) || new Set(codes).size !== codes.length || codes.length > 20) {
+            throw new CmsError('CMS_VALIDATION', 'Languages are distinct codes such as en, fr or pt-br, at most 20.');
+        }
+        if (input.urls !== undefined && input.urls !== 'hide-default' && input.urls !== 'all') throw new CmsError('CMS_VALIDATION', 'Language in URLs is hide-default or all.');
+        await this.settings.update('languages', { default: codes[0], others: codes.slice(1).join(','), ...(input.urls ? { urls: input.urls } : {}) }, { principal });
+        this.menus.refresh();
+        return this.languages();
+    }
+
+
+    /**
+     * An entry's translations by language, itself included, as the principal may read them.
+     * A translation group is named after its first entry, which keeps no group of its own.
+     */
+    async translations(collection: CollectionDefinition, record: RecordShape, context: OperationContext = { principal: ANONYMOUS }): Promise<Map<string, RecordShape>> {
+        return (await this.translationsOf(collection, [record], context)).get(translationGroupOf(record))!;
+    }
+
+    /**
+     * The translations of several entries, such as a page of the dashboard's list, by
+     * translation group and then language, each entry itself included. One request per
+     * hundred translations, as the principal may read them.
+     */
+    async translationsOf(collection: CollectionDefinition, records: readonly RecordShape[], context: OperationContext = { principal: ANONYMOUS }): Promise<Map<string, Map<string, RecordShape>>> {
+        const languages = await this.languages();
+        const localeOf = (entry: RecordShape) => typeof entry.locale === 'string' ? entry.locale : languages.default;
+        const groups = [...new Set(records.map(translationGroupOf))].slice(0, 100);
+        const found = new Map(groups.map(group => [group, new Map<string, RecordShape>()]));
+        const add = (entry: RecordShape) => {
+            const members = found.get(translationGroupOf(entry));
+            if (members && !members.has(localeOf(entry))) members.set(localeOf(entry), entry);
+        };
+        for (const record of records) add(record);
+        if (!groups.length) return found;
+        const repository = this.resource(`cms/${collection.name}`);
+        const known = new Set(records.map(record => record.id));
+        for (const source of (await repository.getMany(groups.filter(group => !known.has(group)), context)).values()) add(source);
+        // At most 20 languages each: 2,000 translations for a full page.
+        for (let offset = 0; offset < 2000; offset += 100) {
+            const page = (await repository.list({ where: { translationGroup: { in: groups } }, limit: 100, offset, order: { field: 'createdAt', direction: 'asc' } }, context)).records;
+            for (const entry of page) add(entry);
+            if (page.length < 100) break;
+        }
+        return found;
+    }
+
+    /**
+     * Start a translation of an entry: a draft copy in the language and the entry's translation
+     * group, with its parent's translation as parent. An existing translation is returned instead.
+     */
+    async translateEntry(collectionName: string, id: string, locale: string, principal: Principal): Promise<RecordShape> {
+        const languages = await this.languages();
+        if (!languages.all.includes(locale)) throw new CmsError('CMS_VALIDATION', `${locale} is not one of the site's languages.`);
+        const collection = this.collection(collectionName);
+        const repository = this.resource(`cms/${collection.name}`);
+        const source = await repository.get(id, { principal });
+        if (!source) throw new CmsError('CMS_NOT_FOUND', 'Entry not found.');
+        // A translation starts as a copy: a reader the entry is locked for gets none to open.
+        if (lockedCopy(source, repository.canUpdate(source, principal))) throw new CmsError('CMS_FORBIDDEN', 'Only its editors can translate a protected or members-only entry.');
+        // A translation the principal cannot read still exists: never start a second one.
+        const existing = (await this.translations(collection, source, { principal: systemPrincipal('translations') })).get(locale);
+        if (existing) {
+            if ((await repository.getMany([existing.id], { principal })).has(existing.id)) return existing;
+            throw new CmsError('CMS_CONFLICT', `A ${languageName(locale)} translation exists that you cannot open.`);
+        }
+        const input: { [field: string]: unknown } = {};
+        for (const [name, declaration] of Object.entries(repository.resource.fields)) {
+            if (['slug', 'status', 'publishedAt', 'locale', 'translationGroup', 'parent'].includes(name) || source[name] === undefined || source[name] === null) continue;
+            if (declaration.access?.write && !hasPermission(principal, declaration.access.write)) continue;
+            input[name] = source[name];
+        }
+        if (collection.hierarchical && typeof source.parent === 'string') {
+            const parent = (await repository.getMany([source.parent], { principal })).get(source.parent);
+            const translated = parent ? (await this.translations(collection, parent, { principal })).get(locale) : undefined;
+            if (translated) input.parent = translated.id;
+        }
+        const group = typeof source.translationGroup === 'string' ? source.translationGroup : source.id;
+        return repository.create({ ...input, locale, translationGroup: group, ...(collection.publishable === false ? {} : { status: 'draft' }) }, { principal, [JOIN_GROUP]: group } as OperationContext);
+    }
+
+    /**
+     * Public URLs of a collection's entries: the collection's path and, for nested
+     * collections, the slugs of their ancestors, fetched through the parent link in one request.
+     */
+    async entryUrls(collection: CollectionDefinition, records: readonly RecordShape[], context: OperationContext = { principal: ANONYMOUS }): Promise<Map<string, string | null>> {
+        const urls = new Map<string, string | null>();
+        if (collection.path === null || collection.path === undefined || collection.slug === false) {
+            for (const record of records) urls.set(record.id, null);
+            return urls;
+        }
+        const known = new Map(records.map(record => [record.id, record]));
+        const languages = await this.languages();
+        if (collection.hierarchical) {
+            // Every ancestor chain in one request, through the parent link's record projections.
+            const roots = records.filter(record => typeof record.parent === 'string' && record.parent && !known.has(record.parent)).map(record => record.id);
+            const chains = await this.resource(`cms/${collection.name}`).ancestors(roots, 'parent', context);
+            for (const chain of chains.values()) for (const ancestor of chain) known.set(ancestor.id, ancestor);
+        }
+        // Category permalinks: the slug of each entry's first term, read in one request.
+        const taxonomy = collection.permalink === 'category' ? collection.taxonomies?.[0] : undefined;
+        const terms = taxonomy ? await this.taxonomies.getMany([...new Set(records.map(record => this.#firstTerm(record, taxonomy)).filter((id): id is string => !!id))]) : new Map<string, TermShape>();
+        for (const record of records) {
+            const slugs: string[] = [];
+            let current: RecordShape | undefined = record;
+            for (let depth = 0; current && depth < 9; depth++) {
+                if (typeof current.slug !== 'string') { slugs.length = 0; break; }
+                slugs.unshift(current.slug);
+                const parent: string | null = collection.hierarchical ? current.parent as string | null : null;
+                current = parent ? known.get(parent) : undefined;
+                if (parent && !current) { slugs.length = 0; break; }
+            }
+            const term = taxonomy ? terms.get(this.#firstTerm(record, taxonomy) ?? '') : undefined;
+            if (term && slugs.length) slugs.unshift(term.slug);
+            const url = entryUrl(collection.path, slugs);
+            urls.set(record.id, url ? `${this.localePrefix(record.locale, languages)}${url}` : null);
+        }
+        return urls;
+    }
+
+    /** The first term of a record's taxonomy field, which category permalinks use. */
+    #firstTerm(record: RecordShape, taxonomy: string): string | null {
+        const value = record[taxonomy];
+        return Array.isArray(value) && typeof value[0] === 'string' ? value[0] : null;
+    }
+
+    /**
+     * Create or change a collection. Its table and indexes change in one migration step that
+     * also stores the definition; built-in collections store only what was changed. With
+     * `groups`, the field groups attached to the collection are set to that list in that order:
+     * groups it leaves out are detached, and the schema is planned once for all of it.
+     */
+    async saveCollection(given: CollectionDefinition, principal: Principal, options: { readonly groups?: readonly { readonly id: string; readonly order?: number }[] } = {}): Promise<CollectionDefinition> {
+        this.#authorizeBuilder(principal);
+        await this.ready({ force: true });
+        const before = this.#collections.get(given.name);
+        const searched = this.siteSearch.signature(given.name);
+        const builtin = this.#builtinCollections.get(given.name);
+        if (builtin?.managed) throw new CmsError('CMS_FORBIDDEN', `${builtin.label} is managed by its module and has its own screens.`);
+        // Managed is the module's to declare.
+        const { managed: _managed, ...input } = given;
+        const stored: CollectionDefinition = builtin ? {
+            name: input.name, label: input.label, singular: input.singular, ...(input.description !== undefined ? { description: input.description } : {}),
+            ...(input.icon !== undefined ? { icon: input.icon } : {}), ...(input.path !== undefined ? { path: input.path } : {}),
+            ...(input.permalink !== undefined ? { permalink: input.permalink } : {}),
+            ...(input.sitemap !== undefined ? { sitemap: input.sitemap } : {}),
+            ...(input.schema !== undefined ? { schema: input.schema } : {}),
+            ...(input.robots !== undefined ? { robots: input.robots } : {}),
+            ...(input.seoTemplates !== undefined ? { seoTemplates: input.seoTemplates } : {}),
+            ...(input.comments !== undefined ? { comments: input.comments } : {}),
+            ...(input.features !== undefined ? { features: input.features } : {}),
+            ...(input.template !== undefined ? { template: input.template } : {}),
+            ...(input.templateLock !== undefined ? { templateLock: input.templateLock } : {}),
+            ...(input.editor !== undefined ? { editor: input.editor } : {}),
+            taxonomies: (input.taxonomies ?? []).filter(name => !(builtin.taxonomies ?? []).includes(name)),
+            fields: Object.fromEntries(Object.entries(input.fields ?? {}).filter(([name]) => !Object.hasOwn(builtin.fields, name))),
+            // The module's fields are not stored, so their place among the added ones is.
+            fieldOrder: [...(input.fieldOrder ?? Object.keys(input.fields ?? {}))],
+        } : (({ fieldOrder, ...rest }) => ({ ...rest, fields: orderedFields(input.fields ?? {}, fieldOrder), builtin: false }))(input);
+        const definition = builtin ? extendCollection(builtin, stored) : stored;
+        const problems = collectionProblems(definition);
+        if (!builtin && this.#static.has(`cms/${definition.name}`)) problems.push(`cms/${definition.name} is already a resource.`);
+        // Structured data maps name fields of the collection: its own, the features' and its groups'.
+        if (!problems.length && definition.schema?.map) problems.push(...collectionSeoProblems({ schema: definition.schema, fields: Object.keys(this.#collectionResource(definition, this.#taxonomyLabels()).fields) }));
+        for (const taxonomy of definition.taxonomies ?? []) if (!this.#taxonomies.has(taxonomy)) problems.push(`Taxonomy ${taxonomy} does not exist.`);
+        for (const [name, declaration] of Object.entries(definition.fields)) {
+            if (declaration.kind === 'reference' && declaration.target !== `cms/${definition.name}` && !this.#resources.has(declaration.target!)) problems.push(`Field ${name} refers to ${declaration.target}, which does not exist.`);
+            for (const type of declaration.blocks ?? []) if (!this.#blocks.has(type)) problems.push(`Field ${name} allows ${type}, which is not a block type.`);
+        }
+        // The content template is checked like an entry's blocks, against the content's allowed types.
+        if (definition.template?.length && !problems.length) {
+            const allowed = contentBlocks(definition.features?.content) ?? [];
+            const { errors } = validateBlocks(definition.template, this.#blocks, allowed.length ? { allowed } : {});
+            problems.push(...Object.entries(errors).map(([path, message]) => `Template block ${path}: ${message}`));
+            if (!hasPermission(principal, PERMISSIONS.unfilteredHtml) && htmlBlocksChanged(definition.template, before?.template)) problems.push('The template has a Custom HTML block, which only people allowed to post HTML can add or change.');
+        }
+        // The attached groups: each checked against the collection's fields and the other attached groups.
+        const target: FieldGroupTarget = { kind: 'collection', name: definition.name };
+        const changed: FieldGroup[] = [];
+        if (options.groups) {
+            const wanted = new Map(options.groups.map((entry, index) => [entry.id, entry.order ?? index]));
+            for (const id of wanted.keys()) if (!this.#groups.some(group => group.id === id)) problems.push(`Field group ${id} does not exist.`);
+            // A plugin's group is attached by its manifest; the list cannot detach or reorder it.
+            const attached = this.#groups.map(group => group.plugin ? group : wanted.has(group.id) ? withTarget(group, target, true, wanted.get(group.id)) : withTarget(group, target, false));
+            for (const [index, group] of attached.entries()) if (canonicalJson(group) !== canonicalJson(this.#groups[index])) changed.push(group);
+            const scope = [...RESERVED_FIELDS, ...(definition.taxonomies ?? []), ...Object.keys(definition.fields)];
+            const taken = new Map<string, string>();
+            for (const group of groupsForTarget(attached, target)) {
+                const checked = fieldGroupProblems(group, this.#blocks, scope);
+                problems.push(...checked.problems.map(problem => `Field group ${group.title}: ${problem}`));
+                for (const name of Object.keys(checked.fields)) {
+                    if (taken.has(name)) problems.push(`Field ${name} is in both “${taken.get(name)}” and “${group.title}”.`);
+                    taken.set(name, group.title);
+                }
+            }
+        }
+        if (problems.length) throw new CmsError('CMS_VALIDATION', problems.join(' '), { fields: { definition: problems.join(' ') } });
+        for (const group of changed) await this.fieldGroups.put(group, principal);
+        if (changed.length) this.#groups = await this.fieldGroups.all();
+        // The same resource `ready()` builds from the stored definition; its hash is what the migration records.
+        const resource = this.#collectionResource(definition, this.#taxonomyLabels());
+        const row: Statement = {
+            rql: 'INSERT INTO cms_collections (name, definition, updated_at, updated_by) VALUES ($name, $definition, $now, $by) ON CONFLICT (name) DO UPDATE SET definition = excluded.definition, updated_at = excluded.updated_at, updated_by = excluded.updated_by',
+            params: { $name: definition.name, $definition: JSON.stringify(stored), $now: this.#now(), $by: principalId(principal) },
+        };
+        // A new path: old links redirect, from the outbox job this write queues.
+        const moved = before && before.path !== definition.path && typeof before.path === 'string' && typeof definition.path === 'string' && before.slug !== false
+            ? pathsMovedStatement({ at: this.#now(), kind: 'collection', name: definition.name, from: before.path, to: definition.path, by: principalId(principal) }) : null;
+        const saving = moved ? [row, moved] : [row];
+        const resources = [...[...this.#resources.values()].filter(entry => entry.id !== resource.id), resource];
+        let attached = false;
+        const plan = await planSchema(resources, await readCatalog(this.db, resources.map(entry => entry.storage)));
+        const blocked = plan.blocked.filter(problem => problem.resource === resource.id);
+        if (blocked.length) throw new CmsError('CMS_VALIDATION', blocked.map(problem => problem.message).join(' '));
+        const report = await migrate(this.db, resources, { now: this.#now, only: [resource.id], attach: id => id === resource.id ? (attached = true, saving) : [] });
+        if (report.failed) throw new CmsError('CMS_CONFLICT', `The collection could not be saved: ${report.failed.message}`);
+        if (!attached) await this.db.write(saving, { kind: 'cms.collections', retryConflicts: 5 });
+        if (moved) this.outboxWritten();
+        this.#activation = undefined;
+        await this.ready({ force: true });
+        const saved = this.collection(definition.name);
+        // A new path, status rule or searched field changes which entries visitors find, and what in them.
+        if (before && this.siteSearch.signature(saved.name) !== searched) await this.siteSearch.rebuild({ only: saved.name });
+        return saved;
+    }
+
+    /**
+     * Automatic redirects for an entry whose URL changes while it stays published, added to the
+     * entry's write and guarded by it. Called by repositories.
+     */
+    async redirectStatements(resource: Resource, before: RecordShape, after: RecordShape, guard: { rql: string; params: { [key: string]: Value } }, by: string | null): Promise<Statement[]> {
+        const collection = resource.owner === 'cms' ? this.#collections.get(resource.name) : undefined;
+        if (!collection || collection.path === null || collection.path === undefined || collection.slug === false) return [];
+        const live = (record: RecordShape) => collection.publishable === false || record.status === 'published';
+        const taxonomy = collection.permalink === 'category' ? collection.taxonomies?.[0] : undefined;
+        const sameTerm = !taxonomy || this.#firstTerm(before, taxonomy) === this.#firstTerm(after, taxonomy);
+        if (!live(before) || !live(after) || (before.slug === after.slug && before.parent === after.parent && before.locale === after.locale && sameTerm)) return [];
+        const from = (await this.entryUrls(collection, [before])).get(before.id);
+        const to = (await this.entryUrls(collection, [after])).get(after.id);
+        return from && to && from !== to ? this.redirects.automatic(from, to, { guard: guard.rql, params: guard.params, by }) : [];
+    }
+
+    /**
+     * Old links keep working after a collection's URL path changes: `/<old>/*` redirects to the
+     * new path, the archive to the new archive, and entries that leave the site root one by one.
+     */
+    async #pathRedirects(before: CollectionDefinition, after: CollectionDefinition, by: string | null): Promise<void> {
+        if (before.path === null || before.path === undefined || after.path === null || after.path === undefined || before.slug === false) return;
+        const pairs: { from: string; to: string; prefix?: boolean }[] = [];
+        if (before.path) {
+            pairs.push({ from: `/${before.path}`, to: after.path ? `/${after.path}` : '/', prefix: true });
+            const archive = await this.archiveUrl(after);
+            if (archive) pairs.push({ from: `/${before.path}`, to: archive });
+        } else {
+            // Entries leave the site root: a prefix of / would catch every missing page.
+            const repository = this.resource(`cms/${after.name}`);
+            const languages = await this.languages();
+            const where: { [field: string]: FieldFilter } = after.publishable === false ? {} : { status: 'published' };
+            for (let offset = 0; offset < 1000; offset += 100) {
+                const page = await repository.list({ where, order: { field: 'createdAt', direction: 'asc' }, limit: 100, offset }, { principal: systemPrincipal('redirects') });
+                const urls = await this.entryUrls(after, page.records);
+                for (const record of page.records) {
+                    const to = urls.get(record.id);
+                    // Each entry answered under its own language's prefix.
+                    if (to && typeof record.slug === 'string') pairs.push({ from: `${this.localePrefix(record.locale, languages)}/${record.slug}`, to });
+                }
+                if (!page.more) break;
+            }
+        }
+        await this.redirects.record(pairs, by);
+        // The new path serves the collection again: an older redirect away from it goes.
+        if (after.path) await this.redirects.dropPrefix(`/${after.path}`);
+    }
+
+    /** Delete a collection the dashboard defined, with its table and entries. */
+    async deleteCollection(name: string, principal: Principal): Promise<void> {
+        this.#authorizeBuilder(principal);
+        await this.ready({ force: true });
+        if (this.#builtinCollections.has(name)) throw new CmsError('CMS_FORBIDDEN', 'Built-in collections cannot be deleted.');
+        const definition = this.collection(name);
+        const id = `cms/${definition.name}`;
+        const referrers = this.resources.filter(resource => resource.id !== id && Object.values(resource.fields).some(field => field.kind === 'reference' && field.target === id));
+        if (referrers.length) throw new CmsError('CMS_CONFLICT', `${referrers.map(resource => resource.label ?? resource.id).join(', ')} refer to this collection.`);
+        const storage = this.resourceById(id).storage;
+        // The groups attached to it stay, for other targets, without it: in the batch that drops
+        // it, so a failure leaves both as they were. Groups that do not fit go first, each batch
+        // a schema change the other servers reload, and a retry finds them detached.
+        const detach = groupsForTarget(this.#groups, { kind: 'collection', name }).map(group => this.fieldGroups.putStatement(withTarget(group, { kind: 'collection', name }, false), principal));
+        const room = MAX_STATEMENTS - 7;
+        try {
+            while (detach.length > room) await this.db.write([...detach.splice(0, room), nextGenerationStatement(this.#now())], { kind: 'cms.fieldGroups' });
+        } finally {
+            this.fieldGroups.reset();
+        }
+        const info = await this.db.read([{ rql: 'INFO FOR DB' }]);
+        const exists = ((info.results[0]!.rows[0]![0] as { tables?: { name: string }[] }).tables ?? []).some(table => table.name === storage);
+        const at = this.#now();
+        try {
+            await this.db.write([
+                ...detach,
+                ...(exists ? [{ rql: `DROP TABLE ${storage}` }] : []),
+                { rql: 'DELETE FROM cms_collections WHERE name = $name', params: { $name: name } },
+                { rql: 'DELETE FROM cms_schema_state WHERE resource = $id', params: { $id: id } },
+                { rql: `DELETE FROM ${SITE_SEARCH.collection} WHERE collection = $name`, params: { $name: name } },
+                // Its comments go from the outbox, which retries until they are gone.
+                collectionDeletedStatement(id, `collection.deleted:${id}:${uuidv7()}`, at),
+                nextGenerationStatement(at),
+            ], { kind: 'cms.collections' });
+        } finally {
+            this.fieldGroups.reset();
+        }
+        this.outboxWritten();
+        this.#activation = undefined;
+        await this.ready({ force: true });
+    }
+
+    /** Create or change a taxonomy. Built-in taxonomies keep their name and nesting. */
+    async saveTaxonomy(input: TaxonomyDeclaration, principal: Principal): Promise<TaxonomyDeclaration> {
+        this.#authorizeBuilder(principal);
+        await this.ready({ force: true });
+        const builtin = this.#builtinTaxonomies.get(input.name);
+        const extras = { ...(input.description !== undefined ? { description: input.description } : {}), ...(input.noindex !== undefined ? { noindex: input.noindex } : {}) };
+        const declaration: TaxonomyDeclaration = builtin ? { ...builtin, label: input.label, singular: input.singular, path: input.path ?? null, ...extras }
+            : { name: input.name, label: input.label, singular: input.singular, hierarchical: input.hierarchical, path: input.path ?? null, ...extras };
+        const problems = taxonomyProblems(declaration);
+        // Collections store a taxonomy's terms in a field of the same name.
+        if (!builtin && (RESERVED_FIELDS.includes(declaration.name) || [...this.#collections.values()].some(collection => Object.hasOwn(collection.fields, declaration.name)))) problems.push(`${declaration.name} is already a field name.`);
+        if (problems.length) throw new CmsError('CMS_VALIDATION', problems.join(' '));
+        const current = this.#taxonomies.get(declaration.name);
+        if (current?.hierarchical && !declaration.hierarchical) {
+            const nested = await this.db.read([{ rql: 'SELECT count(*) FROM cms_terms WHERE taxonomy = $taxonomy AND parent_id IS NOT NULL', params: { $taxonomy: declaration.name } }]);
+            if (Number(nested.results[0]!.rows[0]![0] as bigint)) throw new CmsError('CMS_CONFLICT', `Some ${declaration.label.toLowerCase()} have parents. Move them to the top level first.`);
+        }
+        // Term archives keep answering at the old path, from the outbox job this write queues.
+        const moved = current?.path && declaration.path && current.path !== declaration.path
+            ? pathsMovedStatement({ at: this.#now(), kind: 'taxonomy', name: declaration.name, from: current.path, to: declaration.path, by: principalId(principal) }) : null;
+        await this.db.write([{
+            rql: 'INSERT INTO cms_taxonomies (name, definition, updated_at, updated_by) VALUES ($name, $definition, $now, $by) ON CONFLICT (name) DO UPDATE SET definition = excluded.definition, updated_at = excluded.updated_at, updated_by = excluded.updated_by',
+            params: { $name: declaration.name, $definition: JSON.stringify(declaration), $now: this.#now(), $by: principalId(principal) },
+        }, ...(moved ? [moved] : [])], { kind: 'cms.collections', retryConflicts: 5 });
+        if (moved) this.outboxWritten();
+        await this.ready({ force: true });
+        return this.taxonomies.declaration(declaration.name);
+    }
+
+    /** Delete a taxonomy the dashboard defined, with its terms. Collections must stop using it first. */
+    async deleteTaxonomy(name: string, principal: Principal): Promise<void> {
+        this.#authorizeBuilder(principal);
+        await this.ready({ force: true });
+        if (this.#builtinTaxonomies.has(name)) throw new CmsError('CMS_FORBIDDEN', 'Built-in taxonomies cannot be deleted.');
+        this.taxonomies.declaration(name);
+        const users = this.collections().filter(collection => collection.taxonomies?.includes(name));
+        if (users.length) throw new CmsError('CMS_CONFLICT', `${users.map(collection => collection.label).join(', ')} use this taxonomy.`);
+        await this.db.write([
+            { rql: 'DELETE FROM cms_terms WHERE taxonomy = $name', params: { $name: name } },
+            { rql: 'DELETE FROM cms_taxonomies WHERE name = $name', params: { $name: name } },
+        ], { kind: 'cms.collections' });
+        await this.ready({ force: true });
+    }
+
+    /** Resources the principal may read, for navigation. */
+    readable(principal: Principal): Resource[] {
+        return this.resources.filter(resource => evaluateRule(resource.access.read, principal) !== 'deny');
+    }
+
+    async plan(options: { signal?: AbortSignal } = {}): Promise<SchemaPlan> {
+        return planSchema(this.resources, await readCatalog(this.db, this.resources.map(resource => resource.storage), options));
+    }
+
+    async migrate(options: { signal?: AbortSignal } = {}): Promise<MigrationReport> {
+        const report = await migrate(this.db, this.resources, { ...options, now: this.#now });
+        this.#activation = undefined;
+        return report;
+    }
+
+    /**
+     * A resource is active when the database records its current declaration and its plugin is
+     * active. Writes to collections read the recorded hash fresh: a definition changed by another
+     * isolate is reloaded before the write is validated.
+     */
+    async assertActive(resource: Resource, options: { fresh?: boolean } = {}): Promise<void> {
+        const collection = resource.owner === 'cms' && this.#collections.has(resource.name);
+        const recorded = async () => {
+            if (!(options.fresh && collection)) return (await this.#state()).hashes.get(resource.id);
+            const result = await this.db.read([{ rql: 'SELECT declaration_hash FROM cms_schema_state WHERE resource = $id', params: { $id: resource.id } }]);
+            return result.results[0]!.rows[0]?.[0] as string | undefined;
+        };
+        let current = this.#resources.get(resource.id) ?? resource;
+        let hash = await recorded();
+        if (hash !== await declarationHash(current) && collection) {
+            // Another isolate changed the collection: reload its definition and activation once.
+            this.#activation = undefined;
+            await this.ready({ force: true });
+            current = this.#resources.get(resource.id) ?? current;
+            hash = await recorded();
+        }
+        if (hash !== await declarationHash(current)) {
+            throw new CmsError('CMS_UNAVAILABLE', `${resource.id} is waiting for a schema migration.`, { lasting: true });
+        }
+        const owner = collection ? this.#collections.get(resource.name)?.plugin ?? resource.owner : resource.owner;
+        const plugin = this.#plugins.get(owner);
+        if (plugin && !(await this.#pluginStatus(plugin, await this.#state())).active) throw new CmsError('CMS_UNAVAILABLE', `Plugin ${owner} is not active.`, { lasting: true });
+    }
+
+    async status(): Promise<ActivationStatus> {
+        const state = await this.#state();
+        const resources = await Promise.all(this.resources.map(async resource => ({ id: resource.id, active: state.hashes.get(resource.id) === await declarationHash(resource) })));
+        const plugins = await Promise.all([...this.#plugins.values()].map(plugin => this.#pluginStatus(plugin, state)));
+        return { resources, plugins };
+    }
+
+    /** The names of the plugins active on this site, themes included, as of the last refresh. */
+    activePluginNames(): readonly string[] {
+        return [...this.#activePlugins];
+    }
+
+    async pluginActive(name: string): Promise<boolean> {
+        const plugin = this.#plugins.get(name);
+        return plugin ? (await this.#pluginStatus(plugin, await this.#state())).active : false;
+    }
+
+    /**
+     * Record an administrator's grant of everything the plugin's manifest requests. An upgrade
+     * that requests more leaves the plugin inactive until it is granted again. A plugin asking
+     * for unrestricted access also takes `{ unrestricted: true }` and a network admin, since it
+     * can reach every site, and the grant is written to the audit trail.
+     */
+    async grantPlugin(name: string, principal: Principal, options: { unrestricted?: boolean } = {}): Promise<PluginStatus> {
+        if (!hasPermission(principal, PERMISSIONS.managePlugins)) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to manage plugins.');
+        const plugin = this.#plugins.get(name);
+        const network = pluginState((await this.#state()).policy, name);
+        if (!plugin || network === 'hidden') throw new CmsError('CMS_NOT_FOUND', `Unknown plugin ${name}.`);
+        if (network === 'network') throw new CmsError('CMS_FORBIDDEN', `The network activates ${name} on every site.`);
+        if (plugin.problems.length) throw new CmsError('CMS_VALIDATION', `Plugin ${name} has an invalid manifest: ${plugin.problems.join(' ')}`);
+        const unrestricted = plugin.requested.includes(UNRESTRICTED_GRANT);
+        if (unrestricted && !options.unrestricted) throw new CmsError('CMS_CONFLICT', `Plugin ${name} was not enabled: unrestricted access has to be confirmed on its own.`);
+        if (unrestricted && !isNetworkAdmin(principal)) throw new CmsError('CMS_FORBIDDEN', 'Only a network admin can grant unrestricted access.');
+        const now = this.#now();
+        await this.db.write([
+            ...(unrestricted ? [unrestrictedGrantAudit(name, principalId(principal), now)] : []),
+            { rql: 'DELETE FROM cms_grants WHERE subject = $subject', params: { $subject: `plugin:${name}` } },
+            ...[PLUGIN_ENABLED, ...plugin.requested].map((permission, index) => ({
+                rql: 'INSERT INTO cms_grants (id, subject, permission, revision, created_at) VALUES ($id, $subject, $permission, $revision, $now)',
+                params: { $id: `${name}:${index}:${now}`, $subject: `plugin:${name}`, $permission: permission, $revision: now, $now: now },
+            })),
+        ], { kind: 'cms.grants', retryConflicts: 5 });
+        this.#activation = undefined;
+        await this.#refreshPlugins();
+        await this.#purgeSite('plugins');
+        await this.#seedFieldGroups(plugin, principal);
+        await this.#seedPatterns(plugin, principal);
+        return this.#pluginStatus(plugin, await this.#state());
+    }
+
+    /**
+     * Store the patterns a plugin's manifest ships, as `<plugin>-<slug>`: sections a theme or a
+     * plugin offers in the pattern picker. A pattern the site already has is left as it is, edited
+     * or not; with `onlyIfNone`, nothing is added while the site has any of them, so a pattern it
+     * deleted stays deleted across starts and comes back with the plugin's next grant or activation.
+     */
+    async #seedPatterns(plugin: HostedPlugin, principal: Principal, options: { onlyIfNone?: boolean } = {}): Promise<void> {
+        const declared = plugin.manifest.patterns ?? [];
+        if (!declared.length || !this.#collections.has('patterns')) return;
+        const repository = this.resource('cms/patterns');
+        const ids = declared.map(pattern => `${plugin.manifest.name}-${pattern.slug}`);
+        const existing = await repository.getMany(ids, { principal });
+        if (options.onlyIfNone && existing.size) return;
+        for (const [index, pattern] of declared.entries()) {
+            if (existing.has(ids[index]!)) continue;
+            await repository.create({ title: pattern.title, content: pattern.blocks, synced: pattern.synced === true, starter: [...(pattern.starter ?? [])] }, { principal, id: ids[index]! });
+        }
+    }
+
+    /**
+     * Store the field groups a plugin's manifest ships, tagged with the plugin, and plan their
+     * targets' schemas. Granting the plugin again after an upgrade replaces them; the groups
+     * stay, with their fields' values, while the plugin is inactive, and go with the plugin.
+     */
+    async #seedFieldGroups(plugin: HostedPlugin, principal: Principal): Promise<void> {
+        if (!plugin.manifest.fieldGroups?.length) return;
+        await this.ready({ force: true });
+        for (const declared of plugin.manifest.fieldGroups) {
+            const group: FieldGroup = { ...declared, plugin: plugin.manifest.name };
+            const scope = [...new Set(group.targets.flatMap(target => this.#targetScope(target)))];
+            const checked = fieldGroupProblems(group, this.#blocks, scope);
+            for (const target of group.targets) if (target.kind === 'collection' && !this.#collections.has(target.name)) checked.problems.push(`Collection ${target.name} does not exist.`);
+            if (checked.problems.length) throw new CmsError('CMS_VALIDATION', `Field group ${group.id} of ${plugin.manifest.name}: ${checked.problems.join(' ')}`);
+            await this.fieldGroups.put({ ...group, blocks: checked.blocks }, principal);
+            await this.#migrateTargets(group, principal);
+        }
+    }
+
+    /** What active plugins add to a collection's entry editor: their tabs and sidebar boxes, in plugin order. */
+    editorLayoutAdditions(collection: string): EditorLayoutAddition[] {
+        return [...this.#plugins.values()].filter(plugin => !plugin.problems.length && this.#activePlugins.has(plugin.manifest.name))
+            .flatMap(plugin => (plugin.manifest.editor ?? []).filter(entry => entry.collection === collection)
+                .map(entry => ({ plugin: plugin.manifest.name, layout: { tabs: entry.tabs ?? [], sidebar: entry.sidebar ?? [] } })));
+    }
+
+    /** Disable a plugin: its grants are removed; its hooks, commands and resources stop. Data stays. */
+    async revokePlugin(name: string, principal: Principal): Promise<void> {
+        if (!hasPermission(principal, PERMISSIONS.managePlugins)) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to manage plugins.');
+        if (pluginState((await this.#state()).policy, name) === 'network') throw new CmsError('CMS_FORBIDDEN', `The network keeps ${name} active on every site.`);
+        await this.db.write([{ rql: 'DELETE FROM cms_grants WHERE subject = $subject', params: { $subject: `plugin:${name}` } }], { kind: 'cms.grants', retryConflicts: 5 });
+        this.#activation = undefined;
+        await this.#refreshPlugins();
+        await this.#purgeSite('plugins');
+    }
+
+    /** Commands plugin manifests declare. */
+    commands(): { plugin: string; command: PluginCommand }[] {
+        return [...this.#plugins.values()].flatMap(plugin => (plugin.manifest.commands ?? []).map(command => ({ plugin: plugin.manifest.name, command })));
+    }
+
+    /** Run a plugin command as the principal: dashboard access, the command's permission and an active plugin are required. */
+    async runCommand(plugin: string, name: string, input: { readonly [option: string]: string | number | boolean }, context: CommandContext): Promise<unknown> {
+        const hosted = this.#plugins.get(plugin);
+        const command = hosted?.manifest.commands?.find(entry => entry.name === name);
+        const handler = hosted?.commands.get(name);
+        if (!hosted || !command || !handler) throw new CmsError('CMS_NOT_FOUND', `Unknown command ${plugin}:${name}.`);
+        if (!hasPermission(context.principal, PERMISSIONS.dashboard) || (command.permission && !hasPermission(context.principal, command.permission))) {
+            throw new CmsError(context.principal.kind === 'anonymous' ? 'CMS_UNAUTHENTICATED' : 'CMS_FORBIDDEN', `Not allowed to run ${plugin}:${name}.`);
+        }
+        if (!(await this.pluginActive(plugin))) throw new CmsError('CMS_UNAVAILABLE', `Plugin ${plugin} is not active.`);
+        return handler(input, context);
+    }
+
+    /** Links plugins add to a dashboard slot, for active plugins and permitted principals. */
+    async slotLinks(slot: string, principal: Principal): Promise<(SlotLink & { plugin: string })[]> {
+        const links: (SlotLink & { plugin: string })[] = [];
+        for (const plugin of this.#plugins.values()) {
+            const entries = plugin.manifest.ui?.slots?.[slot] ?? [];
+            if (!entries.length || !(await this.pluginActive(plugin.manifest.name))) continue;
+            for (const link of entries) if (!link.permission || hasPermission(principal, link.permission)) links.push({ ...link, plugin: plugin.manifest.name });
+        }
+        return links;
+    }
+
+    /** True once every host table exists. Background work waits for it on a fresh database. */
+    async installed(): Promise<boolean> {
+        if (this.#installed) return true;
+        const result = await this.db.read([{ rql: 'INFO FOR DB' }]);
+        const tables = new Set(((result.results[0]!.rows[0]![0] as { tables?: { name: string }[] }).tables ?? []).map(table => table.name));
+        this.#installed = HOST_TABLES.every(name => tables.has(name));
+        return this.#installed;
+    }
+
+    /** Forget cached activation, for example after a migration or grant made elsewhere. */
+    refreshActivation(): void {
+        this.#activation = undefined;
+        // The next ready() re-reads which plugins are active, for their collections.
+        this.#definitions = undefined;
+    }
+
+    /** Repositories limited to a plugin's own resources and its granted ones. */
+    pluginCms(name: string): PluginCms {
+        return {
+            resource: id => {
+                const plugin = this.#plugins.get(name);
+                // Its own resources and the collections it ships.
+                const own = (plugin?.resources.includes(id) || plugin?.manifest.collections?.some(collection => `cms/${collection.name}` === id)) ?? false;
+                const requested = new Set((plugin?.requested ?? []).filter(grant => grant.startsWith(`resource:${id}:`)).map(grant => grant.slice(`resource:${id}:`.length) as ResourceAction));
+                const unrestricted = plugin?.requested.includes(UNRESTRICTED_GRANT) ?? false;
+                if (!own && !requested.size && !unrestricted) throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} has no grant for ${id}.`);
+                const repository = this.resource(id);
+                // Requested in the manifest and granted by an administrator.
+                const check = (action: ResourceAction): Promise<void> => {
+                    if (own) return Promise.resolve();
+                    if (!unrestricted && !requested.has(action)) throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} may not ${action} ${id}.`);
+                    return this.#state().then(state => {
+                        const granted = this.#granted(name, state);
+                        if (!granted.has(`resource:${id}:${action}`) && !granted.has(UNRESTRICTED_GRANT)) throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} is not granted ${action} on ${id}.`);
+                    });
+                };
+                return {
+                    get: (key, context) => check('read').then(() => repository.get(key, context)),
+                    list: (options: ListOptions, context: OperationContext) => check('read').then(() => repository.list(options, context)),
+                    count: (filter, context) => check('read').then(() => repository.count(filter, context)),
+                    search: (query, options, context) => check('read').then(() => repository.search(query, options, context)),
+                    create: (input, context) => check('create').then(() => repository.create(input, context)),
+                    update: (key, patch, context) => check('update').then(() => repository.update(key, patch, context)),
+                    delete: (key, context) => check('delete').then(() => repository.delete(key, context)),
+                };
+            },
+        };
+    }
+
+    /** Called after each committed mutation. Menus link to entries, so their cache is dropped. */
+    outboxWritten(): void {
+        this.outboxWrites++;
+        this.menus.refresh();
+    }
+
+    jobs() { return createJobStore(this.db); }
+    notifications() { return createNotificationStore(this.db); }
+
+    #register(resource: Resource): Resource {
+        if (this.#static.has(resource.id)) throw new Error(`Resource ${resource.id} is declared twice.`);
+        if ([...this.#static.values()].some(other => other.storage === resource.storage)) throw new Error(`Resource ${resource.id} collides with another storage name.`);
+        this.#static.set(resource.id, resource);
+        this.#resources.set(resource.id, resource);
+        return resource;
+    }
+
+    #authorizeBuilder(principal: Principal): void {
+        if (!hasPermission(principal, PERMISSIONS.manageCollections)) throw new CmsError(principal.kind === 'anonymous' ? 'CMS_UNAUTHENTICATED' : 'CMS_FORBIDDEN', 'Not allowed to change collections.');
+    }
+
+    /**
+     * A collection's resource: its declared fields, then its groups' (a group field named as a
+     * core field or a feature is left out), with the groups' layout. Saving and reloading
+     * build it the same way, so the declaration hash a migration records is the one `ready()`
+     * checks writes against.
+     */
+    #collectionResource(definition: CollectionDefinition, labels: { [name: string]: string }): Resource {
+        const groups = this.#groupFields({ kind: 'collection', name: definition.name });
+        const taken = new Set([...RESERVED_FIELDS, ...(definition.taxonomies ?? []), ...Object.keys(definition.fields)]);
+        const fields = { ...definition.fields, ...Object.fromEntries(Object.entries(groups.fields).filter(([name]) => !taken.has(name))) };
+        const layout = groups.layout;
+        return resolveResource({ ...collectionResource({ ...definition, fields }, labels), ...(layout.length ? { layout } : {}) }, 'cms');
+    }
+
+    #taxonomyLabels(): { [name: string]: string } {
+        return Object.fromEntries([...this.#taxonomies.values()].map(taxonomy => [taxonomy.name, taxonomy.label]));
+    }
+
+    /**
+     * After a package upgrade, apply what the CMS owns on the next request: new host tables and
+     * built-in or dashboard collections whose declaration changed. Code-declared resources and
+     * plugins wait for Tools → Schema. Concurrent isolates replan against the ledger.
+     */
+    async #upgrade(): Promise<void> {
+        const state = await this.#state();
+        if (!state.hostVersions.has(1)) return; // before setup
+        const hostPending = HOST_STEPS.some(step => !state.hostVersions.has(step.version));
+        const stale: string[] = [];
+        for (const collection of this.#collections.values()) {
+            const resource = this.#resources.get(`cms/${collection.name}`);
+            if (resource && state.hashes.get(resource.id) !== await declarationHash(resource)) stale.push(resource.id);
+        }
+        // A plugin the network activates is migrated on every site as the site loads.
+        const networkActive = [...this.#plugins.values()].filter(plugin => !plugin.problems.length && pluginState(state.policy, plugin.manifest.name) === 'network');
+        for (const id of networkActive.flatMap(plugin => plugin.resources)) {
+            const resource = this.#resources.get(id);
+            if (resource && !stale.includes(id) && state.hashes.get(id) !== await declarationHash(resource)) stale.push(id);
+        }
+        if (hostPending || stale.length) {
+            this.#upgrading ??= migrate(this.db, this.resources, { now: this.#now, only: stale }).then(report => {
+                if (report.failed) console.error(`[cms] could not upgrade the schema: ${report.failed.message}`);
+            }).catch(error => console.error('[cms] could not upgrade the schema', error)).finally(() => {
+                this.#upgrading = undefined;
+                this.#activation = undefined;
+                this.#installed = false;
+            });
+            await this.#upgrading;
+        }
+        // And gets the field groups its manifest ships, once, as a site admin's grant would store them.
+        for (const plugin of networkActive) {
+            if (plugin.manifest.fieldGroups?.length && !this.#groups.some(group => group.plugin === plugin.manifest.name)) await this.#seedFieldGroups(plugin, systemPrincipal('network')).catch(error => console.error(`[cms] could not add the field groups of ${plugin.manifest.name}`, error));
+            await this.#seedPatterns(plugin, systemPrincipal('network'), { onlyIfNone: true }).catch(error => console.error(`[cms] could not add the patterns of ${plugin.manifest.name}`, error));
+        }
+    }
+
+    /** Forget cached activation and definitions, so the next request reads the network's and the site's current state. */
+    expire(): void {
+        this.#activation = undefined;
+        this.#definitions = undefined;
+    }
+
+    async #loadDefinitions(): Promise<void> {
+        let collections: readonly (readonly unknown[])[] = [];
+        let taxonomies: readonly (readonly unknown[])[] = [];
+        try {
+            // Definitions are JSON of many fields: forty large collections may come in smaller reads.
+            collections = await readPaged(this.db, (size, at) => ({ rql: 'SELECT name, definition FROM cms_collections ORDER BY name LIMIT $limit OFFSET $offset', params: { $limit: size, $offset: at } }), 200, 0);
+            taxonomies = await readPaged(this.db, (size, at) => ({ rql: 'SELECT name, definition FROM cms_taxonomies ORDER BY name LIMIT $limit OFFSET $offset', params: { $limit: size, $offset: at } }), 200, 0);
+        } catch (error) {
+            // Before setup the tables do not exist; built-ins apply.
+            if (!(error instanceof ClientError) || !/cms_collections|cms_taxonomies|no such table|not found/i.test(error.message)) throw error;
+        }
+        const parse = <T>(rows: readonly (readonly unknown[])[]) => new Map(rows.flatMap(([name, definition]) => {
+            try { return [[name as string, JSON.parse(definition as string) as T] as const]; } catch { return []; }
+        }));
+        this.fieldGroups.reset();
+        this.#groups = await this.fieldGroups.all();
+        this.#apply(parse<CollectionDefinition>(collections), parse<TaxonomyDeclaration>(taxonomies));
+    }
+
+    /** The groups attached to a target, in their order there. */
+    #groupsFor(target: FieldGroupTarget): FieldGroup[] {
+        return groupsForTarget(this.#groups, target);
+    }
+
+    /** A target's fields from its groups, after the group blocks are checked against the current types. */
+    #groupFields(target: FieldGroupTarget): { fields: { [name: string]: FieldDeclaration }; layout: Block[] } {
+        const fields: { [name: string]: FieldDeclaration } = {};
+        const layout: Block[] = [];
+        for (const group of this.#groupsFor(target)) {
+            const { blocks } = validateBlocks(group.blocks, this.#blocks, { fieldGroup: true });
+            Object.assign(fields, fieldGroupDeclarations(blocks, this.#blocks));
+            layout.push(...blocks);
+        }
+        return { fields, layout };
+    }
+
+    /**
+     * A target's meta as it is stored: the groups' fields checked, hidden fields cleared, the
+     * fields the input leaves out kept from `previous`.
+     */
+    /** Settings → Files as the file service reads them. */
+    async #imageSettings(): Promise<ImageSettings> {
+        const settings = await this.settings.all();
+        return { widths: imageWidths(settings['media.imageWidths']), quality: settings['media.imageQuality'], maxWidth: settings['media.maxImageWidth'] };
+    }
+
+    async #checkMeta(target: FieldGroupTarget, meta: unknown, previous: { readonly [field: string]: unknown } | null, principal?: Principal): Promise<{ readonly [field: string]: unknown }> {
+        const { fields: groupFields, layout } = this.#groupFields(target);
+        // Users carry their public author profile besides their groups' fields.
+        const fields = target.kind === 'users' ? { ...AUTHOR_FIELDS, ...groupFields } : groupFields;
+        if (meta !== undefined && (meta === null || typeof meta !== 'object' || Array.isArray(meta))) throw new CmsError('CMS_VALIDATION', 'Meta must be an object of fields.', { fields: { meta: 'must be an object of fields.' } });
+        const merged = { ...previous, ...(meta as { [field: string]: unknown } | undefined) };
+        const { errors, values } = metaProblems(fields, merged, () => blockId());
+        const { hidden, values: cleared } = fieldVisibility(layout, this.#blocks, values);
+        const names = new Map(flattenGroupFields(layout).map(block => [block._id, block.data.name as string]));
+        for (const key of hidden) { const name = key.includes('/') ? undefined : names.get(key); if (name) { delete errors[name]; delete cleared[name]; } }
+        // Blocks, rich text and Markdown render on the site: their blocks are checked as an
+        // entry's are, and Custom HTML needs the HTML permission (no principal: never).
+        const html = principal !== undefined && hasPermission(principal, PERMISSIONS.unfilteredHtml);
+        for (const [name, value] of Object.entries(cleared)) {
+            const declaration = Object.hasOwn(fields, name) ? fields[name] : undefined;
+            if (!declaration || errors[name] || value === undefined || value === null) continue;
+            if ((declaration.kind === 'blocks' || declaration.kind === 'richtext') && !html && htmlBlocksChanged(value, previous?.[name])) { errors[name] = 'has a Custom HTML block, which only people allowed to post HTML can add or change.'; continue; }
+            if (declaration.kind === 'blocks') {
+                const checked = validateBlocks(value as Block[], this.#blocks, declaration.blocks ? { allowed: declaration.blocks } : {});
+                const [path, message] = Object.entries(checked.errors)[0] ?? [];
+                if (path) errors[name] = `block ${path} ${message}`;
+                else cleared[name] = checked.blocks;
+            } else if (declaration.kind === 'richtext') {
+                const doc = normalizeRichText(value);
+                const checked = validateBlocks(richTextBlocks(doc), this.#blocks, declaration.blocks ? { allowed: declaration.blocks } : {});
+                const [path, message] = Object.entries(checked.errors)[0] ?? [];
+                if (path) errors[name] = `block ${path} ${message}`;
+                else cleared[name] = withRichTextBlocks(doc, checked.blocks);
+            } else {
+                const problem = textFieldProblem(declaration, value, this.#blocks);
+                if (problem) errors[name] = problem;
+            }
+        }
+        if (Object.keys(errors).length) throw new CmsError('CMS_VALIDATION', Object.entries(errors).map(([name, error]) => `${fields[name]?.label ?? name} ${error}`).join(' '), { fields: errors });
+        return cleared;
+    }
+
+    /** The field groups attached to a target, with their blocks, for editors. */
+    fieldGroupsFor(target: FieldGroupTarget): FieldGroup[] {
+        return this.#groupsFor(target);
+    }
+
+    /** Field names a group attached to the target cannot take: the target's own, core fields included. */
+    #targetScope(target: FieldGroupTarget): string[] {
+        switch (target.kind) {
+            case 'collection': {
+                const definition = this.#collections.get(target.name);
+                return [...RESERVED_FIELDS, ...(definition?.taxonomies ?? []), ...Object.keys(definition?.fields ?? {})];
+            }
+            case 'taxonomy': return ['name', 'slug', 'description', 'parent', 'icon', 'path', 'depth', 'taxonomy'];
+            case 'users': return ['email', 'name', 'avatar', 'status', 'roles', 'password', 'slug', ...Object.keys(AUTHOR_FIELDS)];
+            case 'menus': return ['label', 'kind', 'url', 'collection', 'entry', 'taxonomy', 'term', 'description', 'panel', 'newTab', 'className', 'attributes', 'children'];
+        }
+    }
+
+    /** Save a field group: checked against the block types and each target's own fields, then the targets' schemas are planned. */
+    async saveFieldGroup(input: FieldGroup, principal: Principal): Promise<FieldGroup> {
+        this.#authorizeBuilder(principal);
+        await this.ready({ force: true });
+        const existing = await this.fieldGroups.get(input.id);
+        if (existing?.plugin) throw new CmsError('CMS_FORBIDDEN', `The group ${existing.title} comes from the plugin ${existing.plugin}; it is changed in its manifest.`);
+        const problems: string[] = [];
+        for (const target of input.targets ?? []) {
+            if (target.kind === 'collection' && !this.#collections.has(target.name)) problems.push(`Collection ${target.name} does not exist.`);
+            else if (target.kind === 'collection' && this.#collections.get(target.name)?.managed) problems.push(`${this.#collections.get(target.name)!.label} is managed by its module; groups cannot attach to it.`);
+            if (target.kind === 'taxonomy' && !this.#taxonomies.has(target.name)) problems.push(`Taxonomy ${target.name} does not exist.`);
+        }
+        const scope = [...new Set((input.targets ?? []).flatMap(target => this.#targetScope(target)))];
+        const checked = fieldGroupProblems(input, this.#blocks, scope);
+        problems.push(...checked.problems);
+        // Names are distinct across the groups of one target.
+        for (const target of input.targets ?? []) for (const other of this.#groupsFor(target)) {
+            if (other.id === input.id) continue;
+            for (const name of Object.keys(fieldGroupDeclarations(other.blocks, this.#blocks))) if (Object.hasOwn(checked.fields, name)) problems.push(`Field ${name} is already in the group “${other.title}”.`);
+        }
+        for (const [name, declaration] of Object.entries(checked.fields)) {
+            if (declaration.kind === 'reference' && !this.#resources.has(declaration.target!)) problems.push(`Field ${name} refers to ${declaration.target}, which does not exist.`);
+            for (const type of declaration.blocks ?? []) if (!this.#blocks.has(type)) problems.push(`Field ${name} allows ${type}, which is not a block type.`);
+        }
+        if (problems.length) throw new CmsError('CMS_VALIDATION', problems.join(' '), { fields: { definition: problems.join(' ') } });
+        const group: FieldGroup = {
+            id: input.id, title: input.title.trim(), ...(input.description?.trim() ? { description: input.description.trim() } : {}),
+            ...(input.placement ? { placement: input.placement } : {}), ...(input.order !== undefined ? { order: input.order } : {}),
+            targets: [...input.targets], blocks: checked.blocks,
+        };
+        await this.fieldGroups.put(group, principal);
+        await this.#migrateTargets(group, principal);
+        return (await this.fieldGroups.get(group.id))!;
+    }
+
+    async deleteFieldGroup(id: string, principal: Principal): Promise<void> {
+        this.#authorizeBuilder(principal);
+        const group = await this.fieldGroups.get(id);
+        if (!group) throw new CmsError('CMS_NOT_FOUND', 'Field group not found.');
+        if (group.plugin) throw new CmsError('CMS_FORBIDDEN', `The group ${group.title} comes from the plugin ${group.plugin}; it is removed with the plugin.`);
+        await this.fieldGroups.remove(id);
+        await this.#migrateTargets(group, principal);
+    }
+
+    /** Re-resolve the collections a group touches and plan their schemas: indexes come and go, old values stay. */
+    async #migrateTargets(group: FieldGroup, principal: Principal): Promise<void> {
+        this.#activation = undefined;
+        await this.ready({ force: true });
+        const ids = group.targets.filter(target => target.kind === 'collection').map(target => `cms/${(target as { name: string }).name}`).filter(id => this.#resources.has(id));
+        if (!ids.length) return;
+        const resources = [...this.#resources.values()];
+        const plan = await planSchema(resources, await readCatalog(this.db, resources.filter(entry => ids.includes(entry.id)).map(entry => entry.storage)));
+        const blocked = plan.blocked.filter(problem => ids.includes(problem.resource));
+        if (blocked.length) throw new CmsError('CMS_VALIDATION', blocked.map(problem => problem.message).join(' '));
+        const report = await migrate(this.db, resources, { now: this.#now, only: ids });
+        if (report.failed) throw new CmsError('CMS_CONFLICT', `The schema could not be updated: ${report.failed.message}`);
+        void principal;
+        this.#activation = undefined;
+        await this.ready({ force: true });
+    }
+
+    /** Rebuild the registry from built-ins and stored definitions. Invalid stored definitions are skipped. */
+    #apply(storedCollections: ReadonlyMap<string, CollectionDefinition>, storedTaxonomies: ReadonlyMap<string, TaxonomyDeclaration>): void {
+        const taxonomies = new Map(this.#builtinTaxonomies);
+        for (const [name, stored] of storedTaxonomies) {
+            const builtin = this.#builtinTaxonomies.get(name);
+            const next = builtin ? { ...builtin, label: stored.label ?? builtin.label, singular: stored.singular ?? builtin.singular, path: stored.path === undefined ? builtin.path : stored.path, ...(stored.description !== undefined ? { description: stored.description } : {}), ...(stored.noindex !== undefined ? { noindex: stored.noindex } : {}) } : { ...stored, builtin: false };
+            if (!taxonomyProblems(next).length) taxonomies.set(name, Object.freeze(next));
+        }
+        const collections = new Map<string, CollectionDefinition>();
+        for (const builtin of this.#builtinCollections.values()) {
+            const stored = storedCollections.get(builtin.name);
+            collections.set(builtin.name, stored ? extendCollection(builtin, stored) : builtin);
+        }
+        for (const [name, stored] of storedCollections) if (!this.#builtinCollections.has(name)) collections.set(name, { ...stored, builtin: false });
+        const labels = Object.fromEntries([...taxonomies.values()].map(taxonomy => [taxonomy.name, taxonomy.label]));
+        const resources = new Map(this.#static);
+        const effective = new Map<string, CollectionDefinition>();
+        for (const definition of collections.values()) {
+            const known = { ...definition, taxonomies: (definition.taxonomies ?? []).filter(name => taxonomies.has(name)) };
+            if (collectionProblems(known).length || this.#static.has(`cms/${known.name}`)) continue;
+            try {
+                const resource = this.#collectionResource(known, labels);
+                const previous = this.#resources.get(resource.id);
+                // Keep the same object when nothing changed, so callers holding it stay current. Field order counts.
+                resources.set(resource.id, previous && canonicalJson(previous) === canonicalJson(resource) && sameKeyOrder(previous.fields, resource.fields) ? previous : resource);
+                effective.set(known.name, Object.freeze(known));
+            } catch { /* an invalid stored definition stays inactive */ }
+        }
+        this.#taxonomies = taxonomies;
+        this.#collections = effective;
+        this.#resources = resources;
+        for (const id of this.#repositories.keys()) if (!resources.has(id)) this.#repositories.delete(id);
+    }
+
+    #hostTheme(plugin: HostedPlugin, groups: ReadonlySet<string>): ThemeInfo {
+        const manifest = plugin.manifest.theme as ThemeManifest;
+        const problems = [...plugin.problems];
+        const parent = this.#parentOf(plugin);
+        const parentManifest = parent?.manifest.theme as ThemeManifest | undefined;
+        if (!problems.length && manifest?.extends) {
+            if (manifest.extends === plugin.manifest.name) problems.push('A theme cannot extend itself.');
+            else if (!parent) problems.push(`It extends ${manifest.extends}, which is not an installed theme.`);
+            else if (parent.problems.length) problems.push(`Its parent theme ${manifest.extends} is invalid.`);
+            else if (parentManifest?.extends) problems.push(`Its parent theme ${manifest.extends} extends another theme; themes extend one level.`);
+        }
+        if (!problems.length) problems.push(...siteThemeProblems(assembleSiteTheme(plugin.registration, parent?.registration)));
+        // A child's options, locations and areas are layered over its parent's; its option values are its own.
+        const inherited = manifest?.extends && parentManifest ? parentManifest : undefined;
+        const fields = { ...inherited?.options, ...manifest?.options };
+        const options = manifest && Object.keys(fields).length ? { id: plugin.manifest.name, label: manifest.label, permission: PERMISSIONS.manageAppearance, fields } : null;
+        if (options && (groups.has(options.id) || ['plugins', 'json', '__proto__', 'constructor', 'prototype'].includes(options.id) || !/^[a-z][a-z0-9-]{0,40}$/.test(options.id))) problems.push(`Its options need a settings group named ${options.id}, which is taken, reserved or too long.`);
+        const named = (entries: { readonly [name: string]: string }) => Object.entries(entries).map(([name, label]) => ({ name, label }));
+        return Object.freeze({
+            name: plugin.registration.name, version: plugin.registration.version, ...authorOf(plugin),
+            label: typeof manifest?.label === 'string' ? manifest.label : plugin.registration.name, description: typeof manifest?.description === 'string' ? manifest.description : '',
+            locations: named({ ...inherited?.locations, ...manifest?.locations }), areas: Object.entries({ ...inherited?.areas, ...manifest?.areas }).map(([name, entry]) => themeArea(name, entry)),
+            parent: inherited ? manifest.extends! : null, ...artwork(plugin), options, presets: layerPresets(inherited?.presets, manifest?.presets), problems,
+        });
+    }
+
+    /**
+     * Menu items for visitors: entries, archives and terms get their current titles and URLs;
+     * items whose target is gone are left out, their children move up. Headings keep no URL.
+     * Meta stays raw and the panel a pattern ID: the site renders them (`menuViews`).
+     */
+    async #resolveMenu(items: readonly MenuItem[], locale?: string): Promise<ResolvedMenuItem[]> {
+        const languages = await this.languages();
+        const translate = Boolean(locale && languages.multilingual);
+        const entries = new Map<string, Set<string>>();
+        const terms = new Set<string>();
+        const collect = (list: readonly MenuItem[]) => {
+            for (const item of list) {
+                if (item.kind === 'entry' && item.collection && item.entry) entries.set(item.collection, (entries.get(item.collection) ?? new Set()).add(item.entry));
+                if (item.kind === 'term' && item.term) terms.add(item.term);
+                collect(item.children);
+            }
+        };
+        collect(items);
+        const found = new Map<string, { title: string; url: string | null }>();
+        for (const [name, ids] of entries) {
+            const collection = this.#collections.get(name);
+            if (!collection) continue;
+            try {
+                const records = await this.resource(`cms/${name}`).getMany([...ids], { principal: ANONYMOUS });
+                // In another language, an entry item shows the entry's translation when there is one.
+                const shown = new Map<string, RecordShape>();
+                const translations = translate ? await this.translationsOf(collection, [...records.values()]) : null;
+                for (const record of records.values()) shown.set(record.id, translations?.get(translationGroupOf(record))?.get(locale!) ?? record);
+                const urls = await this.entryUrls(collection, [...shown.values()]);
+                for (const [id, record] of shown) found.set(`${name}:${id}`, { title: recordTitle(record, 'title'), url: urls.get(record.id) ?? null });
+            } catch (error) {
+                if (!(error instanceof CmsError)) throw error;
+            }
+        }
+        const termRows = terms.size ? await this.taxonomies.getMany([...terms]) : new Map();
+        const archives = new Map<string, string | null>();
+        const visitArchives = async (list: readonly MenuItem[]): Promise<void> => {
+            for (const item of list) {
+                const collection = item.kind === 'archive' && item.collection ? this.#collections.get(item.collection) : undefined;
+                if (collection && !archives.has(collection.name)) archives.set(collection.name, await this.archiveUrl(collection, translate ? locale : null));
+                await visitArchives(item.children);
+            }
+        };
+        await visitArchives(items);
+        const resolve = (list: readonly MenuItem[]): ResolvedMenuItem[] => list.flatMap(item => {
+            const children = resolve(item.children);
+            let target: { title: string; url: string | null } | undefined;
+            if (item.kind === 'link') target = { title: item.label, url: item.url ?? null };
+            else if (item.kind === 'heading') target = { title: item.label, url: null };
+            else if (item.kind === 'entry') target = found.get(`${item.collection}:${item.entry}`);
+            else if (item.kind === 'archive') {
+                const collection = item.collection ? this.#collections.get(item.collection) : undefined;
+                const url = collection ? archives.get(collection.name) : null;
+                target = collection && url ? { title: collection.label, url } : undefined;
+            } else {
+                const term = termRows.get(item.term ?? '');
+                const taxonomy = term && term.taxonomy === item.taxonomy ? this.#taxonomies.get(term.taxonomy) : undefined;
+                target = term && taxonomy?.path ? { title: term.name, url: `${translate ? this.localePrefix(locale, languages) : ''}/${taxonomy.path}/${term.slug}` } : undefined;
+            }
+            if (!target || (!target.url && item.kind !== 'heading')) return children;
+            return [Object.freeze({ id: item.id, label: item.label || target.title, url: target.url, newTab: item.newTab === true, kind: item.kind, description: item.description ?? '',
+                className: item.className ?? '', attributes: Object.freeze({ ...item.attributes }), meta: Object.freeze({ ...item.meta }), panel: item.panel || null, children: Object.freeze(children) })];
+        });
+        return resolve(items);
+    }
+
+    #host(registration: PluginRegistrationLike): void {
+        const manifest = (registration.manifest ?? { schemaVersion: 1, name: registration.name, version: registration.version }) as CmsPluginManifest;
+        const problems = manifestProblems(manifest);
+        if (manifest.name !== registration.name) problems.push(`The manifest names ${String(manifest.name)}, not ${registration.name}.`);
+        // Never in the application instead: the build left its code out of it.
+        if (isolatedCode(registration) && !this.#runner) problems.push('It runs isolated, and this application has no Worker Loader binding (LOADER) to run it. Add the binding, or add the plugin with --in-app.');
+        const resources: string[] = [];
+        if (!problems.length) {
+            for (const declaration of manifest.resources ?? []) resources.push(this.#register(resolveResource({ ...declaration, owner: registration.name }, registration.name)).id);
+        }
+        this.#plugins.set(registration.name, { registration, manifest, problems, resources, requested: problems.length ? [] : requestedGrants(manifest), commands: new Map() });
+    }
+
+    /**
+     * Pair each plugin's `hooks` on another plugin's points with that plugin's `provides`. A
+     * consumer of a point no installed plugin provides, or of another version, is invalid.
+     * Registration order never matters: the registry matches points by name, and every point
+     * is built here before any plugin's `register()` runs.
+     */
+    #resolvePluginPoints(): void {
+        for (const plugin of this.#plugins.values()) {
+            if (plugin.problems.length) continue;
+            for (const point of providedPoints(plugin.manifest)) this.#pluginPoints.set(point.name, { point, plugin: plugin.manifest.name });
+        }
+        for (const plugin of [...this.#plugins.values()]) {
+            if (plugin.problems.length) continue;
+            const problems: string[] = [];
+            for (const hook of plugin.manifest.hooks ?? []) {
+                if (!isPluginPoint(hook.point)) continue;
+                const provided = this.#pluginPoints.get(hook.point);
+                if (!provided) problems.push(`hooks: ${hook.point} is provided by no installed plugin.`);
+                else if (provided.point.version !== hook.version) problems.push(`hooks: ${hook.point} is version ${provided.point.version}, not ${hook.version}.`);
+            }
+            if (problems.length) this.#plugins.set(plugin.manifest.name, { ...plugin, problems, requested: [] });
+        }
+    }
+
+    #registerPlugin(plugin: HostedPlugin): void {
+        const register = plugin.registration.module?.register;
+        const isolated = isolatedCode(plugin.registration);
+        if (plugin.problems.length || (!isolated && typeof register !== 'function')) return;
+        const name = plugin.manifest.name;
+        const active = () => this.pluginActive(name);
+        const declared = new Set((plugin.manifest.hooks ?? []).map(hook => hook.point));
+        const provided = new Set((plugin.manifest.provides ?? []).map(declaration => declaration.point));
+        const declaredCommands = new Set((plugin.manifest.commands ?? []).map(command => command.name));
+        // Unrestricted: any extension point, though handlers still run only while the plugin is active.
+        const anyPoint = plugin.manifest.permissions?.unrestricted === true;
+        const checkHook = (point: ExtensionPoint) => {
+            if (!anyPoint && !declared.has(point.name)) throw new Error(`Plugin ${name} registers ${point.name}, which its manifest does not declare in hooks.`);
+            const known = this.#pluginPoints.get(point.name);
+            if (known && (known.point.kind !== point.kind || known.point.version !== point.version)) throw new Error(`Plugin ${name} registers ${point.name} as a version ${point.version} ${point.kind}; ${known.plugin} provides a version ${known.point.version} ${known.point.kind}.`);
+        };
+        const checkProvided = (point: ExtensionPoint) => {
+            const known = this.#pluginPoints.get(point.name);
+            if (!provided.has(point.name) || !known) throw new Error(`Plugin ${name} invokes ${point.name}, which its manifest does not declare in provides.`);
+            if (known.point.kind !== point.kind || known.point.version !== point.version) throw new Error(`Plugin ${name} invokes ${point.name} as a version ${point.version} ${point.kind}, not the version ${known.point.version} ${known.point.kind} it provides.`);
+        };
+        const allowed = async (grant: string, what: string): Promise<void> => {
+            if (!(await active())) throw new CmsError('CMS_UNAVAILABLE', `Plugin ${name} is not active.`);
+            const granted = this.#granted(name, await this.#state());
+            if (!granted.has(grant) && !granted.has(UNRESTRICTED_GRANT)) throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} is not granted ${what}.`);
+        };
+        const capabilities = pluginCapabilities({ name, manifest: plugin.manifest, allowed, files: this.files, mail: this.mail, mailFrom: this.mailFrom, users: this.users, cache: this.cache,
+            outbox: this.outbox, secrets: this.#secrets, ai: this.ai, payments: this.payments, now: this.#now, queued: () => this.outboxWritten(),
+            // An isolated plugin's job handlers live in its Worker.
+            ...(isolated ? { jobRunner: (job: string, payload: unknown, ctx: PluginJobContext) => this.#runIsolated(name, { kind: 'job', name: job, payload, scheduledAt: ctx.scheduledAt, principal: ctx.principal }, 'work', [ctx.principal]) } : {}) });
+        // The plugin's jobs, queued or scheduled, run its handlers; other plugins' events pass by.
+        this.hooks.addAction(pluginJob, async (event, ctx) => { if (event.plugin === name) await capabilities.runJob(event, { signal: ctx.signal }); }, { plugin: name });
+        const context: PluginContext = {
+            name,
+            version: plugin.manifest.version,
+            resources: plugin.resources,
+            hooks: {
+                // A disabled, unmigrated or ungranted plugin's handlers do not run.
+                addAction: (point, handler, options = {}) => {
+                    checkHook(point);
+                    this.hooks.addAction(point, async (payload, ctx) => { if (await active()) await handler(payload, ctx); }, { ...options, plugin: name });
+                },
+                addFilter: (point, handler, options = {}) => {
+                    checkHook(point);
+                    this.hooks.addFilter(point, async (value, ctx) => await active() ? handler(value, ctx) : value, { ...options, plugin: name });
+                },
+                point: ((pointName: string, kind: 'action' | 'filter') => {
+                    const known = this.#pluginPoints.get(pointName);
+                    if (!known || (!anyPoint && !declared.has(pointName) && !provided.has(pointName))) throw new Error(`Plugin ${name} asks for ${pointName}, which its manifest does not declare in hooks or provides.`);
+                    if (known.point.kind !== kind) throw new Error(`${pointName} is ${known.point.kind === 'action' ? 'an action' : 'a filter'}, not ${kind === 'action' ? 'an action' : 'a filter'}.`);
+                    return known.point;
+                }) as PluginContext['hooks']['point'],
+                doAction: async (point, payload, options) => {
+                    checkProvided(point);
+                    if (!(await active())) return Object.freeze({ ok: true, outcomes: Object.freeze([]), failed: Object.freeze([]) });
+                    return this.hooks.doAction(point, payload, options);
+                },
+                applyFilters: async (point, value, input, options) => {
+                    checkProvided(point);
+                    if (!(await active())) return value;
+                    return this.hooks.applyFilters(point, value, ...[input, options] as never);
+                },
+            },
+            commands: {
+                add: (command, handler) => {
+                    if (!declaredCommands.has(command)) throw new Error(`Plugin ${name} adds command ${command}, which its manifest does not declare.`);
+                    plugin.commands.set(command, handler);
+                },
+            },
+            cms: this.pluginCms(name),
+            files: capabilities.files,
+            mail: capabilities.mail,
+            jobs: capabilities.jobs,
+            users: capabilities.users,
+            cache: capabilities.cache,
+            secrets: capabilities.secrets,
+            ai: capabilities.ai,
+            payments: capabilities.payments,
+            unrestricted: async () => {
+                await allowed(UNRESTRICTED_GRANT, 'unrestricted access');
+                return { db: this.db, host: this, env: this.#env };
+            },
+            settings: {
+                get: async field => {
+                    if (!(await active())) throw new CmsError('CMS_UNAVAILABLE', `Plugin ${name} is not active.`);
+                    const fields = plugin.manifest.settings?.fields;
+                    if (typeof field !== 'string' || !fields || !Object.hasOwn(fields, field)) throw new CmsError('CMS_NOT_FOUND', `Unknown setting of plugin ${name}.`);
+                    return structuredClone(await this.settings.get(`${pluginSettingsGroupId(name)}.${field}`));
+                },
+                all: async () => {
+                    if (!(await active())) throw new CmsError('CMS_UNAVAILABLE', `Plugin ${name} is not active.`);
+                    const values = await this.settings.all();
+                    return Object.fromEntries(Object.keys(plugin.manifest.settings?.fields ?? {}).map(field => [field, structuredClone(values[`${pluginSettingsGroupId(name)}.${field}`])]));
+                },
+            },
+            fetch: async (input, init) => {
+                const granted = this.#granted(name, await this.#state());
+                const unrestricted = granted.has(UNRESTRICTED_GRANT);
+                const hosts = [...granted].filter(grant => grant.startsWith('network:')).map(grant => grant.slice('network:'.length));
+                const check = (url: URL) => {
+                    if (!unrestricted && !hosts.some(host => host === url.hostname || (host.startsWith('*.') && url.hostname.endsWith(host.slice(1))))) {
+                        throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} is not granted network access to ${url.hostname}.`);
+                    }
+                };
+                let url = new URL(input instanceof Request ? input.url : String(input));
+                check(url);
+                if (unrestricted) return this.#fetch(input, init);
+                // Redirects are followed here, one hop at a time, so a granted host cannot pass the request on to a host that is not.
+                const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
+                const redirect = init?.redirect ?? (input instanceof Request ? input.redirect : 'follow');
+                let response = await this.#fetch(input, { ...init, redirect: 'manual' });
+                const location = () => response.status >= 300 && response.status < 400 ? response.headers.get('location') : null;
+                if (redirect === 'manual' || !location()) return response;
+                if (redirect === 'error') throw new TypeError(`Plugin ${name}'s request was redirected.`);
+                // A request with a body is not sent again: its redirect is returned as it came.
+                if (method !== 'GET' && method !== 'HEAD') return response;
+                const headers = init?.headers ?? (input instanceof Request ? input.headers : undefined);
+                const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
+                for (let hop = 0; hop < 5 && location(); hop++) {
+                    url = new URL(location()!, url);
+                    check(url);
+                    await response.body?.cancel().catch(() => undefined);
+                    response = await this.#fetch(url.href, { method, redirect: 'manual', ...(headers ? { headers } : {}), ...(signal ? { signal } : {}) });
+                }
+                if (location()) throw new CmsError('CMS_UNAVAILABLE', `Plugin ${name}'s request was redirected too many times.`);
+                return response;
+            },
+        };
+        if (isolated) this.#registerIsolated(plugin, context, isolated);
+        else (register as (context: PluginContext) => void)(context);
+    }
+
+    /**
+     * An isolated plugin's handlers are stand-ins built from its manifest: each forwards its
+     * call to the plugin's Worker, which runs the handlers `register()` added there. The context
+     * the host would have given `register()` is what the bridge serves.
+     */
+    #registerIsolated(plugin: HostedPlugin, context: PluginContext, code: IsolatedPluginCode): void {
+        const name = plugin.manifest.name;
+        this.#isolated.set(name, { context, code });
+        for (const hook of plugin.manifest.hooks ?? []) {
+            const point = this.#pointNamed(hook.point);
+            if (!point) continue;
+            const options = { priority: hook.priority ?? 10 };
+            if (point.kind === 'action') {
+                context.hooks.addAction(point as ActionPoint<unknown>, async (payload, ctx) => { await this.#runIsolated(name, { kind: 'action', point: point.name, payload }, 'hook', [], ctx.deadline); }, options);
+            } else {
+                context.hooks.addFilter(point as FilterPoint<unknown, unknown>, (value, ctx) => this.#runIsolated(name, { kind: 'filter', point: point.name, value, input: (ctx as FilterContext<unknown>).input }, 'hook', [], ctx.deadline), options);
+            }
+        }
+        for (const command of plugin.manifest.commands ?? []) {
+            context.commands.add(command.name, (input, { principal }) => this.#runIsolated(name, { kind: 'command', name: command.name, input, principal }, 'work', [principal]));
+        }
+    }
+
+    /** A CMS point or one an installed plugin provides, by name. */
+    #pointNamed(name: string): ExtensionPoint | undefined {
+        return this.#pluginPoints.get(name)?.point ?? EXTENSION_POINTS.find(point => point.name === name);
+    }
+
+    #isolatePoints(plugin: HostedPlugin): IsolatePoint[] {
+        const names = [...(plugin.manifest.hooks ?? []).map(hook => hook.point), ...(plugin.manifest.provides ?? []).map(point => point.point)];
+        return names.flatMap(pointName => {
+            const point = this.#pointNamed(pointName);
+            return point ? [{ name: point.name, kind: point.kind, version: point.version, timeoutMs: point.timeoutMs }] : [];
+        });
+    }
+
+    async #runIsolated(name: string, run: IsolateRun, work: IsolatedWork, principals: readonly Principal[], deadline = Date.now() + ISOLATED_WORK_MS): Promise<unknown> {
+        const isolated = this.#isolated.get(name);
+        const plugin = this.#plugins.get(name);
+        if (!isolated || !plugin || !this.#runner) throw new CmsError('CMS_UNAVAILABLE', `Plugin ${name} cannot run isolated here.`);
+        const call: IsolateCall = { protocol: ISOLATE_PROTOCOL, site: this.site, deadline, resources: plugin.resources, points: this.#isolatePoints(plugin), payments: this.payments?.name ?? null, run };
+        try {
+            return await this.#runner.run(isolated.code, call, { site: this.site, plugin: name, deadline, principals }, work);
+        } catch (error) {
+            // A payload with functions or class instances cannot cross; say so instead of the platform's words.
+            if ((error as { name?: unknown } | null)?.name === 'DataCloneError') {
+                throw Object.assign(new Error(`Plugin ${name} could not be called with ${run.kind === 'action' || run.kind === 'filter' ? run.point : run.name}: its data cannot be copied into the plugin's Worker (${(error as Error).message}).`), { code: 'COSSACK_PLUGIN_PAYLOAD' });
+            }
+            throw error;
+        }
+    }
+
+    /** What the application's `PluginBridge` serves: one call from an isolated plugin's Worker, checked as the plugin's context checks it. */
+    isolatedCall(name: string, member: string, args: readonly unknown[], principals: readonly Principal[]): Promise<unknown> {
+        const isolated = this.#isolated.get(name);
+        if (!isolated) return Promise.reject(new CmsError('CMS_NOT_FOUND', `Plugin ${name} does not run isolated on this site.`));
+        return serveIsolatedCall(isolated.context, member, args, principals);
+    }
+
+    async #pluginStatus(plugin: HostedPlugin, state: Activation): Promise<PluginStatus> {
+        const themeOnly = isThemeOnly(plugin.manifest);
+        const network = themeOnly ? 'available' : pluginState(state.policy, plugin.manifest.name);
+        const base = { name: plugin.registration.name, version: plugin.registration.version, description: typeof plugin.manifest.description === 'string' ? plugin.manifest.description : '', ...authorOf(plugin), ...artwork(plugin), themeOnly,
+            unrestricted: plugin.requested.includes(UNRESTRICTED_GRANT), requests: [PLUGIN_ENABLED, ...plugin.requested], network,
+            runtime: plugin.registration.isolation?.mode === 'isolated' ? 'isolated' as const : 'app' as const,
+            ...(plugin.registration.isolation?.mode === 'app' && plugin.registration.isolation.reason ? { runtimeReason: plugin.registration.isolation.reason } : {}) };
+        if (plugin.problems.length) return { ...base, active: false, reason: `Invalid manifest: ${plugin.problems.join(' ')}`, missing: [] };
+        // A theme alone runs nothing on the server: choosing it under Appearance is all it needs.
+        if (themeOnly) return { ...base, active: true, missing: [] };
+        if (network === 'hidden') return { ...base, active: false, reason: 'Hidden by the network.', missing: [] };
+        const unmigrated: string[] = [];
+        for (const id of [...plugin.resources, ...(plugin.manifest.collections ?? []).map(collection => `cms/${collection.name}`)]) {
+            const resource = this.#resources.get(id);
+            if (!resource || state.hashes.get(id) !== await declarationHash(resource)) unmigrated.push(id);
+        }
+        const granted = this.#granted(plugin.manifest.name, state);
+        const missing = [PLUGIN_ENABLED, ...plugin.requested].filter(grant => !granted.has(grant));
+        if (unmigrated.length) return { ...base, active: false, reason: `Waiting for a migration of ${unmigrated.join(', ')}.`, missing };
+        if (missing.length && network === 'network') return { ...base, active: false, reason: `Needs the network's grant for ${missing.join(', ')}.`, missing };
+        if (missing.length) return { ...base, active: false, reason: granted.size ? `Needs a new grant for ${missing.join(', ')}.` : 'Not enabled.', missing };
+        return { ...base, active: true, missing: [] };
+    }
+
+    /**
+     * Register a visitor: `cms.user.before-register` filters may refuse it (`CMS_VALIDATION`
+     * with their message), change its name and roles, or hold it for approval. Returns the
+     * draft the account is made from.
+     */
+    async registrationDraft(input: { email: string; name: string; roles: readonly string[]; approval: boolean }, context: { origin: string }): Promise<RegistrationDraft> {
+        const original: RegistrationDraft = { email: input.email, name: input.name, roles: [...input.roles], approval: input.approval, refused: null };
+        const known = new Set((await this.users.roles({ limit: 200 })).map(role => role.id));
+        const draft = registrationDraftOf(await this.hooks.applyFilters(userBeforeRegister, original, context), original, known);
+        if (draft.refused) throw new CmsError('CMS_VALIDATION', draft.refused);
+        return draft;
+    }
+
+    /** Queue `cms.user.registered` for a new account. */
+    async userRegistered(user: UserRef, state: UserRegisteredEvent['state']): Promise<void> {
+        const event: UserRegisteredEvent = { eventId: `user.registered:${user.id}`, topic: 'user.registered', at: this.#now(), user: { id: user.id, email: user.email, name: user.name }, state };
+        if (await this.outbox.enqueue('user.registered', event, { ignoreDuplicate: true })) this.outboxWritten();
+    }
+
+    /** Queue `cms.user.signed-in` for a session that just started; `sessionId` keeps repeated deliveries one event. */
+    async userSignedIn(user: UserRef, sessionId: string): Promise<void> {
+        await this.outbox.enqueue('user.signed-in', await this.#signedInEvent(user, sessionId), { ignoreDuplicate: true }).then(inserted => { if (inserted) this.outboxWritten(); });
+    }
+
+    /** The outbox row of `cms.user.signed-in`, for the batch that stores the session: the event is queued exactly when the session is. */
+    async userSignedInStatement(user: UserRef, sessionId: string): Promise<Statement> {
+        return this.outbox.statement('user.signed-in', await this.#signedInEvent(user, sessionId), { ignoreDuplicate: true });
+    }
+
+    async #signedInEvent(user: UserRef, sessionId: string): Promise<UserSignedInEvent> {
+        return { eventId: `user.signed-in:${await sha256Hex(sessionId)}`, topic: 'user.signed-in', at: this.#now(), user: { id: user.id, email: user.email, name: user.name } };
+    }
+
+    /**
+     * A payments webhook: the provider verifies the request and names the event; a known event is
+     * queued as `cms.payment.event` for plugins and delivered from the outbox, so a handler that
+     * fails is retried. Returns the event, or null for one the CMS does not relay. Throws
+     * `CMS_FORBIDDEN` for a bad signature and `CMS_UNAVAILABLE` without a provider.
+     */
+    async receivePayment(request: Request): Promise<PaymentEvent | null> {
+        if (!this.payments) throw new CmsError('CMS_UNAVAILABLE', 'The application has no payments provider.');
+        const event = await this.payments.webhook(request);
+        if (!event) return null;
+        if (await this.outbox.enqueue('payment.event', event, { ignoreDuplicate: true })) this.outboxWritten();
+        return event;
+    }
+
+    /** An entry's event as the automations see it: created, updated or deleted, and published when it just went live. */
+    async #automate(event: ResourceEvent): Promise<void> {
+        if (!event.resource.startsWith('cms/')) return;
+        const name = event.resource.slice('cms/'.length);
+        const collection = this.#collections.get(name);
+        if (!collection) return;
+        const record = event.record;
+        const path = record ? (await this.entryUrls(collection, [record]).catch(() => new Map<string, string | null>())).get(record.id) ?? '' : '';
+        const origin = this.indexnow.origin() ?? '';
+        const vars = { collection: name, collectionLabel: collection.label, id: event.id, title: record ? recordTitle(record, 'title') : '', status: record?.status ?? '', path, url: path ? `${origin}${path}` : '', actor: event.actor.id, record };
+        const scopes = await this.#automationScopes(event.actor);
+        await this.automations.run(event.topic === 'resource.deleted' ? 'entry.deleted' : event.topic === 'resource.created' ? 'entry.created' : 'entry.updated', vars, scopes, event.eventId);
+        if (collection.publishable !== false && event.topic !== 'resource.deleted' && record?.status === 'published' && event.previousStatus !== 'published') await this.automations.run('entry.published', vars, scopes, `${event.eventId}:published`);
+    }
+
+    /** What `$site` and `$user` read in an automation's templates: the site's public settings and the account that acted, when a user did. */
+    async #automationScopes(actor?: WriteActor): Promise<Omit<BindingScopes, 'entry'>> {
+        const settings = await this.settings.all().catch(() => null);
+        const account = actor?.kind === 'user' ? await this.accounts.get(actor.id).catch(() => null) : null;
+        return { site: settings ? siteBindingScope(settings) : null, user: account ? { name: account.name, email: account.email } : null };
+    }
+
+    /** The schedules of active plugins that hold the jobs grant, for the clock. */
+    async #dueSchedules(): Promise<DueSchedule[]> {
+        const state = await this.#state();
+        const due: DueSchedule[] = [];
+        for (const plugin of this.#plugins.values()) {
+            if (plugin.problems.length || !plugin.manifest.schedules?.length) continue;
+            const granted = this.#granted(plugin.manifest.name, state);
+            if (!granted.has('capability:jobs') && !granted.has(UNRESTRICTED_GRANT)) continue;
+            if (!(await this.#pluginStatus(plugin, state)).active) continue;
+            for (const schedule of plugin.manifest.schedules) due.push({ plugin: plugin.manifest.name, name: schedule.name, cron: schedule.cron });
+        }
+        return due;
+    }
+
+    /** What a plugin is granted: the network's approval when the network activates it, else the site's own grant. */
+    #granted(name: string, state: Activation): ReadonlySet<string> {
+        const network = state.policy.plugins.get(name);
+        if (network?.state === 'hidden') return new Set();
+        if (network?.state === 'network') return new Set([PLUGIN_ENABLED, ...network.grants]);
+        return state.grants.get(`plugin:${name}`) ?? new Set<string>();
+    }
+
+    #state(): Promise<Activation> {
+        const now = this.#now();
+        if (!this.#activation || now - this.#activation.at > this.#activationTtl) {
+            const policy = readPolicy(this.network).catch(error => { console.error('[cms] could not read the network policy', error); return OPEN_POLICY; });
+            const state = this.db.read([
+                { rql: 'SELECT resource, declaration_hash FROM cms_schema_state ORDER BY resource LIMIT 1000' },
+                { rql: "SELECT subject, permission FROM cms_grants WHERE subject LIKE 'plugin:%' ORDER BY subject, permission LIMIT 1000" },
+                { rql: "SELECT version FROM cms_migrations WHERE kind = 'host' LIMIT 100" },
+            ]).then(async result => {
+                const hostVersions = new Set(result.results[2]!.rows.map(([version]) => Number(version as bigint)));
+                // A database made by another build is refused on every request, rather than read with the wrong schema.
+                const unknown = unknownHostSteps(hostVersions);
+                if (unknown.length) throw new CmsError('CMS_SCHEMA_MISMATCH', hostSchemaMismatch(unknown));
+                const grants = new Map<string, Set<string>>();
+                for (const [subject, permission] of result.results[1]!.rows) {
+                    const set = grants.get(subject as string) ?? new Set<string>();
+                    set.add(permission as string);
+                    grants.set(subject as string, set);
+                }
+                return {
+                    hashes: new Map(result.results[0]!.rows.map(([resource, hash]) => [resource as string, hash as string])), grants,
+                    hostVersions, policy: await policy,
+                };
+            }).catch(async error => {
+                // Before the first migration the host tables do not exist yet.
+                if (/cms_schema_state|cms_grants|cms_migrations|no such table|not found/i.test(String((error as Error).message))) return { hashes: new Map<string, string>(), grants: new Map<string, Set<string>>(), hostVersions: new Set<number>(), policy: await policy };
+                throw error;
+            });
+            this.#activation = { at: now, state };
+            state.catch(() => { this.#activation = undefined; });
+        }
+        return this.#activation.state;
+    }
+}
+
+function sameKeyOrder(a: object, b: object): boolean {
+    return Object.keys(a).join('\n') === Object.keys(b).join('\n');
+}
+
+/** Where a visitor's comment goes: spam for disallowed words, held for links or moderation rules, else approved. */
+function writeActorOf(principal: Principal): WriteActor {
+    return { kind: principal.kind, id: principalId(principal) };
+}
+
+async function commentStatus(fields: { content: string; authorName: string; authorEmail: string; authorUrl: string }, settings: SiteSettings, approvedBefore: () => Promise<boolean>): Promise<CommentStatus> {
+    const text = `${fields.content}\n${fields.authorName}\n${fields.authorEmail}\n${fields.authorUrl}`.toLowerCase();
+    const blocked = settings['discussion.blockedWords'].split('\n').map(word => word.trim().toLowerCase()).filter(Boolean);
+    if (blocked.some(word => text.includes(word))) return 'spam';
+    const links = (fields.content.match(/https?:\/\//gi) ?? []).length;
+    if (settings['discussion.maxLinks'] > 0 && links >= settings['discussion.maxLinks']) return 'pending';
+    const moderation = settings['discussion.moderation'];
+    if (moderation === 'all') return 'pending';
+    if (moderation === 'first') return await approvedBefore() ? 'approved' : 'pending';
+    return 'approved';
+}
+
+/** A plugin's theme loaders, from its `server.ts` `loaders` export. */
+function loadersOf(plugin: HostedPlugin): ThemeLoaders {
+    const loaders = plugin.registration.module?.loaders;
+    return loaders && typeof loaders === 'object' ? Object.fromEntries(Object.entries(loaders).filter(([, loader]) => typeof loader === 'function')) as ThemeLoaders : {};
+}
+
+/** A plugin that only ships a theme: no resources, blocks, hooks, commands, slots or permissions. */
+function isThemeOnly(manifest: CmsPluginManifest): boolean {
+    return manifest.theme !== undefined && manifest.settings === undefined && !manifest.resources?.length && !manifest.collections?.length && !manifest.blocks?.length && !manifest.hooks?.length && !manifest.commands?.length
+        && !Object.keys(manifest.ui?.slots ?? {}).length && !Object.keys(manifest.permissions?.resources ?? {}).length && !manifest.permissions?.network?.length && !manifest.permissions?.define?.length && manifest.permissions?.unrestricted !== true;
+}
+
+/** The plugin's logo and cover: the manifest's files, else `assets/logo.*` and `assets/cover.*`. */
+/** A plugin's maker, with empty strings for what the manifest leaves out. */
+export interface PluginAuthorView { readonly name: string; readonly url: string; readonly email: string }
+
+function authorOf(plugin: HostedPlugin): { author: PluginAuthorView | null } {
+    const author = plugin.manifest.author;
+    if (!author || typeof author !== 'object' || typeof author.name !== 'string') return { author: null };
+    return { author: { name: author.name.trim(), url: typeof author.url === 'string' ? author.url : '', email: typeof author.email === 'string' ? author.email : '' } };
+}
+
+function artwork(plugin: HostedPlugin): { logo: string | null; cover: string | null } {
+    const assets = plugin.registration.assets ?? {};
+    const pick = (declared: unknown, name: string) => (typeof declared === 'string' ? assets[declared] : undefined)
+        ?? ['svg', 'png', 'webp', 'jpg', 'jpeg', 'gif', 'avif'].map(extension => assets[`assets/${name}.${extension}`]).find(Boolean) ?? null;
+    return { logo: pick(plugin.manifest.logo, 'logo'), cover: pick(plugin.manifest.cover, 'cover') };
+}
+
+export function createCMS(options: CmsOptions): CmsHost {
+    return new CmsHost(options);
+}
+
+/** Client address and browser of a sign-in, from a Hono context, for the sessions list. */
+function requestMetadata(context: unknown): { ip?: string; userAgent?: string } {
+    const request = (context as { req?: { header(name: string): string | undefined } } | undefined)?.req;
+    if (!request || typeof request.header !== 'function') return {};
+    // The address the deployment trusts (TRUSTED_PROXY_HEADER, Cloudflare's, or the socket's), not a header anyone sends.
+    const address = getClientIp(context as Parameters<typeof getClientIp>[0]);
+    const ip = address && address !== 'anonymous' ? address : undefined;
+    const userAgent = request.header('user-agent');
+    return { ...(ip ? { ip } : {}), ...(userAgent ? { userAgent } : {}) };
+}
+
+/** Whether a payment event completes a payment, once per payment: what its provider says in `completes`. */
+export function paymentCompleted(event: PaymentEvent): boolean {
+    return event.completes;
+}
+
+/**
+ * Whether a copy of an entry (a duplicate, a translation) would hand someone what the entry
+ * locks: a protected or members-only entry is copied only by those who may edit it. Members it
+ * is for read it, but a copy they own would also carry its password, or outlive its roles.
+ */
+export function lockedCopy(record: RecordShape, editor: boolean): boolean {
+    return !editor && isLockedRecord(record);
+}

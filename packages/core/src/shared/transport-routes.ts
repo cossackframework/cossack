@@ -97,3 +97,45 @@ export function transportPath(name: TransportRouteName, param?: string): string 
   if (param === undefined) throw new TypeError(`[Cossack] The ${name} transport path needs a parameter.`);
   return `${route.slice(0, index)}/${encodeURIComponent(param)}`;
 }
+
+/** Context variable where a transport request records the page or layout file whose guards it runs. */
+export const TRANSPORT_GUARD_PATH = 'cossack.transportGuardPath';
+
+/**
+ * The page or layout file (`/src/pages/dashboard/index.ts`) whose guards a transport request
+ * (an RPC call, an upload, a stream or a WebSocket) runs, from the request's checked target;
+ * undefined for other requests. A layout guard learns from it which page an action belongs to.
+ */
+export function transportGuardPath(c: { get: (key: any) => unknown }): string | undefined {
+  const value = c.get(TRANSPORT_GUARD_PATH);
+  return typeof value === 'string' ? value : undefined;
+}
+
+/** Context variable where a transport request records the file whose code it runs. */
+export const TRANSPORT_TARGET_PATH = 'cossack.transportTargetPath';
+
+/**
+ * What a transport request runs: the file of the component an RPC call names, a service's layout,
+ * the stream's page or layout, or the realtime owner's id (a page's or layout's file, and for a
+ * realtime component its registry id, never the page the client names, so it matches no page
+ * file). It differs from {@link transportGuardPath} for a layout's actions, which run under the
+ * client's page, and for a realtime component: a guard that exempts one page's own actions checks
+ * both, and a guard that matches a page file on this path does not cover component sockets.
+ */
+export function transportTargetPath(c: { get: (key: any) => unknown }): string | undefined {
+  const value = c.get(TRANSPORT_TARGET_PATH);
+  return typeof value === 'string' ? value : undefined;
+}
+
+/** Context variable where an RPC call records the action it calls. */
+export const TRANSPORT_ACTION = 'cossack.transportAction';
+
+/**
+ * The action an RPC call names on its {@link transportTargetPath} (a component's method, or a
+ * service's), as the client sent it; undefined for other requests. A guard may exempt one
+ * named action of one file, such as a layout's sign-out.
+ */
+export function transportAction(c: { get: (key: any) => unknown }): string | undefined {
+  const value = c.get(TRANSPORT_ACTION);
+  return typeof value === 'string' ? value : undefined;
+}

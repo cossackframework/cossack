@@ -130,3 +130,38 @@ describe('shared structural route model', () => {
     expect(watcher.listenerCount('add')).toBe(0); expect(watcher.listenerCount('unlink')).toBe(0); expect(watcher.listenerCount('change')).toBe(0);
   });
 });
+
+describe('functional handlers outside /api', () => {
+  it('classifies endpoints by their syntax, in the application and in plugins, without executing them', () => {
+    const root = project();
+    write(root, 'src/pages/index.ts');
+    write(root, 'src/pages/about/index.ts', "import { Cossack } from '@cossackframework/core';\nexport default class About extends Cossack {}");
+    write(root, 'src/pages/feed.xml/index.ts', "export const GET = () => new Response('<rss/>');");
+    write(root, 'src/pages/downloads/[file]/index.ts', "throw new Error('never executed');\nexport default async (c: any) => c.text(c.req.param('file'));");
+    write(root, 'src/pages/webhooks/crm/index.ts', "import { defineApi } from '@cossackframework/framework/api';\nexport const POST = defineApi({ handler: () => new Response() });");
+    write(root, 'src/pages/intro.md', '# Intro');
+    write(root, 'src/plugins/crm/plugin.json', JSON.stringify({ name: 'crm', version: '1.0.0' }));
+    write(root, 'src/plugins/crm/pages/webhooks/stripe/index.ts', 'export const POST = async () => new Response(null, { status: 204 });');
+    const generated = generateRoutes(root, { includeMarkdown: true });
+    const kinds = Object.fromEntries(generated.manifest.routes.map(route => [route.name, route.kind]));
+    expect(kinds).toEqual({ '/': 'page', '/about': 'page', '/intro': 'page', '/feed.xml': 'api', '/downloads/[file]': 'api', '/webhooks/crm': 'api', '/webhooks/stripe': 'api' });
+    expect(generated.manifest.handlers).toEqual([
+      '/src/pages/downloads/[file]/index.ts', '/src/pages/feed.xml/index.ts', '/src/pages/webhooks/crm/index.ts', '/src/pages/webhooks/stripe/index.ts',
+    ]);
+    // Generated URL helpers and API types include the endpoints, through their real sources.
+    expect(generated.source).toContain('"/feed.xml": "/feed.xml"');
+    expect(generated.source).toContain('"/feed.xml": typeof import("../src/pages/feed.xml/index.ts")');
+    expect(generated.source).toContain('"/downloads/[file]": typeof import("../src/pages/downloads/[file]/index.ts")');
+    expect(generated.source).toContain('"/webhooks/stripe": typeof import("../src/plugins/crm/pages/webhooks/stripe/index.ts")');
+    expect(generated.source).not.toContain('about/index.ts');
+  });
+
+  it('follows a module whose exports change shape', () => {
+    const root = project();
+    const file = write(root, 'src/pages/hook/index.ts', 'export const POST = () => new Response();');
+    expect(generateRoutes(root).manifest.routes[0]).toMatchObject({ name: '/hook', kind: 'api' });
+    writeFileSync(file, "import { Cossack } from '@cossackframework/core';\nexport default class Hook extends Cossack { POST() { return 'a method, not an export'; } }");
+    expect(generateRoutes(root).manifest.routes[0]).toMatchObject({ name: '/hook', kind: 'page' });
+    expect(generateRoutes(root).manifest.handlers).toBeUndefined();
+  });
+});

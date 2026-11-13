@@ -1,9 +1,11 @@
 import { Context, type MiddlewareHandler } from 'hono';
 import { assertResponseHeadersMutable, getLocaleCatalog, RESPONSE_HEADER_STATE_KEY } from '@cossackframework/core';
 import configuredMiddlewares from 'virtual:cossack-middlewares';
+import { gatePluginMiddlewares } from './plugin-activity.js';
 import configFactories, { requirements as configRequirements, environment as configEnvironment } from 'virtual:cossack-config';
 import { ensureRequestContextAlsWired, runWithContext } from './request-context-als.js';
 import { withRuntimeRouteParams } from './runtime-websocket.js';
+import { TRANSPORT_GUARD_PATH, TRANSPORT_TARGET_PATH } from './transport-routes.js';
 import { prepareConfigStore, runWithConfig } from './config.js';
 import { ensureLocaleAlsWired, runWithLocale } from './i18n-context.js';
 import { cloneRealtimeIdentity, snapshotRealtimeRequest, type RealtimeIdentity, type RealtimeRequestSnapshot } from './realtime-identity.js';
@@ -12,9 +14,13 @@ export { captureRealtimeIdentity, RealtimeIdentityConfigurationError, snapshotRe
 export type { RealtimeIdentity, RealtimeRequestSnapshot } from './realtime-identity.js';
 
 function contextFromSnapshot(snapshot: RealtimeRequestSnapshot): Context {
-    return withRuntimeRouteParams(new Context(new Request(snapshot.url, { headers: snapshot.headers }), {
+    const c = withRuntimeRouteParams(new Context(new Request(snapshot.url, { headers: snapshot.headers }), {
         env: snapshot.env, path: snapshot.path,
     }), snapshot.params);
+    // Guards see the same page and target on every revalidation as on the first request.
+    if (snapshot.guardPath) c.set(TRANSPORT_GUARD_PATH as never, snapshot.guardPath as never);
+    if (snapshot.targetPath) c.set(TRANSPORT_TARGET_PATH as never, snapshot.targetPath as never);
+    return c;
 }
 
 /** Run each check in a fresh request/ORM scope, without replaying bearer headers. */
@@ -60,7 +66,7 @@ export async function withRealtimeAuthorization<T>(
     ensureRequestContextAlsWired();
     let outcome: { context: Context; value: T } | null = null;
     let index = -1;
-    const stack = [...configuredMiddlewares, ...middlewares];
+    const stack = [...gatePluginMiddlewares(configuredMiddlewares), ...middlewares];
     let operationStarted = false;
     let operationFailed = false;
     const dispatch = async (position: number): Promise<void> => {

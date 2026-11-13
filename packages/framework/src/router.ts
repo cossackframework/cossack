@@ -7,7 +7,7 @@ import { getModuleDefault } from './module-default.js';
 import { getForwardedServerMethodClass } from '@cossackframework/core';
 // src/router.ts
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { Hono, type Context, type Handler } from 'hono';
+import { Hono, type Context, type Handler, type Next } from 'hono';
 import { renderRoot, TemplateHelpers } from './root.js';
 import { Page, PageOptions, Cossack, User, setPublicUserProjection, toPublicUser, type CossackRuntimeInfo, type Middleware, type PublicUserProjection } from '@cossackframework/core';
 import {
@@ -132,6 +132,7 @@ import { createRpcStreamResponse, isRpcStream, retainRpcResponseBody } from './t
 import { logRpcFailure, type RpcFailureContext } from './transports/rpc-logging.js';
 import { retainResponseLifetime } from './response-lifetime.js';
 import { captureRealtimeIdentity, snapshotRealtimeRequest, withRealtimeAuthorization } from './realtime-context.js';
+import { gatePluginMiddlewares, setPluginActivity } from './plugin-activity.js';
 
 // Side-effect: register the i18n helpers (`__`, `setLocale`, ...) on
 // `globalThis` so bare `__('key')` calls in `render()` resolve during SSR.
@@ -233,7 +234,29 @@ function getLocalePreloadHref(manifest: Record<string, any>): string | undefined
   return `/${entry.file}`;
 }
 
-const { pages, layouts, loadings } = registry;
+const { pages, layouts } = registry;
+/** Route key -> rendered plugin whose `pages/` the module comes from (pages and layouts). */
+const owners: Record<string, string> = registry.owners ?? {};
+const HTTP_HANDLER_EXPORTS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'] as const;
+/** A function the router can call as a handler. Classes, component or not, are never handlers. */
+function isHandlerFunction(value: unknown): value is Handler {
+  return typeof value === 'function' && !/^class[\s{]/.test(Function.prototype.toString.call(value));
+}
+/**
+ * The module shape the static classifier (`page-inspection`) and the client stubs
+ * recognize as a functional HTTP handler: a default function, or without a default
+ * export, GET/POST/… functions. A default export of any other shape is not a handler.
+ */
+function isHttpHandlerExports(module: Record<string, unknown>): boolean {
+  const main = getModuleDefault(module);
+  if (main !== undefined) return isHandlerFunction(main);
+  return HTTP_HANDLER_EXPORTS.some(method => isHandlerFunction(module[method]));
+}
+/** 404 and error components have source identities, not URLs, and render through renderNotFound. */
+function isBoundaryPath(path: string): boolean {
+  const kind = classifyRoute(filePathToHttpRoute(path));
+  return kind === '404' || kind === 'error';
+}
 // Realtime child components, by build-time registry id.
 const realtimeComponents: Record<string, new () => Cossack> = realtimeRegistry?.components ?? {};
 const realtimeComponentIds = new Map<Function, string>(Object.entries(realtimeComponents).map(([id, Component]) => [Component, id]));
@@ -318,7 +341,7 @@ export type PageModule = {
 };
 
 function getLayoutStack(pagePath: string) {
-  return resolveLayoutPaths(pagePath, Object.keys(layouts));
+  return resolveLayoutPaths(pagePath, Object.keys(layouts), owners);
 }
 
 /**
@@ -327,7 +350,7 @@ function getLayoutStack(pagePath: string) {
  * In production, collects the page chunk and all its transitive JS imports.
  */
 function findNearestSpecialPage(pagePath: string, type: '404' | 'error') {
-  const path = resolveNearestSpecialPage(pagePath, Object.keys(pages), type);
+  const path = resolveNearestSpecialPage(pagePath, Object.keys(pages), type, owners);
   return path ? { path, component: getModuleDefault(pages[path] as object) as new () => Cossack } : null;
 }
 
@@ -377,6 +400,17 @@ export interface CreateAppOptions {
    * always comes from the authenticated user. Return only non-sensitive data.
    */
   publicUser?: PublicUserProjection;
+  /**
+   * Whether a rendered plugin's routes answer this request. The pages, layouts
+   * and HTTP handlers under `src/plugins/<name>/pages` are registered at build
+   * time; a host that activates plugins at runtime (the CMS) returns false for
+   * an inactive one, and the request is not found, exactly like an unknown URL,
+   * before any of the plugin's guards or handlers run. The same applies to RPC,
+   * SSE and WebSocket requests addressed to the plugin's components, and an
+   * inactive plugin's 404 boundaries do not render for unknown URLs. Without
+   * this option every plugin route is live.
+   */
+  isPluginActive?: (plugin: string, c: Context) => boolean | Promise<boolean>;
 }
 
 @Page({ transport: 'http' })
@@ -392,18 +426,32 @@ export function createApp(options: CreateAppOptions = {}) {
   // Hono's getPathNoStrict strips a single trailing slash before route matching,
   // so users get the same page whether or not they type the slash.
   const app = new Hono<{ Bindings: CloudflareBindings; Variables: { user?: User; db?: any; 'cossack.configContext'?: Pick<ConfigRequirementContext, 'runtime' | 'environment'> } }>({ strict: false });
-  app.onError((error, c) => {
+  app.onError(async (error, c) => {
     if (error instanceof HTTPException) return error.getResponse();
+    // The route whose chain was running: Hono's matchedRoutes lists every pattern the URL
+    // matches (a catch-all included), not the one that ran or was denied.
+    // Before any route ran (a global middleware failed), the most specific page route the URL
+    // matches: routes are registered most specific first, so the first one, not the catch-all.
+    // A route of an inactive plugin is no route: the URL is the app's, as for an unknown URL.
+    // Only a denial asks the host which plugins are active: other failures name a route for the log alone.
+    const denial = getAuthorizationFailure(error);
+    let ran = runningRoute(c);
+    if (ran === undefined) {
+      for (const route of c.req.matchedRoutes) {
+        if (route.path === '*' || !pagePathByRoute.has(route.path) || skipped(c, route.path) || (denial && await inactiveRoute(c, route.path))) continue;
+        ran = route.path;
+        break;
+      }
+    }
+    ran ??= c.req.matchedRoutes.findLast(route => route.path !== '*')?.path;
     const context = createServerFailureContext(c, {
-      route: c.req.matchedRoutes.findLast(route => route.path !== '*')?.path ?? 'unknown',
+      route: ran ?? 'unknown',
       action: 'request', runtime: options.runtimeAdapter?.name ?? 'cloudflare',
     });
     logConfigRequirementFailure(error);
-    const denial = getAuthorizationFailure(error);
     if (denial) {
-      if (wantsHtmlDocument(c)) {
-        const route = c.req.matchedRoutes.findLast(route => route.path !== '*')?.path;
-        const anchor = (route ? pagePathByRoute.get(route) : undefined) ?? resolveNotFound(c.req.path)?.path;
+      if (wantsHtmlDocument(c) && !(await matchedEndpoint(c))) {
+        const anchor = (ran ? pagePathByRoute.get(ran) : undefined) ?? (await resolveActiveNotFound(c))?.path;
         return renderDenialDocument(c, denial, anchor, context.requestId);
       }
       return c.json({ error: denial.message, code: denial.code, requestId: context.requestId }, denial.status);
@@ -423,6 +471,41 @@ export function createApp(options: CreateAppOptions = {}) {
     executed.add(key);
     return middleware(c, next);
   };
+  /**
+   * An inactive plugin's module answers like an unknown URL, before its own guards
+   * run. Keyed by plugin, so a request asks the host once however many of the
+   * plugin's layouts and pages are in the stack.
+   */
+  const pluginGate = (plugin: string): Middleware => policy(`plugin:${plugin}`, 0, async (c, next) => {
+    if (!options.isPluginActive || await options.isPluginActive(plugin, c)) return next();
+    return renderNotFound(c);
+  });
+  /**
+   * A route of a plugin that is off for this request steps aside, as an unknown URL would: its
+   * first middleware marks the route skipped, and every middleware and handler of that route
+   * (its layouts' guards included) then calls `next()`, so a broader route (the app's catch-all)
+   * answers, or Hono's not-found when nothing else matches.
+   */
+  const skippedRoutes = Symbol('cossack:skipped-plugin-routes');
+  const skipped = (c: Context, path: string) => (c as Context & { [skippedRoutes]?: Set<string> })[skippedRoutes]?.has(path) === true;
+  const routeGate = (path: string, plugin: string): Middleware => async (c, next) => {
+    if (options.isPluginActive && !(await options.isPluginActive(plugin, c))) {
+      ((c as Context & { [skippedRoutes]?: Set<string> })[skippedRoutes] ??= new Set()).add(path);
+    }
+    return next();
+  };
+  const skippable = <H extends (c: Context, next: Next) => unknown>(path: string, handler: H): H =>
+    (async (c: Context, next: Next) => skipped(c, path) ? next() : handler(c, next)) as unknown as H;
+  /**
+   * The route whose middleware and handlers are running, set as each route's chain starts (a
+   * skipped plugin route never sets it): the route a denial or failure belongs to.
+   */
+  const runningRoutes = Symbol('cossack:running-route');
+  const markRoute = (httpRoute: string): Middleware => async (c, next) => {
+    (c as Context & { [runningRoutes]?: string })[runningRoutes] = httpRoute;
+    return next();
+  };
+  const runningRoute = (c: Context): string | undefined => (c as Context & { [runningRoutes]?: string })[runningRoutes];
   const getMiddlewares = (componentPath: string): Middleware[] => {
     const paths = new Set([...getLayoutStack(componentPath), componentPath]);
     return [...paths].flatMap(path => {
@@ -430,7 +513,9 @@ export function createApp(options: CreateAppOptions = {}) {
       const component = path === '/src/App' ? options.AppComponent ?? RouterFallbackApp : module && getModuleDefault(module);
       const middlewares: Middleware[] = typeof component === 'function'
         ? (Reflect.getMetadata('page:options', component) as PageOptions | undefined)?.middlewares ?? [] : [];
-      return middlewares.map((middleware, index) => policy(path, index, middleware));
+      const owner = owners[path];
+      const gate = owner && !isBoundaryPath(path) ? [pluginGate(owner)] : [];
+      return [...gate, ...middlewares.map((middleware, index) => policy(path, index, middleware))];
     });
   };
 
@@ -449,6 +534,7 @@ export function createApp(options: CreateAppOptions = {}) {
     routePathToFilePathMap,
     pages,
     layouts,
+    owners,
     allowedOrigins: options.allowedOrigins,
     rpcBodyLimits: { jsonBytes: options.rpc?.maxJsonBytes, uploadBytes: options.rpc?.maxUploadBytes },
     runtimeInfo: resolveRuntimeInfo,
@@ -501,7 +587,9 @@ export function createApp(options: CreateAppOptions = {}) {
   // auth session, feature flags, ...). Each is registered in array order,
   // before the locale middleware. The registry is the Laravel-style "kernel"
   // list — definitions live in `src/middlewares/*.ts`. Absent file → no-op.
-  for (const middleware of configuredMiddlewares) {
+  // A plugin's middleware runs only while the plugin is active for the request.
+  setPluginActivity(options.isPluginActive);
+  for (const middleware of gatePluginMiddlewares(configuredMiddlewares, () => options.isPluginActive)) {
     app.use('*', middleware as any);
   }
 
@@ -648,7 +736,7 @@ export function createApp(options: CreateAppOptions = {}) {
         // layout) renders without one and stays offline.
         const layoutRealtime: Record<string, string> = {};
         const { scope: activeServiceScope } = await createServiceScopeChain({
-          componentPath: path, layouts, routePathToIdMap, scopeKey,
+          componentPath: path, layouts, owners, routePathToIdMap, scopeKey,
           facilities: { context: c, user, env: c.env }, root: requestServiceScope,
           onLayout: async ({ path: lPath, component: LComp, scope: layoutServiceScope }) => {
             const layoutOptions = Reflect.getMetadata('page:options', LComp) as PageOptions | undefined;
@@ -667,16 +755,18 @@ export function createApp(options: CreateAppOptions = {}) {
 
         const pageInstance = createInstance(PageComponent, { serviceScope: activeServiceScope });
         requestComponents.push(pageInstance);
-        // Check if component has a loading template (method or file convention)
-        // If so, skip init() during SSR to show loading UI immediately
+        // A page defers init() past SSR only when it opts in with both
+        // loadingTemplate() (the skeleton SSR renders) and clientInit() (the
+        // client-side step that calls init() over RPC once hydrated). Nothing
+        // else runs init() after hydration: it is stripped from the client
+        // bundle, so a `loading.ts` file or loadingTemplate() alone must not
+        // skip it. `loading.ts` only shows during client navigation while the
+        // next page is fetched.
         const hasLoadingTemplate = typeof (pageInstance as any).loadingTemplate === 'function';
-        const lastSlash = path.lastIndexOf('/');
-        const loadingFilePath = `${path.substring(0, lastSlash)}/loading.ts`;
-        const hasLoadingFile = loadings[loadingFilePath] !== undefined;
-        const shouldSkipInit = hasLoadingTemplate || hasLoadingFile;
+        const hasClientInit = typeof (pageInstance as any).clientInit === 'function';
+        const shouldSkipInit = hasLoadingTemplate && hasClientInit;
 
         // Bootstrap Page with retrieved DO initial state (if any)
-        // Skip init() if component has a loading template to show loading UI immediately
         await pageInstance.bootstrap({
           context: c,
           user,
@@ -687,8 +777,8 @@ export function createApp(options: CreateAppOptions = {}) {
           skipInit: shouldSkipInit,
         });
 
-        // If we skipped init, set loading state so loadingTemplate() renders during SSR
-        // The client will then call init() via RPC to get the actual data
+        // If we skipped init, set loading state so loadingTemplate() renders during SSR.
+        // clientInit() then calls init() via RPC to get the actual data.
         if (shouldSkipInit) {
           (pageInstance as any).loading.init = 1;
         }
@@ -859,10 +949,94 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       const middleware = middlewares[position];
       if (!middleware) { c.res = await handler(c); return; }
       const response = await middleware(c, () => dispatch(position + 1));
-      if (response) c.res = response;
+      if (response instanceof Response) c.res = response;
     };
     await dispatch(0);
     return c.res;
+  };
+
+  /** Route patterns of functional HTTP handlers. Their failures are never HTML documents. */
+  const endpointRoutes = new Set<string>();
+  /** Hono route pattern -> handler file path, for handler routes. */
+  const endpointPathByRoute = new Map<string, string>();
+  /** Whether the route that ran is a functional endpoint (not one a skipped plugin route only matched). */
+  /**
+   * Whether the host has the plugin on, asked once per request and plugin. While answering a
+   * failure, a hook that throws counts as off (as the CMS hook answers), so the error handler
+   * itself never fails.
+   */
+  const pluginAnswers = Symbol('cossack.pluginActive');
+  const pluginActiveOnce = (c: Context, owner: string): Promise<boolean> => {
+    if (!options.isPluginActive) return Promise.resolve(true);
+    const store = c as unknown as { [pluginAnswers]?: Map<string, Promise<boolean>> };
+    const answers = store[pluginAnswers] ??= new Map();
+    let answer = answers.get(owner);
+    if (!answer) {
+      answer = Promise.resolve().then(() => options.isPluginActive!(owner, c)).then(Boolean, () => false);
+      answers.set(owner, answer);
+    }
+    return answer;
+  };
+  /** Whether a route belongs to a plugin the request's host has turned off. */
+  const inactiveRoute = async (c: Context, route: string): Promise<boolean> => {
+    const file = pagePathByRoute.get(route) ?? endpointPathByRoute.get(route);
+    const owner = file ? owners[file] : undefined;
+    return Boolean(owner && !(await pluginActiveOnce(c, owner)));
+  };
+  const matchedEndpoint = async (c: Context): Promise<boolean> => {
+    const ran = runningRoute(c);
+    if (ran !== undefined) return endpointRoutes.has(ran);
+    for (const route of c.req.matchedRoutes) if (endpointRoutes.has(route.path) && !(await inactiveRoute(c, route.path))) return true;
+    return false;
+  };
+
+  /** Unknown-URL resolvers without the pages of the given inactive plugins, compiled once per set. */
+  const resolversExcluding = new Map<string, ReturnType<typeof createNotFoundResolver>>();
+  const resolveNotFoundExcluding = (plugins: ReadonlySet<string>) => {
+    const key = [...plugins].sort().join(',');
+    let resolver = resolversExcluding.get(key);
+    if (!resolver) {
+      if (resolversExcluding.size >= 32) resolversExcluding.clear();
+      resolver = createNotFoundResolver(Object.keys(pages).filter(path => !plugins.has(owners[path] ?? '')));
+      resolversExcluding.set(key, resolver);
+    }
+    return resolver;
+  };
+
+  /**
+   * The response for a URL no route owns, and for a route of an inactive plugin.
+   * API paths, transports and clients that ask for JSON (but not HTML) get a
+   * machine-readable 404. Every other request, including a browser form POST to
+   * a page path, renders the nearest HTML 404 boundary. A boundary of an
+   * inactive plugin does not render; the next source ancestor's does.
+   */
+  /** The nearest not-found page for the URL, skipping pages of plugins the host turned off. */
+  const resolveActiveNotFound = async (c: Context) => {
+    const inactive = new Set<string>();
+    let selected = resolveNotFound(c.req.path);
+    while (selected && options.isPluginActive) {
+      const owner = owners[selected.path];
+      if (!owner || await pluginActiveOnce(c, owner)) break;
+      inactive.add(owner);
+      selected = resolveNotFoundExcluding(inactive)(c.req.path);
+    }
+    return selected;
+  };
+  const renderNotFound = async (c: Context): Promise<Response> => {
+    const accept = c.req.header('accept') ?? '';
+    const wantsJson = /\bapplication\/(?:[\w.+-]+\+)?json\b/i.test(accept) && !/\btext\/html\b/i.test(accept);
+    if (classifyRoute(c.req.path) === 'api' || TRANSPORT_PATH.test(c.req.path) || wantsJson) {
+      return c.json({ error: 'Not Found', code: 'COSSACK_NOT_FOUND' }, 404);
+    }
+    const selected = await resolveActiveNotFound(c);
+    if (selected) {
+      const chosen = selected;
+      const component = getModuleDefault(pages[chosen.path] as object) as new () => Cossack;
+      const context = withRuntimeRouteParams(c, chosen.params);
+      c.status(404);
+      return runWithContext(context, () => renderBoundary(component, chosen.path, context));
+    }
+    return c.text('404 Not Found', 404);
   };
 
   /**
@@ -875,7 +1049,8 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
     c: Context, denial: { status: 401 | 403; message: string }, anchorPath: string | undefined, requestId: string,
   ): Promise<Response> => {
     c.header('X-Cossack-Request-Id', requestId);
-    if (!c.res.headers.has('Cache-Control')) c.header('Cache-Control', 'private, no-store');
+    // A denial is never cached, whatever an earlier middleware set.
+    c.header('Cache-Control', 'private, no-store');
     const errorPage = anchorPath ? findNearestSpecialPage(anchorPath, 'error') : null;
     if (errorPage && anchorPath !== errorPage.path) {
       try {
@@ -960,7 +1135,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
           // embeds it, so it gets a root scope of its own.
           const instance = await createChainedComponent({
             component: ComponentClass, componentPath: owner.id,
-            layouts: owner.kind === 'component' ? {} : layouts, routePathToIdMap, scopeKey,
+            layouts: owner.kind === 'component' ? {} : layouts, owners, routePathToIdMap, scopeKey,
             facilities: { context: componentContext, user, env: c.env },
             bootstrap: { context: componentContext, user, env: c.env, runtime: runtimeInfo, page: pathname },
           });
@@ -1011,7 +1186,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       try {
         const pageOptions = Reflect.getMetadata('page:options', getModuleDefault(pages[pagePath]) as object) as PageOptions | undefined;
         const chain = await createServiceScopeChain({
-          componentPath: pagePath, layouts, routePathToIdMap, scopeKey: await resolveSseScopeKey(pageContext, pageOptions),
+          componentPath: pagePath, layouts, owners, routePathToIdMap, scopeKey: await resolveSseScopeKey(pageContext, pageOptions),
           facilities: { context: pageContext, user, env: c.env }, root: requestScope,
         });
         const ownerScope = chain.layouts.find(layout => layout.path === ownerPath)?.scope;
@@ -1182,7 +1357,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       try {
         if (componentContext.req.raw.signal.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
         const { scope: activeScope } = await createServiceScopeChain({
-          componentPath, layouts, routePathToIdMap, scopeKey: effectiveScopeKey,
+          componentPath, layouts, owners, routePathToIdMap, scopeKey: effectiveScopeKey,
           facilities: { context: componentContext, user, env: c.env }, root: requestScope,
         });
         componentInstance = createInstance(ComponentClass, { serviceScope: activeScope });
@@ -1453,7 +1628,8 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
   // where `[id]` sorts before `new`, which broke `/dashboard/users/new`
   // (matched `:id = 'new'`). See `compareHttpRoutes` for the comparator.
   const apiHandlerOptions = (componentPath: string) => ({
-    componentPath, layouts, routePathToIdMap, runtimeInfo: resolveRuntimeInfo,
+    componentPath, layouts, owners, routePathToIdMap, runtimeInfo: resolveRuntimeInfo,
+    maxBodyBytes: options.rpc?.maxUploadBytes ?? RPC_UPLOAD_REQUEST_MAX_BYTES,
   });
   const pagePaths = resolvePageRouteFiles(Object.keys(pages)).sort((a, b) =>
     compareHttpRoutes(filePathToHttpRoute(a), filePathToHttpRoute(b)),
@@ -1477,8 +1653,12 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       // on this route. Hono types route handlers as a fixed-length tuple, so a
       // variable-length middleware spread can't be type-checked — `app.use` avoids that
       // and lets the handlers below be registered as plain single-handler routes.
+      const pageOwner = owners[path];
+      if (pageOwner) app.use(httpRoute, routeGate(path, pageOwner));
+      const step = <H extends (c: Context, next: Next) => unknown>(handler: H): H => pageOwner ? skippable(path, handler) : handler;
+      app.use(httpRoute, step(markRoute(httpRoute)));
       for (const middleware of combinedMiddlewares) {
-        app.use(httpRoute, middleware);
+        app.use(httpRoute, step(middleware));
       }
       // A class that does not override render() is a pure API route: GET must
       // return JSON (via the API handler) rather than render HTML. A class that
@@ -1491,10 +1671,10 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       if (isApiRoute) {
         // GET -> JSON. `get()` is the canonical HTTP-GET handler; `init()` is
         // kept as a server-side alias for backward compatibility.
-        app.get(httpRoute, createApiHandler(PageComponent, ['get', 'init'], apiHandlerOptions(path)));
+        app.get(httpRoute, step(createApiHandler(PageComponent, ['get', 'init'], apiHandlerOptions(path))));
       } else {
         const ssrHandler = createSsrHandler(PageComponent, path, pageOptions);
-        app.get(httpRoute, ssrHandler);
+        app.get(httpRoute, step(ssrHandler));
       }
 
       // Handle class-based HTTP method handlers for hybrid pages
@@ -1505,45 +1685,29 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
           // Only authored methods (stopping before Cossack.prototype) become
           // routes; a framework default can never expose a public verb.
           if (typeof getAuthoredRouteMember(PageComponent, method)?.value === 'function') {
-            (app as any)[method](httpRoute, createApiHandler(PageComponent, method, apiHandlerOptions(path)));
+            (app as any)[method](httpRoute, step(createApiHandler(PageComponent, method, apiHandlerOptions(path))));
           }
         }
       }
     }
-    // 2. Check if it's a functional API Route
-    else if (classifyRoute(httpRoute) === 'api') {
-      // Handle default export as a generic handler
-      if (typeof module.default === 'function') {
-        app.all(httpRoute, module.default);
-      }
-      // Handle named exports for HTTP methods (Nuxt/Next style)
-      const methods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'];
-      for (const m of methods) {
-        if (typeof module[m] === 'function') {
-          (app as any)[m.toLowerCase()](httpRoute, module[m]);
-        }
+    // 2. A functional HTTP handler, at any path (`/api/items`, `/webhooks/crm`,
+    // `/feed.xml`): a default function handles every method and takes precedence;
+    // GET/POST/… exports handle their own (Nuxt/Next style).
+    else if (isHttpHandlerExports(module)) {
+      endpointRoutes.add(httpRoute);
+      endpointPathByRoute.set(httpRoute, path);
+      const owner = owners[path];
+      if (owner) app.use(httpRoute, routeGate(path, owner));
+      const step = <H extends (c: Context, next: Next) => unknown>(handler: H): H => owner ? skippable(path, handler) : handler;
+      app.use(httpRoute, step(markRoute(httpRoute)));
+      if (isHandlerFunction(mainExport)) app.all(httpRoute, step(mainExport));
+      for (const method of HTTP_HANDLER_EXPORTS) {
+        if (isHandlerFunction(module[method])) (app as any)[method.toLowerCase()](httpRoute, step(module[method]));
       }
     }
   }
 
-  app.notFound(async (c) => {
-    // API paths and clients that ask for JSON (but not HTML) get a
-    // machine-readable 404. Every other request, including a browser form
-    // POST to a page path, renders the route's nearest HTML 404 boundary.
-    const accept = c.req.header('accept') ?? '';
-    const wantsJson = /\bapplication\/(?:[\w.+-]+\+)?json\b/i.test(accept) && !/\btext\/html\b/i.test(accept);
-    if (classifyRoute(c.req.path) === 'api' || wantsJson) {
-      return c.json({ error: 'Not Found', code: 'COSSACK_NOT_FOUND' }, 404);
-    }
-    const selected = resolveNotFound(c.req.path);
-    if (selected) {
-      const component = getModuleDefault(pages[selected.path] as object) as new () => Cossack;
-      const context = withRuntimeRouteParams(c, selected.params);
-      c.status(404);
-      return runWithContext(context, () => renderBoundary(component, selected.path, context));
-    }
-    return c.text('404 Not Found', 404);
-  });
+  app.notFound(renderNotFound);
 
   return app;
 }

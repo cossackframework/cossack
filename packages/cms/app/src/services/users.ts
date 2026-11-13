@@ -1,0 +1,173 @@
+import { ClientVisibleError, getRequestContext } from '@cossackframework/core';
+import { isCmsError, NETWORK_ADMIN, systemPrincipal } from '@cossackframework/cms';
+import { MAIN_SITE, randomToken, type CmsHost, type CmsUser } from '@cossackframework/cms/server';
+import { currentCms, networkFor, type CmsBindings } from '../cms/index';
+import { getCookie } from 'hono/cookie';
+import { linkOrigin, manageableHere, NETWORK_ACCOUNT_LOCKED, SESSION_COOKIE_NAME, type PublicUser, type RoleAssignment } from '../auth';
+
+export interface UserSummary {
+  id: string;
+  email: string;
+  name: string;
+  avatar: string | null;
+  createdAt: string;
+  /** When the user last signed in, recorded when a session starts; null when never. */
+  lastSignedInAt: string | null;
+  roles: RoleAssignment[];
+  /** On an added site, *Network account* for members who sign in through the network. */
+  badge?: string;
+}
+
+export interface UserDetail extends UserSummary {
+  /** The account administers the network: only another network admin changes it. */
+  networkAdmin?: true;
+  /** For others on an added site, why a network account's profile, password and sign-in methods are not changed here. */
+  lockedProfile?: string;
+}
+
+export interface ListUsersOptions {
+  search?: string;
+  roleId?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface ListUsersResult {
+  items: UserSummary[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface CreateUserInput {
+  email: string;
+  /** Required unless `invite` is set. */
+  password?: string;
+  /** Send an invitation: the account starts with a random password and an email with a link to set one, good for seven days. */
+  invite?: boolean;
+  name?: string;
+  /** Roles chosen by someone who may assign them; otherwise the default role. */
+  roleIds?: string[];
+}
+
+export interface UpdateUserInput {
+  name?: string;
+  email?: string;
+  avatar?: string | null;
+}
+
+function summary(user: CmsUser): UserSummary {
+  return {
+    id: user.id, email: user.email, name: user.name, avatar: user.avatar, createdAt: new Date(user.createdAt).toISOString(),
+    lastSignedInAt: user.lastSignInAt === null ? null : new Date(user.lastSignInAt).toISOString(),
+    roles: user.assignments.map(role => ({ id: role.id, name: role.name, permissions: [...role.permissions] })),
+    // Site accounts are an added site's own; members with a network account are marked.
+    ...(currentCms().siteAccounts && user.account === 'network' ? { badge: 'Network account' } : {}),
+  };
+}
+
+/** CMS failures carry safe text; pages show it. */
+async function visible<T>(work: Promise<T>): Promise<T> {
+  try { return await work; }
+  catch (error) { throw isCmsError(error) ? new ClientVisibleError(error.message) : error; }
+}
+
+export async function listUsers(options: ListUsersOptions = {}): Promise<ListUsersResult> {
+  const page = Math.max(1, options.page ?? 1);
+  const pageSize = Math.min(Math.max(1, options.pageSize ?? 20), 100);
+  const result = await currentCms().users.list({ search: options.search, role: options.roleId, limit: pageSize, offset: (page - 1) * pageSize });
+  return { items: result.items.map(summary), total: result.total, page, pageSize };
+}
+
+export async function getUser(id: string): Promise<UserDetail | null> {
+  const user = await currentCms().users.get(id);
+  if (!user) return null;
+  const cms = currentCms();
+  const networkAdmin = user.account === 'network' && (await cms.accounts.get(id))?.networkRole === NETWORK_ADMIN;
+  return { ...summary(user), ...(networkAdmin ? { networkAdmin: true as const } : {}), ...(await manageableHere(id) ? {} : { lockedProfile: NETWORK_ACCOUNT_LOCKED }) };
+}
+
+/** A new account with the chosen roles, or General settings' default role. */
+export async function createUser(input: CreateUserInput): Promise<Omit<PublicUser, 'principal'>> {
+  const cms = currentCms();
+  let roles: string[];
+  if (input.roleIds) {
+    roles = [...new Set(input.roleIds)];
+    for (const id of roles) if (!(await cms.users.role(id))) throw new ClientVisibleError('Choose roles that exist.');
+  } else {
+    const role = await cms.settings.get('general.defaultRole');
+    roles = role && (await cms.users.role(role)) ? [role] : [];
+  }
+  if (!input.invite && !input.password) throw new ClientVisibleError('Set a password or send an invitation.');
+  if (input.invite && !cms.mail) throw new ClientVisibleError('No email sender is configured, so invitations cannot be sent. Set a password instead.');
+  const password = input.invite ? randomToken(32) : input.password!;
+  const user = await visible(cms.users.create({ email: input.email, password, name: input.name?.trim() || input.email.split('@')[0]!, roles }));
+  if (input.invite) await sendInvitation(cms, user.email, user.name);
+  return { ...summary(user), meta: null };
+}
+
+/** The invitation: a link to set a password, good for seven days, from the site's sender. */
+async function sendInvitation(cms: CmsHost, email: string, name: string): Promise<void> {
+  const reset = await cms.signIn.accounts.createPasswordReset(email, { ttlMs: 7 * 24 * 60 * 60_000 });
+  // The site's own address, never the request's Host: without one, no link is sent.
+  const origin = linkOrigin();
+  if (!reset || !cms.mail || !origin) return;
+  const title = await cms.settings.get('general.siteTitle').catch(() => '');
+  const link = `${origin.replace(/\/$/, '')}/auth/reset-password?token=${reset.token}`;
+  await cms.mail.send({ kind: 'invitation', to: email, from: cms.mailFrom, subject: `You are invited to ${title || 'the site'}`,
+    text: `Hello ${name || email},\n\nAn account was made for you on ${title || origin}. Set your password here within seven days:\n${link}\n\nIf you were not expecting this, ignore this email.` });
+}
+
+/** A network account on an added site keeps its name, email and picture unless the person or a network admin changes them. */
+export async function updateUser(id: string, patch: UpdateUserInput): Promise<void> {
+  const cms = currentCms();
+  if (!(await manageableHere(id))) {
+    const user = await cms.users.get(id);
+    if (user && (Object.keys(patch) as (keyof UpdateUserInput)[]).some(key => patch[key] !== undefined && patch[key] !== user[key])) throw new ClientVisibleError(NETWORK_ACCOUNT_LOCKED);
+    return;
+  }
+  await visible(cms.users.update(id, patch));
+}
+
+/**
+ * Set a user's password. Every other session of the account ends, so whoever had the old
+ * password is signed out; the caller's own session stays when it is their own password.
+ */
+export async function changeUserPassword(id: string, newPassword: string): Promise<void> {
+  if (!(await manageableHere(id))) throw new ClientVisibleError(NETWORK_ACCOUNT_LOCKED);
+  const cms = currentCms();
+  if (!(await visible(cms.users.setPassword(id, newPassword)))) throw new ClientVisibleError('User not found.');
+  const c = getRequestContext();
+  const own = c && (c.get('user') as { id?: string } | undefined)?.id === id ? getCookie(c, SESSION_COOKIE_NAME) : undefined;
+  // On an added site, a network account's sessions are the network host's; its sites' child sessions end with them.
+  const sessions = cms.siteAccounts && (await cms.storesOf(id)).kind === 'network' && c ? networkFor(c.env as CmsBindings).main.authSessions : cms.authSessions;
+  await sessions.revokeAllForUser(id, own);
+}
+
+/**
+ * On the main site, deletes the account: from every site it belongs to, then what signs it in.
+ * On another site, removes the member and their roles: a site account goes with them, a network
+ * account stays. Content keeps its author ID. The last network admin cannot be deleted.
+ */
+export async function deleteUser(id: string): Promise<void> {
+  const c = getRequestContext();
+  const cms = currentCms();
+  if (c?.get('site')?.id && c.get('site').id !== MAIN_SITE) { await visible(cms.users.delete(id)); return; }
+  // Deleting on the main site removes the account from every site it belongs to.
+  if (!(await manageableHere(id))) throw new ClientVisibleError(NETWORK_ACCOUNT_LOCKED);
+  await visible(networkFor(c!.env as CmsBindings).deleteAccount(id, { principal: systemPrincipal('users') }));
+}
+
+export async function assignRole(userId: string, roleId: string): Promise<void> {
+  const user = await currentCms().users.get(userId);
+  if (user) await syncUserRoles(userId, [...new Set([...user.roles, roleId])]);
+}
+
+export async function removeRole(userId: string, roleId: string): Promise<void> {
+  const user = await currentCms().users.get(userId);
+  if (user) await syncUserRoles(userId, user.roles.filter(role => role !== roleId));
+}
+
+export async function syncUserRoles(userId: string, roleIds: string[]): Promise<void> {
+  await visible(currentCms().users.setRoles(userId, roleIds));
+}

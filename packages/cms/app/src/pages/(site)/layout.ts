@@ -1,0 +1,218 @@
+import { Client, ClientState, Cossack, Page, Server, State, server$, setRequestLocale, type HeadContext, type HeadTag, type HeadValue } from '@cossackframework/core';
+import { analyticsTags, NO_ANALYTICS, type AnalyticsServices } from '../../cms/analytics';
+import { listedCollections } from '../../cms/cache';
+import { html } from '@cossackframework/renderer';
+import { hasPermission, PERMISSIONS, PLACEHOLDER_SCRIPT, usesUserBinding, type RenderedBlock, type SiteView, type ThemeData } from '@cossackframework/cms';
+import { areaViews, bindableEntry, bindingScopes, languageLinks, resolvedOptions, siteMenus, siteView, themeData, themeState, unlockCookie, type Resolved, type ThemeState } from '../../cms/site';
+import { getCookie } from 'hono/cookie';
+import { blockOptions } from '../../cms/content';
+import { areaDraftBlocks, patternDraftBlocks } from '../../cms/site-editing';
+import { siteSession, type AreaDraft, type PatternDraft, type SiteEditingContext } from '../../cms/site-session';
+import { closeMenusOnFollow, pluginHeads, siteTheme, tagDocument, themeHelpers } from '../../cms/site-view';
+import { siteTaskbar } from '../../cms/site-taskbar';
+import { ICON_STYLE_META, iconStyle } from '../../cms/icons';
+import { taskbar, type TaskbarView } from '../../cms/taskbar';
+
+import { logout } from '../../auth';
+
+/**
+ * The public site's frame, drawn by the active theme's layout, in the page's language, with
+ * the taskbar signed-in users see along the bottom. The taskbar is a `server$` resource: it is
+ * built during render, after the page's `init()` described the page (`c.set('cms.taskbar')`),
+ * and again on every client navigation, which a layout's `@State` is not.
+ *
+ * Every page under `(site)` gets this frame, the application's and plugins' own pages too:
+ * `src/plugins/<name>/pages/(site)/docs/guide.md` serves `/docs/guide` inside the theme.
+ * `ssg: false`: the frame comes from the database, so no page under it is rendered at build
+ * time, Markdown pages included, which otherwise are.
+ */
+@Page({ transport: 'http', ssg: false })
+export default class SiteLayout extends Cossack {
+    /** The signed-in user's taskbar; null for visitors, whose pages carry no trace of it. */
+    taskbar: TaskbarView | null = server$(() => siteTaskbar(this.c, this.user), { initial: null });
+    @State() logoutError = '';
+    /** Settings → Analytics: the services counting this page, none for people signed in. */
+    @State() analytics: AnalyticsServices = NO_ANALYTICS;
+    @State() site: SiteView & { noindex: boolean } = { title: '', tagline: '', logo: null, blog: null, menus: {}, noindex: false, locale: 'en', languages: [], searchUrl: '/search', homeUrl: '/', areas: {}, template: null, url: '', breadcrumbs: [] };
+    @State() theme: ThemeState = { name: null, options: {} };
+    /** What the theme's `layout` loader returned. */
+    @State() data: ThemeData = {};
+    /** Settings → General: the site icon for tabs and the app icon for home screens, as URLs; empty for the application's own. */
+    @State() icons: { favicon: string; appIcon: string } = { favicon: '', appIcon: '' };
+    /**
+     * Live Edit: the page's area documents at render time (`c.set('cms.editing')` in the page's
+     * init), so the areas render with their markers from the first paint. The page owns the
+     * entry; the frame is this layout's, which previews the areas from the shared session.
+     */
+    editing: SiteEditingContext | null = server$(() => this.c.get('cms.editing') ?? null, { initial: null });
+    /** The browser left edit mode: the markers go, the saved areas show. */
+    @ClientState() exited = false;
+    private unsubscribe: (() => void) | undefined;
+    /** Stops closing the theme's menus after a followed link. */
+    private menusWatched: (() => void) | undefined;
+    private sessionSeen = false;
+    private previewTimer: ReturnType<typeof setTimeout> | undefined;
+    private pendingPreview: { areas: AreaDraft[]; patterns: PatternDraft[] } | null | undefined;
+    private previewing = false;
+
+    onMount() {
+        this.menusWatched = closeMenusOnFollow();
+        this.unsubscribe = siteSession.subscribe(session => {
+            if (session) { this.sessionSeen = true; this.exited = false; this.queuePreview(session); }
+            else if (this.sessionSeen) { this.sessionSeen = false; this.exited = true; this.queuePreview(null); }
+        });
+    }
+
+    onCleanup() {
+        this.unsubscribe?.();
+        this.menusWatched?.();
+        if (this.previewTimer) clearTimeout(this.previewTimer);
+    }
+
+    /** Preview the areas from the drafts, one request at a time, a moment after the last change. */
+    @Client()
+    private queuePreview(session: { areas: AreaDraft[]; patterns: PatternDraft[] } | null) {
+        this.pendingPreview = session;
+        if (this.previewTimer) clearTimeout(this.previewTimer);
+        this.previewTimer = setTimeout(() => { void this.runPreview(); }, 150);
+    }
+
+    @Client()
+    private async runPreview() {
+        if (this.previewing) return;
+        this.previewing = true;
+        try {
+            while (this.pendingPreview !== undefined) {
+                const next = this.pendingPreview;
+                this.pendingPreview = undefined;
+                await this.previewAreas(next);
+            }
+        } finally { this.previewing = false; }
+    }
+
+    /** The frame rendered from the editor's drafts (the areas, and the patterns the areas and menus show), or from what is saved when the session ends. */
+    @Server()
+    async previewAreas(session: { areas: AreaDraft[]; patterns: PatternDraft[] } | null) {
+        const cms = this.c.get('cms');
+        const principal = this.c.get('principal');
+        if (principal.kind !== 'user') return;
+        const settings = await cms.settings.all();
+        const info = cms.themes().find(entry => entry.name === this.theme.name);
+        const options = session ? await blockOptions(cms) : [];
+        const user = this.user ? { name: this.user.name } : null;
+        // Areas change only for users who may edit them; a pattern previews for whoever edits it, in the areas and the menus' panels.
+        const drafts = session && hasPermission(principal, PERMISSIONS.manageAppearance) ? areaDraftBlocks(session.areas, options) : undefined;
+        const patternDrafts = session?.patterns.length ? patternDraftBlocks(session.patterns, options) : undefined;
+        // Previews bind to the site and the user; the entry shown is the page's, not known here.
+        const areas = await areaViews(cms, info?.areas ?? [], undefined, bindingScopes(settings, { user }), undefined, drafts, patternDrafts);
+        const menus = patternDrafts || this.patternsPreviewed ? await siteMenus(cms, this.theme, { locale: this.site.locale, user, patternDrafts }) : this.site.menus;
+        this.patternsPreviewed = Boolean(patternDrafts);
+        this.site = { ...this.site, areas, menus };
+    }
+    /** The menus were rendered with pattern drafts: render them again when the drafts go. */
+    @State() patternsPreviewed = false;
+
+    /**
+     * Pages set their own titles; the site title is the fallback. The theme's head template
+     * adds stylesheets, fonts and meta under the page's own: a page's title and meta win.
+     */
+    head(context: HeadContext): HeadValue {
+        const theme = siteTheme(this.theme);
+        const helpers = themeHelpers(theme, { ...this.theme, data: { layout: this.data }, languages: this.site.languages }, () => false);
+        const contributed = theme.head?.(this.site, helpers) ?? {};
+        // Active plugins add their tags under the theme's: a stylesheet for their blocks, say.
+        const added = pluginHeads(this.theme, this.site, helpers);
+        const key = (tag: HeadTag) => String(tag.attributes?.name ?? tag.attributes?.property ?? '');
+        const taken = new Set(context.meta.map(key).filter(Boolean));
+        const scripts = [...(contributed.scripts ?? []), ...added.flatMap(head => head.scripts ?? [])];
+        return {
+            title: context.title || contributed.title || this.site.title,
+            ...(contributed.description && !context.description ? { description: contributed.description } : {}),
+            ...(contributed.image && !context.image ? { image: contributed.image } : {}),
+            meta: [
+                ...[...(contributed.meta ?? []), ...added.flatMap(head => head.meta ?? [])].filter(tag => !taken.has(key(tag))),
+                ...(this.site.noindex ? [{ tag: 'meta', attributes: { name: 'robots', content: 'noindex, nofollow' } }] : []),
+                { tag: 'meta', attributes: { property: 'og:site_name', content: this.site.title } },
+                // The icon style the sprites are drawn in, so Live Edit's client renders match the server's.
+                { tag: 'meta', attributes: { name: ICON_STYLE_META, content: iconStyle() } },
+            ],
+            links: [...(contributed.links ?? []), ...added.flatMap(head => head.links ?? []), ...(this.site.blog ? [{ tag: 'link', attributes: { rel: 'alternate', type: 'application/rss+xml', title: this.site.title, href: '/feed' } }] : []), ...this.iconLinks()],
+            ...(scripts.length ? { scripts } : {}),
+            // The site's Additional CSS, checked on save, after the theme's own tags; then the script that drops
+            // an image's blurred placeholder once it has loaded, so it never shows through transparent pixels.
+            tags: [...(contributed.tags ?? []), ...(this.theme.customCss ? [{ tag: 'style', attributes: { 'data-cms-custom-css': '' }, children: this.theme.customCss }] : []),
+                { tag: 'script', attributes: { 'data-cms-placeholders': '' }, children: PLACEHOLDER_SCRIPT },
+                ...analyticsTags(this.analytics)],
+        };
+    }
+
+    /** The site icon for tabs, the app icon for home screens, and the manifest that lists it. */
+    private iconLinks(): HeadTag[] {
+        const { favicon, appIcon } = this.icons;
+        const resized = (url: string, size: number) => url.startsWith('/media/') ? `${url}?w=${size}&h=${size}` : url;
+        return [
+            ...(favicon ? [{ tag: 'link', attributes: { rel: 'icon', href: favicon, ...(/\.svg(?:$|[?#])/i.test(favicon) ? { type: 'image/svg+xml' } : {}) } }] : []),
+            ...(appIcon ? [{ tag: 'link', attributes: { rel: 'apple-touch-icon', sizes: '180x180', href: resized(appIcon, 180) } }, { tag: 'link', attributes: { rel: 'manifest', href: '/manifest.webmanifest' } }] : []),
+        ];
+    }
+
+    @Server()
+    async doLogout() {
+        this.logoutError = '';
+        try {
+            const { headers } = await logout(this.c);
+            headers.forEach((value, key) => this.c.header(key, value));
+            this.redirect(config('auth.redirectAfterLogout'));
+        } catch {
+            this.logoutError = __('Could not sign out. Try again.');
+        }
+    }
+
+    async init() {
+        const cms = this.c.get('cms');
+        // A signed-in user's page carries their taskbar: never share it through a cache.
+        if (this.user) this.c.header('cache-control', 'private, no-store');
+        try {
+            this.theme = await themeState(cms);
+            const settings = await cms.settings.all();
+            this.icons = { favicon: settings['general.favicon'], appIcon: settings['general.appIcon'] };
+            const languages = await cms.languages();
+            // The catch-all route resolves its path first; other routes are in the default language.
+            const resolved = this.c.get('cms.site');
+            const path = this.c.req.path;
+            const page: Resolved | { kind: 'other'; locale: string } = resolved && 'locale' in resolved ? resolved
+                : path === '/' ? { kind: 'home', locale: languages.default }
+                : path === '/search' ? { kind: 'search', locale: languages.default }
+                // A page of the application's or a plugin's own under (site), a Markdown page say: the frame around it, nothing the CMS resolved.
+                : { kind: 'other', locale: languages.default };
+            // The catch-all route set its content's language; the others render in the default one.
+            if (!(resolved && 'locale' in resolved)) setRequestLocale(languages.default);
+            const template = resolved?.kind === 'entry' && typeof resolved.record.template === 'string' && resolved.record.template ? resolved.record.template : null;
+            // Widgets and theme options bind like blocks: `$` is the entry shown, `$site` and `$user` are there on every page.
+            // A locked entry binds as its readers see it unless this reader may read it; the password never binds.
+            const principal = this.c.get('principal');
+            const entry = resolved?.kind === 'entry' ? await bindableEntry(cms, resolved.collection.name, resolved.record, principal, getCookie(this.c, unlockCookie(resolved.record))) : null;
+            // `$user` is the signed-in principal's: a session still owing its second factor binds as a visitor.
+            const user = principal.kind === 'user' && this.user ? { name: this.user.name } : null;
+            const usage = { user: Object.values(this.theme.options).some(value => usesUserBinding(value)) };
+            this.theme = { ...this.theme, options: resolvedOptions(this.theme.options, bindingScopes(settings, { entry, user })) };
+            this.site = await siteView(cms, this.theme, { locale: page.locale, languages: await languageLinks(cms, page), template, entry, user, usage, url: this.c.req.url, page, forms: { query: this.c.req.query(), principal: this.c.get('principal'), url: this.c.req.path } });
+            if (usage.user && user) this.c.header('cache-control', 'private, no-store');
+            this.data = await themeData(cms, this.theme, 'layout', this.site, this.c.get('principal'), page.locale);
+            this.analytics = user ? NO_ANALYTICS : { cloudflareToken: settings['analytics.cloudflareToken'] || '', googleMeasurementId: settings['analytics.googleMeasurementId'] || '' };
+            // A Latest entries block in a widget area puts the collection on every page: the page adds these to its cache tags.
+            this.c.set('cms.cacheTags', [...listedCollections(Object.values(this.site.areas).flat())].map(name => cms.purge.tag.collection(name)));
+        } catch { this.site = { ...this.site, title: config('app.name') }; }
+    }
+
+    render() {
+        const theme = siteTheme(this.theme);
+        // In edit mode every area block carries its document, and a lock when the user may not change areas.
+        const editing = Boolean(this.editing) && !this.exited;
+        const patterns = editing ? new Map(this.editing!.patterns.map(pattern => [pattern.id, !pattern.editable])) : undefined;
+        const areas: Record<string, readonly RenderedBlock[]> = editing ? Object.fromEntries(Object.entries(this.site.areas).map(([name, blocks]) => [name, tagDocument(blocks, `area:${name}`, !this.editing!.editable, patterns)])) : this.site.areas;
+        const site = editing ? { ...this.site, areas } : this.site;
+        const frame = theme.layout(site, html`${this.children}`, themeHelpers(theme, { ...this.theme, data: { layout: this.data }, editing, languages: this.site.languages, menus: this.site.menus, site: this.site }, (path, exact) => this.isActive(path, exact)));
+        return this.taskbar ? html`${frame}${taskbar(this.taskbar, { logout: () => this.doLogout(), error: this.logoutError })}` : frame;
+    }
+}

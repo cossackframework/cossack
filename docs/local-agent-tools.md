@@ -32,6 +32,13 @@ real path. Tool arguments cannot select another project or request arbitrary fil
 Package metadata and imported declarations use the project's dependency resolution.
 The project binding is not a filesystem sandbox against a malicious local project.
 
+## Managing a CMS site
+
+`cossack-mcp` inspects a project. A running CMS site is managed through its own MCP server,
+`POST /api/cms/mcp`, served by the application itself with an application password:
+`cossack cms login --url https://example.com` then `cossack cms mcp` prints the client
+configuration. See [Management API, CLI and MCP](./cms/api.md).
+
 ## Tools
 
 | Tool | Input fields | Reads |
@@ -144,8 +151,8 @@ Use `read_documentation` with an optional `package` name. The allowed names are
 `@cossackframework/framework`, `@cossackframework/node-adapter`,
 `@cossackframework/desktop`, `@cossackframework/solar-icons`,
 `@cossackframework/database`, `@cossackframework/auth`,
-`@cossackframework/scaffold`, `@cossackframework/ui`, `@cossackframework/studio`
-and `@cossackframework/typescript-plugin`. Without `package`, the catalog covers
+`@cossackframework/scaffold`, `@cossackframework/ui`, `@cossackframework/studio`,
+`@cossackframework/typescript-plugin`, `@cossackframework/romedb` and `@cossackframework/cms`. Without `package`, the catalog covers
 all of them.
 `symbols` (default `false`) requires `package`. `symbol` (1 to 256 characters,
 not blank) requires `symbols: true`. The same service backs

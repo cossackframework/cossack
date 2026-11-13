@@ -29,7 +29,7 @@ function mockContext(pairs: [string, string][]): Context {
   const fd = new FormData();
   for (const [k, v] of pairs) fd.append(k, v);
   return {
-    req: { formData: async () => fd },
+    req: { raw: new Request('http://test.local/', { method: 'POST', body: fd }) },
   } as unknown as Context;
 }
 
@@ -53,6 +53,118 @@ describe('createCossackContext — native receivers', () => {
 });
 
 describe('createCossackContext — getFormData', () => {
+  it('answers 413 for a body over the limit, declared or streamed', async () => {
+    const big = mockContext([['note', 'x'.repeat(2048)]]);
+    const ctx = createCossackContext(big, true) as unknown as CossackContext;
+    await expect(ctx.getFormData({ maxBytes: 1024 })).rejects.toMatchObject({ status: 413 });
+    // No Content-Length: the stream is cut off past the limit.
+    let sent = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent++ < 20) controller.enqueue(new Uint8Array(512).fill(97));
+        else controller.close();
+      },
+    });
+    const raw = { body: stream, headers: new Headers({ 'content-type': 'application/x-www-form-urlencoded' }) };
+    const streamed = createCossackContext({ req: { raw } } as unknown as Context, true) as unknown as CossackContext;
+    await expect(streamed.getFormData({ maxBytes: 4096 })).rejects.toMatchObject({ status: 413 });
+    // Under the limit it parses as before.
+    const small = createCossackContext(mockContext([['a[b]', '1']]), true) as unknown as CossackContext;
+    expect(await small.getFormData({ maxBytes: 4096 })).toEqual({ a: { b: '1' } });
+  });
+
+  it('shares Hono\'s body cache: parseBody before or after getFormData', async () => {
+    const app = new Hono();
+    app.post('/before', async c => {
+      expect(await c.req.parseBody()).toMatchObject({ 'a[b]': '1' });
+      const ctx = createCossackContext(c, true) as unknown as CossackContext;
+      return c.json(await ctx.getFormData());
+    });
+    app.post('/after', async c => {
+      const ctx = createCossackContext(c, true) as unknown as CossackContext;
+      const data = await ctx.getFormData();
+      expect(await c.req.parseBody()).toMatchObject({ 'a[b]': '1' });
+      expect((await c.req.formData()).get('a[b]')).toBe('1');
+      return c.json(data);
+    });
+    for (const path of ['/before', '/after']) {
+      const form = new FormData();
+      form.append('a[b]', '1');
+      const response = await app.request(path, { method: 'POST', body: form });
+      expect(response.status, path).toBe(200);
+      expect(await response.json()).toEqual({ a: { b: '1' } });
+    }
+  });
+
+  it('reads a body longer than it declared, within the limit', async () => {
+    const body = new TextEncoder().encode('a=1&b=2');
+    const chunks = [body.subarray(0, 3), body.subarray(3)];
+    let index = 0;
+    const stream = new ReadableStream<Uint8Array>({ pull(controller) { if (index < chunks.length) controller.enqueue(chunks[index++]!); else controller.close(); } });
+    // Declares fewer bytes than it sends: the rest is still read, within the limit.
+    const raw = { body: stream, headers: new Headers({ 'content-type': 'application/x-www-form-urlencoded', 'content-length': '3' }) };
+    const ctx = createCossackContext({ req: { raw } } as unknown as Context, true) as unknown as CossackContext;
+    expect(await ctx.getFormData({ maxBytes: 4096 })).toEqual({ a: '1', b: '2' });
+  });
+
+  it('grows its buffer as bytes arrive, never from the declared length alone', async () => {
+    const allocations: number[] = [];
+    const Real = Uint8Array;
+    // A declared 8 MiB body that sends one small chunk allocates only the first, small buffer.
+    class Tracking extends Real {
+      constructor(...args: unknown[]) {
+        super(...(args as [number]));
+        if (typeof args[0] === 'number') allocations.push(args[0]);
+      }
+    }
+    globalThis.Uint8Array = Tracking as unknown as typeof Uint8Array;
+    try {
+      const body = new TextEncoder().encode('a=1');
+      let sent = false;
+      const stream = new ReadableStream<Uint8Array>({ pull(controller) { if (!sent) { sent = true; controller.enqueue(body); } else controller.close(); } });
+      const raw = { body: stream, headers: new Headers({ 'content-type': 'application/x-www-form-urlencoded', 'content-length': String(8 * 1024 * 1024) }) };
+      const ctx = createCossackContext({ req: { raw } } as unknown as Context, true) as unknown as CossackContext;
+      expect(await ctx.getFormData()).toEqual({ a: '1' });
+    } finally { globalThis.Uint8Array = Real; }
+    expect(Math.max(0, ...allocations)).toBeLessThanOrEqual(64 * 1024);
+    // Many chunks past the first buffer still arrive whole.
+    const pairs = Array.from({ length: 2000 }, (_, i) => `k${i}=${'v'.repeat(60)}`).join('&');
+    const bytes = new TextEncoder().encode(pairs);
+    let offset = 0;
+    const chunked = new ReadableStream<Uint8Array>({ pull(controller) { if (offset < bytes.length) { controller.enqueue(bytes.subarray(offset, offset + 1000)); offset += 1000; } else controller.close(); } });
+    const raw = { body: chunked, headers: new Headers({ 'content-type': 'application/x-www-form-urlencoded' }) };
+    const ctx = createCossackContext({ req: { raw } } as unknown as Context, true) as unknown as CossackContext;
+    const data = await ctx.getFormData<Record<string, string>>();
+    expect(Object.keys(data)).toHaveLength(2000);
+    expect(data.k1999).toBe('v'.repeat(60));
+  });
+
+  it('reads a body Hono cached as text as a form, and refuses one cached as JSON', async () => {
+    const app = new Hono();
+    app.post('/text', async c => {
+      await c.req.text();
+      const ctx = createCossackContext(c, true) as unknown as CossackContext;
+      return c.json(await ctx.getFormData());
+    });
+    app.post('/json', async c => {
+      await c.req.json();
+      const ctx = createCossackContext(c, true) as unknown as CossackContext;
+      return c.json(await ctx.getFormData());
+    });
+    const text = await app.request('/text', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'a=1' });
+    expect(await text.json()).toEqual({ a: '1' });
+    const json = await app.request('/json', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"a":1}' });
+    expect(json.status).toBe(400);
+  });
+
+  it('defaults to an 8 MiB limit', async () => {
+    const { FORM_DATA_MAX_BYTES } = await import('../src/shared/context');
+    expect(FORM_DATA_MAX_BYTES).toBe(8 * 1024 * 1024);
+    const raw = { body: new ReadableStream(), headers: new Headers({ 'content-type': 'application/x-www-form-urlencoded', 'content-length': String(8 * 1024 * 1024 + 1) }) };
+    const ctx = createCossackContext({ req: { raw } } as unknown as Context, true) as unknown as CossackContext;
+    await expect(ctx.getFormData()).rejects.toMatchObject({ status: 413 });
+  });
+
   it('parses nested form data (server side)', async () => {
     const ctx = createCossackContext(
       mockContext([

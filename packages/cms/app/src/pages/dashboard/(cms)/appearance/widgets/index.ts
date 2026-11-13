@@ -1,0 +1,279 @@
+import { Client, Cossack, Page, Server, State, type HeadValue } from '@cossackframework/core';
+import { input } from '@cossackframework/core/input';
+import { Badge, Button, Card, CardBody } from '@cossackframework/ui';
+import { component, html, type TemplateResult } from '@cossackframework/renderer';
+import type { CmsHost } from '@cossackframework/cms/server';
+import { findBlock, flattenBlocks, hasPermission, isCmsError, PERMISSIONS, updateBlock, type RichTextDoc, type ThemePresets } from '@cossackframework/cms';
+import { requireAny } from '../../../../../cms/guards';
+import { notice, pageHeader } from '../../../../../cms/ui';
+import { blockFilePreviews, blockOptions, findMedia, sourceChoices } from '../../../../../cms/content';
+import { blocksInput, controlValue, editorBlocks, editorInput, type BlockOption, type EditorBlock, type EditorField, type SourceChoices } from '../../../../../cms/editor';
+import { RichTextField, richTextEditors } from '../../../../../cms/rich-text-field';
+import { blockFields, type MediaHooks, type MediaPreview } from '../../../../../cms/field-controls';
+import { BlockTree } from '../../../../../cms/block-tree';
+import { blockPanel } from '../../../../../cms/block-panel';
+import { chooserKind, closedChooser, mediaChooser, uploadMedia, withFile, type MediaChooserState } from '../../../../../cms/media-chooser';
+import { activePresets } from '../../../../../cms/site';
+import { blockIdOf, styleValues, withStyle, type BlockTab, type StyleValues } from '../../../../../cms/style-controls';
+
+interface AreaRow { name: string; label: string; theme: string; active: boolean; revision: number; blocks: EditorBlock[]; changed: boolean; /** The theme's default blocks show: nothing is saved for this site yet. */ defaulted: boolean; hasDefaults: boolean }
+/** The block being edited in the dialog: its fields' values on the General tab, its style on the Style tab. */
+interface BlockDialog { area: string; id: string; values: Record<string, unknown>; style: StyleValues; tab: BlockTab; errors: Record<string, string> }
+
+/** The blocks widgets take, as the host declares them. Synced patterns belong in entries; widgets hold their own blocks. */
+async function widgetOptions(cms: CmsHost): Promise<BlockOption[]> {
+    return (await blockOptions(cms)).filter(option => option.name !== 'core/pattern');
+}
+
+/**
+ * Widgets: the blocks of the themes' widget areas, such as a footer or a sidebar. The active
+ * theme's areas come first. Each area saves on its own, with a revision check. Blocks hold
+ * control values while edited, as the entry editor's do.
+ */
+@Page({ transport: 'http', middlewares: [requireAny(PERMISSIONS.manageAppearance)] })
+export default class WidgetsPage extends Cossack {
+    @State() areas: AreaRow[] = [];
+    @State() options: BlockOption[] = [];
+    @State() previews: Record<string, MediaPreview> = {};
+    @State() presets: Required<ThemePresets> = { colors: [], gradients: [], fontSizes: [], spacing: [] };
+    /** What widgets' form, collection and term fields choose from. */
+    @State() sources: SourceChoices = { forms: [], collections: [], terms: [], locations: [], authors: [], roles: [] };
+    @State() dialog: BlockDialog | null = null;
+    @State() chooser: MediaChooserState = closedChooser();
+    @State() error = '';
+    /** What the last save did. */
+    @State() message = '';
+
+    head(): HeadValue {
+        return { title: __('Widgets') };
+    }
+
+    async init() {
+        await this.load();
+    }
+
+    @Server()
+    async load() {
+        const cms = this.c.get('cms');
+        const saved = await cms.areas.all();
+        this.options = await widgetOptions(cms);
+        this.sources = await sourceChoices(cms);
+        this.areas = (await cms.areaLocations()).map(area => {
+            const stored = saved.get(area.name);
+            // Until the site saves an area, the theme's default blocks show, and saving stores them as they are then.
+            return { name: area.name, label: area.label, theme: area.theme, active: area.active, revision: stored?.revision ?? 0, blocks: editorBlocks((stored?.blocks ?? area.defaults) as EditorBlock[], this.options), changed: false, defaulted: !stored, hasDefaults: area.defaults.length > 0 };
+        });
+        this.previews = await blockFilePreviews(cms, this.areas.flatMap(area => area.blocks));
+        this.presets = await activePresets(cms);
+    }
+
+    @Server({ input: input.args(input.string({ maxLength: 200 })) })
+    async save(name: string) {
+        const cms = this.c.get('cms');
+        // The blocks and the revision they started from are the user's edits; what each block
+        // type takes is the host's, never the page's copy.
+        const area = this.areas.find(entry => entry.name === name);
+        if (!area) return;
+        this.error = '';
+        const options = await widgetOptions(cms);
+        const converted = blocksInput(area.blocks, new Map(options.map(option => [option.name, option])));
+        if ('error' in converted) { this.error = converted.error; return; }
+        try {
+            const known = (await cms.areaLocations()).map(entry => entry.name);
+            const saved = await cms.areas.save(name, converted.value, { principal: this.c.get('principal'), expectedRevision: area.revision, known });
+            this.options = options;
+            this.areas = this.areas.map(entry => entry.name === name ? { ...entry, revision: saved.revision, blocks: editorBlocks(saved.blocks as EditorBlock[], options), changed: false, defaulted: false } : entry);
+        } catch (error) {
+            this.error = isCmsError(error) ? error.message : __('The widgets could not be saved.');
+        }
+    }
+
+    /** Forget what the site saved for an area: the theme's default blocks show again. */
+    @Server({ input: input.args(input.string({ maxLength: 200 })) })
+    async reset(name: string) {
+        const cms = this.c.get('cms');
+        this.error = '';
+        this.message = '';
+        try {
+            const areas = await cms.areaLocations();
+            await cms.areas.reset(name, { principal: this.c.get('principal'), known: areas.map(entry => entry.name) });
+            const area = areas.find(entry => entry.name === name);
+            this.options = await widgetOptions(cms);
+            this.areas = this.areas.map(entry => entry.name === name ? { ...entry, revision: 0, blocks: editorBlocks((area?.defaults ?? []) as EditorBlock[], this.options), changed: false, defaulted: true } : entry);
+            this.message = __('The area shows the theme’s default blocks again.');
+        } catch (error) {
+            this.error = isCmsError(error) ? error.message : __('The widgets could not be reset.');
+        }
+    }
+
+    @Client()
+    async submit(name: string) {
+        this.message = '';
+        await this.save(name);
+        if (!this.error) this.message = __('Widgets saved.');
+    }
+
+    @Client()
+    private change(name: string, blocks: EditorBlock[]) {
+        this.areas = this.areas.map(area => area.name === name ? { ...area, blocks, changed: true } : area);
+    }
+
+    private blocksOf(name: string): EditorBlock[] {
+        return this.areas.find(area => area.name === name)?.blocks ?? [];
+    }
+
+    @Client()
+    edit(name: string, id: string) {
+        const block = findBlock(this.blocksOf(name), id);
+        const option = this.options.find(entry => entry.name === block?.type);
+        if (!block || !option) return;
+        // Rich text is written in the tree; the panel takes the other fields.
+        this.dialog = { area: name, id, errors: {}, tab: 'general', style: styleValues(block), values: Object.fromEntries(option.fields.filter(field => field.kind !== 'richtext').map(field => [field.name, block.data[field.name] ?? controlValue(field, field.defaultValue)])) };
+    }
+
+    @Client()
+    showTab(tab: BlockTab) {
+        if (this.dialog) this.dialog = { ...this.dialog, tab };
+    }
+
+    @Client()
+    setStyle(style: StyleValues) {
+        if (this.dialog) this.apply({ ...this.dialog, style });
+    }
+
+    @Client()
+    setValue(name: string, value: unknown) {
+        if (this.dialog) this.apply({ ...this.dialog, values: { ...this.dialog.values, [name]: value }, errors: { ...this.dialog.errors, [name]: '' } });
+    }
+
+    /** The panel's values and style go into the block at once; a value its field cannot take stays in the panel with its message. */
+    @Client()
+    apply(dialog: BlockDialog) {
+        const block = findBlock(this.blocksOf(dialog.area), dialog.id);
+        const option = this.options.find(entry => entry.name === block?.type);
+        if (!block || !option) return;
+        const fields = option.fields.filter(field => field.kind !== 'richtext');
+        const { input, errors } = editorInput(fields, dialog.values);
+        // A valid new ID under Advanced re-keys the block; the panel follows it.
+        const taken = this.otherBlockIds(dialog.area, dialog.id);
+        this.dialog = { ...dialog, id: blockIdOf({ _id: dialog.id }, dialog.style, taken), errors: { ...dialog.errors, ...errors } };
+        this.change(dialog.area, updateBlock(this.blocksOf(dialog.area), dialog.id, entry => withStyle({ ...entry, data: { ...Object.fromEntries(Object.entries(entry.data).filter(([name]) => option.fields.find(field => field.name === name)?.kind === 'richtext')), ...input } }, dialog.style, taken)));
+    }
+
+    /** The IDs of an area's blocks apart from one, which a custom block ID may not repeat. */
+    private otherBlockIds(area: string, except: string): ReadonlySet<string> {
+        return new Set(flattenBlocks(this.blocksOf(area)).map(block => block._id).filter(id => id !== except));
+    }
+
+    @Server({ input: input.args(input.string({ maxLength: 2000 })) })
+    async searchMedia(search: string) {
+        if (!hasPermission(this.c.get('principal'), PERMISSIONS.manageAppearance)) return;
+        this.chooser = { ...this.chooser, search, items: await findMedia(this.c.get('cms'), search, this.chooser.kind) };
+    }
+
+    @Client()
+    async openChooser(field: string, multiple: boolean, kind = 'image') {
+        this.chooser = { ...this.chooser, open: true, error: '', field, multiple, kind };
+        await this.searchMedia(this.chooser.search);
+    }
+
+    @Client()
+    async filterMedia(kind: string) {
+        this.chooser = { ...this.chooser, kind };
+        await this.searchMedia(this.chooser.search);
+    }
+
+    @Client()
+    choose(file: MediaPreview) {
+        this.previews = { ...this.previews, [file.id]: file };
+        if (this.chooser.field.startsWith('\u0002')) {
+            // A background image or video from the panel's Style tab.
+            const property = this.chooser.field.slice(1) as 'image' | 'video';
+            if (this.dialog) this.setStyle({ ...this.dialog.style, style: { ...this.dialog.style.style, [property]: file.id } });
+            this.chooser = { ...this.chooser, open: false };
+            return;
+        }
+        if (this.chooser.field.includes('\u0000')) {
+            // An image for the rich text of a block in the tree.
+            const editor = this.chooser.field.split('\u0000')[3] ?? '';
+            richTextEditors.get(editor)?.insertImage({ src: file.url, alt: file.alt || file.title, mediaId: file.id });
+            this.chooser = { ...this.chooser, open: false };
+            return;
+        }
+        this.setValue(this.chooser.field, withFile(this.dialog?.values[this.chooser.field], file.id, this.chooser.multiple));
+        if (!this.chooser.multiple) this.chooser = { ...this.chooser, open: false };
+    }
+
+    @Client()
+    async upload(event: Event) {
+        const { files, error } = await uploadMedia(event.currentTarget as HTMLInputElement);
+        this.chooser = { ...this.chooser, error };
+        for (const file of files) this.choose(file);
+        await this.searchMedia('');
+    }
+
+    private areaCard(area: AreaRow): TemplateResult {
+        return component(Card, {}, component(CardBody, { class: 'space-y-4' }, html`
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <h2 class="text-base font-semibold text-foreground">${area.label}</h2>
+                ${area.active ? null : component(Badge, { variant: 'secondary' }, `${__('Theme')}: ${area.theme}`)}
+            </div>
+            ${component(BlockTree, {
+                id: `area-${area.name}`, blocks: area.blocks, options: this.options, allowed: [], previews: this.previews,
+                onChange: (blocks: EditorBlock[]) => this.change(area.name, blocks), onEdit: (id: string) => this.edit(area.name, id),
+                control: (field: EditorField, value: unknown, change: (value: unknown) => void, block: EditorBlock, id: string) => this.richText(area.name, block, field, value, change, id),
+            })}
+            ${area.defaulted && area.hasDefaults ? html`<p class="text-xs text-muted-foreground">${__('These are the theme’s default blocks. Saving keeps them for this site, and the theme’s later changes to its defaults no longer apply here.')}</p>` : null}
+            <div class="flex flex-wrap items-center justify-end gap-2">
+                ${!area.defaulted && area.hasDefaults ? component(Button, { type: 'button', variant: 'outline', '@click': () => this.reset(area.name) }, __('Reset to the theme’s default')) : null}
+                ${component(Button, { type: 'button', disabled: !area.changed, '@click': () => this.submit(area.name) }, __('Save widgets'))}
+            </div>`));
+    }
+
+    /** A rich text field of a widget block, written in the tree itself. */
+    private richText(area: string, block: EditorBlock, field: EditorField, value: unknown, change: (value: unknown) => void, id: string): TemplateResult | null {
+        if (field.kind !== 'richtext') return null;
+        return component(RichTextField, {
+            id, label: field.label, value: (value as RichTextDoc | null) ?? null, blocks: [], onChange: (doc: RichTextDoc) => change(doc),
+            onMedia: () => this.openRichMedia(area, block._id, field.name, id), onInsertBlock: () => undefined, onEditBlock: () => undefined,
+        });
+    }
+
+    /** The media chooser for an image in rich text: the chosen file is inserted into that editor. */
+    @Client()
+    async openRichMedia(area: string, block: string, field: string, editor: string) {
+        this.chooser = { ...this.chooser, open: true, error: '', field: `${area}\u0000${block}\u0000${field}\u0000${editor}`, multiple: false };
+        await this.searchMedia(this.chooser.search);
+    }
+
+    private dialogModal(): TemplateResult {
+        const dialog = this.dialog;
+        const block = dialog ? findBlock(this.blocksOf(dialog.area), dialog.id) : undefined;
+        const option = this.options.find(entry => entry.name === block?.type) ?? null;
+        const media = (field: string): MediaHooks => ({ previews: this.previews, choose: multiple => this.openChooser(field, multiple, chooserKind(option?.fields.find(entry => entry.name === field))) });
+        const fields = option ? { ...option, fields: option.fields.filter(field => field.kind !== 'richtext') } : null;
+        return blockPanel({
+            id: 'widget-block', open: Boolean(dialog && option), option, tab: dialog?.tab ?? 'general', style: dialog?.style ?? styleValues({}), presets: this.presets,
+            ...(dialog ? { taken: this.otherBlockIds(dialog.area, dialog.id) } : {}),
+            media: { previews: this.previews, choose: property => this.openChooser(`\u0002${property}`, false, property) },
+            onTab: tab => this.showTab(tab), onStyle: style => this.setStyle(style), onClose: () => { this.dialog = null; },
+            general: dialog && fields ? (fields.fields.length ? blockFields(fields, dialog.values, (name, value) => this.setValue(name, value), `widget-${dialog.area}-${dialog.id}`, media, dialog.errors, [], this.sources)
+                : html`<p class="text-sm text-muted-foreground">${__('This block has no settings.')}</p>`) : html``,
+        });
+    }
+
+    render() {
+        return html`<div class="space-y-6">
+            ${pageHeader(__('Widgets'), { description: __('Blocks the theme shows outside entries, such as in a footer or a sidebar. Areas of other themes keep their widgets for when you switch.') })}
+            ${this.message ? notice(this.message, 'success') : null}
+            ${this.error ? notice(this.error, 'error') : null}
+            ${this.areas.length ? html`<div class="grid gap-4 lg:grid-cols-2">${this.areas.map(area => this.areaCard(area))}</div>`
+                : notice(__('The active theme has no widget areas.'))}
+            ${this.dialogModal()}
+            ${mediaChooser(this.chooser, {
+                search: text => this.searchMedia(text), filter: kind => this.filterMedia(kind), choose: file => this.choose(file), upload: event => this.upload(event),
+                close: () => { this.chooser = { ...this.chooser, open: false }; },
+            })}
+        </div>`;
+    }
+}

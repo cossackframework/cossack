@@ -1,6 +1,7 @@
 packages:
   - packages/*
   - examples/*
+  - packages/cms/app
 
 nodeLinker: hoisted
 
@@ -16,22 +17,28 @@ allowBuilds:
 
 overrides:
   '@electron/rebuild': ^4.2.0
-  'happy-dom@<20.8.9': 20.11.1
+  'happy-dom@<21.0.4': 21.0.4
   'nanoid@<3.3.18': 3.3.18
   'tmp@<0.2.6': 0.2.7
-  'undici@>=7.0.0 <7.29.1': 7.29.1
-  'undici@>=6.0.0 <6.28.1': 6.28.1
+  vite: ~8.1.6
+  'undici@>=7.0.0 <7.30.1': 7.30.2
+  'undici@>=6.0.0 <6.29.1': 6.29.1
   '@xmldom/xmldom@>=0.9.0 <0.9.12': 0.9.12
   'sharp@<0.35.5': 0.35.5
   'source-map-js@<1.2.2': 1.2.2
   'image-size@<2.0.3': 2.0.4
   'brace-expansion@>=1.0.0 <1.1.21': 1.1.21
+  'markdown-it@>=14.1.0 <14.3.3': 14.3.3
+  'glob@>=9.0.0 <14.0.2': 14.0.4
+  'minimatch@>=7.0.0 <11.0.1': 11.0.5
 
 minimumReleaseAgeExclude:
   - electron@43.5.0
   - '@modelcontextprotocol/core@2.3.0'
   - '@modelcontextprotocol/server@2.3.0'
   - '@modelcontextprotocol/client@2.3.0'
+  - '@romedb/client@0.2.21'
+  - '@romedb/node@0.2.21'
 
 patchedDependencies:
   appdmg@^0.6.6: packages/scaffold/template/patches/appdmg@0.6.6.patch

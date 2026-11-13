@@ -1,28 +1,57 @@
-import { Cossack, Page, Store, State, Validate, Client, Server, storeRules } from '@cossackframework/core';
-import { Card, CardBody, CardHeader, Field, Input, PasswordInput, Button, Form, toast } from '@cossackframework/ui';
+import { ClientVisibleError, Cossack, Page, Store, State, Validate, Client, Server, storeRules } from '@cossackframework/core';
+import { input } from '@cossackframework/core/input';
+import { Card, CardBody, CardHeader, Checkbox, Field, Input, PasswordInput, Button, Form } from '@cossackframework/ui';
+import { linkButton, notice, pageHeader } from '@cossackframework/ui/blocks';
 import { html, component, bind } from '@cossackframework/renderer';
-import { guard } from '../../../../services/rbac';
+import { canAssignRoles, canGrantRoles, guard } from '../../../../services/rbac';
 import { createUser } from '../../../../services/users';
+import { defaultRole, getRole, listRoles, type RoleDetail } from '../../../../services/roles';
+import type { PublicUser } from '../../../../auth';
 
 interface NewUserForm {
     name: string;
     email: string;
     password: string;
+    roleIds: string[];
+    /** Send an invitation with a link to set the password instead of setting one here. */
+    invite: boolean;
 }
 
+/**
+ * Add a user. Role managers (administrators by default) choose the roles; other user managers
+ * add users with the default role.
+ */
 @Page({ transport: 'http', middlewares: [guard.requireRole('admin')] })
 export default class NewUserPage extends Cossack {
     @Store()
     @Validate({
         rules: storeRules<NewUserForm>({
             email: { required: true, email: true, message: 'Enter a valid email' },
-            password: { required: true, minLength: 8, message: 'Password must be at least 8 characters' },
+            password: { minLength: 8, message: 'Password must be at least 8 characters' },
         }),
         config: { trigger: 'all', runOn: 'both' }
     })
-    form: NewUserForm = { name: '', email: '', password: '' };
+    form: NewUserForm = { name: '', email: '', password: '', roleIds: [], invite: false };
 
     @State() error = '';
+    @State() canAssignRoles = false;
+    @State() roles: RoleDetail[] = [];
+    @State() defaultRoleName = '';
+
+    async init() {
+        this.canAssignRoles = canAssignRoles(this.user as PublicUser | undefined);
+        const fallback = await defaultRole();
+        this.defaultRoleName = fallback?.name ?? '';
+        if (this.canAssignRoles) {
+            this.roles = await listRoles();
+            this.form.roleIds = fallback ? [fallback.id] : [];
+        }
+    }
+
+    @Client()
+    toggleRole(roleId: string, checked: boolean) {
+        this.form.roleIds = checked ? [...new Set([...this.form.roleIds, roleId])] : this.form.roleIds.filter(id => id !== roleId);
+    }
 
     @Client()
     async handleSubmit(event: Event) {
@@ -30,27 +59,34 @@ export default class NewUserPage extends Cossack {
         this.error = '';
         const ok = await this.validateAll();
         if (!ok) return;
+        if (!this.form.invite && !this.form.password) { this.error = __('Enter a password, or send an invitation.'); return; }
         try {
-            await this.create(this.form.name, this.form.email, this.form.password);
+            await this.create(this.form.name, this.form.email, this.form.invite ? '' : this.form.password, this.form.roleIds, this.form.invite);
         } catch (e: any) {
             this.error = e?.message || __('Could not create user');
-            toast.error(this.error);
         }
     }
 
-    @Server()
-    async create(name: string, email: string, password: string) {
-        await createUser({ email, password, name: name || undefined });
+    @Server({ input: input.args(input.string({ maxLength: 200 }), input.string({ maxLength: 320 }), input.string({ maxLength: 1000 }),
+        input.array(input.string({ maxLength: 200 }), { maxItems: 50 }), input.boolean().optional()) })
+    async create(name: string, email: string, password: string, roleIds: string[], invite = false) {
+        // Roles from the form count only for a role manager; others get the default role. Each
+        // requested role is read by its ID, so none escapes the check however many roles exist.
+        const chosen = canAssignRoles(this.user as PublicUser | undefined) ? [...new Set(roleIds)] : undefined;
+        if (chosen) {
+            const roles = await Promise.all(chosen.map(id => getRole(id)));
+            if (roles.some(role => !role)) throw new ClientVisibleError(__('Role not found'));
+            if (!canGrantRoles(this.user as PublicUser | undefined, roles as RoleDetail[])) throw new ClientVisibleError(__('You cannot give a role with permissions you do not have.'));
+        }
+        await createUser({ email, ...(invite ? { invite: true } : { password }), name: name || undefined, ...(chosen ? { roleIds: chosen } : {}) });
         this.redirect('/dashboard/users');
     }
 
     render() {
         return html`
-            <div class="space-y-8 max-w-2xl">
-                <div>
-                    <h1 class="text-2xl font-bold text-foreground">${__('New user')}</h1>
-                    <p class="mt-1 text-sm text-muted-foreground">${__('Create a new user account.')}</p>
-                </div>
+            <div class="max-w-2xl space-y-6">
+                ${pageHeader(__('New user'), { description: __('Create a new user account.') })}
+                ${this.error ? notice(this.error, 'error') : null}
 
                 ${component(Card, {}, html`
                     ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Details')}</h2>`)}
@@ -63,14 +99,19 @@ export default class NewUserPage extends Cossack {
                                 control: attributes => component(Input, { ...attributes, type: 'text', '.value': bind(this.form, 'name') }) })}
                             ${component(Field, { label: __('Email'), for: 'email', error: this.getError('form.email'),
                                 control: attributes => component(Input, { ...attributes, type: 'email', placeholder: 'user@example.com', variant: this.hasError('form.email') ? 'error' : 'default', '.value': bind(this.form, 'email') }) })}
-                            ${component(Field, { label: __('Password'), for: 'password', error: this.getError('form.password'),
+                            ${component(Checkbox, { label: __('Send an invitation email with a link to set the password'), checked: this.form.invite, '@change': (e: Event) => { this.form.invite = (e.target as HTMLInputElement).checked; } })}
+                            ${this.form.invite ? null : component(Field, { label: __('Password'), for: 'password', error: this.getError('form.password'),
                                 control: attributes => component(PasswordInput, { ...attributes, value: this.form.password, onValueChange: (v: string) => this.form.password = v }) })}
+                            ${this.canAssignRoles ? html`<fieldset class="space-y-2">
+                                <legend class="mb-1 text-sm font-medium text-foreground">${__('Roles')}</legend>
+                                ${this.roles.length ? this.roles.map(role => html`<div>${component(Checkbox, { label: role.name, checked: this.form.roleIds.includes(role.id), '@change': (e: Event) => this.toggleRole(role.id, (e.target as HTMLInputElement).checked) })}</div>`)
+                                    : html`<p class="text-sm text-muted-foreground">${__('No roles defined yet.')}</p>`}
+                            </fieldset>` : html`<p class="text-sm text-muted-foreground">${this.defaultRoleName
+                                ? `${__('The new user gets the default role')}: ${this.defaultRoleName}.`
+                                : __('The new user starts without a role.')}</p>`}
                             <div class="flex items-center gap-2">
                                 ${component(Button, { type: 'submit' }, __('Create user'))}
-                                <a href="/dashboard/users"
-                                   class="inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors">
-                                    ${__('Cancel')}
-                                </a>
+                                ${linkButton(__('Cancel'), '/dashboard/users', 'outline')}
                             </div>
                             </div>
                         `)}

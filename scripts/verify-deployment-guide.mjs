@@ -118,7 +118,13 @@ export default class GuideStatic extends Cossack { render() { return html\`<h1>G
           if(response.status===200) { await response.text(); ready=true; break; } } catch {}
         await new Promise(resolve => setTimeout(resolve, 200));
       }
-      assert.ok(ready, `Named environment dev must serve HTTP: ${errorOutput}`);
+      if (!ready) {
+        // The JSON lifecycle keeps the child's output out of the protocol; rerun plainly to learn why Vite stopped.
+        const plain = await new Promise(resolve => { let text = ''; const retry = spawn(process.execPath, [cli, 'dev', '--env', 'staging', '--host', '127.0.0.1', '--port', String(port + 1)], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
+          retry.stdout.on('data', chunk => { text += chunk; }); retry.stderr.on('data', chunk => { text += chunk; });
+          const timer = setTimeout(() => retry.kill('SIGKILL'), 45000); retry.on('close', () => { clearTimeout(timer); resolve(text); }); });
+        assert.fail(`Named environment dev must serve HTTP (exit ${exit}): ${errorOutput}\n--- dev --json stdout ---\n${output.slice(-3000)}\n--- dev without --json ---\n${plain.slice(-6000)}`);
+      }
       stop('SIGTERM');
       const stopped = await Promise.race([closed, new Promise(resolve => { const timer=setTimeout(()=>resolve('timeout'),15000); timer.unref(); })]);
       assert.notEqual(stopped, 'timeout', 'Development command must drain');
@@ -149,7 +155,7 @@ export default class GuideStatic extends Cossack { render() { return html\`<h1>G
     assert.ok(unavailable.diagnostics.some(item => item.code === 'COSSACK_WRANGLER_API_UNSUPPORTED'), 'Unsupported parser must produce actionable Wrangler diagnostics');
     assert.equal(await fs.readFile(attempts, 'utf8').catch(error => { if(error.code==='ENOENT') return ''; throw error; }), '', 'No remote requests permitted');
     return { schemaVersion: 1, scope: 'local-generated-guide', versions, receipts, remoteReadiness: 'not-checked' };
-  } finally { await fs.rm(scratch, { recursive: true, force: true }); }
+  } finally { if (process.env.COSSACK_KEEP_SMOKE !== '1') await fs.rm(scratch, { recursive: true, force: true }); }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

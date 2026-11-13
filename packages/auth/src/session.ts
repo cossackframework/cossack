@@ -31,7 +31,11 @@ export interface AuthProvider<User> {
 export type SessionCreator<User> = (user: User, c: Context) => Promise<{ headers: Headers }>;
 
 export type LoginHandlerOptions<User> = {
-    validateCredentials: (credentials: any, c: Context) => Promise<User | null>;
+    /**
+     * The user for these credentials, null to refuse them, or a `Response` to answer with
+     * instead, such as a request for a second-factor code.
+     */
+    validateCredentials: (credentials: any, c: Context) => Promise<User | null | Response>;
     /**
      * Per-call session creator. Overrides any `createSession` configured on
      * the {@link AuthProvider} for this login handler. Omit to use the provider.
@@ -92,9 +96,51 @@ async function discardBody(request: Request, limit = 64 * 1024): Promise<void> {
             if (next.done || (size += next.value.byteLength) > limit) break;
         }
     } catch { /* the connection is already gone */ } finally {
-        await Promise.race([reader.cancel().catch(() => {}), new Promise(resolve => setTimeout(resolve, 1000))]);
+        await settledCancel(reader);
         reader.releaseLock();
     }
+}
+
+/** Cancel the rest of a stream, waiting at most a second for the runtime to settle it. */
+async function settledCancel(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([reader.cancel().catch(() => {}), new Promise(resolve => { timer = setTimeout(resolve, 1000); })]);
+    clearTimeout(timer);
+}
+
+/** Credentials are a few small fields: a login body over this is refused unread. */
+export const LOGIN_BODY_MAX_BYTES = 64 * 1024;
+
+class BodyTooLarge extends Error {}
+
+/**
+ * Read a JSON body of at most `limit` bytes. A declared or streamed size over
+ * the limit throws `BodyTooLarge`. The rest of an oversized stream is left
+ * unread, not cancelled: the framework drains it before the response leaves
+ * (cancelling breaks the next request on a Workers keep-alive connection).
+ */
+async function readJsonBody(request: Request, limit: number): Promise<unknown> {
+    const declared = request.headers.get('content-length')?.trim();
+    if (declared && /^\d+$/.test(declared) && Number(declared) > limit) throw new BodyTooLarge();
+    if (!request.body) return JSON.parse('');
+    const reader = request.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+        while (true) {
+            const next = await reader.read();
+            if (next.done) break;
+            size += next.value.byteLength;
+            if (size > limit) throw new BodyTooLarge();
+            chunks.push(next.value);
+        }
+    } finally {
+        reader.releaseLock();
+    }
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    return JSON.parse(new TextDecoder().decode(bytes));
 }
 
 /** Only `application/json` (with optional parameters). Forms cannot send it cross-site without CORS preflight. */
@@ -191,8 +237,11 @@ export function createAuth<User>(provider: AuthProvider<User>): AuthKit<User> {
                 return c.json({ error: 'Login requires Content-Type: application/json' }, 415);
             }
             let credentials: unknown;
-            try { credentials = await c.req.json(); }
-            catch { return c.json({ error: 'Malformed JSON body' }, 400); }
+            try { credentials = await readJsonBody(c.req.raw, LOGIN_BODY_MAX_BYTES); }
+            catch (error) {
+                if (error instanceof BodyTooLarge) return c.json({ error: 'Login body too large' }, 413);
+                return c.json({ error: 'Malformed JSON body' }, 400);
+            }
             if (!credentials || typeof credentials !== 'object' || Array.isArray(credentials)) {
                 return c.json({ error: 'Credentials must be a JSON object' }, 400);
             }
@@ -201,6 +250,7 @@ export function createAuth<User>(provider: AuthProvider<User>): AuthKit<User> {
             if (!user) {
                 return c.json({ error: 'Invalid credentials' }, 401);
             }
+            if (user instanceof Response) return user;
 
             const sessionCreator = loginOptions.createSession ?? provider.createSession;
             if (!sessionCreator) {

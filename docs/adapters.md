@@ -219,3 +219,10 @@ If a trusted reverse proxy terminates HTTPS before a Node server, configure
 requests. The default compares Origin against the request URL seen by the
 framework. The proxy must control any forwarded headers used to reconstruct
 that URL.
+
+Set it even when sign-in already works behind the proxy. The `@cossackframework/auth`
+sign-in check also accepts `https://<request host>` when the request carries
+`X-Forwarded-Proto: https`, since that only changes the scheme of the same host.
+The `/crpc` server-method route, uploads, WebSocket and SSE do not read forwarded
+headers. Without `allowedOrigins`, a proxied site signs users in, then answers 403
+to their server methods and sockets.

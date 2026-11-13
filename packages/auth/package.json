@@ -22,7 +22,7 @@
   },
   "devDependencies": {
     "hono": "^4.13.7",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.12"
   },
   "peerDependencies": {
     "hono": "^4.13.7"
@@ -30,6 +30,11 @@
   "exports": {
     ".": "./src/index.ts",
     "./turnstile": "./src/turnstile.ts",
+    "./two-factor": "./src/two-factor.ts",
+    "./passkeys": "./src/passkeys.ts",
     "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@simplewebauthn/server": "14.0.3"
   }
 }

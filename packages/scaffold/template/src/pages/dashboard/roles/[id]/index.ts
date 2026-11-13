@@ -1,11 +1,13 @@
-import { Cossack, Page, State, Store, Validate, Client, Server, storeRules } from '@cossackframework/core';
-import { Card, CardBody, CardHeader, Field, Input, Button, Checkbox, Form, toast } from '@cossackframework/ui';
+import { ClientVisibleError, Cossack, Page, State, Store, Validate, Client, Server, storeRules } from '@cossackframework/core';
+import { input } from '@cossackframework/core/input';
+import { Card, CardBody, CardHeader, Field, Input, Button, Checkbox, Form } from '@cossackframework/ui';
+import { linkButton, notice, pageHeader } from '@cossackframework/ui/blocks';
 import { html, component, bind } from '@cossackframework/renderer';
-import { guard } from '../../../../services/rbac';
+import { requireRoleManager } from '../../../../services/rbac';
 import { getRole, updateRole, type RoleDetail } from '../../../../services/roles';
-import { PERMISSIONS, type Permission } from '../../../../lib/permissions';
+import { PERMISSIONS, permissionLabel, type Permission } from '../../../../lib/permissions';
 
-@Page({ transport: 'http', middlewares: [guard.requireRole('admin')] })
+@Page({ transport: 'http', middlewares: [requireRoleManager] })
 export default class EditRolePage extends Cossack {
     @Store()
     @Validate({
@@ -47,32 +49,33 @@ export default class EditRolePage extends Cossack {
         const ok = await this.validateAll();
         if (!ok) return;
 
+        if (!this.role) return;
         try {
-            await this.save(this.role, this.selected);
+            await this.save(this.role.name, this.selected);
             this.saved = true;
-            toast.success(__('Saved.'));
         } catch (e: any) {
             this.error = e?.message || __('Could not save role');
-            toast.error(this.error);
         }
     }
 
-    @Server()
-    async save(role: RoleDetail | null, permissions: Permission[]) {
-        if (!role) throw new Error(__('Role not found'));
-        await updateRole(role.id, { name: role.name, permissions });
+    @Server({ input: input.args(input.string({ minLength: 1, maxLength: 200 }), input.array(input.string({ maxLength: 200 }), { maxItems: 1000 })) })
+    async save(name: string, permissions: string[]) {
+        // The role the URL names, never one the client's state names.
+        const role = await getRole(this.c.req.param('id') ?? '');
+        if (!role) throw new ClientVisibleError(__('Role not found'));
+        // The roles service checks each permission (and that the actor holds it) before saving.
+        await updateRole(role.id, { name, permissions: permissions as Permission[] });
     }
 
     render() {
         if (!this.role && !this.error) return html`<div class="text-sm text-muted-foreground">${__('Loading…')}</div>`;
-        if (!this.role) return html`<div class="text-sm text-destructive">${this.error}</div>`;
+        if (!this.role) return notice(this.error, 'error');
 
         return html`
-            <div class="space-y-8 max-w-2xl">
-                <div>
-                    <h1 class="text-2xl font-bold text-foreground">${this.role.name}</h1>
-                    <p class="mt-1 text-sm text-muted-foreground">${__('Edit the role and its permissions.')}</p>
-                </div>
+            <div class="max-w-2xl space-y-6">
+                ${pageHeader(this.role.name, { description: __('Edit the role and its permissions.') })}
+                ${this.saved && !this.error ? notice(__('Saved.'), 'success') : null}
+                ${this.error ? notice(this.error, 'error') : null}
 
                 ${component(Card, {}, html`
                     ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Details')}</h2>`)}
@@ -80,7 +83,7 @@ export default class EditRolePage extends Cossack {
                         ${component(Form, {
                             submit: (e: Event) => this.handleSubmit(e),
                         }, html`
-                            <div class="flex flex-col space-y-6">
+                            <div class="flex flex-col space-y-4">
                             ${component(Field, { label: __('Name'), for: 'name', error: this.getError('name'),
                                 control: attributes => component(Input, { ...attributes, type: 'text', '.value': bind(this.role, 'name') }) })}
 
@@ -88,25 +91,20 @@ export default class EditRolePage extends Cossack {
                                 <p class="text-sm font-medium text-foreground mb-2">${__('Permissions')}</p>
                                 <div class="space-y-2">
                                     ${PERMISSIONS.map((perm) => html`
-                                        <label class="flex items-start gap-3 cursor-pointer">
-                                            ${component(Checkbox, {
-                                                checked: this.selected.includes(perm),
-                                                '@change': (e: any) => this.togglePermission(perm, e.target.checked),
-                                            })}
-                                            <span>
-                                                <span class="block text-sm text-foreground font-mono">${perm}</span>
-                                            </span>
-                                        </label>
+                                        <div class="[&_.cs-checkbox]:items-start [&_.cs-checkbox>input]:mt-0.5">${component(Checkbox, {
+                                            checked: this.selected.includes(perm),
+                                            '@change': (e: any) => this.togglePermission(perm, e.target.checked),
+                                        }, html`<span>
+                                            <span class="block text-sm text-foreground">${__(permissionLabel(perm))}</span>
+                                            <span class="block text-xs text-muted-foreground font-mono">${perm}</span>
+                                        </span>`)}</div>
                                     `)}
                                 </div>
                             </div>
 
                             <div class="flex items-center gap-2">
                                 ${component(Button, { type: 'submit' }, __('Save changes'))}
-                                <a href="/dashboard/roles"
-                                   class="inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors">
-                                    ${__('Back')}
-                                </a>
+                                ${linkButton(__('Back'), '/dashboard/roles', 'outline')}
                             </div>
                             </div>
                         `)}

@@ -447,10 +447,79 @@ cossack add <feature> [options]
 | `schedules` | `jobs` |
 | `notifications` | `jobs` |
 | `workflows` | |
+| `cms` | `ui`, `auth`, `dashboard`, `markdown` |
 
 Prerequisites are resolved transitively: `dashboard` also adds `ui` and
-`database` through `auth`. Files you changed are reported as conflicts and are
-not overwritten unless you pass `--force`. Run `pnpm install` afterwards.
+`database` through `auth`. With `cms`, `auth` keeps users in RomeDB and does not
+add `database`. Files you changed are reported as conflicts and are not
+overwritten unless you pass `--force`. Run `pnpm install` afterwards.
+
+#### `cossack add cms`
+
+Adds the RomeDB CMS to the `auth` and `dashboard` pages: users, roles and
+sessions stored in RomeDB, posts and pages written in a rich text editor that
+saves JSON, collections you define in the dashboard (fields and blocks, each in
+its own document table), categories, tags and other taxonomies, a media library,
+site settings, themes, menus with drag and drop, plugins and the plugin policy
+lints. The public site is drawn by the active theme, a plugin; the default one is
+rendered into `src/plugins/default-theme/` for you to edit or copy. It serves
+collections, term archives, nested pages, `/search`, `/feed`, `/sitemap.xml`,
+`/robots.txt` and a content API (`/api/cms/content/<collection>`,
+`/api/cms/menus/<location>`, `/api/cms/comments`) that apps write to with
+application passwords. Editors schedule entries, share preview links, compare and
+restore revisions and recover autosaves; published URLs that change redirect
+automatically, and Tools manages redirects and signed webhooks. Comments are
+moderated under Comments (Turnstile when `TURNSTILE_SITE_KEY` and
+`TURNSTILE_SECRET_KEY` are set), patterns are reusable content, and Settings →
+Languages publishes translations under `/<code>/`. Staff can sign in with an
+authenticator app or a passkey, and General settings can require it. It needs a
+RomeDB database, named by `ROMEDB_URL`. On Node the default is a file,
+`storage/romedb/app.romedb`, opened in the server's process: no service, port or
+token, and one process at a time. A URL with `ROMEDB_TOKEN` reaches `romedb serve`
+(to share a live database with Studio) or a RomeDB Cloud database. Workers reach
+RomeDB over HTTP: `pnpm dev` starts `romedb serve` for the loopback URL in
+`.dev.vars` and passes its token, and production uses RomeDB Cloud. To look into a
+file while its app runs, run the app on `romedb serve` instead; a plain copy of a
+live file can miss committed writes. The first visit to `/auth/setup` applies the
+schema and creates the administrator; it asks for `CMS_SETUP_CODE`. Media goes to
+R2 (`MEDIA` binding) on Workers, and to S3 (`S3_BUCKET`) or `MEDIA_DIR` on Node;
+images are resized with the Images binding (`IMAGES`) on Workers and `sharp` on
+Node. Maintenance runs every minute, publishing scheduled entries and delivering
+webhooks.
+
+A project whose `auth` already keeps users in the `database` feature cannot add
+`cms`; create a new project with `--features cms`. OAuth sign-in is not
+available with `cms` yet.
+
+```bash
+cossack add cms
+pnpm dev   # Node: creates storage/romedb/app.romedb; Workers: starts romedb serve
+```
+
+#### `cossack add plugin`
+
+Renders a plugin package (a directory, an `npm pack` tarball or an npm package)
+into `src/plugins/<name>/`. The package is read as data and never executed;
+npm installs run with `--ignore-scripts`. `cossack plugins list|check|upgrade|remove`
+manage rendered plugins, and `cossack <plugin>:<command>` runs a command a
+plugin manifest declares. A plugin that asks for unrestricted access can do
+anything in the application, so rendering it stops with a danger message until
+you accept it: a terminal asks, and anything else needs `--allow-unrestricted`.
+
+Each render says where the plugin's server code runs. On Cloudflare a plugin
+with only server code runs isolated in a Worker of its own, and the first one
+adds the Worker Loader binding (`LOADER`, Workers Paid) to `wrangler.jsonc`.
+`--in-app`, on `add plugin` and `plugins upgrade`, keeps a plugin in the
+application instead, and upgrades keep the choice. `cossack plugins list`
+shows `isolated` or `in app` for each plugin. See
+[Where server code runs](/docs/cms/plugins.md#where-server-code-runs).
+
+```bash
+cossack add plugin ./support-desk-1.0.0.tgz
+cossack plugins check
+cossack plugins upgrade support-desk --source ./support-desk-1.1.0.tgz
+CMS_PASSWORD=… cossack support-desk:close-all --email admin@example.com
+```
 
 #### `cossack add database`
 
@@ -504,6 +573,41 @@ cossack remove database --dry-run
 ```
 
 See [Authentication](/docs/authentication.md) and [Social Login](/docs/oauth.md) for the concepts these files implement.
+
+---
+
+## CMS management
+
+### `cossack cms <command>`
+
+Manage a running CMS site through its management API, as a signed-in user:
+
+```bash
+cossack cms login --url https://example.com        # email from --email or CMS_EMAIL, password from CMS_PASSWORD or a prompt
+cossack cms whoami
+cossack cms entries list posts --status draft --json
+cossack cms entries search walrus facts --per-page 5
+cossack cms entries create posts --set title="Hello" --data @body.json
+cossack cms entries publish posts <id> --at 2026-12-01T09:00:00Z
+cossack cms notes add posts <id> --body "Shorter title?" --target field:title
+cossack cms users create --email grace@example.com --password … --role editor
+cossack cms settings set general --set siteTitle="My site"
+cossack cms sites create Blog --host blog.example.com
+cossack cms mcp                                    # the MCP client configuration for the same site
+cossack cms password reset --email you@example.com # recovery mode: a reset link with the site's CMS_RECOVERY_CODE, no login
+```
+
+`login` creates an application password through a session and keeps it in
+`~/.config/cossack/cms-logins.json` (0600). The address comes from `--url`, `COSSACK_CMS_URL`,
+the project's `APP_URL`, then the current login; `COSSACK_CMS_TOKEN` and `COSSACK_CMS_SITE`
+override the login for CI. `--site <id>` acts on one site of a network through the network
+host. Writes take `--data '{…}'` (`@file`, `@-` for stdin) and `--set field=value`; deletes need
+`--yes`; nothing prompts under `--json`, whose `data` is the API's answer. Commands: `login`,
+`logout`, `whoami`, `mcp`, `collections`, `taxonomies`, `terms`, `entries`, `notes`, `users`,
+`roles`, `settings`, `media`, `sites`. Failures use `COSSACK_CMS_*` codes
+(`COSSACK_CMS_LOGIN_REQUIRED`, `COSSACK_CMS_FORBIDDEN`, `COSSACK_CMS_CONFLICT`,
+`COSSACK_CMS_INVALID`, …). The API, every command and the MCP tools are described in
+[Management API, CLI and MCP](./cms/api.md).
 
 ---
 

@@ -4,7 +4,7 @@ import type { NavigateResult } from '@cossackframework/core';
 import { startDevelopmentTrace, type DevelopmentTraceSession } from '@cossackframework/core/devtools';
 
 const fixture = vi.hoisted(() => ({
-    registry: { pages: {} as Record<string, any>, layouts: {} as Record<string, any>, loadings: {} },
+    registry: { pages: { '/src/pages/feed.xml.ts': async () => ({}) } as Record<string, any>, layouts: {} as Record<string, any>, loadings: {}, handlers: ['/src/pages/feed.xml.ts'] },
     guard: async () => false,
     bootstrapGate: undefined as Promise<void> | undefined,
     bootstrapStarted: false,
@@ -369,6 +369,20 @@ describe('navigation completion behavior', () => {
         expect(await navigate('/missing')).toMatchObject({ outcome: 'failed' }); expect(window.location.pathname).toBe('/start');
     });
 
+    it('hands a same-origin response without page state to the browser instead of reloading the current page', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => new Response('# Notes', { headers: { 'content-type': 'text/markdown' } })));
+        const errors: Event[] = [];
+        const record = (event: Event) => errors.push(event);
+        document.addEventListener('cossack:navigation-error', record);
+        const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const result = await navigate('/notes?format=md');
+        document.removeEventListener('cossack:navigation-error', record);
+        expect(result).toMatchObject({ outcome: 'failed', error: expect.objectContaining({ message: expect.stringContaining('Not a page') }) });
+        expect(errors).toHaveLength(0);
+        expect(logged.mock.calls.filter(call => call[0] === 'Navigation failed:')).toHaveLength(0);
+        expect(window.location.pathname).toBe('/start');
+    });
+
     it('returns the full URL through the public callback and pushes it to history', async () => {
         vi.stubGlobal('fetch', vi.fn(async () => documentResponse('fast')));
         expect(await Cossack._onNavigate!('/fast?sort=name#row')).toEqual({ outcome: 'completed', url: '/fast?sort=name#row' });
@@ -608,6 +622,17 @@ describe('development navigation diagnostics', () => {
         ]);
     });
 
+
+    it('loads a handler route as a document without fetching it first, and never prefetches it', async () => {
+        const fetchMock = vi.fn(async () => documentResponse('fast'));
+        vi.stubGlobal('fetch', fetchMock);
+        const core = await import('@cossackframework/core');
+        const prefetch = vi.mocked(core.enableClientNavigation).mock.calls.at(-1)![1]!;
+        await prefetch('/feed.xml');
+        const result = await navigate('/feed.xml');
+        expect(result).toMatchObject({ outcome: 'failed', error: { url: 'http://localhost:3000/feed.xml' } });
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
 
     it('correlates a shared prefetch and superseded navigation independently', async () => {
         let release!: (response: Response) => void;

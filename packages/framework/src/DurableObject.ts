@@ -10,6 +10,7 @@ import { realtimeConnectionScopeKey, type RealtimeOwner } from './realtime-scope
 import { realtimeOwnerMiddlewares } from './transports/realtime-target.js';
 import { withRealtimeAuthorization, type RealtimeIdentity, type RealtimeRequestSnapshot } from './realtime-context.js';
 import { ensureRequestContextAlsWired } from './request-context-als.js';
+import { pluginActivityGate } from './plugin-activity.js';
 import type { SocketPeerAttachment } from '@cossackframework/core';
 
 let routeIds: RouteIdMaps | undefined;
@@ -56,14 +57,14 @@ export class AppDurableObject extends CossackDurableObject {
         const component = Object.hasOwn(realtimeComponents(), request.componentPath);
         return createChainedComponent({
             component: Component, componentPath: request.componentPath, scopeKey: request.scopeKey,
-            layouts: component ? {} : applicationRegistry.layouts, routePathToIdMap: routeIds.routePathToIdMap,
+            layouts: component ? {} : applicationRegistry.layouts, owners: applicationRegistry.owners, routePathToIdMap: routeIds.routePathToIdMap,
             facilities: { context, user, env: this.env },
             bootstrap: { context, user, env: this.env, page: request.page, skipInit: true, initialState: request.initialState },
         });
     }
 
     /** The owner this peer joined and the guard stack each of its operations runs again. */
-    private peerAuthorization(peer: SocketPeerAttachment): { owner: RealtimeOwner; middlewares: MiddlewareHandler[] } | undefined {
+    private peerAuthorization(peer: SocketPeerAttachment): { owner: RealtimeOwner; guardPath: string; middlewares: MiddlewareHandler[] } | undefined {
         const componentPath = peer.componentPath!;
         const pages = applicationRegistry.pages as Record<string, unknown>;
         const layouts = applicationRegistry.layouts as Record<string, unknown>;
@@ -86,13 +87,17 @@ export class AppDurableObject extends CossackDurableObject {
         const guardPath = kind === 'layout' ? componentPath : peer.guardPath ?? componentPath;
         if (!Object.hasOwn(pages, guardPath) && !Object.hasOwn(layouts, guardPath)) return undefined;
         const owner: RealtimeOwner = { kind, id: componentPath, options: Reflect.getMetadata('page:options', Component) as PageOptions | undefined };
-        const paths = new Set([...resolveLayoutPaths(guardPath, Object.keys(layouts)), guardPath]);
+        const paths = new Set([...resolveLayoutPaths(guardPath, Object.keys(layouts), applicationRegistry.owners), guardPath]);
         const middlewares: MiddlewareHandler[] = [...paths].flatMap(path => {
             const GuardComponent = componentOf(pages[path] ?? layouts[path]);
             const declared = GuardComponent ? Reflect.getMetadata('page:options', GuardComponent)?.middlewares ?? [] : [];
             return Array.isArray(declared) ? declared : [];
         });
-        return { owner, middlewares: [...middlewares, ...realtimeOwnerMiddlewares(owner)] };
+        // A plugin's pages and layouts stop answering once the plugin is off, as the router's gate does.
+        const owners = applicationRegistry.owners ?? {};
+        const plugins = new Set([...paths, componentPath].map(path => owners[path]).filter((owner): owner is string => typeof owner === 'string'));
+        const gates = [...plugins].map(plugin => pluginActivityGate(plugin));
+        return { owner, guardPath, middlewares: [...gates, ...middlewares, ...realtimeOwnerMiddlewares(owner)] };
     }
 
     protected override async authorizeWebSocketPeer(
@@ -111,6 +116,9 @@ export class AppDurableObject extends CossackDurableObject {
             env: this.env,
             params: request.params,
             locale: request.locale ?? 'en',
+            guardPath: authorization.guardPath,
+            // As protectTransport records it: the owner's own code, a realtime component by its id.
+            targetPath: authorization.owner.id,
         };
         const originalUserId = (peer.user as { id?: unknown } | undefined)?.id;
         // The same user, and a scope that still resolves to this connection's

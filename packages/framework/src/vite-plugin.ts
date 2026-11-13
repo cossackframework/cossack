@@ -3,7 +3,7 @@ export { cossackSchedules } from './vite-schedules.js';
 export { cossackBuildBudgets } from './vite-build-budgets.js';
 import { checkConfigBuildRequirements } from './config-preflight.js';
 import type { ConfigRuntime } from './config-requirements.js';
-import { CONFIG_GLOB, generateConfigTypes, discoverConfigFactories } from './config-codegen.js';
+import { CONFIG_GLOB, PLUGIN_CONFIG_GLOB, generateConfigTypes, discoverConfigSources } from './config-codegen.js';
 import { parseSync, type Plugin } from 'vite';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -12,16 +12,18 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { installDevelopmentTraceBridge, TRACE_BRIDGE_MODULE } from './vite-development-traces.js';
 import { installPublicReloadPrivacy } from './vite-public-diagnostics.js';
 import { checkTemplatesForBuild, formatTemplateDiagnostic, startDevelopmentTemplateChecks } from './vite-template-diagnostics.js';
-import { clientOptimizedDependencies } from './vite-dependency-optimization.js';
+import { clientOptimizedDependencies, linkedDependenciesConfig, linkedDependencyFolders, restartOnLinkedRebuilds, ssrOptimizedDependencies, type LinkedDependency } from './vite-dependency-optimization.js';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { resolve, dirname, relative } from 'path';
-import { generateRoutes, scanPagesDir, ROUTES_MODULE_ID, ROUTES_SOURCE_PATH, ROUTE_GLOB_EXCLUDES } from './route-codegen.js';
+import { discoverGetHandlers, generateRoutes, ROUTES_MODULE_ID, ROUTES_SOURCE_PATH, ROUTE_GLOB_EXCLUDES } from './route-codegen.js';
+import { PLUGINS_MODULE_ID, pluginPageKey, pluginRegistryModule, readRenderedPlugins, scanPageSources } from './plugin-sources.js';
+import { isolationReport, PLUGIN_LOADER_BINDING, pluginIsolation, PluginIsolationError, type PluginIsolationOptions } from './plugin-isolation.js';
 export { scanPagesDir } from './route-codegen.js';
 import { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
 import { checkCapabilityRequirements, type CapabilityUse, type RuntimeName } from './runtime-capabilities.js';
 import { extractPageOptionsFromAst, isHttpHandlerModule } from './page-inspection.js';
 import { readBuildBindingNames } from './build-bindings.js';
-import { classifyRoute, filePathToHttpRoute, filePathToRoutePath } from './route-ids.js';
+import { filePathToRoutePath } from './route-ids.js';
 import { validateMarkdownFrontmatter, isValidatedMarkdownFrontmatter } from './markdown-frontmatter.js';
 import { describeUncoveredClientOutput, uncoveredClientOutput, type StaticAssetRouteFact } from './static-asset-routing.js';
 import { checkReservedPaths, type ReservedPathDiagnostic } from './reserved-paths.js';
@@ -35,6 +37,7 @@ const virtualModuleId = 'virtual:cossack-pages';
 const resolvedVirtualModuleId = '\0' + virtualModuleId;
 
 const resolvedRealtimeComponentsModuleId = '\0' + REALTIME_COMPONENTS_MODULE_ID;
+const resolvedPluginsModuleId = '\0' + PLUGINS_MODULE_ID;
 
 const langVirtualModuleId = 'virtual:cossack-lang';
 const resolvedLangVirtualModuleId = '\0' + langVirtualModuleId;
@@ -104,6 +107,13 @@ export interface CossackPagesOptions {
    */
   markdownProcessor?: MarkdownProcessor;
   /**
+   * Run plugins' server code in their own Workers where the shape allows it
+   * (specs/cms-plugin-isolation.md). On Cloudflare each isolated plugin's
+   * `server.ts` is bundled with `runtime` and kept out of the application;
+   * other runtimes keep it in the application and say why.
+   */
+  pluginIsolation?: PluginIsolationOptions;
+  /**
    * Check html and svg templates (`cossack check templates`): builds fail on
    * template errors, and the dev server reports diagnostics as files change.
    * Default true.
@@ -124,6 +134,8 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
   let publicDirectory: string | false = 'public';
   let developmentBase = '/';
   let traceBridge: ReturnType<typeof installDevelopmentTraceBridge> | undefined;
+  /** Linked packages Vite pre-bundles, watched while the dev server runs. */
+  let linkedFolders: LinkedDependency[] = [];
   if (options.markdownProcessor) {
     configuredMarkdownProcessor = options.markdownProcessor;
   }
@@ -131,7 +143,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
   let warnedAboutMarkdown = false;
   const warnIfMarkdownIsUnconfigured = (warn: (message: string) => void) => {
     if (markdownEnabled || warnedAboutMarkdown) return;
-    const { markdownKeys } = scanPagesDir(resolve(projectRoot, 'src', 'pages'), false);
+    const { markdownKeys } = scanPageSources(projectRoot, false);
     if (markdownKeys.length === 0) return;
     warnedAboutMarkdown = true;
     warn(
@@ -162,18 +174,21 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
 
   let capabilityPages = new Set<string>();
   let capabilityBindings: readonly string[] = [];
+  /** Whether `capabilityBindings` came from the project, so an absent binding means something. */
+  let bindingsRead = false;
   const refreshCapabilityPages = () => {
-    capabilityPages = new Set(scanPagesDir(resolve(projectRoot, 'src/pages'), markdownEnabled)
-      .pageKeys.map(key => resolve(projectRoot, key.slice(1)).replaceAll('\\', '/')));
+    const { pageKeys, sources } = scanPageSources(projectRoot, markdownEnabled);
+    capabilityPages = new Set(pageKeys.map(key => resolve(projectRoot, (sources[key] ?? key).slice(1)).replaceAll('\\', '/')));
   };
   const pageRequirement = async (file: string) => {
-    const key = '/' + relative(projectRoot, file).replaceAll('\\', '/');
+    const key = pluginPageKey('/' + relative(projectRoot, file).replaceAll('\\', '/'));
     let transport = 'http';
     let stateful = false;
     let line: number | undefined;
     if (file.endsWith('.ts')) {
       const source = readFileSync(file, 'utf8');
-      if (classifyRoute(filePathToHttpRoute(key)) === 'api' && await isHttpHandlerModule(source)) return {};
+      // Functional handlers serve any path (/feed.xml, /webhooks/x), and need no page transport.
+      if (await isHttpHandlerModule(source)) return {};
       const facts = await extractPageOptionsFromAst(source);
       if (facts?.method !== 'ast' || !facts.options) return {
         parseError: !!(facts && 'parseError' in facts && facts.parseError),
@@ -204,7 +219,19 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
     // UI and Solar Icons must also stay in the SSR graph: Solar Icons 0.7.2
     // exposes some runtime entry points as TypeScript, which recent Node
     // versions refuse to strip when Vite externalizes the transitive import.
-    config() {
+    config(userConfig, env) {
+      const include = clientOptimizedDependencies(import.meta.url);
+      // Vite keys its pre-bundle cache on the lockfile and the config, never on a linked
+      // package's files, and the browser keeps a bundle for good under that key's hash. An
+      // environment that bundles linked packages carries their fingerprint in its config, so
+      // a changed one is bundled again under a new address (see the helper).
+      const root = userConfig.root ? resolve(userConfig.root) : process.cwd();
+      const client = [...include, ...(userConfig.environments?.client?.optimizeDeps?.include ?? []), ...(userConfig.optimizeDeps?.include ?? [])];
+      const ssr = [...ssrOptimizedDependencies(), ...(userConfig.environments?.ssr?.optimizeDeps?.include ?? []), ...(userConfig.ssr?.optimizeDeps?.include ?? [])];
+      const clientLinked = env.command === 'serve' ? linkedDependencyFolders(root, client) : [];
+      const ssrLinked = env.command === 'serve' ? linkedDependencyFolders(root, ssr) : [];
+      // A running server watches them too: one rebuilt meanwhile restarts it (see configureServer).
+      linkedFolders = [...new Map([...clientLinked, ...ssrLinked].map(entry => [entry.folder, entry])).values()];
       return {
         ssr: {
           noExternal: [
@@ -219,10 +246,13 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
               // The framework client app stays in Vite's graph for its
               // virtual modules and HMR when linked; see the helper for why
               // an installed framework also lists its devtools entry.
-              include: clientOptimizedDependencies(import.meta.url),
+              include,
+              ...linkedDependenciesConfig(clientLinked),
             },
           },
           ssr: {
+            // CommonJS reached through installed packages is pre-bundled up front; see the helper.
+            optimizeDeps: { include: ssrOptimizedDependencies(), ...linkedDependenciesConfig(ssrLinked) },
             resolve: {
               noExternal: [
                 '@cossackframework/framework',
@@ -241,6 +271,8 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
       generateRoutes(projectRoot, { includeMarkdown: markdownEnabled });
     },
     async buildStart() {
+      // Every src/plugins/<name>/ needs a valid rendered manifest; route conflicts fail below.
+      readRenderedPlugins(projectRoot);
       const { manifest } = generateRoutes(projectRoot, { includeMarkdown: markdownEnabled });
       // Builds check every template once, before any module is transformed.
       if (options.templateDiagnostics !== false && this.environment?.mode !== 'dev' && !templatesChecked) {
@@ -275,6 +307,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           ? await readBuildBindingNames(projectRoot, options.capabilities.environment ?? process.env.CLOUDFLARE_ENV, options.configPath) : []);
         const requirements: CapabilityUse[] = [...(options.capabilities.requirements ?? [])];
         capabilityBindings = bindings;
+        bindingsRead = true;
         refreshCapabilityPages();
         for (const file of [...capabilityPages].sort()) {
           this.addWatchFile(file);
@@ -292,8 +325,9 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
         }
         // Realtime layouts and realtime components need the same runtime
         // support as a realtime page.
-        for (const key of scanPagesDir(resolve(projectRoot, 'src/pages'), false).layoutKeys) {
-          const file = resolve(projectRoot, key.slice(1));
+        const pageSources = scanPageSources(projectRoot, false);
+        for (const key of pageSources.layoutKeys) {
+          const file = resolve(projectRoot, (pageSources.sources[key] ?? key).slice(1));
           const facts = await extractPageOptionsFromAst(readFileSync(file, 'utf8'));
           if (facts?.method !== 'ast' || facts.options?.transport !== 'durable-object') continue;
           requirements.push({ feature: 'realtime layout', source: { file, line: facts.decoratorLine ?? undefined },
@@ -331,6 +365,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
         return resolvedVirtualModuleId;
       }
       if (id === REALTIME_COMPONENTS_MODULE_ID) return resolvedRealtimeComponentsModuleId;
+      if (id === PLUGINS_MODULE_ID) return resolvedPluginsModuleId;
     },
     load(id) {
       if (id === '\0' + TRACE_BRIDGE_MODULE) {
@@ -342,6 +377,28 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
         return `import { enableDevTools } from '@cossackframework/framework/client/devtools';
           import { connectDevelopmentTraceBridge } from ${JSON.stringify(entry)};
           connectDevelopmentTraceBridge(${JSON.stringify(traceBridge.token)}, import.meta.hot, enableDevTools());`;
+      }
+      if (id === resolvedPluginsModuleId) {
+        // One static registry of rendered plugins, built from their manifests.
+        const plugins = readRenderedPlugins(projectRoot);
+        for (const plugin of plugins) this.addWatchFile(resolve(projectRoot, plugin.manifest));
+        const server = this.environment?.name !== 'client';
+        if (!server || !options.pluginIsolation) return pluginRegistryModule(plugins, server);
+        const isolationOptions = options.pluginIsolation;
+        return pluginIsolation(projectRoot, plugins, isolationOptions, options.capabilities?.runtime ?? 'unknown').then(({ entries, watchFiles }) => {
+          for (const file of watchFiles) this.addWatchFile(file);
+          // Isolated code was left out of the application, so without the binding it could not run at all.
+          const needing = Object.entries(entries).filter(([, entry]) => entry.mode === 'isolated' && entry.code !== undefined).map(([name]) => name);
+          const bindings = bindingsRead ? capabilityBindings : options.capabilities?.bindings;
+          if (needing.length && options.capabilities?.runtime === 'cloudflare' && bindings && !bindings.includes(PLUGIN_LOADER_BINDING)) {
+            this.error({ code: 'COSSACK_PLUGIN_ISOLATION_BINDING', message: `[cossack] COSSACK_PLUGIN_ISOLATION_BINDING: ${needing.join(', ')} ${needing.length === 1 ? 'runs' : 'run'} isolated and ${needing.length === 1 ? 'needs' : 'need'} the Worker Loader binding. Add "worker_loaders": [{ "binding": "${PLUGIN_LOADER_BINDING}" }] to the Wrangler configuration (Dynamic Workers need the Workers Paid plan), or add the plugin with --in-app.` });
+          }
+          if (this.environment?.mode !== 'dev') for (const line of isolationReport(entries)) this.environment?.logger?.info(line);
+          return pluginRegistryModule(plugins, true, entries);
+        }, (error: unknown) => {
+          if (error instanceof PluginIsolationError) this.error({ code: error.code, message: error.message, id: resolve(projectRoot, error.file) });
+          throw error;
+        });
       }
       if (id === resolvedRealtimeComponentsModuleId) {
         // Server environments import exactly the realtime components; the
@@ -359,12 +416,34 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           ...(markdownEnabled ? ['/src/pages/**/*.mdx', '/src/pages/**/*.md'] : []),
           ...PAGE_GLOB_EXCLUDES,
         ]);
+        // Plugin pages overlay the application's tree under the same keys.
+        const pluginGlob = (patterns: string[]) => JSON.stringify(patterns.map(pattern =>
+          pattern.replace('/src/pages/', '/src/plugins/*/pages/')));
+        const globOptions = isSsrEnvironment ? ', { eager: true }' : '';
 
         // Worker-rendered HTML may bypass transformIndexHtml. The client
         // registry is the shared bootstrap path for generated applications.
         return `
           ${!isSsrEnvironment && traceBridge ? `import ${JSON.stringify(TRACE_BRIDGE_MODULE)};` : ''}
-          const pages = import.meta.glob(${pagePatterns}${isSsrEnvironment ? ', { eager: true }' : ''});
+          // Route key -> plugin name, so the router can ask the host whether a plugin's routes answer.
+          const owners = {};
+          function overlay(application, plugins) {
+            const merged = { ...application };
+            for (const [file, module] of Object.entries(plugins)) {
+              // '/src/plugins/<name>/pages/<rest>' routes as '/src/pages/<rest>'.
+              const key = '/src/pages/' + file.split('/').slice(5).join('/');
+              if (Object.hasOwn(merged, key)) {
+                throw new Error('[Cossack] COSSACK_PLUGIN_ROUTE_CONFLICT: ' + file.slice(1) + ' and another source both define ' + key.slice('/src/pages'.length) + '.');
+              }
+              merged[key] = module;
+              owners[key] = file.split('/')[3];
+            }
+            return merged;
+          }
+          const pages = overlay(
+            import.meta.glob(${pagePatterns}${globOptions}),
+            import.meta.glob(${pluginGlob(JSON.parse(pagePatterns))}${globOptions}),
+          );
 
           // Layouts: eager on SSR (synchronous server rendering), lazy on the
           // client. A layout often pulls in heavy deps (e.g. the dashboard
@@ -372,10 +451,16 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           // every layout on the client would force those deps onto routes that
           // don't use them (e.g. the public landing page loading the dashboard
           // sidebar). The client resolves layouts via dynamic import in app.ts.
-          const layouts = import.meta.glob(${JSON.stringify(['/src/pages/**/layout.ts', ...ROUTE_GLOB_EXCLUDES])}${isSsrEnvironment ? ', { eager: true }' : ''});
+          const layouts = overlay(
+            import.meta.glob(${JSON.stringify(['/src/pages/**/layout.ts', ...ROUTE_GLOB_EXCLUDES])}${globOptions}),
+            import.meta.glob(${pluginGlob(['/src/pages/**/layout.ts', ...ROUTE_GLOB_EXCLUDES])}${globOptions}),
+          );
 
           // Loading states: always eager (small, needed immediately for UX)
-          const loadings = import.meta.glob(${JSON.stringify(['/src/pages/**/loading.ts', ...ROUTE_GLOB_EXCLUDES])}, { eager: true });
+          const loadings = overlay(
+            import.meta.glob(${JSON.stringify(['/src/pages/**/loading.ts', ...ROUTE_GLOB_EXCLUDES])}, { eager: true }),
+            import.meta.glob(${pluginGlob(['/src/pages/**/loading.ts', ...ROUTE_GLOB_EXCLUDES])}, { eager: true }),
+          );
 
           // Components resolve by direct class reference (component(Card, ...)
           // captures the constructor), so no registry glob is needed. Eagerly
@@ -383,7 +468,10 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           // (e.g. a UI barrel) and defeat tree-shaking.
           const components = {};
 
-          export default { pages, layouts, loadings, components };
+          // Functional HTTP handler routes: client navigation loads them as documents, without fetching first.
+          const handlers = ${isSsrEnvironment ? '[]' : JSON.stringify(discoverGetHandlers(projectRoot, markdownEnabled))};
+
+          export default { pages, layouts, loadings, components, owners, handlers };
         `;
       }
     },
@@ -399,6 +487,10 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
       handler(server) {
         const restoreReloadPrivacy = installPublicReloadPrivacy(server);
         server.httpServer?.once('close', restoreReloadPrivacy);
+        // A linked package rebuilt while the server runs is bundled again, without deleting node_modules/.vite.
+        if (linkedFolders.length && server.httpServer && !server.config.server?.middlewareMode) {
+          server.httpServer.once('close', restartOnLinkedRebuilds(server, linkedFolders));
+        }
         // Middleware-mode servers (SSG rendering, tests) serve no editing session.
         if (options.templateDiagnostics !== false && server.httpServer && !server.config.server?.middlewareMode) {
           const logger = server.config.logger;
@@ -438,13 +530,26 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
         server.httpServer?.once('close', () => {
           server.watcher.off('add', updateRealtime).off('unlink', updateRealtime).off('change', updateRealtime);
         });
-        const pagesDirectory = resolve(projectRoot, 'src/pages');
+        // The browser's handler list is fixed when virtual:cossack-pages loads, and Vite
+        // reloads that module only when page files are added or removed: a page turning
+        // into a handler (or back) invalidates it here.
+        let knownHandlers: string | undefined;
+        try { knownHandlers = JSON.stringify(discoverGetHandlers(projectRoot, markdownEnabled)); } catch { /* Reported by the first update. */ }
         const update = (file: string) => {
-          const path = relative(pagesDirectory, file);
-          if (path.startsWith('..') || path.startsWith('/') || !/\.(?:ts|mdx?)$/.test(path)) return;
+          const path = relative(projectRoot, file).replaceAll('\\', '/');
+          if (!/^src\/(?:pages|plugins\/[^/]+\/pages)\/.+\.(?:ts|mdx?)$/.test(path)) return;
           try {
             if (options.capabilities) refreshCapabilityPages();
             const generated = generateRoutes(projectRoot, { includeMarkdown: markdownEnabled });
+            const handlers = JSON.stringify(discoverGetHandlers(projectRoot, markdownEnabled));
+            if (knownHandlers !== undefined && handlers !== knownHandlers) {
+              for (const environment of Object.values(server.environments ?? {})) {
+                const module = environment.moduleGraph.getModuleById(resolvedVirtualModuleId);
+                if (module) environment.moduleGraph.invalidateModule(module);
+              }
+              server.ws.send({ type: 'full-reload' });
+            }
+            knownHandlers = handlers;
             if (!generated.changed) return;
             const reserved = unreportedReservedPaths(reservedPaths(generated.manifest.routes));
             if (reserved) server.config.logger.warn(reserved, { timestamp: true });
@@ -531,7 +636,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
         const result = await options.markdownProcessor(code, id);
         const frontmatter = isValidatedMarkdownFrontmatter(result.frontmatter) ? result.frontmatter
           : validateMarkdownFrontmatter(result.frontmatter, { source: code, filename: id, extensions: (options.markdownProcessor as any).frontmatterExtensions });
-        const sourceRoute = filePathToRoutePath('/' + relative(projectRoot, id).replaceAll('\\', '/'));
+        const sourceRoute = filePathToRoutePath(pluginPageKey('/' + relative(projectRoot, id).replaceAll('\\', '/')));
         if (frontmatter.aliases?.length && /\[|:[A-Za-z_]/.test(sourceRoute)) {
           this.error({ code: 'COSSACK_MARKDOWN_ALIAS_DYNAMIC', id,
             message: 'Markdown output aliases require a static source route.' });
@@ -647,7 +752,8 @@ function emitRoutesManifest(projectRoot: string, clientOutDir: string, includeMa
 }
 
 /**
- * Virtual module exposing the user's `src/lang/*.json` catalogs.
+ * Virtual module exposing the user's `src/lang/*.json` catalogs, plugins'
+ * namespaced `lang/*.json`, and language packs' `translations/` catalogs.
  *
  * - **Server**: catalogs are `import.meta.glob`-ed eagerly so the locale
  *   middleware can read any locale synchronously during SSR.
@@ -679,17 +785,47 @@ export function cossackLang(): Plugin {
         // One entry per src/lang/<locale>.json. Eager on the server, lazy on the
         // client so each locale becomes its own chunk (code splitting).
         const modules = import.meta.glob('/src/lang/*.json'${globOptions});
-
+        // Plugin catalogs (src/plugins/<name>/lang/<locale>.json) join the
+        // application's locales under '<name>::key'.
+        const pluginModules = import.meta.glob('/src/plugins/*/lang/*.json'${globOptions});
+        // Language packs: a plugin's translations/<locale>.json translates the
+        // application's own keys, translations/<locale>/<plugin>.json another
+        // plugin's. Packs add their locales.
+        const packModules = import.meta.glob(['/src/plugins/*/translations/*.json', '/src/plugins/*/translations/*/*.json']${globOptions});
+        function messagesOf(mod) { return (mod && mod.default) ? mod.default : (mod || {}); }
         function extractLocale(globKey) {
           const parts = globKey.split('/');
           const file = parts[parts.length - 1];
-          return file.replace(/\\.json$/, '');
+          return file.replace(/\.json$/, '');
+        }
+
+        // Each locale's sources in merge order: plugins' own catalogs, then packs,
+        // then the application's, so application keys win and packs override plugins.
+        const sources = {};
+        const add = (locale, rank, order, prefix, mod) => (sources[locale] ??= []).push({ rank, order, prefix, mod });
+        for (const [key, mod] of Object.entries(pluginModules)) add(extractLocale(key), 0, key, key.split('/')[3] + '::', mod);
+        for (const [key, mod] of Object.entries(packModules)) {
+          const parts = key.split('/');
+          if (parts.length === 6) add(extractLocale(key), 1, key, '', mod);
+          else add(parts[5], 1, key, extractLocale(key) + '::', mod);
+        }
+        for (const [key, mod] of Object.entries(modules)) add(extractLocale(key), 2, key, '', mod);
+        for (const list of Object.values(sources)) list.sort((a, b) => a.rank - b.rank || (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
+        function merge(list, loaded) {
+          const merged = {};
+          list.forEach((source, index) => {
+            for (const [name, value] of Object.entries(messagesOf(loaded[index]))) merged[source.prefix + name] = value;
+          });
+          return merged;
         }
 
         const defaultLocale = ${JSON.stringify(process.env.APP_LOCALE || 'en')} || 'en';
+        // The application's catalogs and packs name the locales; plugins' own catalogs only join them.
+        const named = Object.keys(sources).filter(locale => sources[locale].some(source => source.rank > 0));
+        // A pack never makes its language the default: the source text is the default's catalog.
+        if (named.length && !named.includes(defaultLocale) && Object.keys(packModules).length) { named.push(defaultLocale); sources[defaultLocale] ??= []; }
 
-        const supportedLocales = Object.keys(modules)
-          .map(extractLocale)
+        const supportedLocales = named
           .sort((a, b) => {
             // Default locale first so wildcard / fallback behavior prefers
             // the configured default (APP_LOCALE) instead of hardcoding 'en'.
@@ -701,13 +837,15 @@ export function cossackLang(): Plugin {
         // Lazy loaders used by the client. On the server these are pre-resolved
         // (eager), but we keep the same call signature for a unified API.
         const catalogs = {};
-        for (const [key, mod] of Object.entries(modules)) {
-          const locale = extractLocale(key);
+        for (const locale of supportedLocales) {
+          const list = sources[locale];
           if (${isSsrEnvironment ? 'true' : 'false'}) {
-            const messages = (mod && mod.default) ? mod.default : (mod || {});
+            const messages = merge(list, list.map(source => source.mod));
             catalogs[locale] = () => Promise.resolve({ default: messages });
+          } else if (list.length === 1 && !list[0].prefix) {
+            catalogs[locale] = list[0].mod;
           } else {
-            catalogs[locale] = mod;
+            catalogs[locale] = async () => ({ default: merge(list, await Promise.all(list.map(source => source.mod()))) });
           }
         }
 
@@ -764,7 +902,17 @@ export function cossackMiddlewares(): Plugin {
         // well-known path so the absence of the file resolves to [].
         const modules = import.meta.glob('/src/bootstrap/middlewares.ts', { eager: true });
         const mod = modules['/src/bootstrap/middlewares.ts'];
-        const middlewares = (mod && mod.default) || [];
+        // Plugin middleware (src/plugins/<name>/middlewares.ts) runs after the
+        // application's, in plugin name order.
+        const pluginModules = import.meta.glob('/src/plugins/*/middlewares.ts', { eager: true });
+        const middlewares = [...((mod && mod.default) || [])];
+        for (const key of Object.keys(pluginModules).sort()) {
+          const list = pluginModules[key].default;
+          if (!Array.isArray(list)) throw new Error('[Cossack] COSSACK_PLUGIN_MIDDLEWARE_INVALID: ' + key.slice(1) + ' must default-export an array of middleware.');
+          // Tagged with the plugin's name, so the router runs them only while it is active.
+          const plugin = key.split('/')[3];
+          middlewares.push(...list.map(middleware => Object.assign((c, next) => middleware(c, next), { cossackPlugin: plugin })));
+        }
         export default middlewares;
       `;
     },
@@ -819,14 +967,15 @@ export function cossackConfig(options: { runtime?: ConfigRuntime; environment?: 
       for (const file of ['src/config', 'package.json', '.cossack/scaffold.json', 'wrangler.jsonc', 'wrangler.json', 'wrangler.toml']) this.addWatchFile(resolve(projectRoot, file));
       const selectedConfig = options.configPath ?? process.env.CLOUDFLARE_VITE_WRANGLER_CONFIG_PATH;
       if (selectedConfig) this.addWatchFile(resolve(projectRoot, selectedConfig));
-      for (const file of discoverConfigFactories(projectRoot)) this.addWatchFile(resolve(projectRoot, 'src/config', file));
+      for (const { source } of discoverConfigSources(projectRoot)) this.addWatchFile(resolve(projectRoot, source));
       await preflight();
       generateConfigTypes(projectRoot);
     },
     configureServer(server) {
       const directory = resolve(projectRoot, 'src/config');
       const update = (file: string) => {
-        if (dirname(resolve(file)) === directory && file.endsWith('.ts')) {
+        const path = relative(projectRoot, resolve(file)).replaceAll('\\', '/');
+        if (/^src\/(?:plugins\/[^/]+\/)?config\/[^/]+\.ts$/.test(path)) {
           try { generateConfigTypes(projectRoot); }
           catch (error) { server.config.logger.error(String(error)); }
         }
@@ -851,10 +1000,14 @@ export function cossackConfig(options: { runtime?: ConfigRuntime; environment?: 
         // Loads src/config/*.ts (if present). Globs the well-known config
         // directory so an absent folder resolves to {} (no-op).
         const modules = import.meta.glob(${JSON.stringify(CONFIG_GLOB)}, { eager: true });
+        // Plugin configuration joins under '<plugin>::<file>'.
+        const pluginModules = import.meta.glob(${JSON.stringify(PLUGIN_CONFIG_GLOB)}, { eager: true });
         const configs = {};
         const requirements = {};
-        for (const [filePath, mod] of Object.entries(modules)) {
-          const name = filePath.split('/').pop().replace(/\\.ts$/, '');
+        for (const [filePath, mod] of [...Object.entries(modules), ...Object.entries(pluginModules)]) {
+          const parts = filePath.split('/');
+          const file = parts.pop().replace(/\\.ts$/, '');
+          const name = parts[2] === 'plugins' ? parts[3] + '::' + file : file;
           configs[name] = mod.default;
           if (mod.requirements !== undefined) requirements[name] = mod.requirements;
         }

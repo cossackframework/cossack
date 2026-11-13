@@ -9,6 +9,8 @@ export type NativeSelectProps = SelectAttributes & {
     size?: "default" | "sm" | "lg";
     /** Visual style. "error" applies destructive borders/ring. */
     variant?: "default" | "error";
+    /** Shrink to the content width instead of filling the line. */
+    inline?: boolean;
 }
 
 const SIZES: Record<NonNullable<NativeSelectProps["size"]>, string> = {
@@ -39,10 +41,10 @@ export class NativeSelect extends Cossack {
     declare props: NativeSelectProps;
 
     render() {
-        const { size = "default", variant = "default", ...rest } = this.props;
+        const { size = "default", variant = "default", inline = false, ...rest } = this.props;
 
         return html`
-            <div class="cs-native-select relative inline-block w-full">
+            <div class=${classMap({ "cs-native-select relative inline-block": true, "w-full": !inline })}>
                 <select
                     class=${classMap({
                         "cs-native-select__input": true,

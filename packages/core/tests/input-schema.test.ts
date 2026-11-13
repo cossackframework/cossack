@@ -172,3 +172,30 @@ it('rejects unmigrated rule maps without running legacy coercion or callbacks', 
     await expect(enforceActionInput(Legacy,'save',[{age:'3',unlisted:true},'extra'])).rejects.toThrow(/rule maps must migrate/);
     expect(callback).not.toHaveBeenCalled();
 });
+
+describe('argument lists (input.args)', () => {
+    class Methods {
+        @Server({ input: input.args(input.string(), input.number({ integer: true }).optional(), input.record()) })
+        async run(name: string, count: number | undefined, values: Record<string, unknown>) { return [name, count, values]; }
+        @Server({ input: input.array(input.string()) })
+        async tags(list: string[]) { return list; }
+    }
+
+    it('parses each argument by position and keys errors by it', async () => {
+        expect(await enforceActionInput(Methods, 'run', ['a', 2, { x: 1 }])).toEqual(['a', 2, { x: 1 }]);
+        expect(await enforceActionInput(Methods, 'run', ['a', undefined, {}])).toEqual(['a', undefined, {}]);
+        expect(await fields(enforceActionInput(Methods, 'run', []))).toEqual({ 0: 'Expected a string.', 2: 'Expected an object.' });
+        expect(await fields(enforceActionInput(Methods, 'run', ['a', 1.5, []]))).toEqual({ 1: 'Expected a safe integer.', 2: 'Expected an object.' });
+    });
+
+    it('refuses extra arguments, and leaves one-argument schemas as they were', async () => {
+        expect(await fields(enforceActionInput(Methods, 'run', ['a', 1, {}, 'forged']))).toEqual({ _: 'This action accepts at most 3 arguments.' });
+        expect(await enforceActionInput(Methods, 'tags', [['x', 'y']])).toEqual([['x', 'y']]);
+        expect(await fields(enforceActionInput(Methods, 'tags', [['x'], 'forged']))).toEqual({ _: 'This action accepts one input argument.' });
+    });
+
+    it('takes only plain objects as records', async () => {
+        for (const value of [undefined, null, [], 'x', new Date(0)]) expect(await fields(input.record().parse(value))).toEqual({ _: 'Expected an object.' });
+        expect(await input.record().parse(Object.create(null))).toEqual({});
+    });
+});

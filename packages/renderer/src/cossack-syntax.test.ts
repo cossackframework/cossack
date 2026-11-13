@@ -79,6 +79,19 @@ describe('Cossack Syntax Extensions', () => {
         expect(element.hasAttribute('title')).toBe(false);
     });
 
+    it('drops spread keys that are not attribute names, in SSR and on the client', () => {
+        const hostile = { 'x onmouseover=alert(1)': 'y', '"><script>alert(1)</script>': 'z', '?a b': true, '.x=y': 1, '?': true, '.': 1, '@': 'x', '??x': true, title: 'Kept' };
+        const output = renderToString(html`<div ...=${hostile}></div>`);
+        expect(output).toContain('title="Kept"');
+        expect(output).not.toContain('onmouseover');
+        expect(output).not.toContain('<script');
+        const container = document.createElement('div');
+        expect(() => render(html`<div ...=${hostile}></div>`, container)).not.toThrow();
+        const element = container.querySelector('div')!;
+        expect(element.getAttribute('title')).toBe('Kept');
+        expect(element.getAttributeNames()).toEqual(['title']);
+    });
+
     it('binds events using @ syntax (Client)', () => {
         const container = document.createElement('div');
         const spy = vi.fn();

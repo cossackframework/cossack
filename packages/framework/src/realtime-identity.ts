@@ -1,6 +1,7 @@
 import { Context } from 'hono';
 import type { ConfigRequirementContext } from './config-requirements.js';
 import { getLocale } from '@cossackframework/core';
+import { transportGuardPath, transportTargetPath } from './transport-routes.js';
 
 /** Structural auth protocol: the framework does not depend on the auth package. */
 export interface RealtimeIdentity {
@@ -16,6 +17,9 @@ export interface RealtimeRequestSnapshot {
     env: unknown;
     params: Record<string, string>;
     locale: string;
+    /** The transport's guard and target paths, which guards read again on each revalidation. */
+    guardPath?: string;
+    targetPath?: string;
     configContext?: Pick<ConfigRequirementContext, 'runtime' | 'environment'>;
 }
 
@@ -67,6 +71,9 @@ export function snapshotRealtimeRequest(c: Context, params: Record<string, strin
     for (const name of ['cookie', 'authorization', 'proxy-authorization', 'set-cookie', 'x-user-id', 'x-user-data',
         'x-api-key', 'x-auth-token', 'x-component-path', 'connection', 'upgrade']) headers.delete(name);
     const configContext = c.get('cossack.configContext') as RealtimeRequestSnapshot['configContext'];
+    const guardPath = transportGuardPath(c);
+    const targetPath = transportTargetPath(c);
     return { url: c.req.url, path: c.req.path, headers: [...headers], env: c.env, params: { ...params }, locale,
+        ...(guardPath ? { guardPath } : {}), ...(targetPath ? { targetPath } : {}),
         ...(configContext ? { configContext: { runtime: configContext.runtime, ...(configContext.environment !== undefined ? { environment: configContext.environment } : {}) } } : {}) };
 }

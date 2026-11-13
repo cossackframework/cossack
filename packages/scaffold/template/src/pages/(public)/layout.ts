@@ -25,7 +25,7 @@ const hamburgerIcon = { line: hamburgerIconSvg };
  */
 @Page({ transport: 'http' })
 export default class PublicLayout extends Cossack {
-    appName = server$(() => config('app.name'), { initial: 'My App' });
+    appName = server$(() => config('app.name'), { initial: 'Cossack' });
     @State() theme: 'light' | 'dark' = 'dark';
     @State() mobileNavOpen = false;
     /** Auth-aware nav data — computed server-side in init() so it serializes

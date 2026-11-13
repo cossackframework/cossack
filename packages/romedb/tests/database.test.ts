@@ -1,0 +1,412 @@
+import fsPromises, { link, mkdtemp, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ClientError, connect, createRomeDB, EngineVersionError, MemoryPendingWriteStore, PendingWriteConflictError, pendingCursor, REQUIRED_ENGINE_VERSION, UncertainWriteError, type PendingWriteStore } from '../src/index';
+import { FilePendingWriteStore } from '../src/node';
+import { DurableObjectPendingWriteStore, RomeDBPendingWrites } from '../src/cloudflare';
+
+const LOCAL = 'http://127.0.0.1:4321/v1/database';
+const details = (engineVersion?: string) => ({
+    id: 'db-1', sequence: 10, serviceVersion: 1, ...(engineVersion === undefined ? {} : { engineVersion }),
+    capabilities: { readVersion: 2, atomicWrites: true, replayWindow: 64, exactSequenceCondition: true }, limits: {},
+});
+const json = (body: unknown, status = 200, headers: { [key: string]: string } = {}) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
+
+function service(options: { engine?: string; onQuery?: (body: { [key: string]: unknown }, attempt: number) => Response | Promise<Response>; onRead?: (attempt: number) => Response } = {}) {
+    let queries = 0;
+    let reads = 0;
+    const bodies: string[] = [];
+    const fetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input);
+        if (url === LOCAL) return json(details(options.engine ?? REQUIRED_ENGINE_VERSION));
+        const body = JSON.parse(String(init.body));
+        if (url.endsWith('/read')) {
+            reads++;
+            return options.onRead?.(reads) ?? json({ readVersion: 2, requestId: body.requestId, sequence: 10, results: [{ columns: ['n'], rows: [[{ type: 'Integer', value: '1' }]], affected: '0' }] });
+        }
+        queries++;
+        bodies.push(String(init.body));
+        return options.onQuery?.(body, queries) ?? json({ requestId: body.requestId, sequence: body.afterSequence + 1, results: [{ columns: [], rows: [], affected: '1' }] });
+    }) as typeof globalThis.fetch;
+    return { fetch, bodies, get queries() { return queries; }, get reads() { return reads; } };
+}
+
+const noSleep = async () => {};
+
+describe('RomeDB binding', () => {
+    it('refuses an older or missing engine release', async () => {
+        for (const engine of ['0.2.20', undefined]) {
+            const db = createRomeDB({ url: LOCAL, token: 't', pending: new MemoryPendingWriteStore(), fetch: service({ engine: engine as string }).fetch });
+            if (engine === undefined) {
+                const fetch = (async (input: RequestInfo | URL) => String(input) === LOCAL ? json(details()) : json({})) as typeof globalThis.fetch;
+                const missing = createRomeDB({ url: LOCAL, token: 't', pending: new MemoryPendingWriteStore(), fetch });
+                await expect(missing.read([{ rql: 'SELECT 1' }])).rejects.toBeInstanceOf(EngineVersionError);
+                continue;
+            }
+            await expect(db.read([{ rql: 'SELECT 1' }])).rejects.toThrow(/0\.2\.20 is older than the required 0\.2\.21/);
+        }
+        const newer = createRomeDB({ url: LOCAL, token: 't', pending: new MemoryPendingWriteStore(), fetch: service({ engine: '2.10.1' }).fetch });
+        expect((await newer.preflight()).engineVersion).toBe('2.10.1');
+    });
+
+    it('asks for a file with tables left out only from an engine that leaves them out', async () => {
+        const ID = '00000000-0000-4000-8000-000000000002';
+        const CLOUD = `https://cloud.romedb.com/v1/organizations/00000000-0000-4000-8000-000000000001/databases/${ID}`;
+        const files: string[] = [];
+        const JOB = '00000000-0000-4000-8000-000000000003';
+        // Cloud builds the file in a job: start it, read its state, then download what it built.
+        const reach = (engine: string) => (async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = String(input);
+            if (!url.includes('/file-exports')) return json({ ...details(engine), id: ID });
+            files.push(`${init?.method ?? 'GET'} ${url}`);
+            if (init?.method === 'POST') return json({ id: JOB, state: 'running' }, 202);
+            if (url.endsWith(`/file-exports/${JOB}`)) return json({ id: JOB, state: 'ready' });
+            return new Response('file', { headers: { 'content-type': 'application/vnd.romedb.database', 'content-length': '4', 'x-romedb-sequence': '10', 'x-romedb-database-id': ID } });
+        }) as typeof globalThis.fetch;
+        // Cloud connections defer their details, so nothing else has checked the engine yet.
+        const old = createRomeDB({ url: CLOUD, token: 't', pending: new MemoryPendingWriteStore(), fetch: reach('0.2.13') });
+        await expect(old.exportFile({ emptyTables: ['cms_cache'] })).rejects.toBeInstanceOf(EngineVersionError);
+        expect(files).toEqual([]);
+
+        const current = createRomeDB({ url: CLOUD, token: 't', pending: new MemoryPendingWriteStore(), fetch: reach(REQUIRED_ENGINE_VERSION) });
+        const file = await current.exportFile({ emptyTables: ['cms_cache', 'cms_sessions'] });
+        expect(file.size).toBe(4);
+        expect(await new Response(file.body).text()).toBe('file');
+        expect(files).toEqual([`POST ${CLOUD}/file-exports?empty=cms_cache,cms_sessions`, `GET ${CLOUD}/file-exports/${JOB}`, `GET ${CLOUD}/file-exports/${JOB}/file`]);
+    });
+
+    it('sends explicit work limits by default', async () => {
+        const bodies: { [key: string]: unknown }[] = [];
+        const fake = service({ onQuery: (body) => { bodies.push(body); return json({ requestId: body.requestId, sequence: 11, results: [{ columns: [], rows: [], affected: '1' }] }); } });
+        const db = createRomeDB({ url: LOCAL, token: 't', pending: new MemoryPendingWriteStore(), fetch: fake.fetch, workLimits: { write: { rowMutations: 10 } } });
+        await db.write([{ rql: 'UPDATE x SET y = 1' }]);
+        expect(bodies[0]!.workLimits).toEqual({ rowsRead: 50_000, rowMutations: 10, vmSteps: 2_000_000 });
+    });
+
+    it('saves the exact request before dispatch and clears it after the receipt', async () => {
+        const pending = new MemoryPendingWriteStore();
+        const seen: number[] = [];
+        const fake = service({ onQuery: async (body) => {
+            seen.push((await pending.list()).length);
+            return json({ requestId: body.requestId, sequence: (body.afterSequence as number) + 1, results: [{ columns: [], rows: [], affected: '1' }] });
+        } });
+        const db = createRomeDB({ url: LOCAL, token: 't', pending, fetch: fake.fetch });
+        const result = await db.write([{ rql: 'UPDATE x SET y = 1' }], { requestId: 'op-1' });
+        expect(result.requestId).toBe('op-1');
+        expect(seen).toEqual([1]);
+        expect(await pending.list()).toHaveLength(0);
+    });
+
+    it('recovers backpressure with the same body and bounded attempts', async () => {
+        const fake = service({ onQuery: (body, attempt) => attempt < 3
+            ? json({ error: { code: 'RDB_UNAVAILABLE', message: 'busy' } }, 503, { 'retry-after': '1' })
+            : json({ requestId: body.requestId, sequence: 11, results: [{ columns: [], rows: [], affected: '1' }] }) });
+        const delays: number[] = [];
+        const db = createRomeDB({ url: LOCAL, token: 't', pending: new MemoryPendingWriteStore(), fetch: fake.fetch, sleep: async ms => { delays.push(ms); }, retry: { attempts: 3, maxDelayMs: 500 } });
+        await db.write([{ rql: 'UPDATE x SET y = 1' }], { requestId: 'op-2' });
+        expect(fake.queries).toBe(3);
+        expect(new Set(fake.bodies).size).toBe(1);
+        expect(delays.every(delay => delay >= 500 && delay < 525)).toBe(true);
+    });
+
+    it('keeps an unconfirmed write pending and recovers it later by exact body', async () => {
+        let up = false;
+        const fake = service({ onQuery: (body) => {
+            if (!up) throw new TypeError('connection reset');
+            return json({ requestId: body.requestId, sequence: 11, results: [{ columns: [], rows: [], affected: '1' }] });
+        } });
+        const pending = new MemoryPendingWriteStore();
+        const db = createRomeDB({ url: LOCAL, token: 't', pending, fetch: fake.fetch, sleep: noSleep, retry: { attempts: 2 } });
+        const error = await db.write([{ rql: 'UPDATE x SET y = 1' }], { requestId: 'op-3', kind: 'test' }).catch(e => e);
+        expect(error).toBeInstanceOf(UncertainWriteError);
+        expect((error as UncertainWriteError).requestId).toBe('op-3');
+        expect(await pending.get('op-3')).toMatchObject({ kind: 'test' });
+        up = true;
+        expect(await db.recoverPending()).toEqual({ confirmed: ['op-3'], rolledBack: [], reconciled: [], pending: [], unreadable: [] });
+        expect(new Set(fake.bodies).size).toBe(1);
+        expect(await pending.list()).toHaveLength(0);
+    });
+
+    it('drops the saved request when the database confirms a rollback', async () => {
+        const fake = service({ onQuery: (body) => json({ requestId: body.requestId, sequence: 11, error: { code: 'RDB_CONSTRAINT', message: 'unique' } }, 409) });
+        const pending = new MemoryPendingWriteStore();
+        const db = createRomeDB({ url: LOCAL, token: 't', pending, fetch: fake.fetch, sleep: noSleep });
+        await expect(db.write([{ rql: 'INSERT INTO x VALUES (1)' }])).rejects.toMatchObject({ outcome: 'rolled-back', code: 'RDB_CONSTRAINT' });
+        expect(fake.queries).toBe(1);
+        expect(await pending.list()).toHaveLength(0);
+    });
+
+    it('stops retrying when the request is cancelled after dispatch', async () => {
+        const controller = new AbortController();
+        const fake = service({ onQuery: () => { controller.abort(); throw new DOMException('aborted', 'AbortError'); } });
+        const pending = new MemoryPendingWriteStore();
+        const db = createRomeDB({ url: LOCAL, token: 't', pending, fetch: fake.fetch, sleep: noSleep });
+        await expect(db.write([{ rql: 'UPDATE x SET y = 1' }], { signal: controller.signal })).rejects.toBeInstanceOf(UncertainWriteError);
+        expect(fake.queries).toBe(1);
+        expect(await pending.list()).toHaveLength(1);
+    });
+
+    it('reconciles writes that left the receipt window', async () => {
+        let sequence = 10;
+        const fetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
+            const url = String(input);
+            if (url === LOCAL) return json({ ...details(REQUIRED_ENGINE_VERSION), sequence });
+            const body = JSON.parse(String(init.body));
+            if (url.endsWith('/read')) return json({ readVersion: 2, requestId: body.requestId, sequence, results: [{ columns: [], rows: [], affected: '0' }] });
+            throw new TypeError('reset');
+        }) as typeof globalThis.fetch;
+        const pending = new MemoryPendingWriteStore();
+        const decisions: string[] = [];
+        const db = createRomeDB({ url: LOCAL, token: 't', pending, fetch, sleep: noSleep, retry: { attempts: 1 }, reconcilers: { audit: async write => { decisions.push(write.kind!); return 'committed'; } } });
+        await expect(db.write([{ rql: 'UPDATE x SET y = 1' }], { kind: 'audit' })).rejects.toBeInstanceOf(UncertainWriteError);
+        expect(await db.recoverPending()).toMatchObject({ pending: [expect.any(String)] });
+        sequence = 200;
+        await db.read([{ rql: 'SELECT 1' }]);
+        expect((await db.recoverPending()).reconciled).toHaveLength(1);
+        expect(decisions).toEqual(['audit']);
+    });
+
+    it('returns a committed result when clearing the saved request fails', async () => {
+        const pending = new MemoryPendingWriteStore();
+        pending.delete = async () => { throw new Error('disk full'); };
+        const db = createRomeDB({ url: LOCAL, token: 't', pending, fetch: service().fetch });
+        expect((await db.write([{ rql: 'UPDATE x SET y = 1' }], { requestId: 'op-9' })).requestId).toBe('op-9');
+        // Still saved: a later recovery confirms it again by its receipt.
+        expect(await pending.get('op-9')).toBeDefined();
+        const rolledBack = createRomeDB({ url: LOCAL, token: 't', pending, sleep: noSleep, fetch: service({ onQuery: body => json({ requestId: body.requestId, sequence: 11, error: { code: 'RDB_CONSTRAINT', message: 'unique' } }, 409) }).fetch });
+        await expect(rolledBack.write([{ rql: 'INSERT INTO x VALUES (1)' }])).rejects.toBeInstanceOf(ClientError);
+    });
+
+    it('passes over writes nothing can resolve to reach newer ones', async () => {
+        const OTHER = 'http://127.0.0.1:4322/v1/database';
+        const otherFetch = (async (input: RequestInfo | URL) => String(input) === OTHER ? json(details(REQUIRED_ENGINE_VERSION)) : json({})) as typeof globalThis.fetch;
+        const other = await connect({ url: OTHER, token: 't', fetch: otherFetch });
+        await other.info();
+        const pending = new MemoryPendingWriteStore();
+        for (let i = 0; i < 5; i++) await pending.put(`old-${i}`, { request: other.prepareWrite([{ sql: 'SELECT 1' }], { requestId: `old-${i}` }), savedAt: i });
+        let up = false;
+        const fake = service({ onQuery: body => {
+            if (!up) throw new TypeError('connection reset');
+            return json({ requestId: body.requestId, sequence: 11, results: [{ columns: [], rows: [], affected: '1' }] });
+        } });
+        const db = createRomeDB({ url: LOCAL, token: 't', pending, fetch: fake.fetch, sleep: noSleep, retry: { attempts: 1 } });
+        await expect(db.write([{ rql: 'UPDATE x SET y = 1' }], { requestId: 'new-1' })).rejects.toBeInstanceOf(UncertainWriteError);
+        up = true;
+        const report = await db.recoverPending({ limit: 2 });
+        expect(report.confirmed).toEqual(['new-1']);
+        expect(report.pending).toEqual(['old-0', 'old-1', 'old-2', 'old-3', 'old-4']);
+        expect(await pending.list()).toHaveLength(5);
+    });
+
+    it('reports writes set aside on every page of a recovery', async () => {
+        const memory = new MemoryPendingWriteStore();
+        // Writes for another database are passed over, so recovery reads every page.
+        const OTHER = 'http://127.0.0.1:4322/v1/database';
+        const remote = await connect({ url: OTHER, token: 't', fetch: (async () => json(details(REQUIRED_ENGINE_VERSION))) as typeof globalThis.fetch });
+        await remote.info();
+        for (let i = 0; i < 3; i++) await memory.put(`w-${i}`, { request: remote.prepareWrite([{ sql: 'SELECT 1' }], { requestId: `w-${i}` }), savedAt: i });
+        let pages = 0;
+        let latest: string[] = [];
+        // Like the file store: each list reports only what it set aside itself.
+        const pending: PendingWriteStore = {
+            durability: memory.durability,
+            put: (id, write) => memory.put(id, write),
+            get: id => memory.get(id),
+            delete: id => memory.delete(id),
+            list: async options => { pages++; latest = [`bad-${pages}`]; return memory.list(options); },
+            unreadable: () => latest,
+        };
+        const db = createRomeDB({ url: LOCAL, token: 't', pending, fetch: service().fetch, sleep: noSleep });
+        const report = await db.recoverPending({ limit: 1 });
+        expect(pages).toBeGreaterThan(1);
+        expect(report.unreadable).toEqual(Array.from({ length: pages }, (_, i) => `bad-${i + 1}`));
+    });
+
+    it('retries reads under backpressure only', async () => {
+        const fake = service({ onRead: attempt => attempt === 1 ? json({ error: 'busy' }, 503) : json({ error: { code: 'RDB_SYNTAX', message: 'bad' } }, 400) });
+        const db = createRomeDB({ url: LOCAL, token: 't', pending: new MemoryPendingWriteStore(), fetch: fake.fetch, sleep: noSleep });
+        const error = await db.read([{ rql: 'SELEC 1' }]).catch(e => e) as ClientError;
+        expect(error.code).toBe('RDB_SYNTAX');
+        expect(fake.reads).toBe(2);
+    });
+});
+
+describe('pending write stores', () => {
+    const directories: string[] = [];
+    afterEach(async () => { await Promise.all(directories.splice(0).map(dir => rm(dir, { recursive: true, force: true }))); });
+
+    async function contract(store: PendingWriteStore) {
+        const db = createRomeDB({ url: LOCAL, token: 't', pending: store, fetch: service().fetch });
+        await db.preflight();
+        const client = await (db as unknown as { ['sequence'](): Promise<number> }).sequence();
+        expect(client).toBe(10);
+        const { connect } = await import('../src/index');
+        const remote = await connect({ url: LOCAL, token: 't', fetch: service().fetch });
+        const a = remote.prepareWrite([{ sql: 'SELECT 1' }], { requestId: 'a' });
+        const b = remote.prepareWrite([{ sql: 'SELECT 2' }], { requestId: 'a' });
+        await store.put('a', { request: a, savedAt: 2 });
+        await store.put('a', { request: a, savedAt: 2 });
+        await expect(store.put('a', { request: b, savedAt: 3 })).rejects.toBeInstanceOf(PendingWriteConflictError);
+        await store.put('c', { request: remote.prepareWrite([{ sql: 'SELECT 3' }], { requestId: 'c' }), savedAt: 1, kind: 'k' });
+        expect((await store.list()).map(write => write.savedAt)).toEqual([1, 2]);
+        const [oldest] = await store.list({ limit: 1 });
+        expect((await store.list({ after: pendingCursor(oldest!) })).map(write => write.savedAt)).toEqual([2]);
+        expect((await store.get('a'))!.request.body).toBe(a.body);
+        await store.delete('a');
+        expect(await store.get('a')).toBeUndefined();
+        await store.delete('a');
+        expect(await store.list()).toHaveLength(1);
+    }
+
+    it('memory store', async () => { await contract(new MemoryPendingWriteStore()); });
+
+    it('file store writes private files', async () => {
+        const directory = await mkdtemp(path.join(os.tmpdir(), 'romedb-pending-'));
+        directories.push(directory);
+        const store = new FilePendingWriteStore(path.join(directory, 'pending'));
+        await contract(store);
+        const [entry] = (await store.list());
+        const id = JSON.parse(entry!.request.body).requestId;
+        expect((await stat(path.join(directory, 'pending', `${id}.json`))).mode & 0o777).toBe(0o600);
+        await expect(store.get('../x')).rejects.toThrow(/letters/);
+        expect((await readdir(path.join(directory, 'pending'))).filter(name => name.endsWith('.tmp'))).toEqual([]);
+    });
+
+    it('file store sets aside a torn file and old temporary bodies', async () => {
+        const directory = await mkdtemp(path.join(os.tmpdir(), 'romedb-pending-'));
+        directories.push(directory);
+        const folder = path.join(directory, 'pending');
+        const store = new FilePendingWriteStore(folder);
+        const remote = await connect({ url: LOCAL, token: 't', fetch: service().fetch });
+        await store.put('good', { request: remote.prepareWrite([{ sql: 'SELECT 1' }], { requestId: 'good' }), savedAt: 1 });
+        // A crash mid-write in an older release left half a body behind, and one left a temporary body.
+        await writeFile(path.join(folder, 'torn.json'), '{"version":1,"sav', { mode: 0o600 });
+        await utimes(path.join(folder, 'torn.json'), new Date(0), new Date(0));
+        const temporary = path.join(folder, '.x.abc.tmp');
+        await writeFile(temporary, '{}', { mode: 0o600 });
+        await utimes(temporary, new Date(0), new Date(0));
+        expect((await store.list()).map(write => write.savedAt)).toEqual([1]);
+        expect((await readdir(folder)).sort()).toEqual(['good.json', 'torn.json.corrupt']);
+    });
+
+    it('file store reports the files it cannot read', async () => {
+        const directory = await mkdtemp(path.join(os.tmpdir(), 'romedb-pending-'));
+        directories.push(directory);
+        const folder = path.join(directory, 'pending');
+        const store = new FilePendingWriteStore(folder);
+        const remote = await connect({ url: LOCAL, token: 't', fetch: service().fetch });
+        await store.put('good', { request: remote.prepareWrite([{ sql: 'SELECT 1' }], { requestId: 'good' }), savedAt: 1 });
+        await writeFile(path.join(folder, 'open.json'), '{}', { mode: 0o644 });
+        await writeFile(path.join(folder, 'torn.json'), '{"ver', { mode: 0o600 });
+        await utimes(path.join(folder, 'torn.json'), new Date(0), new Date(0));
+        expect((await store.list()).map(write => write.savedAt)).toEqual([1]);
+        expect([...store.unreadable()].sort()).toEqual(['open', 'torn']);
+        expect((await readdir(folder)).sort()).toEqual(['good.json', 'open.json', 'torn.json.corrupt']);
+    });
+
+    it('file store leaves a body that may still be being written', async () => {
+        const directory = await mkdtemp(path.join(os.tmpdir(), 'romedb-pending-'));
+        directories.push(directory);
+        const folder = path.join(directory, 'pending');
+        const store = new FilePendingWriteStore(folder);
+        await store.list();
+        // Without hard links a body is written in place: a list in the middle sees half of it.
+        await writeFile(path.join(folder, 'writing.json'), '{"ver', { mode: 0o600 });
+        expect(await store.list()).toEqual([]);
+        expect(store.unreadable()).toEqual([]);
+        expect(await readdir(folder)).toEqual(['writing.json']);
+    });
+
+    it('file store on Windows skips the POSIX mode check and the folder flush', async () => {
+        const directory = await mkdtemp(path.join(os.tmpdir(), 'romedb-pending-'));
+        directories.push(directory);
+        const folder = path.join(directory, 'pending');
+        const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+        Object.defineProperty(process, 'platform', { value: 'win32' });
+        const open = vi.spyOn(fsPromises, 'open');
+        try {
+            const store = new FilePendingWriteStore(folder);
+            const remote = await connect({ url: LOCAL, token: 't', fetch: service().fetch });
+            await store.put('a', { request: remote.prepareWrite([{ sql: 'SELECT 1' }], { requestId: 'a' }), savedAt: 1 });
+            // Windows reports every file as 0o666.
+            await fsPromises.chmod(path.join(folder, 'a.json'), 0o644);
+            expect((await store.get('a'))!.savedAt).toBe(1);
+            await store.delete('a');
+            expect(open.mock.calls.some(([file]) => file === folder)).toBe(false);
+        } finally {
+            open.mockRestore();
+            Object.defineProperty(process, 'platform', platform);
+        }
+    });
+
+    it('file store reads a write whose temporary body is still linked', async () => {
+        const directory = await mkdtemp(path.join(os.tmpdir(), 'romedb-pending-'));
+        directories.push(directory);
+        const folder = path.join(directory, 'pending');
+        const store = new FilePendingWriteStore(folder);
+        const remote = await connect({ url: LOCAL, token: 't', fetch: service().fetch });
+        const write = { request: remote.prepareWrite([{ sql: 'SELECT 1' }], { requestId: 'a' }), savedAt: 1 };
+        await store.put('a', write);
+        // A crash between the link and the unlink leaves the temporary body as a second link.
+        await link(path.join(folder, 'a.json'), path.join(folder, '.a.crashed.tmp'));
+        expect((await store.get('a'))!.savedAt).toBe(1);
+        await store.put('a', write);
+        const other = remote.prepareWrite([{ sql: 'SELECT 2' }], { requestId: 'a' });
+        await expect(store.put('a', { request: other, savedAt: 2 })).rejects.toBeInstanceOf(PendingWriteConflictError);
+        // A second link under any other name is not one of ours.
+        await link(path.join(folder, 'a.json'), path.join(folder, 'elsewhere'));
+        await expect(store.get('a')).rejects.toThrow(/private bounded regular file/);
+    });
+
+    it('file store writes in place where hard links are not supported', async () => {
+        const directory = await mkdtemp(path.join(os.tmpdir(), 'romedb-pending-'));
+        directories.push(directory);
+        const store = new FilePendingWriteStore(path.join(directory, 'pending'));
+        const unsupported = vi.spyOn(fsPromises, 'link').mockRejectedValue(Object.assign(new Error('not supported'), { code: 'ENOTSUP' }));
+        try {
+            await contract(store);
+            expect(unsupported).toHaveBeenCalled();
+            expect((await readdir(path.join(directory, 'pending'))).filter(name => name.endsWith('.tmp'))).toEqual([]);
+        } finally { unsupported.mockRestore(); }
+    });
+
+    it('Durable Object store', async () => {
+        const objects = new Map<string, RomeDBPendingWrites>();
+        const datas = new Map<string, Map<string, unknown>>();
+        const namespace = {
+            idFromName: (name: string) => name,
+            get: (id: never) => {
+                const name = id as unknown as string;
+                if (!objects.has(name)) {
+                    const data = new Map<string, unknown>();
+                    datas.set(name, data);
+                    const storage = {
+                        get: async (key: string) => data.get(key),
+                        put: async (key: string, value: unknown) => { data.set(key, value); },
+                        delete: async (key: string) => data.delete(key),
+                        list: async ({ prefix = '' } = {}) => new Map([...data].filter(([key]) => key.startsWith(prefix))),
+                        transaction: async (closure: (txn: unknown) => Promise<unknown>) => closure(storage),
+                    };
+                    objects.set(name, new RomeDBPendingWrites({ storage } as never));
+                }
+                const object = objects.get(name)!;
+                return { fetch: (input: string | Request, init?: RequestInit) => object.fetch(new Request(input, init)) };
+            },
+        };
+        await contract(new DurableObjectPendingWriteStore(namespace));
+        // One entry that no longer decodes is set aside and reported; the rest still list.
+        const store = new DurableObjectPendingWriteStore(namespace, { name: 'other' });
+        const remote = await connect({ url: LOCAL, token: 't', fetch: service().fetch });
+        await store.put('ok', { request: remote.prepareWrite([{ sql: 'SELECT 1' }], { requestId: 'ok' }), savedAt: 1 });
+        // Any shard's object will do: list reads them all.
+        namespace.get('other:0' as never);
+        datas.get('other:0')!.set('pending:bad', '{"version":1');
+        expect((await store.list()).map(write => write.savedAt)).toEqual([1]);
+        expect(store.unreadable()).toEqual(['bad']);
+        expect(datas.get('other:0')!.get('corrupt:bad')).toBe('{"version":1');
+        expect(datas.get('other:0')!.has('pending:bad')).toBe(false);
+        expect(await store.list()).toHaveLength(1);
+        expect(store.unreadable()).toEqual([]);
+    });
+});

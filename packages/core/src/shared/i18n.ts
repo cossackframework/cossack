@@ -442,7 +442,9 @@ export function readLocaleCookie(): string | undefined {
     const match = document.cookie.match(
         new RegExp(`(?:^|; )${LOCALE_COOKIE}=([^;]*)`),
     );
-    return match ? decodeURIComponent(match[1]) : undefined;
+    if (!match) return undefined;
+    // A malformed escape (set by hand or by another app on the domain) reads as no locale.
+    try { return decodeURIComponent(match[1]); } catch { return undefined; }
 }
 
 /** @internal Cookie name (exported for the server middleware to read). */
@@ -527,6 +529,23 @@ export async function setLocale(locale: string): Promise<void> {
     currentLocale = resolved;
     writeLocaleCookie(resolved);
     dispatchLocaleEvent(resolved);
+}
+
+/**
+ * Switches the current request's locale on the server, such as to the language of
+ * the content a route found: `/fr/a-propos` renders in French whatever the visitor's
+ * cookie says. Call it before rendering. `__()` reads that locale's catalog and falls
+ * back to the default; a locale without a catalog still becomes `<html lang>`. The
+ * `cossack_locale` cookie is not touched, and the client follows the page.
+ */
+export function setRequestLocale(locale: string): void {
+    const store = requestStore();
+    if (!store) throw new Error('[Cossack] setRequestLocale() runs on the server, during a request.');
+    const code = String(locale).trim();
+    if (!/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(code)) throw new Error(`[Cossack] "${locale}" is not a locale code.`);
+    const known = store.catalogs ? Object.keys(store.catalogs).find(value => value.toLowerCase() === code.toLowerCase()) : undefined;
+    store.locale = known ?? code;
+    store.messages = (known && store.catalogs?.[known]) || {};
 }
 
 /**

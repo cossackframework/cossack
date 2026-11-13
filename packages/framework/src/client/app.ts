@@ -29,9 +29,10 @@ import {
     registerLocale,
     __hydrateLocale,
     getDefaultLocale,
+    getLocale,
 } from '@cossackframework/core';
 import { CossackElement, captureRenderDrafts } from '@cossackframework/renderer';
-import { classifyRoute, computeRouteIds, filePathToHttpRoute, filePathToRoutePath, resolvePageRouteFiles } from '../route-ids.js';
+import { classifyRoute, computeRouteIds, createRouteMatcher, filePathToHttpRoute, filePathToRoutePath, resolvePageRouteFiles } from '../route-ids.js';
 import registry from 'virtual:cossack-pages';
 import { supportedLocales, defaultLocale, loadCatalog } from 'virtual:cossack-lang';
 // Side-effect: registers `__`, `setLocale`, `getLocale`, `isLocale` as globals.
@@ -43,6 +44,20 @@ import '../i18n-globals.js';
 
 const { pages, layouts, loadings } = registry;
 const { routeIdMap } = computeRouteIds(Object.keys(pages), Object.keys(layouts));
+const handlerRoutes = new Set(registry.handlers ?? []);
+const matchRoute = handlerRoutes.size ? createRouteMatcher(Object.keys(pages)) : () => null;
+
+/**
+ * Whether a same-origin URL reaches a functional HTTP handler (`/feed.xml`, a webhook):
+ * navigation loads it as a document, and hover never prefetches it, so its GET runs once.
+ */
+function isHandlerUrl(url: string): boolean {
+  if (!handlerRoutes.size) return false;
+  const target = new URL(url, window.location.href);
+  if (target.origin !== window.location.origin) return false;
+  const route = matchRoute(target.pathname);
+  return route !== null && handlerRoutes.has(route);
+}
 
 // Create mapping from route paths to file paths for component loading
 const routeToFilePath = new Map<string, string>();
@@ -100,7 +115,7 @@ export interface CreateClientAppOptions {
  * a page whose state was mutated server-side never serves stale content.
  */
 const PAGE_CACHE_MAX = 20;
-type CachedPage = { html: string; state: any; url: string };
+type CachedPage = { html: string; state: any; lang?: string; url: string };
 const pageCache = new Map<string, CachedPage>();
 let pageCacheEpoch = 0;
 
@@ -161,6 +176,7 @@ function parseStateFromHTML(html: string) {
           return {
             state: JSON.parse(content.substring(jsonStart)),
             title: doc.title,
+            lang: doc.documentElement.getAttribute('lang') ?? '',
             modulePreloads: Array.from(
               doc.querySelectorAll<HTMLLinkElement>('link[rel="modulepreload"][href]')
             ).map((link) => link.href),
@@ -204,6 +220,26 @@ function preloadPageModules(urls: readonly string[]): void {
  */
 const inFlightPages = new SharedPageRequests<CachedPage>();
 
+/** A same-origin URL that answers without page state (Markdown, a feed, a static file): the browser loads it as a document. */
+class NotAPageError extends Error {
+  constructor(readonly url: string) { super(`Not a page: ${url}`); }
+}
+
+/**
+ * A page in another language, such as a site's `/fr/...` pages, renders in it: the
+ * client takes the page's locale and catalog, and its `<html lang>`, without the cookie.
+ */
+function applyPageLocale(langState: { locale?: string; messages?: Record<string, string>; defaultLocale?: string; defaultMessages?: Record<string, string> } | undefined, lang: string) {
+  if (langState && typeof langState === 'object' && langState.locale) {
+    if (langState.defaultMessages && langState.defaultLocale) registerLocale(langState.defaultLocale, langState.defaultMessages);
+    if (langState.locale !== getLocale() || langState.messages) __hydrateLocale(langState.locale, langState.messages);
+  } else if (lang && lang !== getLocale()) {
+    // No catalog in that language: its text falls back to the default catalog.
+    __hydrateLocale(lang);
+  }
+  if (lang && document.documentElement.lang !== lang) document.documentElement.lang = lang;
+}
+
 async function fetchPage(url: string, signal?: AbortSignal, trace: NavigationTrace = event => emitNavigationDiagnostic(null, event)) {
   signal?.throwIfAborted();
   const key = pageCacheKey(url);
@@ -232,7 +268,7 @@ async function fetchPage(url: string, signal?: AbortSignal, trace: NavigationTra
     if (!response.ok && !validBoundary) throw new Error(`Failed to load page: ${response.status} ${response.statusText}`);
 
     if (parsed) {
-      const data = { html, state: parsed.state, url: response.url || new URL(key, window.location.href).href };
+      const data = { html, state: parsed.state, lang: parsed.lang, url: response.url || new URL(key, window.location.href).href };
       preloadPageModules(parsed.modulePreloads);
       // An RPC may have invalidated the cache while this prefetch was in
       // flight. Return its result to the original caller, but never let that
@@ -248,6 +284,7 @@ async function fetchPage(url: string, signal?: AbortSignal, trace: NavigationTra
       return data;
     }
 
+    if (response.ok) throw new NotAPageError(response.url || new URL(key, window.location.href).href);
     throw new Error('Failed to load page state');
   }, signal);
 }
@@ -415,9 +452,11 @@ export async function createClientApp({
   const rootOwnershipKey = (state: any) => layoutOwnershipKey(state?._app_state ?? {}, state, AppComponent);
   let rootOwnership = rootOwnershipKey(window.__INITIAL_STATE__);
 
-  const composeContent = () => {
+  /** The page wrapped in its layouts; `rendered` is the page's output from its own update, which it does not render again. */
+  const composeContent = (rendered?: { instance: Cossack; template: unknown }) => {
     if (!currentPage) return null;
-    let body = ((loadingPage ?? currentPage) as any)._getWrappedTemplate();
+    const page = loadingPage ?? currentPage;
+    let body = rendered?.instance === page ? rendered.template : (page as any)._getWrappedTemplate();
     for (let i = currentLayoutInstances.length - 1; i >= 0; i--) {
        const layout = currentLayoutInstances[i];
        layout.children = body;
@@ -426,7 +465,7 @@ export async function createClientApp({
     return body;
   }
 
-  const triggerAppUpdate = async (isCurrent: () => boolean = () => true) => {
+  const triggerAppUpdate = async (isCurrent: () => boolean = () => true, page?: { instance: Cossack; template: unknown }) => {
       const expectedPublication = publication;
       const allowed = () => publication === expectedPublication && isCurrent();
       if (!allowed()) return false;
@@ -434,12 +473,12 @@ export async function createClientApp({
       // abandoned application update. Small non-core adapters keep the fallback.
       let rendered: boolean;
       if (appInstance._frameworkRenderNavigation) {
-        appInstance.children = composeContent();
+        appInstance.children = composeContent(page);
         rendered = await appInstance._frameworkRenderNavigation(allowed);
       } else {
         await appInstance.updateComplete;
         if (!allowed()) return false;
-        appInstance.children = composeContent();
+        appInstance.children = composeContent(page);
         rendered = await appInstance.requestUpdate();
       }
       if (allowed()) syncHead();
@@ -541,12 +580,29 @@ export async function createClientApp({
     const hookUpdates = (instance: Cossack) => {
       const active = () => currentPage === instance || currentLayoutInstances.includes(instance);
       instance.updateHead = () => { if (active()) syncHead(); };
+      // The output of the instance's own update, which nothing else listens to: the app's render
+      // composes it instead of rendering the page a second time on every state change.
+      let output: { template: unknown } | undefined;
+      if (typeof instance.addRenderListener === 'function') instance.addRenderListener(template => { output = { template }; });
+      const takeOutput = (): { instance: Cossack; template: unknown } | undefined => {
+        const rendered = output;
+        output = undefined;
+        return rendered && { instance, template: rendered.template };
+      };
+      // Every call that joined one update (a handler setting several fields) shares one app render.
+      let composed: { update: unknown; render: Promise<boolean> } | undefined;
       const original = instance.requestUpdate.bind(instance);
       instance.requestUpdate = async (name?: string, oldValue?: unknown) => {
         if (!active() || (instance as any)._phase === LifecyclePhase.Destroyed) return false;
-        await original(name, oldValue);
+        // Only this update's own render counts: one that rendered nothing leaves the page to render.
+        output = undefined;
+        const update = original(name, oldValue);
+        await update;
         if (!active()) return false;
-        await triggerAppUpdate(active);
+        if (!(update instanceof Promise) || composed?.update !== update) {
+          composed = { update, render: triggerAppUpdate(active, takeOutput()) };
+        }
+        await composed.render;
         return true;
       };
     };
@@ -856,6 +912,7 @@ export async function createClientApp({
 
       // Check for loading.ts convention
       const urlObj = new URL(url, window.location.href);
+      if (isHandlerUrl(urlObj.href)) throw new NotAPageError(urlObj.href);
       const cleanPath = urlObj.pathname.replace(/\/$/, '') || '/index';
       const potentialLoadingPath = `/src/pages${cleanPath}/loading.ts`;
       const LoadingCompClass = loadings[potentialLoadingPath] ? getModuleDefault(loadings[potentialLoadingPath]) as new () => Cossack : null;
@@ -888,7 +945,7 @@ export async function createClientApp({
           await owner.wait(triggerAppUpdate(() => !owner.signal.aborted));
       }
 
-      const { state, url: responseUrl } = await owner.wait(fetchPage(url, owner.signal, trace));
+      const { state, lang, url: responseUrl } = await owner.wait(fetchPage(url, owner.signal, trace));
       if (seq !== navigationSequence) {
         // A newer navigation began while this page was loading: discard the
         // late response — it must never commit over the newer navigation.
@@ -908,6 +965,7 @@ export async function createClientApp({
       if (!destination.hash) destination.hash = requestedUrl.hash;
       const destinationUrl = destination.pathname + destination.search + destination.hash;
       const redirected = destination.pathname !== requestedUrl.pathname || destination.search !== requestedUrl.search;
+      applyPageLocale(state.__cossackLang, lang ?? '');
       prepared = await owner.wait(prepareComponent(state, destinationUrl, owner, trace));
       let ownerDisposed = false;
       const commit = async () => {
@@ -997,6 +1055,10 @@ export async function createClientApp({
         await moveHistory(committedHistory, committedUrl);
         if (seq !== navigationSequence) return settle({ outcome: 'superseded', url });
       }
+      if (error instanceof NotAPageError) {
+        window.location.assign(error.url);
+        return settle({ outcome: 'failed', url, error });
+      }
       console.error('Navigation failed:', error);
       // Give the app a chance to handle the failure (show an error UI, retry,
       // or fall back to a cached view) instead of forcing a full reload that
@@ -1065,7 +1127,7 @@ export async function createClientApp({
   enableClientNavigation(
     dispatchNavigate,
     async (url) => {
-      if (!pageCache.has(pageCacheKey(url))) {
+      if (!isHandlerUrl(url) && !pageCache.has(pageCacheKey(url))) {
         fetchPage(url).catch(() => {});
       }
     }

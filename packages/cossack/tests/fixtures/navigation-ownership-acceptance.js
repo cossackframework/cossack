@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { expect } from 'vitest';
 import { expect as browserExpect } from '@playwright/test';
+import { useAppDurableObject } from './generated-app.js';
 
 export async function writeNavigationOwnershipAcceptance(root) {
   const write = async (file, code) => {
@@ -149,14 +150,8 @@ export async function writeNavigationOwnershipAcceptance(root) {
     import {Page} from '@cossackframework/core';import Owner from '../../index';
     @Page({transport:'durable-object',stateful:false,scope:c=>'space:'+c.req.param('space')}) export default class SocketOwner extends Owner {}
   `);
-  const configPath=path.join(root,'wrangler.jsonc');
-  let config;
-  try { config=JSON.parse(await fs.readFile(configPath,'utf8')); }
-  catch(error) { if(error.code!=='ENOENT') throw error; }
-  if(config) {
-    config.durable_objects.bindings.push({name:'COSSACK_OBJECT',class_name:'NavigationObject'});
-    config.migrations.push({tag:'navigation-v2',new_sqlite_classes:['NavigationObject']});
-    await fs.writeFile(configPath,JSON.stringify(config));
+  // Cloudflare: the generated COSSACK_OBJECT binding points at this fixture's class instead of adding a second binding.
+  if(await useAppDurableObject(root,'NavigationObject')) {
     await fs.appendFile(path.join(root,'src/index.ts'), "\nexport { AppDurableObject as NavigationObject } from '@cossackframework/framework';\n");
   }
   await write('src/pages/owner/stream.ts', `

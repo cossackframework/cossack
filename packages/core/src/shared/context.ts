@@ -1,4 +1,5 @@
 // src/shared/context.ts
+import { HTTPException } from 'hono/http-exception';
 import type { Context } from 'hono';
 import { createContext } from '@cossackframework/renderer';
 import { parseFormData } from './forms';
@@ -57,7 +58,92 @@ function resolveFlashOptions(flash: FlashOptions | undefined): { input: readonly
 export type GetFormDataOptions<T> = {
     rules?: StoreRuleMap<T>;
     flash?: FlashOptions;
+    /**
+     * Largest body read, files included; a larger one answers 413. Default: 8 MiB
+     * (`FORM_DATA_MAX_BYTES`). Raise it for forms that post larger files, up to
+     * what the runtime's memory allows: the body is held in memory while parsed.
+     */
+    maxBytes?: number;
 };
+
+/** Default `getFormData` body limit. Larger files belong on `/upload` (32 MiB) or direct storage uploads. */
+export const FORM_DATA_MAX_BYTES = 8 * 1024 * 1024;
+
+/** Hono's per-request body cache (`HonoRequest.bodyCache`), which holds promises. */
+type BodyCache = Record<string, Promise<unknown> | undefined>;
+
+/**
+ * The request's form data, read into memory up to `limit` bytes. A body that
+ * says or turns out to be larger answers 413 before it is buffered whole.
+ *
+ * Shares Hono's body cache both ways: a body already read through Hono
+ * (`parseBody()`, `req.text()`, a validator) is taken from the cache, and the
+ * form read here is cached for later `parseBody()` / `req.formData()` calls.
+ * An oversized body is released partly read; the framework drains it before
+ * the response leaves (`discardRequestBody`), as Workers needs. Cancelling it
+ * here races the runtime's own body pump on Node.
+ */
+async function boundedFormData(req: Context['req'], limit: number): Promise<FormData> {
+    const cache = (req as unknown as { bodyCache?: BodyCache }).bodyCache;
+    const raw = req.raw;
+    if (cache && Object.keys(cache).length > 0) return fromBodyCache(req, cache);
+    const tooLarge = () => new HTTPException(413, { message: 'The form is too large.' });
+    const declaredHeader = raw.headers.get('content-length')?.trim();
+    const declared = declaredHeader && /^\d+$/.test(declaredHeader) ? Number(declaredHeader) : undefined;
+    if (declared !== undefined && declared > limit) throw tooLarge();
+    if (!raw.body) return raw.formData();
+    const reader = raw.body.getReader();
+    // One buffer, grown as bytes arrive (never sized from the header alone, so
+    // a request that declares 8 MiB and sends nothing holds next to nothing).
+    let buffer = new Uint8Array(Math.min(INITIAL_FORM_BUFFER, limit));
+    let size = 0;
+    try {
+        while (true) {
+            const next = await reader.read();
+            if (next.done) break;
+            const end = size + next.value.byteLength;
+            if (end > limit) throw tooLarge();
+            if (end > buffer.length) {
+                let length = buffer.length || 1;
+                while (length < end) length *= 2;
+                const grown = new Uint8Array(Math.min(length, limit));
+                grown.set(buffer.subarray(0, size));
+                buffer = grown;
+            }
+            buffer.set(next.value, size);
+            size = end;
+        }
+    } finally {
+        reader.releaseLock();
+    }
+    const form = formFrom(raw.headers.get('content-type'), buffer.subarray(0, size));
+    if (cache) cache.formData = form;
+    return form;
+}
+
+/** First read of a body fills this much; it doubles as more arrives, up to the limit. */
+const INITIAL_FORM_BUFFER = 64 * 1024;
+
+function formFrom(type: string | null, body: BodyInit): Promise<FormData> {
+    const headers = new Headers();
+    if (type) headers.set('content-type', type);
+    return new Request('http://form.invalid/', { method: 'POST', headers, body }).formData();
+}
+
+/**
+ * A body Hono already read, as form data: its cached form, or its cached bytes
+ * or text parsed with the request's content type. A body read as JSON is not
+ * a form, and answers 400.
+ */
+async function fromBodyCache(req: Context['req'], cache: BodyCache): Promise<FormData> {
+    if (cache.formData) return cache.formData as Promise<FormData>;
+    const type = req.raw.headers.get('content-type');
+    const bytes = cache.arrayBuffer ?? cache.blob ?? cache.text;
+    if (!bytes) throw new HTTPException(400, { message: 'This request is not a form.' });
+    const form = bytes.then(body => formFrom(type, body as BodyInit)).catch(() => { throw new HTTPException(400, { message: 'This request is not a form.' }); });
+    cache.formData = form;
+    return form;
+}
 
 /**
  * `getFormData<T>()` with NO rules returns the parsed data typed as `T`.
@@ -97,7 +183,7 @@ export function createCossackContext(
                     // `target` is `Context | HydratedContext`; only the server
                     // Context has a real `req.formData()`. Cast narrowly.
                     const req = (target as Context).req;
-                    const data = parseFormData(await req.formData()) as T;
+                    const data = parseFormData(await boundedFormData(req, opts?.maxBytes ?? FORM_DATA_MAX_BYTES)) as T;
                     const { input: flashInputOn, errors: flashErrorsOn } = resolveFlashOptions(opts?.flash);
                     if (!opts?.rules) {
                         // No validation: flash the parsed input only (if enabled).

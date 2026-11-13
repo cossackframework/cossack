@@ -75,3 +75,18 @@ it('redacts raw provider and source failures, including forged public error code
     const source = new ReadableStream<Uint8Array>({ start(controller) { controller.error(new Error('PRIVATE_SOURCE')); } });
     await expect(storage.put('a', 'a/file', source, { size: 5, contentType: 'text/plain' })).rejects.toMatchObject({ code: 'COSSACK_STORAGE_TRANSFER_FAILED', message: expect.not.stringContaining('PRIVATE_SOURCE') });
 });
+
+it('presigns an upload through the provider when it can sign, and through the endpoint otherwise', async () => {
+    const { storage, provider } = fixture();
+    const fallback = await storage.presignedUpload('a', 'a/file', { expiresIn: 20, size: 5, contentType: 'text/plain' });
+    expect(fallback).toMatchObject({ method: 'PUT', headers: {} });
+    expect(fallback.url.startsWith('https://app.test/files?access=')).toBe(true);
+    provider.presign = vi.fn(async (key, options) => ({ url: `https://bucket.test/${key}?signed`, method: 'PUT' as const, headers: { 'content-type': options.contentType! } }));
+    expect(await storage.presignedUpload('a', 'a/file', { expiresIn: 20, size: 5, contentType: 'text/plain' })).toEqual({ url: 'https://bucket.test/a/file?signed', method: 'PUT', headers: { 'content-type': 'text/plain' } });
+    expect(provider.presign).toHaveBeenCalledWith('a/file', { size: 5, contentType: 'text/plain', customMetadata: undefined, expiresIn: 20 });
+    // The facade's checks come first: authorization, the byte limit and the permitted types.
+    await expect(storage.presignedUpload('b', 'a/file', { expiresIn: 20, size: 5, contentType: 'text/plain' })).rejects.toMatchObject({ code: 'COSSACK_STORAGE_FORBIDDEN' });
+    await expect(storage.presignedUpload('a', 'a/file', { expiresIn: 20, size: 50, contentType: 'text/plain' })).rejects.toMatchObject({ code: 'COSSACK_STORAGE_SIZE_INVALID' });
+    await expect(storage.presignedUpload('a', 'a/file', { expiresIn: 20, size: 5, contentType: 'image/png' })).rejects.toMatchObject({ code: 'COSSACK_STORAGE_TYPE_INVALID' });
+    expect(provider.presign).toHaveBeenCalledTimes(1);
+});
