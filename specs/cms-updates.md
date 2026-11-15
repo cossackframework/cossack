@@ -1,6 +1,6 @@
 # CMS updates: the update notice, the Update button, and the update server
 
-Status: built 2026-11-15. The update server's code is in `services/update-server`; it is not deployed yet. Part 4 of 4, after `specs/package-routes.md`,
+Status: built 2026-11-15. The update server (`services/update-server`) is deployed at `cms.cossack.dev/update` since 2026-11-15. Part 4 of 4, after `specs/package-routes.md`,
 `specs/cms-served-app.md` and `specs/upgrade-merges.md`. The update server is a
 separate service that is built later; this spec fixes its contract.
 
