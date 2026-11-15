@@ -105,6 +105,12 @@ async function upgradeCommandInner(args, ctx) {
         { code: 'COSSACK_UPGRADE_MANIFEST_INVALID' });
     });
   if (manifest && !supportedManifest(manifest)) throw unsupportedManifestError(manifest);
+  // Releases before the served CMS copied the CMS application into the project. Those copies are
+  // not migrated (specs/upgrade-merges.md): the project is created again on the served CMS.
+  if (manifest?.files && Object.hasOwn(manifest.files, 'src/cms/index.ts')) throw Object.assign(new Error(
+    'This project holds a copied CMS (src/cms/, src/pages/dashboard/(cms)/, ...), which this release no longer updates. ' +
+    'Create a new project with cossack create --features cms, then copy your plugins (src/plugins/<name>), content and seed scripts into it. ' +
+    'See docs/upgrading.md.'), { code: 'COSSACK_UPGRADE_CMS_COPIED' });
   if (manifest?.dependencyBaseline !== undefined && (!manifest.dependencyBaseline ||
     typeof manifest.dependencyBaseline !== 'object' || Array.isArray(manifest.dependencyBaseline) ||
     Object.values(manifest.dependencyBaseline).some(section => !section || typeof section !== 'object' ||

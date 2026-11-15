@@ -357,6 +357,22 @@ async function upgradeJson(root, flags) {
   return [code, output];
 }
 
+describe('projects from before the served CMS', () => {
+  it('refuses a project that holds a copied CMS, and writes nothing', async () => {
+    const project = await seedProject();
+    const manifestPath = path.join(project.projectDir, '.cossack/scaffold.json');
+    const manifest = await readManifest(project.projectDir);
+    manifest.files['src/cms/index.ts'] = { capability: 'cms', hash: sha('// copied\n') };
+    const source = JSON.stringify(manifest, null, 2) + '\n';
+    await fs.writeFile(manifestPath, source);
+    const [code, output] = await upgradeJson(project.projectDir, []);
+    expect(code).toBe(1);
+    expect(JSON.stringify(output)).toContain('COSSACK_UPGRADE_CMS_COPIED');
+    expect(JSON.stringify(output)).toContain('cossack create --features cms');
+    expect(await fs.readFile(manifestPath, 'utf8')).toBe(source);
+  });
+});
+
 describe('upgrades merge local edits', () => {
   const relative = 'src/App.ts';
   const current = async project => (await renderRecipe(project.recipe, { projectName: 'app' })).get(relative).content.toString();
