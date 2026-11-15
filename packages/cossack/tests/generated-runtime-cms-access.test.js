@@ -200,19 +200,15 @@ function apiExpectation(route, verb) {
   return undefined;
 }
 
-/** Every page file's server methods and form handlers, read from the generated app's sources. */
-async function serverMethods(root) {
-  const pages = path.join(root, 'src/pages');
-  const files = [];
-  const walk = async dir => { for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) await walk(full); else if (entry.name.endsWith('.ts')) files.push(full);
-  } };
-  await walk(pages);
+/**
+ * Every page and layout's server methods, read from the sources. The CMS's pages are served
+ * from its package, so the build's route manifest says where each route key's file is.
+ */
+async function serverMethods(root, manifest) {
   const found = [];
-  for (const file of files) {
-    const source = await fs.readFile(file, 'utf8');
-    const relative = path.relative(pages, file).split(path.sep).join('/');
+  for (const key of Object.keys(manifest.filePathToId).filter(file => file.endsWith('.ts'))) {
+    const source = await fs.readFile(path.join(root, manifest.sources?.[key] ?? key), 'utf8');
+    const relative = key.replace(/^\/src\/pages\//, '');
     for (const match of source.matchAll(/@Server\([^)]*\)\s*(?:(?:public|private|protected|static|override)\s+)*(?:async\s+)?(\w+)\s*\(/g)) found.push({ file: relative, method: match[1] });
   }
   return found;
@@ -347,11 +343,11 @@ describe.skipIf(!liveRomeDBTests())('generated CMS access matrix', () => {
       };
       for (const client of Object.values(clients)) client.origin = origin;
 
-      const methods = await serverMethods(root);
+      const methods = await serverMethods(root, manifest);
       const routes = manifest.routes.map(route => ({ ...route, file: route.filePath.replace(/^\/src\/pages\//, '') }));
       const apiVerbs = [];
       for (const route of routes.filter(entry => entry.kind === 'api')) {
-        const source = await fs.readFile(path.join(root, route.filePath), 'utf8');
+        const source = await fs.readFile(path.join(root, manifest.sources?.[route.filePath] ?? route.filePath), 'utf8');
         for (const match of source.matchAll(/export\s+(?:const|async function|function)\s+(GET|POST|PUT|PATCH|DELETE)\b/g)) apiVerbs.push({ route, verb: match[1] });
       }
 

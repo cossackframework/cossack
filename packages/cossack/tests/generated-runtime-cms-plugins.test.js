@@ -28,8 +28,8 @@ describe.skipIf(!liveRomeDBTests())('CMS plugin trust', () => {
     const v1 = await packDesk('1.0.0');
     trackRoot(v1.directory);
     expect(JSON.parse((await cossack(root, ['add', 'plugin', v1.tarball, '--json'])).stdout).data).toMatchObject({ status: 'added', name: 'support-desk' });
-    // The default theme is a rendered plugin too, and passes the same lints.
-    expect(JSON.parse((await cossack(root, ['plugins', 'check', '--json'])).stdout).data.plugins).toEqual([{ plugin: 'default-theme', files: 14, errors: 0 }, { plugin: 'support-desk', files: 4, errors: 0 }]);
+    // The lints cover the project's plugins. The default theme is served from the CMS package and is not one of them.
+    expect(JSON.parse((await cossack(root, ['plugins', 'check', '--json'])).stdout).data.plugins).toEqual([{ plugin: 'support-desk', files: 4, errors: 0 }]);
     // A plugin asking for unrestricted access stops at the danger message until it is accepted; then its raw queries pass the lints, with a warning.
     const vault = await packVault();
     trackRoot(vault.directory);

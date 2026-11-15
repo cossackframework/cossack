@@ -36,7 +36,7 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
     await writePortfolioTheme(root);
     // The theme reads its own collection and the posts its manifest requests: it passes the policy lints.
     const check = JSON.parse((await cossack(root, ['plugins', 'check', '--json'])).stdout);
-    expect(check.data.plugins).toEqual([expect.objectContaining({ plugin: 'default-theme', errors: 0 }), { plugin: 'portfolio', files: 6, errors: 0 }]);
+    expect(check.data.plugins).toEqual([{ plugin: 'portfolio', files: 6, errors: 0 }]);
     await cossack(root, ['config', '--generate']);
     await typecheck(root, 'cms theme application');
     await vite(root, []);
