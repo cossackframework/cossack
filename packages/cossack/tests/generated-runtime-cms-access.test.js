@@ -82,6 +82,8 @@ const PAGES = [
 const API = [
   // Without credentials, signing in is refused.
   { prefix: 'auth/session', allow: NONE, verbs: { DELETE: { skip: 'signs the client out' } } },
+  // OAuth routes answer only for a provider the site lists (src/cms.config.ts: oauth); this app lists none.
+  { prefix: 'auth/[provider]/', allow: NONE },
   { prefix: 'cms/', allow: ADMIN },
   // Visitor endpoints answer anyone, staff without a second factor as visitors.
   { prefix: 'cms/comments/index', verbs: { GET: ALL, POST: ALL } },
