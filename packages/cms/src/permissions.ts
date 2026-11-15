@@ -42,6 +42,8 @@ export const PERMISSIONS = Object.freeze({
     moderateComments: 'cms:comments',
     /** Manage redirects under Tools. */
     manageRedirects: 'cms:redirects',
+    /** See the update notice and ask the project's pipeline to update the site, under Tools → Updates. */
+    manageUpdates: 'cms:updates',
     /** Manage webhooks under Tools. */
     manageWebhooks: 'cms:webhooks',
     /** Read, sort, export and delete form submissions. Forms themselves are `cms/forms:*`. */

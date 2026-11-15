@@ -2,7 +2,8 @@ import type { Context } from 'hono';
 import { ANONYMOUS, applyDashboardMenu, dashboardLinkModuleId, dashboardMenuOf, dashboardNotices as noticesPoint, dashboardNoticesOf, dashboardTaskbar, EMPTY_DASHBOARD_MENU, evaluateRule, hasPermission, isCmsError, isNetworkAdmin, PERMISSIONS, recordTitle, taskbarItemsOf, type DashboardNotice, type Principal, type WriteActor } from '@cossackframework/cms';
 import { MAIN_SITE, type CmsHost } from '@cossackframework/cms/server';
 import { icon } from '../cms/icons';
-import { currentCms, networkFor, siteUrl, type CmsBindings } from '../cms/index';
+import { currentCms, networkFor, siteUrl, updateSettings, type CmsBindings } from '../cms/index';
+import { updateAvailable } from '../cms/updates';
 import { recoveryCode } from '../cms/recovery';
 import { openMatches } from '../cms/site';
 import { dashboardModules } from '@/dashboard/registry';
@@ -82,6 +83,15 @@ export function navigation(c: Context): Promise<DashboardModule[]> {
 }
 
 /**
+ * Who sees Tools → Updates: holders of the permission, on the main site. In a network the
+ * software is shared by every site, so only the network's administrators do.
+ */
+export async function managesUpdates(c: Context, principal: Principal): Promise<boolean> {
+    if (!hasPermission(principal, PERMISSIONS.manageUpdates) || c.get('site')?.id !== MAIN_SITE) return false;
+    return isNetworkAdmin(principal) || !(await networkFor(c.env as CmsBindings).enabled().catch(() => false));
+}
+
+/**
  * The default navigation for the signed-in user, in WordPress order: content first (posts,
  * media, pages, other collections, plugin resources and links), then administration. Each item
  * shows only with the permission its screens require. What it needs from the database loads in
@@ -99,7 +109,7 @@ async function buildNavigation(c: Context): Promise<DashboardModule[]> {
     const hasForms = cms.collections().some(collection => collection.name === 'forms');
     const formsCreate = hasForms && evaluateRule(cms.resourceById('cms/forms').access.create, principal) !== 'deny';
     const showsForms = hasForms && (formsCreate || can('cms/forms:read') || can('cms/forms:update') || can(PERMISSIONS.manageSubmissions));
-    const [status, pendingCommentCount, fresh, slotLinks, approveRegistrations, registrations, network, sites] = await Promise.all([
+    const [status, pendingCommentCount, fresh, slotLinks, approveRegistrations, registrations, network, sites, updates] = await Promise.all([
         activationStatus(c),
         pendingComments(c),
         showsForms ? freshSubmissions(c) : 0,
@@ -108,6 +118,7 @@ async function buildNavigation(c: Context): Promise<DashboardModule[]> {
         waitingRegistrations(c),
         showsNetwork(c, principal),
         principal.kind === 'user' ? remember(c, 'member-sites', () => networkFor(env).memberSites(principal.id).catch(() => [])) : [],
+        managesUpdates(c, principal).then(async shown => ({ shown, available: shown && await updateAvailable(networkFor(env), updateSettings(env)).catch(() => false) })),
     ]);
     const content: DashboardModule[] = [];
     const ordered = [...cms.collections()].sort((a, b) => (a.name === 'posts' ? -1 : b.name === 'posts' ? 1 : 0));
@@ -185,6 +196,8 @@ async function buildNavigation(c: Context): Promise<DashboardModule[]> {
         ...(can(PERMISSIONS.manageSchema) ? [{ label: 'Schema', href: '/dashboard/tools/schema' }] : []),
         ...(can(PERMISSIONS.manageSettings) ? [{ label: 'Export', href: '/dashboard/tools/export' }] : []),
         ...(can(PERMISSIONS.manageSettings) ? [{ label: 'Cache', href: '/dashboard/tools/cache' }] : []),
+        // In a network the software is the network's: its administrators update it, on the network host.
+        ...(updates.shown ? [{ label: updates.available ? 'Updates (1)' : 'Updates', href: '/dashboard/tools/updates' }] : []),
         ...(can(PERMISSIONS.manageSettings) ? [{ label: 'Jobs', href: '/dashboard/tools/jobs' }, { label: 'Activity', href: '/dashboard/tools/activity' }, { label: 'Find and replace', href: '/dashboard/tools/replace' }, { label: 'Automations', href: '/dashboard/tools/automations' }] : []),
     ];
     if (tools.length) admin.push({ id: 'tools', label: 'Tools', href: tools[0]!.href, icon: icon('tuning-2'), authorization: 'authenticated', children: tools });

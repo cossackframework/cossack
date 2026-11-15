@@ -2,7 +2,7 @@ import { createRomeDB } from '@cossackframework/romedb';
 import { getRequestContext } from '@cossackframework/core';
 import { cloudflarePurger, cmsReconcilers, CmsNetwork, createCMS, DEFAULT_RESERVED_PATHS, MAIN_SITE, prefixedStorage, stripePayments, type CachePurger, type CmsHost, type NetworkSite, type PluginRunner } from '@cossackframework/cms/server';
 import { aiProvider, type AiBindings } from './ai';
-import type { IconStyleName, Principal } from '@cossackframework/cms';
+import { DEFAULT_UPDATES_CHANNEL, DEFAULT_UPDATES_URL, type IconStyleName, type Principal } from '@cossackframework/cms';
 import { plugins } from '@cossackframework/framework/plugins';
 // The project's own: its resources, modules and the options it sets.
 import { modules, options as projectOptions, resources } from '@/cms.config';
@@ -30,6 +30,13 @@ export interface CmsBindings extends DatabaseBindings, PendingBindings, MediaBin
     CLOUDFLARE_ZONE_ID?: string;
     /** The Cloudflare API's base URL, for tests. */
     CLOUDFLARE_API_URL?: string;
+    /**
+     * Where Tools → Updates sends its request: the project's pipeline, which runs `cossack upgrade`.
+     * For GitHub: https://api.github.com/repos/<owner>/<repository>/dispatches.
+     */
+    CMS_UPDATE_HOOK_URL?: string;
+    /** Sent to the hook as a bearer token. For GitHub: a fine-grained token with Contents: read and write on the repository. */
+    CMS_UPDATE_HOOK_TOKEN?: string;
 }
 
 declare module 'hono' {
@@ -52,6 +59,17 @@ declare module 'hono' {
 }
 
 let current: { key: string; network: CmsNetwork } | undefined;
+/** Each network's update settings, for the scheduled run, which has the network and not the bindings. */
+const networkUpdates = new WeakMap<CmsNetwork, { check: boolean; url: string; channel: string }>();
+export function updateSettingsOf(network: CmsNetwork): { check: boolean; url: string; channel: string } | undefined {
+    return networkUpdates.get(network);
+}
+
+/** The update notice's settings, from `updates` in src/cms.config.ts; an unset one keeps its default. */
+export function updateSettings(env: CmsBindings): { check: boolean; url: string; channel: string } {
+    const project = typeof projectOptions === 'function' ? projectOptions(env as Record<string, unknown>, { id: MAIN_SITE }) : projectOptions;
+    return { check: project.updates?.check !== false, url: project.updates?.url || DEFAULT_UPDATES_URL, channel: project.updates?.channel || DEFAULT_UPDATES_CHANNEL };
+}
 let pluginRunner: PluginRunner | null = null;
 
 /**
@@ -110,7 +128,7 @@ export function networkFor(env: CmsBindings): CmsNetwork {
                 // Every binding, for a plugin granted unrestricted access.
                 env: env as Record<string, unknown>,
                 runner: pluginRunner,
-                ...(({ purgers: _purgers, reservedPaths: _reserved, ...rest }) => rest)(project),
+                ...(({ purgers: _purgers, reservedPaths: _reserved, updates: _updates, ...rest }) => rest)(project),
                 // An entry's slug cannot take the address of a page: the CMS's routes, every page file of the
                 // application (the project's, the CMS's and plugins'), and what the project names itself.
                 reservedPaths: [...new Set([...DEFAULT_RESERVED_PATHS, ...reservedRouteSegments(Object.keys(registry.pages)), ...(project.reservedPaths ?? [])])],
@@ -118,6 +136,7 @@ export function networkFor(env: CmsBindings): CmsNetwork {
             },
         });
         current = { key, network };
+        networkUpdates.set(network, updateSettings(env));
     }
     return current.network;
 }

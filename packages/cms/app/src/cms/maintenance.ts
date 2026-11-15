@@ -1,5 +1,7 @@
 import { isCmsError, systemPrincipal } from '@cossackframework/cms';
 import { networkSite, type CmsHost, type CmsNetwork } from '@cossackframework/cms/server';
+import { refreshUpdateCheck } from './updates';
+import { updateSettingsOf } from './index';
 
 /** Where the last scheduled run stopped among the added sites, in the network's state. */
 const CURSOR = 'maintenance.cursor';
@@ -15,6 +17,9 @@ let notedCursor = 0;
 export async function runNetworkMaintenance(network: CmsNetwork, options: { warm?: boolean; budgetMs?: number } = {}): Promise<void> {
     const started = Date.now();
     await runMaintenance(network.main, options);
+    // Once a day, which version is the latest: the request carries the installed version only.
+    const updates = updateSettingsOf(network);
+    if (updates?.check && await network.main.installed().catch(() => false)) await refreshUpdateCheck(network, updates).catch(error => console.error('[cms] the update check failed', error));
     if (!network.multisite || !(await network.main.installed())) return;
     await network.handoffs.purgeExpired();
     // Sites deleted 30 days ago lose their database and media.

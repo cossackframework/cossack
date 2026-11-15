@@ -9,6 +9,8 @@ export {
 } from './field-groups';
 export { ANONYMOUS, PERMISSIONS, DEFAULT_ROLES, NETWORK_ADMIN, MAIN_SITE, isNetworkAdmin, systemPrincipal, userPrincipal, hasPermission, holdsAll, permissionMatches, evaluateRule, ruleScope, principalId, type Principal, type RecordScope } from './permissions';
 export { CmsError, isCmsError, type CmsErrorCode } from './errors';
+export { CMS_VERSION } from './version';
+export { checkForUpdate, compareVersions, parseUpdateAnswer, updateCheckUrl, DEFAULT_UPDATES_URL, DEFAULT_UPDATES_CHANNEL, type UpdatesOptions, type UpdateAnswer, type UpdateCheck } from './updates';
 export { beforeWrite, afterCommit, cachePurge, pluginJob, paymentEvent, formValidate, formBeforeSubmit, formPrefill, formConfirmation, formNotification, formSubmitted, termBeforeSave, commentBeforeSave, menuBeforeSave, entryActions, entryColumns, bulkActions, ENTRY_ACTION_IDS, EXTENSION_POINTS,
     dashboardNotices, dashboardTaskbar, siteMarkdown, dashboardNoticesOf, taskbarItemsOf,
     type BeforeWriteInput, type Draft, type ResourceEvent, type CachePurgeEvent, type PluginJobEvent, type PaymentEvent, type WriteActor, type FormRef, type SubmissionContext, type FormErrors, type FormConfirmation, type FormEmail, type FormSubmittedEvent,

@@ -2,6 +2,7 @@
  * The CMS host: resource registry, repositories, plugin hooks and commands, schema and
  * grant activation, outbox, users and stores, all over one RomeDB binding.
  */
+import type { UpdatesOptions } from '../updates';
 import { createHookRegistry, type ActionHandler, type ActionPoint, type ActionReport, type ExtensionPoint, type FilterContext, type FilterHandler, type FilterPoint, type HookRegistry, type InvokeOptions } from '@cossackframework/core/hooks';
 import type { StorageProvider } from '@cossackframework/core/storage';
 import { ClientError, MAX_STATEMENTS, type RomeDB, type Statement, type Value, type WorkLimits } from '@cossackframework/romedb';
@@ -2843,7 +2844,10 @@ export const DEFAULT_RESERVED_PATHS: readonly string[] = Object.freeze(['api', '
  * the defaults; every other option replaces its default.
  */
 export type CmsProjectOptions = Partial<Pick<CmsOptions,
-    'reservedPaths' | 'blocks' | 'settings' | 'taxonomies' | 'payments' | 'ai' | 'purgers' | 'mail' | 'mailFrom' | 'files'>>;
+    'reservedPaths' | 'blocks' | 'settings' | 'taxonomies' | 'payments' | 'ai' | 'purgers' | 'mail' | 'mailFrom' | 'files'>> & {
+    /** The update notice: whether the CMS asks the update server, and which one (specs/cms-updates.md). */
+    readonly updates?: UpdatesOptions;
+};
 
 /** The options as a value, or computed from the environment bindings and the site. */
 export type CmsProjectConfig = CmsProjectOptions |
