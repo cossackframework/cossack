@@ -1,0 +1,7 @@
+{
+  "channels": {
+    "latest": [
+      { "version": "0.9.0", "published": "2026-11-13T00:00:00Z", "notes": "https://github.com/cossackframework/cossack/releases/tag/v0.9.0", "security": false }
+    ]
+  }
+}

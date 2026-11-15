@@ -13,6 +13,7 @@
     "test:agent-docs:local": "node scripts/test-local-scaffold.mjs --agent-docs-only",
     "test:scaffold:local": "node scripts/test-local-scaffold.mjs",
     "test:cms:packed": "node scripts/test-local-scaffold.mjs --cms-only",
+    "test:update-server": "pnpm --filter cossack-update-server run typecheck && pnpm --filter cossack-update-server test",
     "test:production-bundles": "node scripts/test-local-scaffold.mjs",
     "test:integration": "pnpm --filter cossack run test:integration && pnpm --filter @cossackframework/ui run test:browser",
     "test:e2e": "pnpm --filter @cossackframework/framework run test:e2e",

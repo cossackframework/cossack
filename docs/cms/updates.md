@@ -27,7 +27,7 @@ export const options: CmsProjectConfig = {
 };
 ```
 
-The update server only informs. Code always comes from the package registry, through your project's lockfile and pipeline. A wrong answer can show a wrong notice and nothing more.
+The update server only informs. Code always comes from the package registry, through your project's lockfile and pipeline. A wrong answer can show a wrong notice and nothing more. The server is open source (`services/update-server` in the Cossack repository): it sets no cookie and keeps no record of a request, and you can run your own and name it in `updates.url`.
 
 ## The Update button
 

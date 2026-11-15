@@ -1,0 +1,23 @@
+{
+  "name": "cossack-update-server",
+  "version": "0.9.0",
+  "private": true,
+  "type": "module",
+  "description": "The update server of the Cossack CMS: answers which version is the latest (cms.cossack.dev/update)",
+  "license": "MIT",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "release": "node scripts/add-release.mjs",
+    "test": "vitest --run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cossackframework/cms": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.12",
+    "wrangler": "^4.115.0"
+  }
+}

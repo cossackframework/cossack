@@ -1,6 +1,6 @@
 # CMS updates: the update notice, the Update button, and the update server
 
-Status: built 2026-11-15, except the update server (step 6). Part 4 of 4, after `specs/package-routes.md`,
+Status: built 2026-11-15. The update server's code is in `services/update-server`; it is not deployed yet. Part 4 of 4, after `specs/package-routes.md`,
 `specs/cms-served-app.md` and `specs/upgrade-merges.md`. The update server is a
 separate service that is built later; this spec fixes its contract.
 
@@ -103,7 +103,7 @@ deploys as it does for any other commit.
     name another one.
   - The token never reaches the browser or the database.
 
-### The update server (built later)
+### The update server
 
 - **Address:** `https://cms.cossack.dev/update`. Until it exists, the check fails
   quietly and the dashboard shows only the installed version.
@@ -134,8 +134,12 @@ deploys as it does for any other commit.
   through the project's lockfile and pipeline. A wrong answer from the server can
   show a wrong notice, and nothing more. The CMS accepts `latest` only when it is a
   valid version that is newer than the installed one.
-- **Implementation outline:** a Cloudflare Worker that serves a JSON file per
-  channel, written by the release workflow. It keeps no per-request record.
+- **Implementation:** `services/update-server`, a Cloudflare Worker on the custom
+  domain `cms.cossack.dev`. `releases.json` lists each channel's published
+  versions and is bundled with the Worker; `pnpm --filter cossack-update-server run
+  release -- --version <v>` adds one after a release, then `run deploy` ships it.
+  It computes `security` and `minimumFrom` over the releases the asking site would
+  skip. Request logs are off. Deploying needs access to the `cossack.dev` zone.
 
 ## Order
 
@@ -149,7 +153,8 @@ deploys as it does for any other commit.
 4. The scaffold's `cossack-update.yml`, asserted in `cms-recipe.test.js`.
 5. Docs: `docs/cms/updates.md` (new: the notice, what is sent, the hook setup for
    GitHub, other pipelines, backups) and a link from `docs/upgrading.md`.
-6. Later, separately: the update server at `cms.cossack.dev/update`.
+6. The update server (`services/update-server`), with `pnpm test:update-server`.
+   Deploying it is a separate, manual step.
 
 ## Done when
 

@@ -64,6 +64,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./server": "./src/server/index.ts",
+    "./updates": "./src/updates.ts",
     "./isolate": "./src/isolate.ts",
     "./cloudflare": "./src/cloudflare.ts",
     "./node": "./src/node.ts",
