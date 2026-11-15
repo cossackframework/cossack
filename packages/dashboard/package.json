@@ -20,8 +20,7 @@
   "scripts": {
     "dev": "pnpm --dir app run dev",
     "sync": "pnpm --dir app run sync",
-    "test": "pnpm sync && vitest --run",
-    "prepack": "pnpm sync"
+    "test": "pnpm sync && vitest --run"
   },
   "dependencies": {
     "@cossackframework/auth": "workspace:*",

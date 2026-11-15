@@ -132,3 +132,8 @@ export declare function readBase(projectDir: string, name: unknown): Promise<Buf
 export declare function pruneBases(projectDir: string): Promise<string[]>;
 /** A line diff with ` `, `-` and `+` prefixes and `...` between distant changes; '' when equal, null for binary content. */
 export declare function diffLines(before: string | Uint8Array, after: string | Uint8Array, context?: number): string | null;
+/** The package a project with ORM sign-in mounts. */
+export declare const DASHBOARD_PACKAGE: string;
+/** What that package serves, as application paths (a trailing slash names a directory). */
+export declare const SERVED_DASHBOARD_PATHS: readonly string[];
+export declare function isServedDashboardPath(rel: string): boolean;

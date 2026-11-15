@@ -1,6 +1,6 @@
 {
   "feature": "cms",
-  "description": "How the cms feature reaches an application. `served`: paths the application mounts from this package (package.json#cossack) and does not hold, tracked here (a trailing slash names a directory). `shell`: served the same way, and written here by `pnpm sync` from packages/scaffold/template: the sign-in pages, the dashboard and its kit. `rendered`: written into the application by the scaffold's cms recipe: `src/cms.config.ts`, the project's own configuration. Every other file under this folder is a project file of this package's own development application, also written by `pnpm sync`.",
+  "description": "How the cms feature reaches an application. `served`: paths the application mounts from this package (package.json#cossack) and does not hold, tracked here (a trailing slash names a directory). `shell`: served the same way, and written here by `pnpm sync` from packages/dashboard/app/src: the sign-in pages, the dashboard and its kit. `rendered`: written into the application by the scaffold's cms recipe: `src/cms.config.ts`, the project's own configuration. Every other file under this folder is a project file of this package's own development application, also written by `pnpm sync`.",
   "served": [
     "src/cms/",
     "src/pages/dashboard/(cms)/",

@@ -1,6 +1,5 @@
-# What the package ships of this folder: the served sources (cossack-recipe.json: `served`)
-# and the recipe. .gitignore does not apply once this file exists: the sources are untracked,
-# written by `pnpm sync`, and shipped.
+# What the package ships of this folder: the served sources (the scaffold's
+# SERVED_DASHBOARD_PATHS), not the development application's project files around them.
 /*
 !/README.md
 !/src/

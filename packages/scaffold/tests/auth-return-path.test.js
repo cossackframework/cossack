@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 // The template's src/auth-input.ts, with its input contracts stubbed: returnPath is what this tests.
 async function authInput() {
-  const source = await fs.readFile(new URL('../template/src/auth-input.ts', import.meta.url), 'utf8');
+  const source = await fs.readFile(new URL('../../dashboard/app/src/auth-input.ts', import.meta.url), 'utf8');
   const { code } = transformSync(source, { loader: 'ts', format: 'cjs', target: 'es2022' });
   const chain = new Proxy(() => chain, { get: () => chain, apply: () => chain });
   const module = { exports: {} };

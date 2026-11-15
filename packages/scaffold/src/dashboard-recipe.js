@@ -1,10 +1,18 @@
 /**
  * Sign-in and the dashboard on the database ORM are served from @cossackframework/dashboard
  * (specs/dashboard-package.md): the project mounts the package (package.json#cossack.packages)
- * and holds none of these files. The template is still their source: the package's own
- * application is written from it (packages/dashboard/app, `pnpm sync`).
+ * and holds none of these files. The package is their source (packages/dashboard/app/src,
+ * tracked there). The scaffold reads them only for the packages' own applications: the
+ * dashboard's development app, and the CMS, which ships a copy of the shell.
  */
+import path from 'node:path';
+import { createRequire } from 'node:module';
 import { authStore } from './registry.js';
+
+/** The served sources inside @cossackframework/dashboard. */
+export function dashboardSourceDir() {
+  return path.join(path.dirname(createRequire(import.meta.url).resolve('@cossackframework/dashboard/package.json')), 'app');
+}
 
 /** The package a project with ORM sign-in mounts. */
 export const DASHBOARD_PACKAGE = '@cossackframework/dashboard';

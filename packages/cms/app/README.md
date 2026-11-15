@@ -12,15 +12,15 @@ configuration), and the project names the package in its own `package.json`
 - `served`: mounted by the project, never copied, and tracked here: the CMS's pages and
   modules, and its versions of `auth.ts`, the services and a few dashboard modules;
 - `shell`: mounted by the project too, and written here by `pnpm sync` from
-  `packages/scaffold/template`: the sign-in pages, the dashboard and its kit, which projects
-  without the CMS get as files;
+  `packages/dashboard/app/src`, the tracked home of the sign-in pages, the dashboard and its
+  kit (projects without the CMS mount them from `@cossackframework/dashboard`);
 - `rendered`: written into the project by the scaffold (`packages/scaffold/src/cms-recipe.js`):
   `src/cms.config.ts`.
 
 Every other file here (`vite.config.ts`, entries, `.env.example`, …) is a project file of this
 development application and also comes from `pnpm sync`, which `dev`, `build`, `typecheck` and
 `pnpm pack` run first. Synced files are gitignored, so each file has one source: CMS code
-here, shell code in the scaffold template. `.npmignore` lists what the package ships of this
+here, shell code in `packages/dashboard/app/src`. `.npmignore` lists what the package ships of this
 folder: `served` and `shell`. This folder mounts nothing: it is the package's served source
 itself.
 
@@ -65,8 +65,8 @@ not cover them.
 ## Editing
 
 - A CMS page or component: edit it here, reload the browser.
-- A shared page (login, dashboard layout, users): edit `packages/scaffold/template`, run
-  `pnpm sync`, reload.
+- A shared page (login, dashboard layout, users): edit it in `packages/dashboard/app/src`, run
+  `pnpm sync` here, reload.
 - Dependencies: `sync` rewrites this `package.json`'s dependency sections from the recipe, with
   workspace packages as `workspace:*`. Commit the result after `pnpm install`.
 

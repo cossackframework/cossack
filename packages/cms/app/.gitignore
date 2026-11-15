@@ -1,5 +1,6 @@
 # Only CMS sources named in cossack-recipe.json and application tests are tracked. The rest of this
-# application (the shared shell) is rendered by `pnpm sync` from packages/scaffold/template.
+# application is written by `pnpm sync`: the shared shell from packages/dashboard/app/src, the
+# project files from the scaffold.
 /*
 !/.gitignore
 !/README.md

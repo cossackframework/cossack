@@ -16,11 +16,17 @@ ORM projects removes file records from every project.
 - **The package is `@cossackframework/dashboard`** (`packages/dashboard`), built like
   the CMS package: `app/src` is the served root and also a development application
   (`pnpm dev:dashboard`). A project mounts it through `package.json#cossack.packages`.
-- **The scaffold template stays the source of the shell.** `packages/dashboard/app`
-  is written by `pnpm sync` from `packages/scaffold/template`, like the CMS's copy,
-  and shipped with the package (`prepack`, `app/.npmignore`). One source feeds both
-  packages. The scaffold lists the served paths (`src/dashboard-recipe.js`), and the
-  package's test checks its shipped files and its host contract against that list.
+- **The package is the tracked home of the shell** (user, 2026-11-16: "one tracked
+  home"). `packages/dashboard/app/src` holds the served sources, edited and shipped
+  from there (`app/.npmignore`); the scaffold template has none of them. The
+  scaffold lists the served paths (`src/dashboard-recipe.js`) and reads the files
+  only for `renderRecipe(recipe, { servedFiles: true })`, which the CMS's `pnpm sync`
+  uses for its copy. The rest of `packages/dashboard/app` is a development
+  application that the package's own `pnpm sync` writes.
+- **Not built: one served copy for both packages.** A project's type check follows
+  imports into the packages' sources, and the shell's relative imports (`auth`, the
+  services) cannot resolve to another package per project without generated type
+  declarations or package aliases in every project.
 - **Served:** `pages/auth/`, `pages/dashboard/`, `dashboard/`, `auth.ts`,
   `auth-*.ts`, `brand.ts`, `passkeys.client.ts`, `middlewares/auth.ts`,
   `services/{users,roles,rbac}.ts`, `lib/{permissions,uuid}.ts`, `config/auth.ts`.
@@ -41,9 +47,8 @@ ORM projects removes file records from every project.
   - the dashboard's navigation lists the chosen modules.
 - **RBAC is always installed with ORM auth**: the `Role` and `UserRole` models and
   their migrations. Removing the queries from `auth.ts` per recipe is gone.
-- **The CMS keeps its copy of the shell** (`pnpm sync`), with its own
-  `auth-options.ts` (fixed values). Sharing one served shell needs `@/` imports that
-  resolve across packages; not in this change.
+- **The CMS keeps a copy of the shell**, written by its `pnpm sync` from the dashboard
+  package, with its own `auth.ts`, services and `auth-options.ts`.
 - **Every project records no files** once this is in: `recordsFiles()`, the
   manifest's `files`, the stored texts of scaffold files and the scaffold-file merge
   of `cossack upgrade` are removed. The recipe is in `package.json#cossack`.

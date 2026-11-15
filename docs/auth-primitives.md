@@ -87,7 +87,7 @@ conditional matching or normalize the metadata explicitly.
 
 Every callback receives the Hono request context. SQL, transactions and
 cross-process atomicity remain storage responsibilities. See the auth module that
-`@cossackframework/dashboard` serves ([source](../packages/scaffold/template/src/auth.ts)) for the D1/SQLite composition.
+`@cossackframework/dashboard` serves ([source](../packages/dashboard/app/src/auth.ts)) for the D1/SQLite composition.
 
 ## Compose the session middleware
 

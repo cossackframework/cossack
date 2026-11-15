@@ -1,5 +1,6 @@
 import { workflowsRecipeFiles } from './workflow-recipes.js';
-import { DASHBOARD_PACKAGE, dashboardConfigFile, isServedDashboardPath, mountsDashboard } from './dashboard-recipe.js';
+import { DASHBOARD_PACKAGE, dashboardConfigFile, dashboardSourceDir, isServedDashboardPath, mountsDashboard } from './dashboard-recipe.js';
+export { DASHBOARD_PACKAGE, SERVED_DASHBOARD_PATHS, isServedDashboardPath } from './dashboard-recipe.js';
 import { CMS_PACKAGE, cmsRecipeFiles, cmsSetupCode, isCmsPath, isServedCmsPath, patchCmsNodeEntry, patchCmsWorkerEntry } from './cms-recipe.js';
 import { jobsRecipeFiles, turnstileRecipeFiles, schedulesRecipeFiles, notificationsRecipeFiles } from './service-recipes.js';
 import fs from 'node:fs/promises';
@@ -1351,6 +1352,18 @@ export async function renderRecipe(recipe, options = {}) {
       if (recipe.resolvedFeatures.includes('cms')) content = text(patchCmsNodeEntry(content.toString('utf8')));
     }
     files.set(rel, { content, capability });
+  }
+
+  // The sign-in pages, the dashboard and their modules are the dashboard package's sources. A
+  // project mounts them. Only the packages' own applications hold them (`servedFiles`): the
+  // dashboard's development app, and the CMS, which ships a copy of the shell.
+  if (options.servedFiles === true && recipe.resolvedFeatures.includes('auth')) {
+    const source = dashboardSourceDir();
+    for (const rel of await walk(path.join(source, 'src'), 'src')) {
+      if (!isServedDashboardPath(rel)) continue;
+      const capability = capabilityFor(rel, recipe);
+      if (capability) files.set(rel, { content: await fs.readFile(path.join(source, rel)), capability });
+    }
   }
 
   files.set('package.json', {

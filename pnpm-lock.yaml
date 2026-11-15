@@ -738,6 +738,9 @@ importers:
       '@cossackframework/core':
         specifier: workspace:*
         version: link:../core
+      '@cossackframework/dashboard':
+        specifier: workspace:*
+        version: link:../dashboard
       node-diff3:
         specifier: 4.0.0
         version: 4.0.0

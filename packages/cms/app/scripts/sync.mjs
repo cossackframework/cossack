@@ -4,7 +4,7 @@
 // CMS from the package (package.json#cossack.packages), and this folder is that package's
 // served source, so it holds the files themselves and mounts nothing. cossack-recipe.json
 // lists them in two groups. `served` is tracked here. `shell` (the sign-in pages, the
-// dashboard and its kit) comes from packages/scaffold/template and is written by this script,
+// dashboard and its kit) comes from packages/dashboard/app/src (its tracked home) and is written by this script,
 // like every project file of the recipe, so each file has one source. The package ships both
 // groups: `pnpm pack` runs this script first (prepack).
 // Local state is kept: `.env` is created once, `storage/` and plugins other than

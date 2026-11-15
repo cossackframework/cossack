@@ -9,6 +9,7 @@ const fs = createRequire(import.meta.url)('node:fs') as typeof import('node:fs')
 it.each([
   ['framework', path.resolve(import.meta.dirname, '../src/pages')],
   ['scaffold', path.resolve(import.meta.dirname, '../../scaffold/template/src/pages')],
+  ['dashboard', path.resolve(import.meta.dirname, '../../dashboard/app/src/pages')],
 ])('keeps every %s route component selectable by its default export', async (_name, directory) => {
   const { pageKeys, layoutKeys } = scanPagesDir(directory, true);
   const loadingKeys = fs.readdirSync(directory, { recursive: true })

@@ -1,18 +1,18 @@
-// Write this folder from packages/scaffold/template.
+// Write this development application's project files from the scaffold.
 //
-// This application is the `node` + `dashboard` recipe (sign-in, dashboard, SQLite), with one
-// difference: a project mounts the sign-in pages and the dashboard from the package
-// (package.json#cossack.packages), and this folder is that package's served source, so it
-// holds the files themselves and mounts nothing. cossack-recipe.json lists the served paths;
-// the other files are this development application's own project files. The package ships
-// the served ones: `pnpm pack` runs this script first (prepack).
+// This folder holds two kinds of file. The served sources (the sign-in pages, the dashboard,
+// their modules; the scaffold's SERVED_DASHBOARD_PATHS) are this package's own: they are
+// tracked here, edited here and shipped. Around them, this script writes the project files of
+// the `node` + `dashboard` recipe (entry files, models, migrations), so the folder runs as an
+// application on SQLite. A project mounts the served sources from the package
+// (package.json#cossack.packages); this application holds them and mounts nothing.
 // Local state is kept: `.env` is created once and the database file is never touched.
 // Files written by an earlier run that the recipe no longer renders are removed
 // (`.cossack/sync.json` lists them).
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { renderRecipe, resolveRecipe } from '@cossackframework/scaffold';
+import { isServedDashboardPath, renderRecipe, resolveRecipe } from '@cossackframework/scaffold';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const statePath = path.join(root, '.cossack/sync.json');
@@ -21,14 +21,14 @@ const WORKSPACE_PACKAGES = /^(?:@cossackframework\/(?!solar-icons)[^/]+|cossack)
 const SKIPPED = new Set(['package.json', 'pnpm-workspace.yaml', '.gitignore', '.gitattributes', 'README.md', 'AGENTS.md']);
 
 const recipe = resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['dashboard'] });
-// This folder is where the package serves the shell from, so the render keeps it.
-const rendered = await renderRecipe(recipe, { projectName: 'Cossack', servedFiles: true });
+// The served sources are here already, tracked: the render leaves them out, as for a project.
+const rendered = await renderRecipe(recipe, { projectName: 'Cossack' });
 
 const previous = JSON.parse(await fs.readFile(statePath, 'utf8').catch(() => '{"files":[]}'));
 const written = [];
 let changed = 0;
 for (const [rel, entry] of rendered) {
-  if (SKIPPED.has(rel)) continue;
+  if (SKIPPED.has(rel) || isServedDashboardPath(rel)) continue;
   const target = path.join(root, rel);
   if (rel === '.env') {
     // Created once, then owned by the developer.
@@ -46,7 +46,8 @@ for (const [rel, entry] of rendered) {
 
 let removed = 0;
 for (const rel of previous.files ?? []) {
-  if (written.includes(rel)) continue;
+  // A served source is never this script's to remove.
+  if (written.includes(rel) || isServedDashboardPath(rel)) continue;
   await fs.rm(path.join(root, rel), { force: true });
   removed++;
 }

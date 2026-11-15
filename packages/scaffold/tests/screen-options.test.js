@@ -4,7 +4,7 @@ import { transformSync } from 'esbuild';
 
 // The Screen options helpers of the template's src/dashboard/page.ts, without the module's imports.
 async function helpers() {
-  const source = await fs.readFile(new URL('../template/src/dashboard/page.ts', import.meta.url), 'utf8');
+  const source = await fs.readFile(new URL('../../dashboard/app/src/dashboard/page.ts', import.meta.url), 'utf8');
   const { code } = transformSync(source.slice(source.indexOf('/** What a screen\'s options keep')), { loader: 'ts', format: 'cjs', target: 'es2022' });
   const module = { exports: {} };
   new Function('module', 'exports', code)(module, module.exports);

@@ -13,7 +13,8 @@ decisions below, which describe the first build.
 - **Two kinds of file.** Served: everything under the package's `app/src` that a CMS
   project runs. That is the CMS's own sources (`cossack-recipe.json`: `served`,
   tracked in the package) and the sign-in pages, the dashboard, its kit and
-  `config/auth.ts` (`shell`, written by `pnpm sync` from the scaffold template and
+  `config/auth.ts` (`shell`, written by `pnpm sync` from the shell's tracked home,
+  `packages/dashboard/app/src` since 2026-11-16, and
   shipped: `app/.npmignore`, `prepack`). Project: `src/cms.config.ts`,
   `src/bootstrap/middlewares.ts`, the entry files, `src/config/{app,cache,cors}.ts`,
   plugins and content. gif84's `src/` went from 74 files to 24, 10 of them its plugins.
