@@ -834,6 +834,8 @@ To resolve a conflict, edit the file by hand, or run `cossack upgrade --conflict
 
 While an owned file still contains marker lines, `cossack upgrade` stops with `COSSACK_UPGRADE_UNRESOLVED_CONFLICT`. The command exits with 0 when it lists conflicts, so a pipeline can open a pull request with the plan.
 
+After the install, `upgrade` also merges the package's new text into each file copied with `cossack eject`, and renders each plugin that came from an npm package again from its installed version. A plugin rendered from a folder or a tarball is skipped: run `cossack plugins upgrade <name> --source <new source>` for it. The JSON output lists both under `applied.ejected` and `applied.plugins`.
+
 Use `cossack upgrade --dry-run --json` to inspect the complete current plan.
 It includes dependency updates, additions and removals, selected file writes and
 deletions, merges (with the marked text of a conflicting merge), preserved edits,
@@ -866,6 +868,35 @@ applied, and a retry command. It does not report a successful upgrade. Raw packa
 manager output stays outside the machine-readable protocol.
 
 ---
+
+### `cossack eject <package> <path>`
+
+Copy a file that a mounted package serves into the project, where it overrides the package's file (see [Routes from a package](routing.md#routes-from-a-package)). Use it when a plugin, the project's configuration or a child theme cannot make the change.
+
+```bash
+cossack eject cms /search                              # by route
+cossack eject cms "src/pages/(site)/search/index.ts"   # by application path
+cossack eject cms plugins/default-theme                # a served plugin, as a whole
+cossack eject --diff "src/pages/(site)/search/index.ts"
+cossack eject --restore "src/pages/(site)/search/index.ts"
+```
+
+`<package>` is the package's name or the short name it declares (`cms` for `@cossackframework/cms`).
+
+| Option | Description |
+| --- | --- |
+| `--force` | Replace a file that already exists at the path. With `--restore`, delete a copy that you edited. |
+| `--dry-run` | Show what would be copied or deleted. |
+| `--diff` | Show what the package changed since the copy was made, and what the project changed in the copy. |
+| `--restore` | Delete the copy and its record. The package's file is served again. |
+
+Rules:
+
+- Only pages, layouts, loading states, configuration files and whole plugins can be ejected. A shared module such as `cms/site.ts` cannot: the package's own code imports it by relative path and would never use a copy. The command stops with `COSSACK_EJECT_NOT_OVERRIDABLE`.
+- In the copy, an import that stays in the package is rewritten to the package's name (`'../../../cms/site'` becomes `'@cossackframework/cms/app/cms/site'`). The copy and the package then share one instance of each module.
+- The copy is recorded in `.cossack/scaffold.json` under `ejected`, with the package text it was made from.
+- `cossack upgrade` merges the package's later changes into every ejected copy, after it installs the new version. A copy you did not edit takes the package's new text. A copy whose merge conflicts is kept and listed, or gets conflict markers with `--conflicts=markers`.
+- If you update the package with `pnpm up` alone, nothing is merged. The dev server and the build then name each override that fell behind: `src/pages/(site)/search/index.ts overrides @cossackframework/cms 0.10.0; the package changed it since 0.9.0: run cossack upgrade`.
 
 ## Exit codes
 

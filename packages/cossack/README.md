@@ -72,7 +72,8 @@ Run `cossack --help` to list all commands, or `cossack <command> --help` for com
 | `traces` | Read recorded development snapshots and timelines. |
 | `test-results` | Read recorded test evidence and source freshness. |
 | `cms <command>` | Manage a running CMS site through its management API: `login`, `whoami`, `entries`, `notes`, `users`, `roles`, `settings`, `terms`, `media`, `sites` and `mcp` (MCP client setup). `--site <id>` acts on one site of a network. |
-| `upgrade [dir]` | Upgrade Cossack deps and report template drift. |
+| `upgrade [dir]` | Update a project in one command: Cossack dependencies and the files the scaffold wrote, with your edits merged. |
+| `eject <package> <path>` | Copy a page, configuration file or plugin that a mounted package serves into the project, where it overrides the package's. `upgrade` merges later changes into the copy. |
 | `info` | Print system/environment info for bug reports. |
 | `version` (`v`) | Print the CLI version. |
 

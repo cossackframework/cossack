@@ -13,7 +13,9 @@ import {
   readBase,
   resolveRecipe,
 } from '@cossackframework/scaffold';
+import { readPluginState, upgradePlugin } from '@cossackframework/scaffold/plugins';
 import { loadUpgradeScaffold, resolveRegistryVersion } from '../upgrade-scaffold.js';
+import { mergeEjected } from '../eject.js';
 
 import {
   findProjectRoot,
@@ -150,13 +152,16 @@ async function upgradeCommandInner(args, ctx) {
       JSON.parse(report.rendered.get('package.json').content.toString()), previousDependencies) : null;
     const resolved = merged ?? await resolveVersions(collectCossackDeps(projectPkg), tag);
     const unresolved = resolved.updates.filter(update => !update.to);
-    const unresolvedConflicts = report.unresolved.filter(relative => !forceFiles.includes(relative));
+    const markers = flagString(ctx.flags.conflicts) === 'markers';
+    // Ejected copies are merged after the install; this is the merge against the package installed now.
+    const ejectedPreview = await mergeEjected(root, { markers, dryRun: true });
+    const unresolvedConflicts = [...report.unresolved.filter(relative => !forceFiles.includes(relative)),
+      ...ejectedPreview.filter(entry => entry.status === 'unresolved').map(entry => entry.path)];
     if (unresolvedConflicts.length) return {
       exitCode: 1, data: ctx.out.data({ status: 'unresolved-conflicts', files: unresolvedConflicts }),
       diagnostics: unresolvedConflicts.map(relative => ({ code: 'COSSACK_UPGRADE_UNRESOLVED_CONFLICT', severity: 'error', path: relative,
         message: `${relative} still has conflict markers from an earlier upgrade. Resolve them and remove the marker lines, then run upgrade again.` })),
     };
-    const markers = flagString(ctx.flags.conflicts) === 'markers';
     // What each selected file receives: the template's text, or a merge of it with the project's edits.
     const contents = new Map();
     const selected = new Set(report.canUpdate);
@@ -195,6 +200,7 @@ async function upgradeCommandInner(args, ctx) {
       ...([...report.modified, ...report.noBase].some(kept)
         ? ['Review preserved files; use --force-file <path> for each intentional overwrite.'] : []),
       ...(dependencies.conflicts.length ? ['Review preserved dependency edits in package.json before changing their versions.'] : []),
+      ...ejectedPreview.filter(entry => entry.status === 'conflict').map(entry => `Resolve ${entry.path}: cossack eject --diff ${entry.path} shows both sides.`),
     ];
     const plan = {
       root, tag, templateVersion: target.version, adapter: report.adapter ?? null,
@@ -218,6 +224,8 @@ async function upgradeCommandInner(args, ctx) {
         available: report.canUpdate,
         availableDeletions: report.canDelete,
       },
+      // Copies made by cossack eject: `status` is what merging the installed package's version does to each.
+      ejected: ejectedPreview.map(({ text: _text, ...entry }) => entry),
       manifest: { changed: manifestChanges, path: '.cossack/scaffold.json' },
       install: { packageManager, required: dependencyChanges }, nextActions,
     };
@@ -256,7 +264,7 @@ async function upgradeCommandInner(args, ctx) {
       };
     }
 
-    const applied = { dependencies: false, pnpmBuildSettings: false, files: [], deleted: [], manifest: false, installed: false };
+    const applied = { dependencies: false, pnpmBuildSettings: false, files: [], deleted: [], manifest: false, installed: false, ejected: [], plugins: [] };
     try {
       if (dependencyChanges) {
         const next = structuredClone(projectPkg);
@@ -298,6 +306,25 @@ async function upgradeCommandInner(args, ctx) {
         ctx.out.line(`Reinstalling with ${packageManager}...`);
         await runInstall(packageManager, root);
         applied.installed = true;
+      }
+      // With the target installed: merge the package's new text into each ejected copy, and
+      // render each plugin that came from an npm package again from its installed version.
+      applied.ejected = (await mergeEjected(root, { markers })).map(({ text: _text, ...entry }) => entry);
+      for (const entry of applied.ejected) {
+        if (['updated', 'merged', 'markers'].includes(entry.status)) ctx.out.file('overwritten', path.join(root, entry.path));
+        if (entry.status === 'conflict') ctx.out.warn(`${entry.path} conflicts with ${entry.package} ${entry.to}: kept as it is. Run cossack eject --diff ${entry.path}, then edit it or rerun with --conflicts=markers.`);
+        if (entry.status === 'removed-upstream') ctx.out.warn(`${entry.package} no longer serves ${entry.path}. The copy stays; remove it with cossack eject --restore ${entry.path} --force when it is not needed.`);
+      }
+      const plugins = await readPluginState(root).catch(() => ({ plugins: {} }));
+      for (const [name, plugin] of Object.entries(plugins.plugins)) {
+        if (plugin.source?.type !== 'npm') { applied.plugins.push({ name, status: 'skipped', reason: 'It was rendered from a local source: run cossack plugins upgrade with the new source.' }); continue; }
+        try {
+          const result = await upgradePlugin(root, name, { install: false, allowUnrestricted: plugin.unrestricted === true });
+          applied.plugins.push({ name, status: result.status, from: result.from, version: result.version });
+        } catch (error) {
+          applied.plugins.push({ name, status: 'failed', code: error.code ?? null, message: error.message, ...(error.conflicts ? { conflicts: error.conflicts } : {}) });
+          ctx.out.warn(`Plugin ${name} was not upgraded: ${error.message}`);
+        }
       }
       return ctx.out.data({ status: 'completed', plan, applied });
     } catch (error) {

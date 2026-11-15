@@ -52,6 +52,7 @@ const LOADERS = {
   // engine / maintenance
   ssg: [() => import('./commands/ssg.js'), 'ssgCommand', 'ssgHelp'],
   upgrade: [() => import('./commands/upgrade.js'), 'upgradeCommand', 'upgradeHelp'],
+  eject: [() => import('./commands/eject.js'), 'ejectCommand', 'ejectHelp'],
   image: [() => import('./commands/image.js'), 'imageCommand', 'imageHelp'],
 };
 
@@ -234,7 +235,8 @@ ${wrapList(FEATURES, 31)}
   studio                       Inspect the configured database in a local browser.
   routes                       List all routes in the project.
   config                       List configuration factory type origins; --generate emits types.
-  upgrade [dir]                Upgrade Cossack deps + report template drift.
+  upgrade [dir]                Update Cossack deps and scaffold files; merge your edits.
+  eject <package> <path>       Copy a served page, config or plugin into the project.
   ssg                          Pre-render pages marked ssg:true to static HTML.
   image <subcommand>           Image tooling. Subcommands: optimize.
   docs                         Read offline installed-version API export and command catalogs.

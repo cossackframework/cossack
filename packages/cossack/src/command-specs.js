@@ -213,6 +213,10 @@ export const commandSpecs = {
     'force-file': str('Owned file to replace; repeat for multiple files.', { repeated: true }),
     conflicts: choices('How to write a file whose merge conflicts (default: keep the file as it is).', ['markers']),
   } }),
+  eject: new CommandSpec({ name: 'eject', globals: mutations, positionals: ['package', 'path'], minPositionals: 1, flags: {
+    restore: bool('Delete an ejected copy and its record; the package\'s file is served again.'),
+    diff: bool('Show what the package and the project each changed since the copy was made.'),
+  } }),
   cms: new CommandSpec({ name: 'cms', globals: readonly, positionals: ['command', 'subcommand', 'arg', 'arg', 'arg', 'arg', 'arg', 'arg'], minPositionals: 1,
     flags: cmsFlagDefinitions(), check: cmsDiagnostics }),
   image: new CommandSpec({ name: 'image', globals: ['dry-run', 'json', 'help'],
