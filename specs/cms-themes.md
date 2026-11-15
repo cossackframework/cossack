@@ -89,6 +89,17 @@ Extended to widget areas, with the theme's default blocks, and to synced pattern
   stale page gets a conflict notice and reloads. Every server call checks again that the
   user may update the entry. Edit mode renders the draft like a preview, so previews,
   revisions and scheduling apply unchanged.
+- **One context object per template** (2026-11-14). Templates, block renderers and plugin
+  heads take one argument and destructure it: `({ entry, helpers }) => ...`. Every context
+  has `site` and `helpers`; each kind adds its key (`content`, `entry`, `view`, `block`,
+  `plugin`). Positional arguments made a template name values it ignored (`_site`), put
+  `helpers` in different places, and gave page templates no `site`. A new value is a new
+  key. The layout and head get the full `SiteView`; a page's templates get `SiteBasics`
+  (no `blog`, `areas` or `template`), since page state does not carry the widget areas.
+  `helpers.breadcrumbs()` and `helpers.logo()` read the site themselves. Loaders take one
+  object too, with their template's key (`site`, `entry` or `view`) beside `cms`,
+  `principal`, `signal`, `options`, `locale` and `template`. A resolver that
+  injects by parameter name was rejected: minifiers rename parameters and types are erased.
 - **Out of scope.** Options and menus stay in Customize. Loader data is read-only on the
   page. Blocks a theme renders outside the helpers are not editable in place.
 

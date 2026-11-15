@@ -46,7 +46,10 @@ a theme cannot restyle and is an injection surface in a multi-user dashboard.
 - **Rendering is one wrapper.** A styled block renders inside `div.cms-block` with classes per
   property (`cms-bg-brand`, `cms-text-light`, `cms-p-large`, `cms-m-none`, `cms-size-large`,
   `cms-align-center`) and inline custom properties (`background: var(--cms-color-brand)`),
-  plus its `id` and class names. An unstyled block renders as before. The resolved presets
+  plus its `id` and class names. An unstyled block renders as before. A wrapper you can see
+  (padding, a background, a gradient, an image, a video or an overlay) is also `cms-box`: its
+  first and last blocks drop their outer margins. A wrapper that only names, colors or sizes a
+  block leaves the block's own margins as they would be unwrapped. The resolved presets
   render as custom properties (`--cms-color-<slug>`, `--cms-size-<slug>`,
   `--cms-space-<slug>`) on the content root, and `helpers.presets` lets a theme put them
   elsewhere. A column keeps its grid placement through the wrapper. Stacking and spans move to

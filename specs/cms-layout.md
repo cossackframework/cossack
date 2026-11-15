@@ -10,7 +10,7 @@ second representation the themes spec forbids.
 - **Blocks nest.** `Block` gains an optional `children: Block[]`. A type that holds
   children declares `children: { allowed?: string[]; max?: number }`; a type without it
   rejects children. Limits stay global: 200 blocks per field counted across the tree,
-  depth 4, ids distinct within the whole tree. Validation, media collection, the revision
+  depth 8, ids distinct within the whole tree. Validation, media collection, the revision
   diff, patterns and the pattern renderer walk the tree. A rich-text body keeps embedding
   one block node, and that node may be a container, so bodies change nothing.
 - **Three core containers.** `core/group` (a vertical stack: `align` of `left`, `center`,
@@ -55,7 +55,7 @@ second representation the themes spec forbids.
   `.cms-measure` for its own parts (titles, lists, forms). A full-width group renders its
   children as items too, so a band holds content-width text and a wide child stays wide; a
   full-width row lays its row within the measure through `padding-inline`. A block with a
-  padding preset (`cms-padded`) zeroes the gutter for its content, so gutters never double.
+  padding preset (`cms-padded`, padding from `--cms-pad`) zeroes the gutter for its content, so gutters never double. A padded full-width group pads top and bottom alone and keeps the gutter: a band's padding is its height.
   The Width field (`align`) defaults to `content`; `core/columns`, `core/grid`, `core/image`,
   `core/gallery`, `core/carousel`, `core/video` and `core/embed` take it too. A group also
   takes `height` (`short`, `medium`, `tall`, `screen`) and `valign`, for heroes. Rejected: the
