@@ -154,13 +154,15 @@ describe('the Worker Loader binding', () => {
 
 describe('the registry with isolation', () => {
   it('leaves isolated server entries out of the application and carries where each runs', () => {
-    const plugins = [{ name: 'desk', version: '1.0.0', manifest: 'src/plugins/desk/plugin.json' }, { name: 'shop', version: '2.0.0', manifest: 'src/plugins/shop/plugin.json' }];
-    const source = pluginRegistryModule(plugins, true, { desk: { mode: 'isolated', code: 'export default 1;', hash: 'abc', bytes: 17 } as never, shop: { mode: 'app', reason: 'It has ui.ts, which runs in the application.' } as never });
-    expect(source).toContain(`import.meta.glob(["/src/plugins/*/server.ts","!/src/plugins/desk/server.ts"], { eager: true })`);
+    const root = project({ 'src/plugins/desk/plugin.json': manifest('desk'), 'src/plugins/desk/server.ts': server, 'src/plugins/shop/plugin.json': manifest('shop', { version: '2.0.0' }), 'src/plugins/shop/server.ts': server });
+    const plugins = readRenderedPlugins(root);
+    const source = pluginRegistryModule(root, plugins, true, { desk: { mode: 'isolated', code: 'export default 1;', hash: 'abc', bytes: 17 } as never, shop: { mode: 'app', reason: 'It has ui.ts, which runs in the application.' } as never });
+    expect(source).toContain('from "/src/plugins/shop/server.ts";');
+    expect(source).not.toContain('/src/plugins/desk/server.ts');
     expect(source).toContain('"code":"export default 1;"');
     expect(source).toContain('isolation: freeze(isolation[name])');
-    expect(pluginRegistryModule(plugins, true)).toContain("import.meta.glob('/src/plugins/*/server.ts', { eager: true })");
-    expect(pluginRegistryModule(plugins, false)).not.toContain('isolation');
+    expect(pluginRegistryModule(root, plugins, true)).toContain('from "/src/plugins/desk/server.ts";');
+    expect(pluginRegistryModule(root, plugins, false)).not.toContain('isolation');
   });
 
   it('is built by the pages plugin for server environments, with a size report on builds', async () => {
@@ -174,7 +176,7 @@ describe('the registry with isolation', () => {
     expect(typeof client).toBe('string');
     const ssr = await (plugin.load as Function).call(context('ssr'), '\0virtual:cossack-plugins');
     expect(ssr).toContain('"mode":"isolated"');
-    expect(ssr).toContain('!/src/plugins/desk/server.ts');
+    expect(ssr).not.toContain('/src/plugins/desk/server.ts');
     expect(watched).toContain(join(root, 'src/plugins/desk/lib/label.ts'));
     expect(logged).toEqual([expect.stringContaining('Isolated plugin desk:')]);
   });

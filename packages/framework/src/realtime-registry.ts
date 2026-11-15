@@ -5,7 +5,8 @@
  * A realtime component is a class decorated with `@Component` from
  * `@cossackframework/core` whose literal options set
  * `transport: 'durable-object'`. Each one gets a stable id, `<file>#<export>`,
- * where `<file>` is its source path from the project root. The server builds a
+ * where `<file>` is its source path from the project root, or `<package>/<path>`
+ * for a file that a mounted package serves. The server builds a
  * realtime component only from this registry: a WebSocket upgrade names an id,
  * never a module, and the id must be registered. The SSR/worker environment
  * imports the registry through `virtual:cossack-realtime-components`; the
@@ -13,7 +14,8 @@
  */
 import { parseSync } from 'vite';
 import { readdirSync, readFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { isAbsolute, join, relative } from 'node:path';
+import { importSpecifier, mountedPackages, servedFile } from './package-mounts.js';
 
 type AstNode = any; // Oxc nodes, narrowed by their type tags.
 
@@ -24,8 +26,15 @@ export const REALTIME_COMPONENT_ID_PROPERTY = '__cossackRealtimeId';
 export interface RealtimeComponentFact {
     /** Stable registry id: `<file>#<export name>`. */
     id: string;
-    /** Source path from the project root, for example `/src/components/CartBadge.ts`. */
+    /**
+     * Source path from the project root, for example `/src/components/CartBadge.ts`, or
+     * `<package>/<path>` for a mounted package's file.
+     */
     file: string;
+    /** Import specifier of the module, when it is not `file`. */
+    source?: string;
+    /** Absolute path of the module, when the scan read it from disk. */
+    path?: string;
     /** Name the module exports the class under (`default` for a default export). */
     exportName: string;
     /** Local class binding. */
@@ -160,9 +169,21 @@ export function findRealtimeComponents(code: string, file: string): RealtimeRegi
 }
 
 const SKIPPED_DIRECTORIES = new Set(['node_modules', 'dist', '.cossack']);
+
+/**
+ * The label a module's realtime components are registered under: `/src/...` for the
+ * application's file, `<package>/<path>` for a mounted package's, so an id never holds an
+ * install path. Null for a file that is neither.
+ */
+export function realtimeFileLabel(projectRoot: string, path: string): string | null {
+    const served = servedFile(projectRoot, path);
+    if (served) return `${served.package.name}/${served.path}`;
+    const label = relative(join(projectRoot, 'src'), path).replaceAll('\\', '/');
+    return label.startsWith('..') || isAbsolute(label) ? null : '/src/' + label;
+}
 const isSource = (name: string) => name.endsWith('.ts') && !name.endsWith('.d.ts') && !/\.(test|spec)\.ts$/.test(name);
 
-/** Scan every TypeScript source under `<projectRoot>/src`. */
+/** Scan every TypeScript source under `<projectRoot>/src` and under each mounted package's served root. */
 export function scanRealtimeComponents(projectRoot: string): RealtimeRegistryScan {
     const result: RealtimeRegistryScan = { components: [], diagnostics: [] };
     const source = join(projectRoot, 'src');
@@ -176,13 +197,15 @@ export function scanRealtimeComponents(projectRoot: string): RealtimeRegistrySca
             if (!entry.isFile() || !isSource(entry.name)) continue;
             let code: string;
             try { code = readFileSync(path, 'utf8'); } catch { continue; }
-            const file = '/' + relative(projectRoot, path).replaceAll('\\', '/');
+            const file = realtimeFileLabel(projectRoot, path) ?? '/' + relative(projectRoot, path).replaceAll('\\', '/');
             const found = findRealtimeComponents(code, file);
-            result.components.push(...found.components);
+            // The module is imported from where it is, which the label does not say for a package.
+            result.components.push(...found.components.map(component => ({ ...component, source: importSpecifier(projectRoot, path), path })));
             result.diagnostics.push(...found.diagnostics);
         }
     };
     visit(source);
+    for (const mounted of mountedPackages(projectRoot)) visit(mounted.root);
     return result;
 }
 
@@ -194,7 +217,7 @@ export function scanRealtimeComponents(projectRoot: string): RealtimeRegistrySca
 export function realtimeRegistryModule(components: readonly RealtimeComponentFact[], ssr: boolean): string {
     if (!ssr || !components.length) return 'export default { components: {} };\n';
     const files = [...new Set(components.map(component => component.file))];
-    const imports = files.map((file, index) => `import * as realtime${index} from ${JSON.stringify(file)};`);
+    const imports = files.map((file, index) => `import * as realtime${index} from ${JSON.stringify(components.find(component => component.file === file)!.source ?? file)};`);
     const entries = components.map(component =>
         `  ${JSON.stringify(component.id)}: realtime${files.indexOf(component.file)}[${JSON.stringify(component.exportName)}],`);
     return `${imports.join('\n')}\nexport default { components: {\n${entries.join('\n')}\n} };\n`;

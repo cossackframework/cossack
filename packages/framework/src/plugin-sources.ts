@@ -9,6 +9,8 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { scanPagesDir } from './route-codegen.js';
+import { filePathToHttpRoute } from './route-ids.js';
+import { moduleMap, mountedPackages, projectPath, type MapEntry } from './package-mounts.js';
 
 export const PLUGINS_DIRECTORY = 'src/plugins';
 /** Plugin directory names: lowercase letters, digits and single hyphens. */
@@ -39,20 +41,62 @@ export class PluginSourceError extends Error {
   }
 }
 
-/** Rendered plugin names, sorted. Invalid directory names are an error. */
-export function listPlugins(projectRoot: string): string[] {
+export interface PluginLocation {
+  name: string;
+  /** Absolute directory of the plugin's source. */
+  directory: string;
+  /** The mounted package that serves it; absent for a plugin rendered into the application. */
+  package?: string;
+}
+
+/**
+ * Every plugin, sorted by name: those rendered under `src/plugins/` and those a mounted
+ * package serves. An application plugin shadows a package's plugin of the same name as a whole.
+ * Invalid directory names are an error.
+ */
+export function pluginLocations(projectRoot: string): PluginLocation[] {
+  const locations = new Map<string, PluginLocation>();
   const directory = resolve(projectRoot, PLUGINS_DIRECTORY);
-  if (!existsSync(directory)) return [];
-  const names: string[] = [];
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+  if (existsSync(directory)) for (const entry of readdirSync(directory, { withFileTypes: true })) {
     if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
     if (!PLUGIN_NAME.test(entry.name)) {
       throw new PluginSourceError('COSSACK_PLUGIN_NAME_INVALID', `${PLUGINS_DIRECTORY}/${entry.name}`,
         `${PLUGINS_DIRECTORY}/${entry.name} is not a valid plugin name. Use lowercase letters, digits and hyphens.`);
     }
-    names.push(entry.name);
+    locations.set(entry.name, { name: entry.name, directory: join(directory, entry.name) });
   }
-  return names.sort();
+  for (const mounted of mountedPackages(projectRoot)) for (const path of mounted.plugins) {
+    const name = path.split('/')[1]!;
+    const existing = locations.get(name);
+    if (existing?.package) {
+      throw new PluginSourceError('COSSACK_PLUGIN_ROUTE_CONFLICT', path, `${existing.package} and ${mounted.name} both serve the plugin ${name}. Mount one of them.`);
+    }
+    if (!existing && existsSync(join(mounted.root, path))) locations.set(name, { name, directory: join(mounted.root, path.slice(0, -1)), package: mounted.name });
+  }
+  return [...locations.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
+
+/** Plugin names, sorted. */
+export function listPlugins(projectRoot: string): string[] {
+  return pluginLocations(projectRoot).map(location => location.name);
+}
+
+/** What an application file or plugin replaces in a mounted package. */
+export interface PackageOverride {
+  /** The application path that wins: a route key, or `src/plugins/<name>`. */
+  path: string;
+  package: string;
+  /** The package file or directory left out of the build. */
+  file: string;
+}
+
+/** Where a route key's module comes from. */
+export interface PageOrigin {
+  kind: 'app' | 'package' | 'plugin';
+  /** The package or plugin name. */
+  name?: string;
+  /** Absolute path of the module. */
+  file: string;
 }
 
 export interface PageSources {
@@ -60,10 +104,17 @@ export interface PageSources {
   layoutKeys: string[];
   markdownKeys: string[];
   loadingKeys: string[];
-  /** Route key (`/src/pages/...`) to the real source path (`/src/...`). */
+  /**
+   * Route key (`/src/pages/...`) to the module's path as the project sees it: `/src/...`
+   * inside the project, a path through `..` or `node_modules` for a mounted package.
+   */
   sources: Record<string, string>;
   /** Route key to the plugin that renders it, for plugin pages only. */
   plugins: Record<string, string>;
+  /** Route key to where its module comes from. */
+  origins: Record<string, PageOrigin>;
+  /** Package files that an application file replaces. */
+  overrides: PackageOverride[];
 }
 
 /** Map a plugin page module ID to its route key. Other paths return unchanged. */
@@ -71,35 +122,71 @@ export function pluginPageKey(file: string): string {
   return file.replace(/^\/src\/plugins\/[^/]+\/pages\//, '/src/pages/');
 }
 
-/** Application and plugin pages as one tree, keyed like `src/pages`. */
+/**
+ * Application, package and plugin pages as one tree, keyed like `src/pages`.
+ * An application file overrides a package file of the same key or the same URL.
+ * Any other pair of sources for one key is a conflict.
+ */
 export function scanPageSources(projectRoot: string, includeMarkdown = false): PageSources {
-  const result: PageSources = { pageKeys: [], layoutKeys: [], markdownKeys: [], loadingKeys: [], sources: {}, plugins: {} };
-  const roots: { plugin?: string; directory: string; prefix: string }[] = [
-    { directory: resolve(projectRoot, 'src/pages'), prefix: '/src/pages/' },
-    ...listPlugins(projectRoot).map(plugin => ({ plugin, directory: resolve(projectRoot, PLUGINS_DIRECTORY, plugin, 'pages'), prefix: `/${PLUGINS_DIRECTORY}/${plugin}/pages/` })),
-  ];
+  const result: PageSources = { pageKeys: [], layoutKeys: [], markdownKeys: [], loadingKeys: [], sources: {}, plugins: {}, origins: {}, overrides: [] };
+  interface Root { kind: PageOrigin['kind']; name?: string; plugin?: string; directory: string; keyPrefix: string; file?: string }
+  const roots: Root[] = [{ kind: 'app', directory: resolve(projectRoot, 'src/pages'), keyPrefix: '/src/pages/' }];
+  for (const mounted of mountedPackages(projectRoot)) for (const path of mounted.pages) {
+    if (path.endsWith('/')) roots.push({ kind: 'package', name: mounted.name, directory: join(mounted.root, path), keyPrefix: '/src/' + path });
+    else roots.push({ kind: 'package', name: mounted.name, directory: join(mounted.root, path, '..'), keyPrefix: '/src/' + path.slice(0, path.lastIndexOf('/') + 1), file: path.slice(path.lastIndexOf('/') + 1) });
+  }
+  const locations = pluginLocations(projectRoot);
+  for (const location of locations) roots.push({ kind: 'plugin', name: location.name, plugin: location.name, directory: join(location.directory, 'pages'), keyPrefix: '/src/pages/' });
+  // A package's plugin that an application plugin shadows is reported once, as a whole.
+  for (const mounted of mountedPackages(projectRoot)) for (const path of mounted.plugins) {
+    const name = path.split('/')[1]!;
+    if (locations.find(location => location.name === name)?.package !== mounted.name && existsSync(join(mounted.root, path))) {
+      result.overrides.push({ path: `${PLUGINS_DIRECTORY}/${name}`, package: mounted.name, file: join(mounted.root, path.slice(0, -1)) });
+    }
+  }
   for (const root of roots) {
-    const scanned = scanPagesDir(root.directory, includeMarkdown);
-    const loadings = scanLoadingFiles(root.directory);
+    const only = (keys: string[]) => root.file === undefined ? keys : keys.filter(key => key === root.keyPrefix + root.file);
+    const scanned = root.file === undefined || existsSync(join(root.directory, root.file))
+      ? scanPagesDir(root.directory, includeMarkdown, root.keyPrefix, root.file !== undefined) : { pageKeys: [], layoutKeys: [], markdownKeys: [] };
+    const loadings = root.file === undefined || root.file === 'loading.ts' ? scanLoadingFiles(root.directory, root.keyPrefix, root.file !== undefined) : [];
     const add = (list: string[], key: string) => {
-      const source = root.prefix + key.slice('/src/pages/'.length);
-      const existing = result.sources[key];
-      if (existing !== undefined && existing !== source) {
-        throw new PluginSourceError('COSSACK_PLUGIN_ROUTE_CONFLICT', source.slice(1),
-          `${source.slice(1)} and ${existing.slice(1)} both define ${key.slice('/src/pages'.length)}. Move or remove one of them.`);
+      const file = join(root.directory, key.slice(root.keyPrefix.length));
+      const existing = result.origins[key];
+      if (existing !== undefined && existing.file !== file) {
+        if (existing.kind === 'app' && root.kind === 'package') {
+          result.overrides.push({ path: key.slice(1), package: root.name!, file });
+          return;
+        }
+        throw new PluginSourceError('COSSACK_PLUGIN_ROUTE_CONFLICT', projectPath(projectRoot, file).slice(1),
+          `${projectPath(projectRoot, file).slice(1)} and ${projectPath(projectRoot, existing.file).slice(1)} both define ${key.slice('/src/pages'.length)}. Move or remove one of them.`);
       }
       if (existing === undefined) list.push(key);
-      result.sources[key] = source;
+      result.sources[key] = projectPath(projectRoot, file);
+      result.origins[key] = { kind: root.kind, ...(root.name ? { name: root.name } : {}), file };
       if (root.plugin) result.plugins[key] = root.plugin;
     };
-    for (const key of scanned.pageKeys) add(result.pageKeys, key);
-    for (const key of scanned.layoutKeys) add(result.layoutKeys, key);
-    for (const key of loadings) add(result.loadingKeys, key);
+    for (const key of only(scanned.pageKeys)) add(result.pageKeys, key);
+    for (const key of only(scanned.layoutKeys)) add(result.layoutKeys, key);
+    for (const key of only(loadings)) add(result.loadingKeys, key);
     // With Markdown routes enabled these keys are also page keys, added above.
-    for (const key of scanned.markdownKeys) {
+    for (const key of only(scanned.markdownKeys)) {
+      if (result.origins[key] && result.origins[key]!.kind !== root.kind) continue;
       result.markdownKeys.push(key);
-      result.sources[key] ??= root.prefix + key.slice('/src/pages/'.length);
+      result.sources[key] ??= projectPath(projectRoot, join(root.directory, key.slice(root.keyPrefix.length)));
     }
+  }
+  // An application page also replaces a package page that answers the same URL under another key.
+  const applicationRoutes = new Map(result.pageKeys.filter(key => result.origins[key]!.kind === 'app').map(key => [filePathToHttpRoute(key), key]));
+  for (const key of [...result.pageKeys]) {
+    const origin = result.origins[key]!;
+    const winner = origin.kind === 'package' ? applicationRoutes.get(filePathToHttpRoute(key)) : undefined;
+    if (winner === undefined) continue;
+    result.overrides.push({ path: winner.slice(1), package: origin.name!, file: origin.file });
+    result.pageKeys.splice(result.pageKeys.indexOf(key), 1);
+    const markdown = result.markdownKeys.indexOf(key);
+    if (markdown >= 0) result.markdownKeys.splice(markdown, 1);
+    delete result.sources[key];
+    delete result.origins[key];
   }
   result.pageKeys.sort();
   result.layoutKeys.sort();
@@ -108,19 +195,28 @@ export function scanPageSources(projectRoot: string, includeMarkdown = false): P
   return result;
 }
 
+/** One line per override, for the dev server and the build to print. */
+export function overrideReport(projectRoot: string, overrides: readonly PackageOverride[]): string[] {
+  return overrides.map(override => `[cossack] ${override.path} overrides ${override.package}`).sort();
+}
+
 export interface RenderedPlugin {
   name: string;
   version: string;
-  /** Project-relative manifest path. */
+  /** Manifest path as the project sees it (through `..` or `node_modules` for a package's plugin). */
   manifest: string;
+  /** Absolute directory of the plugin's source. */
+  directory: string;
+  /** The mounted package that serves it. */
+  package?: string;
 }
 
 /** Read each rendered manifest as data and check its identity. Never imports plugin code. */
 export function readRenderedPlugins(projectRoot: string): RenderedPlugin[] {
-  return listPlugins(projectRoot).map(name => {
-    const manifest = `${PLUGINS_DIRECTORY}/${name}/${PLUGIN_MANIFEST_FILE}`;
+  return pluginLocations(projectRoot).map(({ name, directory, package: served }) => {
+    const manifest = projectPath(projectRoot, join(directory, PLUGIN_MANIFEST_FILE)).slice(1);
     let parsed: unknown;
-    try { parsed = JSON.parse(readFileSync(resolve(projectRoot, manifest), 'utf8')); }
+    try { parsed = JSON.parse(readFileSync(join(directory, PLUGIN_MANIFEST_FILE), 'utf8')); }
     catch (error) {
       throw new PluginSourceError('COSSACK_PLUGIN_MANIFEST_INVALID', manifest,
         `${manifest} is missing or is not JSON (${(error as Error).message}). Render plugins with cossack add plugin.`);
@@ -129,19 +225,45 @@ export function readRenderedPlugins(projectRoot: string): RenderedPlugin[] {
     if (value === null || typeof value !== 'object' || value.name !== name || typeof value.version !== 'string' || !value.version) {
       throw new PluginSourceError('COSSACK_PLUGIN_MANIFEST_INVALID', manifest, `${manifest} must name the plugin ${JSON.stringify(name)} and give its version.`);
     }
-    return { name, version: value.version, manifest };
+    return { name, version: value.version, manifest, directory, ...(served ? { package: served } : {}) };
   });
+}
+
+const ASSET_EXTENSION = /\.(?:png|jpe?g|webp|gif|avif|svg|css|woff2?|ttf|otf)$/;
+const moduleFile = (name: string) => name.endsWith('.ts') && !/\.(?:d|test|spec)\.ts$/.test(name);
+
+function filesOf(directory: string, test: (name: string) => boolean): string[] {
+  if (!existsSync(directory)) return [];
+  return readdirSync(directory, { withFileTypes: true }).filter(entry => !entry.isDirectory() && test(entry.name)).map(entry => entry.name).sort();
+}
+
+/**
+ * A plugin's files of one kind as map entries, keyed `/src/plugins/<name>/<path>` wherever
+ * the plugin's source is: `relative` is a file, or a directory (trailing slash) with a filter.
+ */
+export function pluginEntries(plugins: readonly PluginLocation[], relative: string, test: (name: string) => boolean = () => true): MapEntry[] {
+  const entries: MapEntry[] = [];
+  for (const plugin of plugins) {
+    const key = `/${PLUGINS_DIRECTORY}/${plugin.name}/`;
+    if (!relative.endsWith('/')) {
+      if (existsSync(join(plugin.directory, relative))) entries.push({ key: key + relative, file: join(plugin.directory, relative) });
+      continue;
+    }
+    for (const name of filesOf(join(plugin.directory, relative), test)) entries.push({ key: key + relative + name, file: join(plugin.directory, relative, name) });
+  }
+  return entries;
 }
 
 /**
  * Source of `virtual:cossack-plugins` for one environment. With `isolation`, server entries of
  * plugins that run isolated are left out of the application and carried as code instead.
  */
-export function pluginRegistryModule(plugins: readonly RenderedPlugin[], server: boolean,
+export function pluginRegistryModule(projectRoot: string, plugins: readonly RenderedPlugin[], server: boolean,
   isolation?: Readonly<Record<string, { readonly mode: 'isolated' | 'app' }>>): string {
-  const ui = `const uiModules = import.meta.glob('/${PLUGINS_DIRECTORY}/*/${PLUGIN_UI_ENTRY}', { eager: true });
-    const templateModules = import.meta.glob('/${PLUGINS_DIRECTORY}/*/${PLUGIN_TEMPLATES}', { eager: true });
-    const assetUrls = import.meta.glob('/${PLUGINS_DIRECTORY}/*/${PLUGIN_ASSETS}', { eager: true, query: '?url', import: 'default' });
+  // Explicit imports, keyed as if every plugin were under src/plugins: a package's plugin is outside the project.
+  const ui = `${moduleMap('uiModules', projectRoot, pluginEntries(plugins, PLUGIN_UI_ENTRY), { eager: true })}
+    ${moduleMap('templateModules', projectRoot, pluginEntries(plugins, 'templates/', moduleFile), { eager: true })}
+    ${moduleMap('assetUrls', projectRoot, pluginEntries(plugins, 'assets/', name => ASSET_EXTENSION.test(name)), { eager: true, query: '?url', importDefault: true })}
     function assetsOf(name) {
       const prefix = '/${PLUGINS_DIRECTORY}/' + name + '/';
       return Object.freeze(Object.fromEntries(Object.entries(assetUrls).filter(([file]) => file.startsWith(prefix)).map(([file, url]) => [file.slice(prefix.length), url])));
@@ -160,12 +282,10 @@ export function pluginRegistryModule(plugins: readonly RenderedPlugin[], server:
   }
   const isolated = Object.entries(isolation ?? {}).filter(([, entry]) => entry.mode === 'isolated').map(([name]) => name).sort();
   // Isolated plugins' server code never enters the application bundle.
-  const serverEntries = isolated.length
-    ? JSON.stringify([`/${PLUGINS_DIRECTORY}/*/${PLUGIN_SERVER_ENTRY}`, ...isolated.map(name => `!/${PLUGINS_DIRECTORY}/${name}/${PLUGIN_SERVER_ENTRY}`)])
-    : `'/${PLUGINS_DIRECTORY}/*/${PLUGIN_SERVER_ENTRY}'`;
+  const serverEntries = pluginEntries(plugins.filter(plugin => !isolated.includes(plugin.name)), PLUGIN_SERVER_ENTRY);
   return `
-    const manifests = import.meta.glob('/${PLUGINS_DIRECTORY}/*/${PLUGIN_MANIFEST_FILE}', { eager: true, import: 'default' });
-    const modules = import.meta.glob(${serverEntries}, { eager: true });
+    ${moduleMap('manifests', projectRoot, pluginEntries(plugins, PLUGIN_MANIFEST_FILE), { eager: true, importDefault: true })}
+    ${moduleMap('modules', projectRoot, serverEntries, { eager: true })}
     const isolation = ${JSON.stringify(isolation ?? {})};
     ${ui}
     function freeze(value) {
@@ -197,18 +317,19 @@ export function pluginRegistryModule(plugins: readonly RenderedPlugin[], server:
 
 /** Directories watched for route changes: `src/pages` and each plugin's `pages`. */
 export function pageDirectories(projectRoot: string): string[] {
-  return [resolve(projectRoot, 'src/pages'), ...listPlugins(projectRoot).map(plugin => resolve(projectRoot, PLUGINS_DIRECTORY, plugin, 'pages'))];
+  return [resolve(projectRoot, 'src/pages'), ...pluginLocations(projectRoot).map(plugin => join(plugin.directory, 'pages')),
+    ...mountedPackages(projectRoot).flatMap(mounted => mounted.pages.map(path => join(mounted.root, path.endsWith('/') ? path : join(path, '..'))))];
 }
 
-function scanLoadingFiles(pagesDir: string): string[] {
+function scanLoadingFiles(pagesDir: string, keyPrefix = '/src/pages/', shallow = false): string[] {
   const keys: string[] = [];
   if (!existsSync(pagesDir)) return keys;
   const walk = (dir: string, rel: string) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (entry.isDirectory()) {
-        if (['__tests__', '__fixtures__', 'fixtures'].includes(entry.name)) continue;
+        if (shallow || ['__tests__', '__fixtures__', 'fixtures'].includes(entry.name)) continue;
         walk(join(dir, entry.name), `${rel}${entry.name}/`);
-      } else if (entry.isFile() && entry.name === 'loading.ts') keys.push(`/src/pages/${rel}loading.ts`);
+      } else if (entry.isFile() && entry.name === 'loading.ts') keys.push(`${keyPrefix}${rel}loading.ts`);
     }
   };
   walk(pagesDir, '');

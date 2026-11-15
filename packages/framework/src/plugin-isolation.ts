@@ -12,7 +12,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { createRequire, isBuiltin } from 'node:module';
 import { dirname, relative, resolve, sep } from 'node:path';
 import type { Plugin as RolldownPlugin } from 'rolldown';
-import { PLUGIN_MANIFEST_FILE, PLUGIN_SERVER_ENTRY, PLUGINS_DIRECTORY, type RenderedPlugin } from './plugin-sources.js';
+import { PLUGIN_MANIFEST_FILE, PLUGIN_SERVER_ENTRY, type RenderedPlugin } from './plugin-sources.js';
 
 /** Files and directories that run in the application, so their plugin does too. */
 export const PLUGIN_IN_APP_PARTS = ['ui.ts', 'pages', 'components', 'middlewares.ts', 'config', 'templates'] as const;
@@ -55,7 +55,7 @@ export class PluginIsolationError extends Error {
 
 /** Why a plugin runs in the application whatever the runtime, or null when its shape allows isolation. */
 export function pluginInAppReason(projectRoot: string, plugin: RenderedPlugin): string | null {
-  const directory = resolve(projectRoot, PLUGINS_DIRECTORY, plugin.name);
+  const directory = plugin.directory;
   const parts = PLUGIN_IN_APP_PARTS.filter(part => existsSync(resolve(directory, part)));
   if (parts.length) return `It has ${parts.map(part => part.includes('.') ? part : `${part}/`).join(', ')}, which ${parts.length === 1 ? 'runs' : 'run'} in the application.`;
   const manifest = JSON.parse(readFileSync(resolve(projectRoot, plugin.manifest), 'utf8')) as { permissions?: { unrestricted?: unknown }; isolation?: unknown };
@@ -67,7 +67,7 @@ export function pluginInAppReason(projectRoot: string, plugin: RenderedPlugin): 
 /** Where a plugin's server code runs on `runtime`, and whether it has any, without bundling it. */
 export function pluginPlacement(projectRoot: string, plugin: RenderedPlugin, runtime: string):
   { readonly mode: 'isolated'; readonly server: boolean } | { readonly mode: 'app'; readonly reason: string; readonly server: boolean } {
-  const server = existsSync(resolve(projectRoot, PLUGINS_DIRECTORY, plugin.name, PLUGIN_SERVER_ENTRY));
+  const server = existsSync(resolve(plugin.directory, PLUGIN_SERVER_ENTRY));
   const reason = pluginInAppReason(projectRoot, plugin);
   if (reason) return { mode: 'app', reason, server };
   if (runtime !== 'cloudflare') return { mode: 'app', reason: `${runtimeLabel(runtime)} has no Worker Loader, so its server code runs in the application.`, server };
@@ -97,11 +97,12 @@ const ENTRY = '\0cossack-isolate-entry';
 /** One ES module: the plugin's server entry and its imports, wrapped by the runtime. */
 export async function bundleIsolatedPlugin(projectRoot: string, plugin: RenderedPlugin, options: PluginIsolationOptions):
   Promise<{ code: string; hash: string; bytes: number; watchFiles: string[] }> {
-  const server = resolve(projectRoot, PLUGINS_DIRECTORY, plugin.name, PLUGIN_SERVER_ENTRY);
-  const manifest = resolve(projectRoot, PLUGINS_DIRECTORY, plugin.name, PLUGIN_MANIFEST_FILE);
+  const server = resolve(plugin.directory, PLUGIN_SERVER_ENTRY);
+  const manifest = resolve(plugin.directory, PLUGIN_MANIFEST_FILE);
   const runtimeFile = createRequire(resolve(projectRoot, 'package.json')).resolve(options.runtime);
   const runtimeRoot = packageRoot(runtimeFile);
-  const pluginsRoot = resolve(projectRoot, PLUGINS_DIRECTORY);
+  // The directory that holds the plugin: src/plugins, or a mounted package's plugins directory.
+  const pluginsRoot = dirname(plugin.directory);
   const source = (file: string) => relative(projectRoot, file).split(sep).join('/');
   const guard: RolldownPlugin = {
     name: 'cossack-isolate',

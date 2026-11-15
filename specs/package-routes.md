@@ -94,8 +94,10 @@ Paths are under `packages/`.
   are explicit, not "everything under `root/pages`": the CMS's dev app renders the
   scaffold shell into the same folders (`packages/cms/app/scripts/sync.mjs`), and a
   workspace link must not mount those files. The application names the packages it
-  mounts: `cossackPages({ packages: ['@cossackframework/cms'] })` in `vite.config.ts`.
-  The list is explicit so installing a package never adds routes by itself.
+  mounts in its own `package.json`: `"cossack": { "packages": ["@cossackframework/cms"] }`.
+  The list is explicit so installing a package never adds routes by itself. It is in
+  `package.json`, not in `vite.config.ts`, because the CLI reads it too (`cossack routes`,
+  template checks, `cossack lang add`) and must not evaluate the Vite configuration.
 - **Package files take app keys.** A served file at `<root>/pages/<rel>` is keyed
   `/src/pages/<rel>`, like a plugin page. Route ids, layouts, boundaries and the
   client keep working on keys unchanged.
@@ -177,7 +179,7 @@ Paths are under `packages/`.
 1. Module preloads through the real path; a test with a plugin page (also fixes today's bug).
 2. `origins` in `PageSources`; explicit module maps for pages, layouts, loadings,
    handlers; app-over-package precedence and the override report; the watcher.
-3. The `cossack` field, `cossackPages({ packages })`, keys for served pages; plugins,
+3. The `cossack` field, `package.json#cossack.packages`, keys for served pages; plugins,
    config, middlewares and translations from packages; the `cossack.host` and
    `cossack.hostTemplate` checks.
 4. The security transform, stable `server$` ids, realtime ids, compile settings.

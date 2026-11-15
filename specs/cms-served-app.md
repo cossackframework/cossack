@@ -117,7 +117,7 @@ configuration, the per-runtime glue, and any file it chose to override.
   - `cossack-recipe.json` becomes `served` (today's `files` and `replaces`, minus glue and `resources.ts`), `facades` (the `replaces` modules that are not pages) and `rendered` (glue). `cms-recipe.js` stops copying served files.
   - The entry patches and the middleware registry import `@cossackframework/cms/app/cms/{index,maintenance,middleware}`.
   - `style.css` gets `@import "@cossackframework/cms/app/cms/blocks.css"` and `@source "../node_modules/@cossackframework/cms/app/src"`.
-  - `patchCmsViteConfig` adds `packages: ['@cossackframework/cms']` to `cossackPages`.
+  - The rendered `package.json` names the package: `"cossack": { "packages": ["@cossackframework/cms"] }`.
   - `withClientDependencies` no longer needs the CMS's imports: the framework adds them from the mount.
 - **The default theme is a served plugin.** It is mounted from the package, not copied. A project changes it with a child theme (`"theme": { "extends": "default-theme" }`, `docs/cms/themes.md` 350-358), which keeps receiving the parent's fixes. Alternatively, it ejects the theme whole, as an app plugin of the same name shadowing the package's (`specs/package-routes.md`). The docs recommend the child theme.
 - **Reserved slugs come from the routes.** At boot, `cms/index.ts` passes `reservedPaths` as the defaults, plus every static top-level segment in the page registry (app, package and plugin routes), plus `cms.config.ts`'s own. An entry slug cannot hide a page the project added.

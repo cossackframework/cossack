@@ -19,6 +19,10 @@ export const ROUTE_GLOB_EXCLUDES = [
 export function scanPagesDir(
   pagesDir: string,
   includeMarkdown = false,
+  /** Key of the directory itself. A mounted package's `pages/(site)/` is `/src/pages/(site)/`. */
+  keyPrefix = '/src/pages/',
+  /** Only the directory's own files. */
+  shallow = false,
 ): { pageKeys: string[]; layoutKeys: string[]; markdownKeys: string[] } {
   const pageKeys: string[] = [];
   const layoutKeys: string[] = [];
@@ -29,14 +33,14 @@ export function scanPagesDir(
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const fullPath = join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (TEST_DIRECTORIES.has(entry.name)) continue;
+        if (shallow || TEST_DIRECTORIES.has(entry.name)) continue;
         walk(fullPath);
       } else if (entry.isFile()) {
         if (/\.(?:test|spec)\.[^.]+$/.test(entry.name) || entry.name.endsWith('.d.ts')) {
           continue;
         }
         const rel = relative(pagesDir, fullPath).split(sep).join('/');
-        const key = `/src/pages/${rel}`;
+        const key = `${keyPrefix}${rel}`;
         if (entry.name === 'layout.ts') {
           layoutKeys.push(key);
         } else if (entry.name === 'loading.ts') {
@@ -70,7 +74,7 @@ export function discoverHttpHandlers(projectRoot: string, pageKeys: readonly str
   const handlers: string[] = [];
   for (const key of pageKeys) {
     if (!key.endsWith('.ts') || classifyRoute(filePathToHttpRoute(key)) !== 'page') continue;
-    const file = resolve(projectRoot, '.' + (sources[key] ?? key));
+    const file = resolve(projectRoot, (sources[key] ?? key).slice(1));
     const { size, mtimeMs } = statSync(file);
     const cached = handlerSyntax.get(file);
     const syntax = cached && cached.size === size && cached.mtimeMs === mtimeMs ? cached : { size, mtimeMs, ...handlerSource(readFileSync(file, 'utf8')) };
