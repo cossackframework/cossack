@@ -290,11 +290,11 @@ The package states what it serves in its own `package.json`. Paths are relative 
   "exports": { "./app/*": "./app/src/*.ts" },
   "cossack": {
     "root": "app/src",
-    "pages": ["pages/dashboard/(cms)/", "pages/(site)/"],
+    "pages": ["pages/"],
     "plugins": ["plugins/default-theme/"],
     "config": ["config/cms.ts"],
     "middlewares": "cms/middleware.ts",
-    "host": ["cms/database.ts"],
+    "host": ["cms.config.ts"],
     "hostTemplate": "0.10.0"
   }
 }

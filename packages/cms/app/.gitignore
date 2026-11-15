@@ -5,6 +5,7 @@
 !/README.md
 !/package.json
 !/cossack-recipe.json
+!/.npmignore
 !/scripts/
 !/tests/
 /scripts/*
@@ -16,10 +17,6 @@
 !/src/brand.ts
 !/src/passkeys.client.ts
 !/src/cms/
-# Rendered per runtime adapter by the recipe.
-/src/cms/database.ts
-/src/cms/media.ts
-/src/cms/pending.ts
 !/src/config/
 /src/config/*
 !/src/config/cms.ts

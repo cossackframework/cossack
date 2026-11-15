@@ -1,5 +1,5 @@
 import { workflowsRecipeFiles } from './workflow-recipes.js';
-import { CMS_PACKAGE, cmsFacadeFiles, cmsRecipeFiles, cmsSetupCode, isCmsPath, isServedCmsPath, patchCmsNodeEntry, patchCmsViteConfig, patchCmsWorkerEntry } from './cms-recipe.js';
+import { CMS_PACKAGE, cmsRecipeFiles, cmsSetupCode, isCmsPath, isServedCmsPath, patchCmsNodeEntry, patchCmsViteConfig, patchCmsWorkerEntry } from './cms-recipe.js';
 import { jobsRecipeFiles, turnstileRecipeFiles, schedulesRecipeFiles, notificationsRecipeFiles } from './service-recipes.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -403,8 +403,6 @@ const DESKTOP_PATHS = new Set([
 ]);
 
 function capabilityFor(rel, recipe) {
-  // The CMS package serves these paths: a template file there would override the package's.
-  if (recipe.resolvedFeatures.includes('cms') && isServedCmsPath(rel)) return null;
   if (rel === '.github/workflows/preview.yml') return recipe.adapter === 'cloudflare' ? 'base' : null;
   // The Update button under Tools → Updates asks this workflow to run cossack upgrade.
   if (rel === '.github/workflows/cossack-update.yml') return recipe.resolvedFeatures.includes('cms') ? 'cms' : null;
@@ -503,15 +501,14 @@ function middlewareRegistry(recipe) {
     );
     entries.push('  ormRequestMiddleware,');
   }
-  const cms = recipe.resolvedFeatures.includes('cms');
-  // The CMS host goes on the context before auth reads users from it.
-  if (cms) {
-    imports.push(`import { cmsMiddleware, cmsPrincipal } from '${CMS_PACKAGE}/app/cms/middleware';`);
-    entries.push('  cmsMiddleware,');
-  }
-  if (recipe.resolvedFeatures.includes('auth')) {
+  // The CMS's middleware comes from its package, in one list: its host, the session, the
+  // principal and the sign-in guard. The project's own goes after it.
+  if (recipe.resolvedFeatures.includes('cms')) {
+    imports.push(`import { cmsMiddlewares } from '${CMS_PACKAGE}/app/cms/middlewares';`);
+    entries.push('  ...cmsMiddlewares,');
+  } else if (recipe.resolvedFeatures.includes('auth')) {
     imports.push("import { auth } from '../auth';", "import { authGuard } from '../middlewares/auth';");
-    entries.push('  auth.middleware,', ...(cms ? ['  cmsPrincipal,'] : []), '  authGuard,');
+    entries.push('  auth.middleware,', '  authGuard,');
   }
   return `${imports.join('\n')}\n\nconst middlewares: MiddlewareHandler[] = [\n${entries.join('\n')}\n];\n\nexport default middlewares;\n`;
 }
@@ -702,7 +699,9 @@ function packageJson(recipe, projectName) {
         deploy: 'cossack deploy',
       };
   // Cloudflare's names and the app's bindings come from generated types, so they are generated first.
-  scripts.typecheck = `${recipe.adapter === 'cloudflare' ? 'pnpm run cf-typegen && ' : ''}cossack routes --generate && tsc --noEmit`;
+  // Configuration served from a mounted package (auth, cms) is typed by .cossack/config.d.ts,
+  // which a build also writes: a clean checkout type-checks without one.
+  scripts.typecheck = `${recipe.adapter === 'cloudflare' ? 'pnpm run cf-typegen && ' : ''}cossack routes --generate && ${recipe.resolvedFeatures.includes('cms') ? 'cossack config --generate && ' : ''}tsc --noEmit`;
   scripts['check:templates'] = 'cossack check templates';
   scripts.format = 'prettier --write "src/**/*.ts"';
   if (recipe.resolvedFeatures.includes('desktop')) {
@@ -1882,11 +1881,6 @@ export async function renderRecipe(recipe, options = {}) {
   if (!recipe.resolvedFeatures.includes('examples') && !recipe.resolvedFeatures.includes('cms')) {
     files.set('src/pages/index.ts', { content: text(minimalPage()), capability: 'base' });
   }
-  if (recipe.resolvedFeatures.includes('cms')) {
-    // The CMS application is served from @cossackframework/cms. The shell imports these auth and
-    // dashboard modules by relative path, so each path stays as a re-export of the CMS's version.
-    for (const [rel, source] of Object.entries(await cmsFacadeFiles())) files.set(rel, { content: text(source), capability: 'cms' });
-  }
   if (recipe.resolvedFeatures.includes('database')) {
     files.set('orm.config.ts', {
       content: text(ormConfiguration(recipe)),
@@ -2068,6 +2062,13 @@ export async function renderRecipe(recipe, options = {}) {
       capability: 'base',
     });
     }
+  }
+  // A CMS project mounts the CMS application from its package, the sign-in pages and the
+  // dashboard included, and holds none of those files: a file at a served path would override
+  // the package's. `servedFiles` keeps them, for the package's own application
+  // (packages/cms/app), which is where the package serves them from.
+  if (recipe.resolvedFeatures.includes('cms') && options.servedFiles !== true) {
+    for (const rel of [...files.keys()]) if (isServedCmsPath(rel)) files.delete(rel);
   }
   const vite = files.get('vite.config.ts');
   if (vite) files.set('vite.config.ts', { ...vite, content: text(withClientDependencies(vite.content.toString('utf8'), files)) });
@@ -2346,6 +2347,15 @@ async function mergePnpmWorkspace(
   }
   entry.content = text(current.toString());
   return entry;
+}
+
+/**
+ * `pnpm-workspace.yaml` for an upgrade: the template's keys go over the project's file, and
+ * keys the project added (its own overrides, build approvals) stay. The manifest records the
+ * file with those keys, so a plain copy of the template's text would drop them.
+ */
+export async function upgradedPnpmWorkspace(projectDir, content) {
+  return (await mergePnpmWorkspace(projectDir, new Map([['pnpm-workspace.yaml', { content }]]))).content;
 }
 
 export async function migratePnpmBuildSettings(

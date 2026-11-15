@@ -7,7 +7,7 @@ import { notice, pageHeader, shortDate } from '../../../../../../cms/ui';
 import { requireNetworkAdmin } from '../../../../../../cms/guards';
 import { network, siteLinks, siteNames } from '../../../../../../cms/network-ui';
 import { actionButton, field, submitButton } from '../../../../../../cms/network-view';
-import { listTable } from '@/dashboard/list-table';
+import { listTable } from '../../../../../../dashboard/list-table';
 
 interface Membership { id: string; name: string; roles: string; dashboard: string }
 

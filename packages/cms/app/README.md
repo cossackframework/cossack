@@ -9,17 +9,24 @@ configuration), and the project names the package in its own `package.json`
 (`cossack.packages`). So the files tracked here are the CMS that every project runs.
 `cossack-recipe.json` lists them in three groups:
 
-- `served`: mounted by the project, never copied;
-- `facades`: served modules that the dashboard shell imports by relative path; the project
-  holds a one-line re-export for each;
+- `served`: mounted by the project, never copied, and tracked here: the CMS's pages and
+  modules, and its versions of `auth.ts`, the services and a few dashboard modules;
+- `shell`: mounted by the project too, and written here by `pnpm sync` from
+  `packages/scaffold/template`: the sign-in pages, the dashboard and its kit, which projects
+  without the CMS get as files;
 - `rendered`: written into the project by the scaffold (`packages/scaffold/src/cms-recipe.js`):
-  the storage glue per runtime and `src/cms.config.ts`.
+  `src/cms.config.ts`.
 
-Every other file here (the shared auth and dashboard shell, `vite.config.ts`, entries,
-`.env.example`, …) comes from `packages/scaffold/template` and is written by `pnpm sync`,
-which `dev`, `build` and `typecheck` run first. Rendered files are gitignored, so each file
-has one source: CMS code here, shell code in the scaffold template. This folder mounts
-nothing: it is the package's served source itself.
+Every other file here (`vite.config.ts`, entries, `.env.example`, …) is a project file of this
+development application and also comes from `pnpm sync`, which `dev`, `build`, `typecheck` and
+`pnpm pack` run first. Synced files are gitignored, so each file has one source: CMS code
+here, shell code in the scaffold template. `.npmignore` lists what the package ships of this
+folder: `served` and `shell`. This folder mounts nothing: it is the package's served source
+itself.
+
+The storage for each runtime is in the package's library, not here: `../src/storage/`
+(`@cossackframework/cms/storage/cloudflare`, `/node`). A project names one in
+`src/cms.config.ts`.
 
 ## The host contract
 
@@ -27,9 +34,9 @@ Served code reaches the project only through `@/…` imports, and `../package.js
 modules in `cossack.host`. Every other import is relative and stays inside the served files, or
 names a package. `tests/host-contract.test.ts` holds this:
 
-- import a project module (`@/dashboard/list-table`, `@/cms.config`) through `@/`, and add a new
+- import a project module (`@/cms.config`, `@/stores.client`) through `@/`, and add a new
   one to `cossack.host`;
-- import another CMS file by relative path;
+- import another served file, the shell included, by relative path;
 - import the CMS core as `@cossackframework/cms`, never by a path into `../src`.
 
 When served code starts to need something new from a project file, raise

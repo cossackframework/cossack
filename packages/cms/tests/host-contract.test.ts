@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
  */
 const packageRoot = path.resolve(import.meta.dirname, '..');
 const app = path.join(packageRoot, 'app');
-const recipe = JSON.parse(readFileSync(path.join(app, 'cossack-recipe.json'), 'utf8')) as { served: string[]; facades: string[]; rendered: string[] };
+const recipe = JSON.parse(readFileSync(path.join(app, 'cossack-recipe.json'), 'utf8')) as { served: string[]; shell: string[]; rendered: string[] };
 const manifest = JSON.parse(readFileSync(path.join(packageRoot, 'package.json'), 'utf8')) as {
     exports: Record<string, unknown>;
     cossack: { root: string; pages: string[]; plugins: string[]; config: string[]; host: string[] };
@@ -18,9 +18,9 @@ const manifest = JSON.parse(readFileSync(path.join(packageRoot, 'package.json'),
 const walk = (directory: string): string[] => readdirSync(directory, { withFileTypes: true })
     .flatMap(entry => entry.isDirectory() ? walk(path.join(directory, entry.name)) : [path.join(directory, entry.name)]);
 
-/** Served files, as paths from the app folder. */
+/** Served files, as paths from the app folder: the tracked sources and the shell `pnpm sync` writes (the test script runs it first). */
 const served = new Set<string>();
-for (const entry of [...recipe.served, ...recipe.facades]) {
+for (const entry of [...recipe.served, ...recipe.shell]) {
     const absolute = path.join(app, entry);
     for (const file of entry.endsWith('/') ? walk(absolute) : [absolute]) {
         const relative = path.relative(app, file).split(path.sep).join('/');
@@ -60,8 +60,7 @@ describe('the host contract of the served CMS app', () => {
             // A file of the served set, or an asset beside it (a stylesheet, a JSON catalog).
             if (!candidates.some(candidate => served.has(candidate))) leaving.push(`${file}: ${specifier}`);
         }
-        // A copy of an application module in the project would never be used by such an import,
-        // and the glue (database, media, pending) differs per runtime.
+        // A copy of an application module in the project would never be used by such an import.
         expect(leaving).toEqual([]);
     });
 
@@ -71,25 +70,28 @@ describe('the host contract of the served CMS app', () => {
         expect(escaping).toEqual([]);
     });
 
-    it('serves exactly the recipe\'s routable paths, plugins and configuration', () => {
-        const under = (prefix: string) => recipe.served.filter(entry => entry.startsWith(prefix)).map(entry => entry.slice('src/'.length)).sort();
-        expect([...manifest.cossack.pages].sort()).toEqual(under('src/pages/'));
-        expect([...manifest.cossack.plugins].sort()).toEqual(under('src/plugins/'));
-        expect([...manifest.cossack.config].sort()).toEqual(under('src/config/'));
-        for (const entry of [...manifest.cossack.pages, ...manifest.cossack.plugins, ...manifest.cossack.config]) {
+    it('serves every page, plugin and configuration file of the recipe', () => {
+        const mounted = [...manifest.cossack.pages, ...manifest.cossack.plugins, ...manifest.cossack.config];
+        const covered = (file: string) => mounted.some(entry => entry.endsWith('/') ? file.startsWith(`src/${entry}`) : file === `src/${entry}`);
+        const routable = [...served].filter(file => /^src\/(?:pages|plugins|config)\//.test(file));
+        expect(routable.filter(file => !covered(file))).toEqual([]);
+        for (const entry of mounted) {
             expect(existsSync(path.join(app, 'src', entry)), entry).toBe(true);
             expect(statSync(path.join(app, 'src', entry)).isDirectory(), entry).toBe(entry.endsWith('/'));
         }
+        // Nothing but served files under a mounted directory: a project file there would be mounted too.
+        const mountedFiles = manifest.cossack.pages.filter(entry => entry.endsWith('/')).flatMap(entry => walk(path.join(app, 'src', entry)))
+            .map(file => path.relative(app, file).split(path.sep).join('/'));
+        expect(mountedFiles.filter(file => !served.has(file))).toEqual([]);
+    });
+
+    it('ships the shell: the pack list names every served path', () => {
+        const rules = readFileSync(path.join(app, '.npmignore'), 'utf8').split('\n').filter(line => line.startsWith('!/')).map(line => line.slice(2));
+        const shipped = (file: string) => rules.some(rule => rule.endsWith('/') ? file.startsWith(rule) : file === rule);
+        expect([...served].filter(file => !shipped(file))).toEqual([]);
     });
 
     it('exports the served root, so a project imports a served module by name', () => {
         expect(manifest.exports['./app/*']).toBe('./app/src/*.ts');
-    });
-
-    it('gives the re-exported shell modules no default export: a project re-exports each with export *', () => {
-        // `export * from '@cossackframework/cms/app/auth'` does not carry a default export.
-        const withDefault = recipe.facades
-            .filter(file => /^export default\b|^export \{[^}]*\bdefault\b/m.test(readFileSync(path.join(app, file), 'utf8')));
-        expect(withDefault).toEqual([]);
     });
 });

@@ -7,7 +7,7 @@ import { notice, pageHeader, shortDate } from '../../../../../../cms/ui';
 import { requireNetworkAdmin } from '../../../../../../cms/guards';
 import { network, siteLinks } from '../../../../../../cms/network-ui';
 import { actionButton, field, siteStatus, submitButton } from '../../../../../../cms/network-view';
-import { listTable } from '@/dashboard/list-table';
+import { listTable } from '../../../../../../dashboard/list-table';
 import { importRequest, importSummary, sendsExport } from '../../../../../../cms/site-import';
 import { sendExport } from '../../../../../../cms/import.client';
 

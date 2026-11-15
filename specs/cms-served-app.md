@@ -4,6 +4,38 @@ Status: built 2026-11-15. Part 2 of 4. Needs `specs/package-routes.md` first;
 `specs/upgrade-merges.md` covers upgrades and `specs/cms-updates.md` the dashboard's Update button. Builds on
 `specs/cms-package-app.md`, whose "Not in this change" named this step.
 
+## Update (2026-11-15): the shell and the storage are served too
+
+Built the same day, after the user chose option A in `NOTES.md`. It replaces the
+"three kinds of file", "host contract", "facades" and "scaffold renders glue only"
+decisions below, which describe the first build.
+
+- **Two kinds of file.** Served: everything under the package's `app/src` that a CMS
+  project runs. That is the CMS's own sources (`cossack-recipe.json`: `served`,
+  tracked in the package) and the sign-in pages, the dashboard, its kit and
+  `config/auth.ts` (`shell`, written by `pnpm sync` from the scaffold template and
+  shipped: `app/.npmignore`, `prepack`). Project: `src/cms.config.ts`,
+  `src/bootstrap/middlewares.ts`, the entry files, `src/config/{app,cache,cors}.ts`,
+  plugins and content. gif84's `src/` went from 74 files to 24, 10 of them its plugins.
+- **No facades, no glue.** The shell and the CMS import each other by relative
+  path inside the package. The storage per runtime is library code:
+  `@cossackframework/cms/storage/cloudflare` and `/node` export a `CmsStorage`, and
+  `src/cms.config.ts` names one (`export const storage = cloudflareStorage`). A
+  project replaces a member to keep something elsewhere.
+- **The host contract is two modules:** `cms.config.ts` and `stores.client.ts` (the
+  theme store that `App.ts` and the dashboard layout share).
+- **Middleware is one list.** `cms/middlewares.ts` exports `cmsMiddlewares` (the
+  host, the session, the principal, the sign-in guard), and the project's
+  `src/bootstrap/middlewares.ts` spreads it, then adds its own.
+- **The scaffold leaves served paths out of a CMS project** (`renderRecipe` drops
+  every `isServedCmsPath` file). `renderRecipe(recipe, { servedFiles: true })` keeps
+  them, for `sync.mjs` only.
+- **The package serves `pages/` whole**, and `config/auth.ts` beside `config/cms.ts`.
+  A CMS project's `typecheck` script also runs `cossack config --generate`, because
+  served configuration is typed by `.cossack/config.d.ts`.
+- Projects without the CMS keep the shell as files (`auth` and `dashboard` on the
+  ORM), updated by `cossack upgrade`. Serving that shell is in `NOTES.md`.
+
 ## Why
 
 A CMS project today holds about 240 copied CMS files: in gif84

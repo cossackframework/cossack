@@ -463,8 +463,9 @@ its own document table), categories, tags and other taxonomies, a media library,
 site settings, themes, menus with drag and drop, plugins and the plugin policy
 lints. The CMS's pages and modules are not copied into the project: the project mounts them
 from the `@cossackframework/cms` package (`package.json#cossack.packages`) and gets
-`src/cms.config.ts`, the storage glue for its runtime and a workflow for the dashboard's Update
-button (see [CMS](/docs/cms/index.md#what-the-project-holds)). The public site is drawn by the
+`src/cms.config.ts` (its configuration, which also names the storage for its runtime) and a
+workflow for the dashboard's Update button. The sign-in pages and the dashboard are served from
+the package too, so the project holds no `src/pages/auth/` or `src/dashboard/` folder (see [CMS](/docs/cms/index.md#what-the-project-holds)). The public site is drawn by the
 active theme, a plugin; the default one is served from the package. It serves
 collections, term archives, nested pages, `/search`, `/feed`, `/sitemap.xml`,
 `/robots.txt` and a content API (`/api/cms/content/<collection>`,

@@ -1,19 +1,21 @@
 import { createRomeDB } from '@cossackframework/romedb';
 import { getRequestContext } from '@cossackframework/core';
 import { cloudflarePurger, cmsReconcilers, CmsNetwork, createCMS, DEFAULT_RESERVED_PATHS, MAIN_SITE, prefixedStorage, stripePayments, type CachePurger, type CmsHost, type NetworkSite, type PluginRunner } from '@cossackframework/cms/server';
+import type { CmsStorage } from '@cossackframework/cms/storage';
 import { aiProvider, type AiBindings } from './ai';
 import { DEFAULT_UPDATES_CHANNEL, DEFAULT_UPDATES_URL, type IconStyleName, type Principal } from '@cossackframework/cms';
 import { plugins } from '@cossackframework/framework/plugins';
-// The project's own: its resources, modules and the options it sets.
-import { modules, options as projectOptions, resources } from '@/cms.config';
-import { databaseConnection, siteDatabase, siteDirectory, webhookFetch, type DatabaseBindings } from '@/cms/database';
-import { pendingWrites, type PendingBindings } from '@/cms/pending';
-import { imageTransformer, mediaStorage, type MediaBindings } from '@/cms/media';
+// The project's own: its resources, modules, the options it sets, and where the CMS keeps its data.
+import { modules, options as projectOptions, resources, storage as projectStorage } from '@/cms.config';
 import { announceNoteEvent } from './notes-announce';
 import { reservedRouteSegments } from './reserved-paths';
 import registry from 'virtual:cossack-pages';
 
-export interface CmsBindings extends DatabaseBindings, PendingBindings, MediaBindings, AiBindings {
+/**
+ * The environment bindings the CMS application reads. The project's storage (`storage` in
+ * src/cms.config.ts) reads its own: the database address, the media bucket and so on.
+ */
+export interface CmsBindings extends AiBindings {
     /** Stripe as the payments provider: the secret key, and the webhook endpoint's signing secret. */
     STRIPE_SECRET_KEY?: string;
     STRIPE_WEBHOOK_SECRET?: string;
@@ -87,21 +89,24 @@ export function setPluginRunner(runner: PluginRunner | null): void {
  * main database holds the accounts and the site registry; each added site has its own database.
  */
 export function networkFor(env: CmsBindings): CmsNetwork {
-    const connection = databaseConnection(env);
+    // The runtime's storage names its own bindings; this module passes the environment through.
+    const store = projectStorage as CmsStorage<unknown>;
+    const connection = store.databaseConnection(env);
     const key = `${connection.url}\n${connection.token ?? ''}`;
     if (current?.key !== key) {
-        const db = createRomeDB({ ...connection, pending: pendingWrites(env), reconcilers: cmsReconcilers() });
-        const storage = mediaStorage(env);
-        const images = imageTransformer(env);
+        const db = createRomeDB({ ...connection, pending: store.pendingWrites(env), reconcilers: cmsReconcilers() });
+        const storage = store.mediaStorage(env);
+        const images = store.imageTransformer(env);
         const mail = env.EMAIL;
         const ai = aiProvider(env);
         const payments = env.STRIPE_SECRET_KEY?.trim() ? stripePayments({ secretKey: env.STRIPE_SECRET_KEY.trim(), ...(env.STRIPE_WEBHOOK_SECRET ? { webhookSecret: env.STRIPE_WEBHOOK_SECRET } : {}), ...(env.STRIPE_API_URL ? { api: env.STRIPE_API_URL } : {}) }) : null;
-        const multisite = siteDatabase(env, MAIN_SITE) !== null;
-        const directory = siteDirectory(env);
+        const multisite = store.siteDatabase(env, MAIN_SITE) !== null;
+        const directory = store.siteDirectory(env);
+        const webhookFetch = store.webhookFetch;
         const network: CmsNetwork = new CmsNetwork({
             db,
             networkHost: () => urlOf(env.APP_URL)?.host,
-            ...(multisite ? { open: site => createRomeDB({ ...siteDatabase(env, site.database)!, pending: pendingWrites(env, site.database), reconcilers: cmsReconcilers() }) } : {}),
+            ...(multisite ? { open: site => createRomeDB({ ...store.siteDatabase(env, site.database)!, pending: store.pendingWrites(env, site.database), reconcilers: cmsReconcilers() }) } : {}),
             ...(directory ? { directory } : {}),
             hostUrl: host => siteUrl(env, { host })!,
             host: (site, siteDb) => {

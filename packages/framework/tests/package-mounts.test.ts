@@ -256,6 +256,18 @@ describe('mounted packages', () => {
     expect(config.environments.ssr.resolve.noExternal).toContain('@acme/kit');
     expect(config.server).toBeUndefined();
 
+    // A dependency the application declares as well is listed both ways: with resolve.dedupe the served
+    // file's import goes to the application's copy, which a linked package does not share.
+    const shared = project();
+    write(shared.kit, {
+      'package.json': JSON.stringify({ name: '@acme/kit', version: '1.4.0', dependencies: { '@cossackframework/solar-icons': '0.7.1', '@tiptap/core': '3.0.0' }, cossack: field }),
+      'app/src/dashboard/modules/users.ts': "import { Icon } from '@cossackframework/solar-icons/users/line';\nimport { Editor } from '@tiptap/core';\nexport default Icon;\n",
+    });
+    write(shared.root, { 'package.json': JSON.stringify({ name: 'app', dependencies: { '@cossackframework/solar-icons': '0.7.1' }, cossack: { packages: ['@acme/kit'] } }) });
+    const both = (cossackPages().config as Function)({ root: shared.root }, { command: 'serve' }).environments.ssr.optimizeDeps.include;
+    expect(both).toEqual(expect.arrayContaining(['@acme/kit > @cossackframework/solar-icons/users/line', '@cossackframework/solar-icons/users/line', '@acme/kit > @tiptap/core']));
+    expect(both).not.toContain('@tiptap/core');
+
     // A linked package is outside the project: the dev server must be allowed to serve its files.
     const linked = project({}, { linked: true });
     expect((cossackPages().config as Function)({ root: linked.root }, { command: 'serve' }).server.fs.allow).toContain(linked.kit);

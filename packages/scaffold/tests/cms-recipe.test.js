@@ -19,43 +19,35 @@ describe('cms recipe', () => {
     expect(() => resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'], authMethods: 'credentials,oauth', oauth: 'github' })).toThrow(/OAuth sign-in is not available with the cms feature/);
   });
 
-  it('mounts the CMS from its package: the project holds glue, re-exports and its own configuration', async () => {
+  it('mounts the CMS from its package: the project holds its own configuration and no shell', async () => {
     const files = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'] }));
     // The application names the package it mounts; installing it alone adds no routes.
     const pkg = JSON.parse(text(files, 'package.json'));
     expect(pkg.cossack).toEqual({ runtime: 'node', packages: ['@cossackframework/cms'] });
-    // The shared shell stays in the project.
-    for (const rel of ['src/pages/auth/login/index.ts', 'src/pages/auth/register/index.ts', 'src/pages/dashboard/layout.ts', 'src/pages/dashboard/users/index.ts', 'src/pages/dashboard/sessions/index.ts',
-      'src/pages/auth/two-factor/index.ts', 'src/pages/dashboard/profile/security/index.ts', 'src/dashboard/avatar-field.ts', 'src/dashboard/list-table.ts'])
-      expect(files.has(rel), rel).toBe(true);
-    // What the cms feature writes: storage glue for the runtime, the project's configuration, and re-exports.
-    expect([...files].filter(([, entry]) => entry.capability === 'cms').map(([rel]) => rel).sort()).toEqual([
-      '.github/workflows/cossack-update.yml', 'src/auth.ts', 'src/brand.ts', 'src/cms.config.ts', 'src/cms/database.ts', 'src/cms/media.ts', 'src/cms/pending.ts',
-      'src/dashboard/access.ts', 'src/dashboard/head.ts', 'src/dashboard/icons.ts', 'src/dashboard/user-sections.ts',
-      'src/lib/permissions.ts', 'src/passkeys.client.ts', 'src/services/rbac.ts', 'src/services/roles.ts', 'src/services/users.ts',
+    // The sign-in pages, the dashboard, its kit, the services and auth are the package's: the project holds none.
+    for (const rel of ['src/pages/auth/login/index.ts', 'src/pages/dashboard/layout.ts', 'src/pages/dashboard/users/index.ts', 'src/dashboard/list-table.ts', 'src/dashboard/registry.ts',
+      'src/dashboard/modules/users.ts', 'src/dashboard/types.ts', 'src/auth.ts', 'src/auth-input.ts', 'src/brand.ts', 'src/services/users.ts', 'src/middlewares/auth.ts', 'src/config/auth.ts', 'src/lib/permissions.ts'])
+      expect(files.has(rel), rel).toBe(false);
+    expect([...files.keys()].filter(rel => rel.startsWith('src/')).sort()).toEqual([
+      'src/App.ts', 'src/bootstrap/middlewares.ts', 'src/client/entry-client.ts', 'src/cms.config.ts', 'src/components/ui/index.ts', 'src/config/app.ts', 'src/config/cache.ts', 'src/config/cors.ts',
+      'src/index.ts', 'src/markdown-processor.ts', 'src/root.ts', 'src/stores.client.ts', 'src/style.css', 'src/vite-env.d.ts',
     ]);
-    // The shell imports these modules by relative path; each path re-exports the CMS's version, so there is one instance.
-    expect(text(files, 'src/auth.ts')).toMatch(/^\/\/ .*\nexport \* from '@cossackframework\/cms\/app\/auth';\n$/);
-    expect(text(files, 'src/services/users.ts')).toContain("export * from '@cossackframework/cms/app/services/users';");
-    expect(text(files, 'src/dashboard/access.ts')).toContain("export * from '@cossackframework/cms/app/dashboard/access';");
-    // A browser-only module names its exports: the server stubs it, and a stub cannot be made from export *.
-    expect(text(files, 'src/passkeys.client.ts')).toContain("export { passkeysSupported, createPasskey, usePasskey } from '@cossackframework/cms/app/passkeys.client';");
+    // What the cms feature writes: the project's configuration and the update workflow.
+    expect([...files].filter(([, entry]) => entry.capability === 'cms').map(([rel]) => rel).sort()).toEqual(['.github/workflows/cossack-update.yml', 'src/cms.config.ts']);
     expect(text(files, 'src/cms.config.ts')).toContain('export const options: CmsProjectConfig = {');
     expect(text(files, 'src/cms.config.ts')).toContain('export const modules = [contentModule, formsModule];');
-    // No served file: the CMS's pages, modules and default theme stay in the package, and the template's
-    // dashboard home is left out so the package's is not overridden.
-    const served = [...files.keys()].filter(rel => rel.startsWith('src/pages/dashboard/(cms)/') || rel.startsWith('src/pages/(site)/') || rel.startsWith('src/pages/api/') ||
-      rel.startsWith('src/pages/auth/setup/') || rel.startsWith('src/plugins/') || rel.startsWith('src/config/cms') || rel === 'src/pages/dashboard/index.ts' ||
-      (rel.startsWith('src/cms/') && !['src/cms/database.ts', 'src/cms/media.ts', 'src/cms/pending.ts'].includes(rel)));
-    expect(served).toEqual([]);
+    // The storage is the package's, named by runtime.
+    expect(text(files, 'src/cms.config.ts')).toContain("import { nodeStorage } from '@cossackframework/cms/storage/node';");
+    expect(text(files, 'src/cms.config.ts')).toContain('export const storage = nodeStorage;');
+    expect([...files.keys()].filter(rel => rel.startsWith('src/pages/') || rel.startsWith('src/plugins/') || rel.startsWith('src/cms/') || rel.startsWith('src/dashboard/'))).toEqual([]);
     expect(files.has('src/pages/index.ts')).toBe(false);
     for (const rel of ['src/models/User.ts', 'src/models/Session.ts', 'src/models/Role.ts', 'src/migrations/0001_create_users.ts', 'src/lib/uuid.ts', 'orm.config.ts', 'src/seeders/application.seeder.ts'])
       expect(files.has(rel), rel).toBe(false);
-    // The host goes on the context before auth reads users from it; the middleware is the package's.
+    // The CMS's middleware is one list from the package; the project's own goes after it.
     const middlewares = text(files, 'src/bootstrap/middlewares.ts');
-    expect(middlewares).toContain("import { cmsMiddleware, cmsPrincipal } from '@cossackframework/cms/app/cms/middleware';");
-    expect(middlewares.indexOf('cmsMiddleware,')).toBeLessThan(middlewares.indexOf('auth.middleware,'));
-    expect(middlewares.indexOf('auth.middleware,')).toBeLessThan(middlewares.indexOf('cmsPrincipal,'));
+    expect(middlewares).toContain("import { cmsMiddlewares } from '@cossackframework/cms/app/cms/middlewares';");
+    expect(middlewares).toContain('  ...cmsMiddlewares,');
+    expect(middlewares).not.toContain('../auth');
     expect(text(files, 'src/index.ts')).toContain("import { networkFor } from '@cossackframework/cms/app/cms/index';");
     // Block styles come from the package, and Tailwind is told to scan the served files.
     expect(text(files, 'src/style.css')).toContain('@import "@cossackframework/cms/app/cms/blocks.css";');
@@ -67,8 +59,6 @@ describe('cms recipe', () => {
     expect(pkg.dependencies['@romedb/client']).toMatch(/^\d/);
     expect(pkg.dependencies['@romedb/client']).toBe(pkg.dependencies['@romedb/node']);
     expect(text(files, '.gitignore')).toContain('storage/media/');
-    expect(text(files, 'src/cms/media.ts')).toContain('LocalStorageProvider');
-    expect(text(files, 'src/cms/media.ts')).toContain("import('sharp')");
     const config = text(files, 'vite.config.ts');
     expect(config).toContain("external: ['@romedb/client', '@romedb/node']");
     // The icon sprites come from the CMS package's Vite plugin, not from files in the application.
@@ -80,6 +70,14 @@ describe('cms recipe', () => {
     expect(text(orm, 'src/passkeys.client.ts')).not.toContain('@simplewebauthn');
     expect(JSON.parse(text(orm, 'package.json')).cossack).toEqual({ runtime: 'node' });
     expect(orm.has('src/pages/dashboard/index.ts')).toBe(true);
+    expect(orm.has('src/dashboard/registry.ts')).toBe(true);
+    expect(text(orm, 'src/bootstrap/middlewares.ts')).toContain('  auth.middleware,\n  authGuard,');
+  });
+
+  it('keeps the served shell for the package\'s own application', async () => {
+    const files = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'] }), { servedFiles: true });
+    for (const rel of ['src/pages/auth/login/index.ts', 'src/pages/dashboard/layout.ts', 'src/dashboard/list-table.ts', 'src/dashboard/registry.ts', 'src/middlewares/auth.ts', 'src/config/auth.ts'])
+      expect(files.has(rel), rel).toBe(true);
   });
 
   it('renders the workflow that the dashboard\'s Update button starts', async () => {
@@ -104,14 +102,16 @@ describe('cms recipe', () => {
     expect(plain.has('.github/workflows/cossack-update.yml')).toBe(false);
   });
 
-  it('renders the same project files on every runtime, apart from the storage glue', async () => {
+  it('renders the same project files on every runtime, apart from the storage it names', async () => {
     const node = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'] }));
     const worker = await renderRecipe(resolveRecipe({ adapter: 'cloudflare', preset: 'minimal', features: ['cms'] }));
     const cms = files => [...files].filter(([, entry]) => entry.capability === 'cms').map(([rel]) => rel).sort();
     expect(cms(worker)).toEqual(cms(node));
     expect(text(worker, 'src/index.ts')).toContain("import { networkFor, setPluginRunner } from '@cossackframework/cms/app/cms/index';");
-    expect(text(worker, 'src/cms.config.ts')).toBe(text(node, 'src/cms.config.ts'));
-    expect(text(worker, 'src/cms/database.ts')).not.toBe(text(node, 'src/cms/database.ts'));
+    expect(text(worker, 'src/cms.config.ts')).toContain("import { cloudflareStorage } from '@cossackframework/cms/storage/cloudflare';");
+    expect(text(worker, 'src/cms.config.ts')).toContain('export const storage = cloudflareStorage;');
+    const afterStorage = source => source.slice(source.indexOf('export const resources'));
+    expect(afterStorage(text(worker, 'src/cms.config.ts'))).toBe(afterStorage(text(node, 'src/cms.config.ts')));
   });
 
   it('binds the Images binding and runs maintenance every minute on Workers', async () => {
@@ -119,7 +119,6 @@ describe('cms recipe', () => {
     const config = JSON.parse(text(files, 'wrangler.jsonc').replace(/^\s*\/\/.*$/gm, ''));
     expect(config.images).toEqual({ binding: 'IMAGES' });
     expect(config.triggers.crons).toEqual(['* * * * *']);
-    expect(text(files, 'src/cms/media.ts')).toContain('env.IMAGES');
     const dependencies = JSON.parse(text(files, 'package.json')).dependencies;
     expect(dependencies).not.toHaveProperty('sharp');
     // Workers reach RomeDB by URL, without the package that holds the native addon.
@@ -130,7 +129,6 @@ describe('cms recipe', () => {
     const files = await renderRecipe(resolveRecipe({ adapter: 'cloudflare', preset: 'minimal', features: ['cms', 'examples'] }));
     const config = JSON.parse(text(files, 'wrangler.jsonc').replace(/^\s*\/\/.*$/gm, ''));
     expect(config.r2_buckets).toEqual([expect.objectContaining({ binding: 'MEDIA' })]);
-    expect(text(files, 'src/cms/media.ts')).toContain('createR2StorageProvider');
     expect(files.has('src/pages/(public)/index.ts')).toBe(true);
     // The package's home page gives way to the application's: an application page overrides a package page of the same URL.
     expect(files.has('src/pages/(site)/index.ts')).toBe(false);
@@ -141,9 +139,9 @@ describe('cms recipe', () => {
     const files = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'] }));
     const config = text(files, 'vite.config.ts');
     const list = config.slice(config.indexOf('@cossack:client-dependencies'), config.indexOf('],', config.indexOf('@cossack:client-dependencies')));
-    for (const name of ['@cossackframework/cms', '@cossackframework/ui', '@cossackframework/solar-icons/users-group-rounded/line', 'hono/cookie'])
-      expect(list).toContain(`'${name}'`);
-    // The served files' imports are the framework's to add, from the mounted package.
+    expect(list).toContain("'@cossackframework/cms'");
+    // The served files' imports are the framework's to add, from the mounted package: the dashboard's icons, the editor.
+    expect(list).not.toContain('@cossackframework/solar-icons');
     expect(list).not.toContain('@tiptap/core');
     expect(list).not.toContain('@cossackframework/cms/server');
     const source = (content) => ({ content: Buffer.from(content) });
@@ -159,7 +157,8 @@ describe('cms recipe', () => {
       .toBe("      // @cossack:server-dependencies\n      '@cossackframework/solar-icons/star/line',\n      '@tiptap/core',\n      '@cossackframework/renderer > parse5',");
     expect(withClientDependencies("      // @cossack:server-dependencies\n      ...([] as string[]),\n      'x',", new Map())).toBe("      // @cossack:server-dependencies\n      'x',");
     const rendered = text(files, 'vite.config.ts');
-    expect(rendered.slice(rendered.indexOf('@cossack:server-dependencies'), rendered.indexOf('parse5'))).toContain("'@cossackframework/solar-icons/users-group-rounded/line'");
+    const held = text(await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'] }), { servedFiles: true }), 'vite.config.ts');
+    expect(held.slice(held.indexOf('@cossack:server-dependencies'), held.indexOf('parse5'))).toContain("'@cossackframework/solar-icons/users-group-rounded/line'");
     expect(rendered.slice(rendered.indexOf('@cossack:server-dependencies'), rendered.indexOf('parse5'))).not.toContain("'@cossackframework/ui'");
     expect(text(await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: [] })), 'vite.config.ts')).toContain('// @cossack:client-dependencies\n        include: [],');
   });
@@ -174,7 +173,8 @@ describe('cms recipe', () => {
     const both = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms', 'database'] }));
     expect(text(both, 'src/seeders/application.seeder.ts')).toContain('Add application seed data here.');
     expect(text(both, 'src/models/index.ts')).not.toContain('User');
-    expect(text(both, 'src/auth.ts')).toContain("export * from '@cossackframework/cms/app/auth';");
+    expect(both.has('src/auth.ts')).toBe(false);
+    expect(text(both, 'src/bootstrap/middlewares.ts')).toContain('  ormRequestMiddleware,\n  ...cmsMiddlewares,');
   });
 
   it('refuses to add cms to a project whose users live in the database feature', async () => {
@@ -183,16 +183,19 @@ describe('cms recipe', () => {
     const { projectDir } = await createApp('orm-auth', { cwd, adapter: 'node', preset: 'auth', interactive: false });
     await expect(addFeature(projectDir, 'cms', { interactive: false })).rejects.toThrow(/keeps its users in the database feature/);
   });
-  it('reads the recipe from the CMS application: what is served, re-exported and rendered', async () => {
+  it('reads the recipe from the CMS application: what is served and rendered', async () => {
     const { cmsAppDir, isCmsPath, isServedCmsPath } = await import('../src/cms-recipe.js');
     const manifest = JSON.parse(await fs.readFile(path.join(cmsAppDir, 'cossack-recipe.json'), 'utf8'));
-    for (const rel of [...manifest.served, ...manifest.facades]) await expect(fs.access(path.join(cmsAppDir, rel)), rel).resolves.toBeUndefined();
-    for (const rel of [...manifest.rendered, ...manifest.facades]) expect(isCmsPath(rel), rel).toBe(true);
-    expect(isServedCmsPath('src/cms/site.ts')).toBe(true);
-    expect(isServedCmsPath('src/pages/dashboard/index.ts')).toBe(true);
-    // The storage glue is under a served directory and is the project's.
-    expect(isServedCmsPath('src/cms/database.ts')).toBe(false);
-    expect(isServedCmsPath('src/pages/dashboard/layout.ts')).toBe(false);
+    for (const rel of manifest.served) await expect(fs.access(path.join(cmsAppDir, rel)), rel).resolves.toBeUndefined();
+    for (const rel of manifest.rendered) expect(isCmsPath(rel), rel).toBe(true);
+    for (const rel of ['src/cms/site.ts', 'src/pages/dashboard/index.ts', 'src/pages/dashboard/layout.ts', 'src/pages/auth/login/index.ts', 'src/dashboard/list-table.ts', 'src/auth.ts'])
+      expect(isServedCmsPath(rel), rel).toBe(true);
+    // The project's own.
+    for (const rel of ['src/cms.config.ts', 'src/stores.client.ts', 'src/App.ts', 'src/config/app.ts', 'src/bootstrap/middlewares.ts']) expect(isServedCmsPath(rel), rel).toBe(false);
+    // Every file the package's application gets from the template and serves is one the project no longer holds.
+    const held = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'] }), { servedFiles: true });
+    const project = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'] }));
+    for (const rel of held.keys()) expect(project.has(rel), rel).toBe(!isServedCmsPath(rel));
     // Without the cms feature the shared modules are the application's own.
     const database = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['auth'] }));
     expect(text(database, 'src/auth.ts')).not.toContain('@cossackframework/cms');

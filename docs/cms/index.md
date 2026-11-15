@@ -10,9 +10,10 @@ in the dashboard and stored schemaless, content is blocks and rich text, and the
 site is drawn by a theme. Plugins add resources, hooks, blocks, dashboard pages, commands
 and themes without touching the application's own code.
 
-`cossack add cms` adds the CMS to an application's `auth` and `dashboard` pages. The CMS's own
-pages, modules and default theme stay in the package: the application mounts them
+`cossack add cms` adds the CMS to an application. The CMS's pages, the sign-in pages, the
+dashboard, their modules and the default theme stay in the package: the application mounts them
 (`package.json#cossack.packages`) and holds no copy, so a package update replaces them whole.
+The rule: code in `node_modules` is replaced by an update, and every file in the project is yours.
 See [`cossack add cms`](/docs/cossack-cli.md#cossack-add-cms) for what the recipe sets up.
 
 ## What the project holds
@@ -20,11 +21,29 @@ See [`cossack add cms`](/docs/cossack-cli.md#cossack-add-cms) for what the recip
 | File | What it is |
 | --- | --- |
 | `src/cms.config.ts` | Your configuration: code-declared resources, the built-in modules, and the options below. |
-| `src/cms/database.ts`, `media.ts`, `pending.ts` | How the CMS reaches its database and media on your runtime. |
-| `src/auth.ts`, `src/brand.ts`, `src/services/*.ts` and a few more | One line each: they re-export the CMS's version of a module that the dashboard shell imports. |
+| `src/bootstrap/middlewares.ts` | The global middleware: the CMS's list (`cmsMiddlewares`), then your own. |
+| `src/index.ts`, `src/App.ts`, `src/root.ts`, `src/client/entry-client.ts`, `src/stores.client.ts`, `src/style.css` | The application's entry files, as in every Cossack project. |
+| `src/config/app.ts`, `cache.ts`, `cors.ts` | Application configuration. |
 | `src/plugins/<name>/` | Your plugins and themes. |
 
-`src/cms.config.ts` exports `resources`, `modules` and `options`. `options` may set
+There is no `src/pages/`, `src/dashboard/` or `src/services/` folder unless you add your own
+pages: `/auth/*`, `/dashboard/*` and the site are served from the package.
+
+`src/cms.config.ts` exports `storage`, `resources`, `modules` and `options`.
+
+`storage` says where the CMS keeps its data on your runtime: `cloudflareStorage` from
+`@cossackframework/cms/storage/cloudflare` (RomeDB over HTTP, a Durable Object for unconfirmed
+writes, R2, the Images binding) or `nodeStorage` from `@cossackframework/cms/storage/node` (a
+RomeDB file or service, a local directory or S3, sharp). To keep something elsewhere, replace a
+member:
+
+```ts
+import { nodeStorage } from '@cossackframework/cms/storage/node';
+
+export const storage = { ...nodeStorage, mediaStorage: () => myStorageProvider };
+```
+
+`options` may set
 `reservedPaths`, `blocks`, `settings`, `taxonomies`, the `payments`, `ai`, `purgers` and `mail`
 providers, and `updates`. Give an object, or a function of the environment bindings and the
 site: `(env, site) => ({ ... })`. An option you leave out keeps its default.

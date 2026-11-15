@@ -205,6 +205,23 @@ describe('recipe upgrades', () => {
       .toBe(expected);
   });
 
+  it('keeps the project\'s own keys in pnpm-workspace.yaml, also when the manifest recorded them', async () => {
+    const project = await seedProject();
+    const relative = 'pnpm-workspace.yaml';
+    // An earlier upgrade recorded the file as it was, with the project's override in it.
+    const own = "allowBuilds:\n  esbuild: true\n# The project's own.\noverrides:\n  left-pad: 1.3.0\n";
+    const manifest = await readManifest(project.projectDir);
+    manifest.files[relative].hash = await write(project.projectDir, relative, own);
+    await fs.writeFile(path.join(project.projectDir, '.cossack/scaffold.json'), JSON.stringify(manifest, null, 2) + '\n');
+
+    await runUpgrade(project.projectDir, []);
+    const after = await fs.readFile(path.join(project.projectDir, relative), 'utf8');
+    expect(after).toContain('left-pad: 1.3.0');
+    expect(after).toContain("# The project's own.");
+    // The template's approvals are added.
+    expect(after).toContain('workerd: true');
+  });
+
   it('offers and records a new upstream file for an installed capability', async () => {
     const project = await seedProject();
     const relative = 'src/vite-env.d.ts';
@@ -492,5 +509,21 @@ describe('upgrades merge local edits', () => {
     expect(await fs.readFile(path.join(project.projectDir, 'src/gone.ts'), 'utf8')).toBe('// old\n// edited\n');
     await expect(fs.access(path.join(project.projectDir, 'src/gone-too.ts'))).rejects.toMatchObject({ code: 'ENOENT' });
     expect((await readManifest(project.projectDir)).files['src/gone-too.ts']).toBeUndefined();
+  });
+
+  it('removes a folder that the template no longer fills, and keeps one that holds the project\'s file', async () => {
+    const project = await seedProject();
+    const manifest = await readManifest(project.projectDir);
+    for (const relative of ['src/shell/kit/table.ts', 'src/shell/page.ts', 'src/mixed/gone.ts']) {
+      manifest.files[relative] = { capability: 'base', hash: sha('// old\n'), base: await putBase(project.projectDir, '// old\n') };
+      await write(project.projectDir, relative, '// old\n');
+    }
+    await fs.writeFile(path.join(project.projectDir, '.cossack/scaffold.json'), JSON.stringify(manifest, null, 2) + '\n');
+    await write(project.projectDir, 'src/mixed/mine.ts', '// the project\'s own\n');
+
+    await runUpgrade(project.projectDir, []);
+    await expect(fs.access(path.join(project.projectDir, 'src/shell'))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(fs.access(path.join(project.projectDir, 'src/mixed/gone.ts'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await fs.readFile(path.join(project.projectDir, 'src/mixed/mine.ts'), 'utf8')).toBe('// the project\'s own\n');
   });
 });

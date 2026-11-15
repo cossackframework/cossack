@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 import { isSameOriginPost } from '@cossackframework/cms';
-import { passesBotCheck } from '@/auth-bot-check';
+import { passesBotCheck } from '../../../auth-bot-check';
 import { auth, completeTwoFactor, beginTwoFactor, createSession, loginUser, logout, SignInLockedError, SignInPasskeyError } from '../../../auth';
 
 /**

@@ -1,8 +1,8 @@
 import { Cossack, Page, State, Server, Client, Ref, type RefObject, type HeadValue } from '@cossackframework/core';
 import { input } from '@cossackframework/core/input';
 import { getCookie } from 'hono/cookie';
-import { bulkBar } from '@/dashboard/bulk';
-import { listFilters, listFooter, listTable } from '@/dashboard/list-table';
+import { bulkBar } from '../../../../../dashboard/bulk';
+import { listFilters, listFooter, listTable } from '../../../../../dashboard/list-table';
 import { Avatar, AvatarGroup, HoverCard, Icon, NativeSelect, AlertDialog, Tooltip, Button, Input } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { ENTRY_ACTION_IDS, entryAuthors, evaluateRule, isCmsError, languageName, mediaUrl, participantColor, recordTitle, translationGroupOf, type BuiltinEntryAction, type EntryAction, type EntryColumn, type FieldFilter, type ListFilter, type RecordShape } from '@cossackframework/cms';

@@ -85,6 +85,7 @@ export declare function planDependencyChanges(current: DependencyBaseline, desir
   preserved: Array<{ name: string; reason: string; sections: string[] }>;
   conflicts: Array<{ name: string; reason: string; resolution: 'preserve' }>;
 };
+export declare function upgradedPnpmWorkspace(projectDir: string, content: Buffer): Promise<Buffer>;
 export declare function migratePnpmBuildSettings(
   projectDir: string,
   recipe: ScaffoldRecipe,

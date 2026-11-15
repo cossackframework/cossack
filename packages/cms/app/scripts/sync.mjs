@@ -2,9 +2,11 @@
 //
 // This application is the `node` + `cms` recipe, with one difference: a project mounts the
 // CMS from the package (package.json#cossack.packages), and this folder is that package's
-// served source, so it holds the files themselves and mounts nothing. Those files are tracked
-// here (see cossack-recipe.json); every other file of the recipe comes from
-// packages/scaffold/template and is written by this script, so each file has one source.
+// served source, so it holds the files themselves and mounts nothing. cossack-recipe.json
+// lists them in two groups. `served` is tracked here. `shell` (the sign-in pages, the
+// dashboard and its kit) comes from packages/scaffold/template and is written by this script,
+// like every project file of the recipe, so each file has one source. The package ships both
+// groups: `pnpm pack` runs this script first (prepack).
 // Local state is kept: `.env` is created once, `storage/` and plugins other than
 // default-theme are never touched. Files rendered by an earlier run that the recipe no
 // longer produces are removed (`.cossack/sync.json` lists them).
@@ -20,14 +22,12 @@ const WORKSPACE_PACKAGES = /^(?:@cossackframework\/(?!solar-icons)[^/]+|cossack)
 const SKIPPED = new Set(['package.json', 'pnpm-workspace.yaml', '.gitignore', 'README.md', 'AGENTS.md']);
 
 const manifest = JSON.parse(await fs.readFile(path.join(root, 'cossack-recipe.json'), 'utf8'));
-/**
- * Tracked here: the files the package serves. A project holds a re-export where this folder has the
- * module itself (`facades`), so those are never rendered here. The storage glue and src/cms.config.ts are rendered.
- */
-const tracked = rel => !manifest.rendered.includes(rel) && [...manifest.served, ...manifest.facades].some(entry => entry.endsWith('/') ? rel.startsWith(entry) : rel === entry);
+/** Tracked here, never rendered: the package's own served sources. */
+const tracked = rel => !manifest.rendered.includes(rel) && manifest.served.some(entry => entry.endsWith('/') ? rel.startsWith(entry) : rel === entry);
 
 const recipe = resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'] });
-const rendered = await renderRecipe(recipe, { projectName: 'Cossack' });
+// This folder is where the package serves the shell from, so the render keeps it.
+const rendered = await renderRecipe(recipe, { projectName: 'Cossack', servedFiles: true });
 
 const previous = JSON.parse(await fs.readFile(statePath, 'utf8').catch(() => '{"files":[]}'));
 const written = [];

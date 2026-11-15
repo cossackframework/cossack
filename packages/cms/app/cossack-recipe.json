@@ -1,6 +1,6 @@
 {
   "feature": "cms",
-  "description": "How the cms feature reaches an application. `served`: paths the application mounts from this package (package.json#cossack) and does not hold (a trailing slash names a directory). `facades`: shared auth and dashboard modules whose RomeDB versions are here; the application keeps each path as a one-line re-export, because its shell imports them by relative path. `rendered`: written into the application by the scaffold's cms recipe: the storage glue per runtime adapter, and `src/cms.config.ts`, the project's own configuration. Everything else under this folder is the shared application shell, rendered here by `pnpm sync` from packages/scaffold/template.",
+  "description": "How the cms feature reaches an application. `served`: paths the application mounts from this package (package.json#cossack) and does not hold, tracked here (a trailing slash names a directory). `shell`: served the same way, and written here by `pnpm sync` from packages/scaffold/template: the sign-in pages, the dashboard and its kit. `rendered`: written into the application by the scaffold's cms recipe: `src/cms.config.ts`, the project's own configuration. Every other file under this folder is a project file of this package's own development application, also written by `pnpm sync`.",
   "served": [
     "src/cms/",
     "src/pages/dashboard/(cms)/",
@@ -12,9 +12,7 @@
     "src/pages/api/auth/",
     "src/config/cms.ts",
     "src/plugins/default-theme/",
-    "src/pages/dashboard/index.ts"
-  ],
-  "facades": [
+    "src/pages/dashboard/index.ts",
     "src/brand.ts",
     "src/auth.ts",
     "src/passkeys.client.ts",
@@ -27,10 +25,17 @@
     "src/dashboard/head.ts",
     "src/dashboard/user-sections.ts"
   ],
+  "shell": [
+    "src/pages/auth/",
+    "src/pages/dashboard/",
+    "src/dashboard/",
+    "src/middlewares/auth.ts",
+    "src/auth-input.ts",
+    "src/auth-bot-check.ts",
+    "src/auth-bot-token.ts",
+    "src/config/auth.ts"
+  ],
   "rendered": [
-    "src/cms/database.ts",
-    "src/cms/media.ts",
-    "src/cms/pending.ts",
     "src/cms.config.ts"
   ]
 }

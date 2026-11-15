@@ -253,6 +253,11 @@ const packageOf = (specifier: string) => specifier.split('/').slice(0, specifier
  */
 export function servedPrebundle(projectRoot: string): { client: string[]; server: string[] } {
   const client = new Set<string>(), server = new Set<string>();
+  let application: Record<string, unknown> = {};
+  try {
+    const manifest = JSON.parse(readFileSync(join(projectRoot, 'package.json'), 'utf8'));
+    application = { ...manifest.dependencies, ...manifest.devDependencies };
+  } catch { /* No application dependencies to name. */ }
   for (const mounted of mountedPackages(projectRoot)) {
     const sources: string[] = [];
     const visit = (directory: string) => {
@@ -264,10 +269,15 @@ export function servedPrebundle(projectRoot: string): { client: string[]; server
     visit(mounted.root);
     let own: Record<string, unknown> = {};
     try { own = JSON.parse(readFileSync(join(mounted.directory, 'package.json'), 'utf8')).dependencies ?? {}; } catch { /* Listed plainly. */ }
-    const named = (specifier: string) => packageOf(specifier) !== mounted.name && Object.hasOwn(own, packageOf(specifier)) ? `${mounted.name} > ${specifier}` : specifier;
+    const viaPackage = (specifier: string) => packageOf(specifier) !== mounted.name && Object.hasOwn(own, packageOf(specifier));
+    // A dependency the application declares too is also listed plainly: the application's
+    // `resolve.dedupe` sends the served file's import to the application's copy, which is
+    // another file than the package's when the package is linked from a workspace.
+    const names = (specifier: string) => !viaPackage(specifier) ? [specifier]
+      : Object.hasOwn(application, packageOf(specifier)) ? [`${mounted.name} > ${specifier}`, specifier] : [`${mounted.name} > ${specifier}`];
     const found = prebundleDependencies(sources);
-    for (const specifier of found.client) client.add(named(specifier));
-    for (const specifier of found.server) server.add(named(specifier));
+    for (const specifier of found.client) for (const name of names(specifier)) client.add(name);
+    for (const specifier of found.server) for (const name of names(specifier)) server.add(name);
   }
   return { client: [...client].sort(), server: [...server].sort() };
 }

@@ -12,7 +12,7 @@
     "dev": "node scripts/start.mjs",
     "build": "node scripts/sync.mjs && vite build && vite build --ssr src/index.ts --outDir dist/server",
     "start": "node --env-file-if-exists=.env dist/server/index.js",
-    "typecheck": "node scripts/sync.mjs && cossack routes --generate && tsc --noEmit"
+    "typecheck": "node scripts/sync.mjs && cossack routes --generate && cossack config --generate && tsc --noEmit"
   },
   "devDependencies": {
     "@cossackframework/typescript-plugin": "workspace:*",

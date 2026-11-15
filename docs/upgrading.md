@@ -25,7 +25,7 @@ A project holds your code and a small number of files that Cossack wrote for you
 | Your CMS configuration | `src/cms.config.ts` | You. |
 | Content | the database and media storage | Editors, in the dashboard. |
 
-With the CMS, the project mounts the CMS's pages from the package (`package.json#cossack.packages`). Its `src/` has the storage glue for your runtime (`src/cms/database.ts`, `media.ts`, `pending.ts`), a few one-line files that re-export the CMS's modules, `src/cms.config.ts`, and your own plugins. To change how the CMS behaves, use a plugin, `src/cms.config.ts` or a child theme. To replace one page as a whole, use [`cossack eject`](/docs/cossack-cli.md#cossack-eject-package-path).
+With the CMS, the project mounts the CMS from the package (`package.json#cossack.packages`): its pages, the sign-in pages, the dashboard and the default theme. Its `src/` has `src/cms.config.ts`, the entry files, application configuration and your own plugins; it has no `src/dashboard/` or `src/pages/auth/` folder for an update to write into. To change how the CMS behaves, use a plugin, `src/cms.config.ts` or a child theme. To replace one page as a whole, use [`cossack eject`](/docs/cossack-cli.md#cossack-eject-package-path).
 
 ## What to commit
 
@@ -78,8 +78,9 @@ For every file the scaffold wrote, `cossack upgrade` compares three texts: your 
 - You and the release changed the same lines: your file is kept, and the plan lists it.
 - Only you changed it: it is kept.
 - You deleted it: it stays deleted, unless you pass `--force`.
+- The release no longer has it: it is deleted when you did not change it, and kept and listed when you did. A folder that becomes empty is removed.
 
-`package.json` is merged by key: dependencies the scaffold owns follow the release, and the ones you added or pinned stay.
+`package.json` and `pnpm-workspace.yaml` are merged by key: dependencies and build approvals the scaffold owns follow the release, and the ones you added or pinned stay, your own `overrides` included. The `scripts` of `package.json` are yours: an upgrade does not change them.
 
 ## Plugins and ejected pages
 

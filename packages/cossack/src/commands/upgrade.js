@@ -188,6 +188,10 @@ async function upgradeCommandInner(args, ctx) {
     // The build-settings migration merges user approvals. A raw template copy
     // would overwrite that merged result, so it owns this file for this run.
     if (migration.workspaceChanged) selected.delete('pnpm-workspace.yaml');
+    // Otherwise the template's keys go over the project's file: its own overrides and approvals stay.
+    else if (selected.has('pnpm-workspace.yaml') && !forceFiles.includes('pnpm-workspace.yaml') && report.rendered?.has('pnpm-workspace.yaml')) {
+      contents.set('pnpm-workspace.yaml', await target.api.upgradedPnpmWorkspace(root, report.rendered.get('pnpm-workspace.yaml').content));
+    }
     const dependencies = {
       updates: resolved.updates.map(update => publicChange({ ...update, changed: !!update.to && update.from !== update.to })),
       additions: (resolved.additions ?? []).map(publicChange), removals: (resolved.removals ?? []).map(publicChange),
@@ -298,6 +302,10 @@ async function upgradeCommandInner(args, ctx) {
       }
       for (const relative of selectedDeletes) {
         await fs.rm(path.join(root, relative));
+        // A folder the template no longer fills is removed when nothing else is in it.
+        for (let directory = path.dirname(path.join(root, relative)); directory !== root && directory.startsWith(root + path.sep); directory = path.dirname(directory)) {
+          if (!await fs.rmdir(directory).then(() => true, () => false)) break;
+        }
         applied.deleted.push(relative);
         ctx.out.file('deleted', path.join(root, relative));
       }

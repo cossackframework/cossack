@@ -6,8 +6,8 @@ import { currentCms, networkFor, siteUrl, updateSettings, type CmsBindings } fro
 import { updateAvailable } from '../cms/updates';
 import { recoveryCode } from '../cms/recovery';
 import { openMatches } from '../cms/site';
-import { dashboardModules } from '@/dashboard/registry';
-import type { DashboardModule, DashboardModuleLink, DashboardStatus } from '@/dashboard/types';
+import { dashboardModules } from './registry';
+import type { DashboardModule, DashboardModuleLink, DashboardStatus } from './types';
 
 /**
  * The same data within one request, asked for once: the layout, the command palette and the
