@@ -54,6 +54,27 @@ Browser                   Cossack app              OAuth provider
 - Exact `redirect_uri` match: the same value is sent on the authorize and
  token-exchange requests.
 
+## With the CMS
+
+List the providers in `src/cms.config.ts`, or create the project with `--auth-methods credentials,oauth --oauth github`:
+
+```ts
+export const options: CmsProjectConfig = {
+    oauth: ['github', 'google'],
+};
+```
+
+Set `<PROVIDER>_CLIENT_ID`, `<PROVIDER>_CLIENT_SECRET` and `OAUTH_SECRET` (16 characters or more). The sign-in page then shows a button for each provider, below the email and password form. The routes are the same: `/auth/<provider>/redirect` and `/auth/<provider>/callback`.
+
+The CMS treats a provider like its sign-in link: the provider proves an email address, and the account with that address signs in. It stores nothing about the provider's identity.
+
+- **An address the provider did not verify** signs nobody in.
+- **An existing active account** signs in. An account with an authenticator app still enters its code, and an account whose required second step is a passkey signs in with the passkey.
+- **An unknown address** becomes an account only while Settings → General lets anyone register. It gets the site's default role, and waits for approval when the site asks for that. It needs no confirmation email, because the provider confirmed the address. It has no password until its owner sets one with "Forgot password".
+- **A disabled account** stays out.
+
+Email and password stay on: the first administrator is created with a password during setup.
+
 ## Atomic state storage
 
 Cookie-based `createOAuth` requires an `OAuthStateStore`. With

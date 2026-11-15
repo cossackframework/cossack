@@ -7,7 +7,7 @@
 
 import { getCookie } from 'hono/cookie';
 import type { Context } from 'hono';
-import { createAuth, createSessionManager, totpUri, type AuthSessionRecord } from '@cossackframework/auth';
+import { createAuth, createOAuth, createSessionManager, OAuthError, totpUri, type AuthSessionRecord, type OAuthKit, type OAuthUser, type TokenSet } from '@cossackframework/auth';
 import {
     passkeyAuthenticationOptions, passkeyRegistrationOptions, verifyPasskeyAuthentication, verifyPasskeyRegistration,
     type AuthenticationResponseJSON, type PasskeyConfig, type PublicKeyCredentialCreationOptionsJSON, type PublicKeyCredentialRequestOptionsJSON, type RegistrationResponseJSON,
@@ -967,4 +967,116 @@ export async function consumeMagicLink(token: string): Promise<string | null> {
   if (!found?.user) return null;
   const account = await host.signIn.accounts.get(found.user).catch(() => null);
   return account && account.status === 'active' ? account.id : null;
+}
+
+// --- OAuth -------------------------------------------------------------------
+// The site's providers are its `oauth` option (src/cms.config.ts). Each reads
+// <PROVIDER>_CLIENT_ID and <PROVIDER>_CLIENT_SECRET; OAUTH_SECRET signs the state, which the
+// host's store spends once. /auth/<provider>/redirect and /callback are the routes.
+//
+// A provider proves an email address, as a sign-in link does: the account with that verified
+// address signs in, and still takes its second step. No provider identity is stored.
+const oauthVariables = (provider: string) => ({
+  clientId: `${provider.toUpperCase()}_CLIENT_ID`,
+  clientSecret: `${provider.toUpperCase()}_CLIENT_SECRET`,
+});
+
+/** Whether this site offers the provider. */
+export function oauthProvider(provider: string): boolean {
+  try { return cms().oauth.includes(provider); }
+  catch { return false; }
+}
+
+function oauthConfigurationError(c: Context, provider: string): OAuthError | null {
+  if (!oauthProvider(provider)) return new OAuthError('COSSACK_OAUTH_PROVIDER_UNKNOWN');
+  const variables = oauthVariables(provider);
+  const env = c.env as Record<string, unknown>;
+  if ([variables.clientId, variables.clientSecret].some(name => !String(env[name] ?? '').trim())) return new OAuthError('COSSACK_OAUTH_CREDENTIALS_MISSING');
+  if (String(env.OAUTH_SECRET ?? '').length < 16) return new OAuthError('COSSACK_OAUTH_SECRET_INVALID');
+  return null;
+}
+
+function oauthUnavailable(c: Context, error: OAuthError): Response {
+  console.warn('[Cossack OAuth]', error.toJSON());
+  const { message, ...diagnostic } = error.toJSON();
+  return c.json({ error: message, ...diagnostic }, error.status);
+}
+
+function createOAuthForRequest(c: Context): OAuthKit {
+  const host = cms(c);
+  const env = c.env as Record<string, unknown>;
+  return createOAuth({
+    secret: String(env.OAUTH_SECRET ?? ''),
+    stateStore: host.oauthStates,
+    providers: Object.fromEntries(host.oauth.map(provider => {
+      const variables = oauthVariables(provider);
+      return [provider, { clientId: String(env[variables.clientId] ?? ''), clientSecret: String(env[variables.clientSecret] ?? ''), redirectUrl: `/auth/${provider}/callback` }];
+    })),
+  });
+}
+
+export const oauth: OAuthKit = {
+  redirect: (provider) => async (c, next) => {
+    const error = oauthConfigurationError(c, provider);
+    if (error) return oauthUnavailable(c, error);
+    return createOAuthForRequest(c).redirect(provider)(c, next);
+  },
+  callback: (provider, options) => async (c, next) => {
+    const error = oauthConfigurationError(c, provider);
+    if (error) return oauthUnavailable(c, error);
+    return createOAuthForRequest(c).callback(provider, options)(c, next);
+  },
+};
+
+/**
+ * The provider sent the visitor back. Its verified email names the account: an active one signs
+ * in (through its second step, when it has one), and an unknown one becomes an account when
+ * registration is open, with the site's default role and its approval rule. The sign-in page
+ * says why a sign-in did not happen (`?oauth=<reason>`).
+ */
+export async function handleOAuthUser(_provider: string, oauthUser: OAuthUser, _tokens: TokenSet, c: Context) {
+  const refused = (reason: 'unverified' | 'closed' | 'pending' | 'inactive' | 'passkey') => c.redirect(`/auth/login?oauth=${reason}`);
+  const email = oauthUser.emailVerified === true && typeof oauthUser.email === 'string' ? oauthUser.email.trim().toLowerCase() : '';
+  // Only an address the provider verified may name or create an account.
+  if (!email) return refused('unverified');
+  const host = cms(c);
+  // The provider confirmed the address: a registration that never confirmed it gives way.
+  await replaceUnconfirmed(host, email, false);
+  let account = await host.signIn.accounts.findByEmail(email).catch(() => null);
+  if (!account) {
+    if (!(await registrationOpen())) return refused('closed');
+    const role = await host.settings.get('general.defaultRole');
+    let draft;
+    try {
+      draft = await host.registrationDraft({ email, name: (oauthUser.name ?? oauthUser.nickname ?? '').trim() || email.split('@')[0]!,
+        roles: role && (await host.users.role(role)) ? [role] : [], approval: await host.settings.get('general.approveRegistrations').catch(() => false) }, { origin: linkOrigin() ?? '' });
+    } catch (error) {
+      if (isCmsError(error, 'CMS_VALIDATION')) return refused('closed');
+      throw error;
+    }
+    // The account has no password anyone knows: it signs in with the provider, or sets one through "Forgot password".
+    const user = await host.users.create({ email, password: randomToken(48), name: draft.name, roles: draft.roles,
+      ...(draft.approval ? { approval: { verified: true } } : {}) });
+    await host.userRegistered(user, draft.approval ? 'approval' : 'active').catch(() => undefined);
+    if (draft.approval) return refused('pending');
+    account = await host.signIn.accounts.get(user.id).catch(() => null);
+  }
+  if (!account || account.status !== 'active') {
+    return refused(account && await host.users.awaitingApproval(account.id).catch(() => false) ? 'pending' : 'inactive');
+  }
+  // The provider stands in for the password only: an enrolled authenticator is still asked for.
+  let pending: string | null;
+  try { pending = await beginTwoFactor(account.id); }
+  catch (error) {
+    if (!(error instanceof SignInPasskeyError)) throw error;
+    return refused('passkey');
+  }
+  if (pending) {
+    const secure = new URL(c.req.url).protocol === 'https:';
+    c.header('set-cookie', `${TWO_FACTOR_COOKIE}=${pending}; Path=/; HttpOnly; SameSite=Lax; Max-Age=300${secure ? '; Secure' : ''}`, { append: true });
+    return c.redirect('/auth/two-factor');
+  }
+  const { headers } = await authSessions.create(account.id, c);
+  headers.forEach((value, key) => c.header(key, value, { append: key.toLowerCase() === 'set-cookie' }));
+  return c.redirect(config('auth.redirectAfterLogin'));
 }

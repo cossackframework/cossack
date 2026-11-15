@@ -9,6 +9,15 @@ import { BOT_CHECK_FAILED, botCheckToken } from '../../../auth-bot-token';
 import { authOptions } from '../../../auth-options';
 import { OAUTH_PROVIDER_ICONS, OAUTH_PROVIDER_LABELS } from '../../../auth-providers';
 
+/** Why a provider's sign-in did not happen, by the `oauth` query the callback sends. */
+const OAUTH_REFUSALS: Record<string, string> = {
+    unverified: 'The provider did not confirm your email address, so it cannot sign you in here.',
+    closed: 'There is no account for this email, and registration is closed on this site.',
+    pending: 'Your account waits for an administrator to approve it. We will email you when it is ready.',
+    inactive: 'This account cannot sign in.',
+    passkey: 'Two-step sign-in is required, and this account\'s second step is its passkey. Sign in with your passkey.',
+};
+
 /** Sign-in failures the visitor is told about, after the password matched or before it is checked; see auth.ts. */
 const TOLD = new Set(['SignInLockedError', 'SignInPendingError', 'SignInPasskeyError']);
 import { usePasskey } from '../../../passkeys.client';
@@ -48,6 +57,7 @@ export default class LoginPage extends Cossack {
     async init() {
         this.oauth = authOptions.authMethods.includes('oauth') ? [...authOptions.oauth] : [];
         this.credentials = authOptions.authMethods.includes('credentials');
+        this.error = OAUTH_REFUSALS[this.c.req.query('oauth') ?? ''] ?? '';
         this.canRegister = await registrationOpen();
         this.passkeys = twoFactorAvailable;
         this.botKey = botCheckKey();
@@ -151,6 +161,7 @@ export default class LoginPage extends Cossack {
         </div>` : null;
         if (!this.credentials) return html`
             <h3 class="mb-6 text-xl font-semibold text-foreground">${__('Login')}</h3>
+            ${this.error ? component(Alert, { variant: 'destructive' }, this.error) : null}
             ${providers}
         `;
         return html`

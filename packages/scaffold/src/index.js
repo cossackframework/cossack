@@ -281,6 +281,8 @@ const AUTH_PATHS = new Set([
   'src/auth-input.ts',
   'src/auth-options.ts',
   'src/auth-providers.ts',
+  'src/pages/auth/[provider]/redirect.ts',
+  'src/pages/auth/[provider]/callback.ts',
   'src/auth-bot-check.ts',
   'src/auth-bot-token.ts',
   'src/auth.ts',
@@ -298,8 +300,6 @@ const AUTH_PATHS = new Set([
 /** Auth storage on the ORM; the CMS store keeps users and sessions in RomeDB instead. */
 const AUTH_ORM_PATHS = new Set([
   'src/lib/uuid.ts',
-  'src/pages/auth/[provider]/redirect.ts',
-  'src/pages/auth/[provider]/callback.ts',
   'src/migrations/0001_create_users.ts',
   'src/migrations/0002_create_sessions.ts',
   'src/migrations/0008_add_session_public_id.ts',
@@ -1483,7 +1483,7 @@ export async function renderRecipe(recipe, options = {}) {
     files.set('src/index.ts', { ...entry, content: text(source) });
   }
   if (recipe.resolvedFeatures.includes('cms')) {
-    for (const [file, source] of Object.entries(cmsRecipeFiles({ adapter: recipe.adapter }))) files.set(file, { content: text(source), capability: 'cms' });
+    for (const [file, source] of Object.entries(cmsRecipeFiles({ adapter: recipe.adapter, oauth: recipe.config.authMethods.includes('oauth') ? recipe.config.oauth : [] }))) files.set(file, { content: text(source), capability: 'cms' });
     if (recipe.adapter === 'cloudflare') {
       const entry = files.get('src/index.ts');
       files.set('src/index.ts', { ...entry, content: text(patchCmsWorkerEntry(entry.content.toString('utf8'), { schedules: recipe.resolvedFeatures.includes('schedules') })) });

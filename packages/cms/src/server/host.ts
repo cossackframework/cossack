@@ -180,6 +180,12 @@ export interface CmsOptions {
     readonly mail?: MailTransport;
     /** The sender of the site's emails. Default `no-reply@example.com`. */
     readonly mailFrom?: string;
+    /**
+     * OAuth providers the sign-in page offers (`github`, `google`, `gitlab`, `facebook`,
+     * `microsoft`). Each reads `<PROVIDER>_CLIENT_ID` and `<PROVIDER>_CLIENT_SECRET`, and
+     * `OAUTH_SECRET` signs the state. Default: none.
+     */
+    readonly oauth?: readonly string[];
     /** Bindings plugins name in `permissions.secrets`, read when a granted plugin asks (`context.secrets.get`). Default: none. */
     readonly secrets?: (name: string) => string | undefined;
     /** The application's bindings, for a plugin granted unrestricted access (`context.unrestricted()`). Default: none. */
@@ -474,6 +480,8 @@ export class CmsHost {
     readonly mail: CmsMailer | null;
     /** The sender of the emails the CMS sends. */
     readonly mailFrom: string;
+    /** The OAuth providers the sign-in page offers. */
+    readonly oauth: readonly string[];
     /** Plugin schedules: `tick()` from maintenance queues the due occurrences as jobs. */
     readonly schedules: CmsSchedules;
     /** The audit trail of writes, for Tools → Activity. */
@@ -591,6 +599,7 @@ export class CmsHost {
         this.webhooks = new CmsWebhooks(this.db, { now: this.#now, fetch: options.webhookFetch ?? this.#fetch, local: options.localWebhooks === true });
         this.comments = new CmsComments(this.db, { now: this.#now, changed: entries => this.#purgeLater('comments', { tags: entries.filter(entry => entry.resource.startsWith('cms/')).map(entry => this.purge.tag.entry(entry.resource.slice(4), entry.recordId)) }) });
         this.mailFrom = options.mailFrom ?? 'no-reply@example.com';
+        this.oauth = Object.freeze([...new Set((options.oauth ?? []).filter(provider => /^[a-z0-9_-]{1,64}$/.test(provider)))]);
         this.mail = options.mail ? siteMailer({ transport: options.mail, from: this.mailFrom, site: this.site, hooks: this.hooks, settings: () => this.settings.all(),
             siteUrl: typeof options.siteUrl === 'function' ? options.siteUrl : () => options.siteUrl as string | undefined }) : null;
         const mail = this.mail;
@@ -2844,7 +2853,7 @@ export const DEFAULT_RESERVED_PATHS: readonly string[] = Object.freeze(['api', '
  * the defaults; every other option replaces its default.
  */
 export type CmsProjectOptions = Partial<Pick<CmsOptions,
-    'reservedPaths' | 'blocks' | 'settings' | 'taxonomies' | 'payments' | 'ai' | 'purgers' | 'mail' | 'mailFrom' | 'files'>> & {
+    'reservedPaths' | 'blocks' | 'settings' | 'taxonomies' | 'payments' | 'ai' | 'purgers' | 'mail' | 'mailFrom' | 'files' | 'oauth'>> & {
     /** The update notice: whether the CMS asks the update server, and which one (specs/cms-updates.md). */
     readonly updates?: UpdatesOptions;
 };

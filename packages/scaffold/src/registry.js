@@ -176,8 +176,9 @@ export function resolveRecipe(options = {}) {
   if (resolvedFeatures.includes('auth') && authMethods.includes('oauth') && oauth.length === 0) {
     throw new Error(`OAuth authentication requires at least one provider: ${OAUTH_PROVIDERS.join(', ')}`);
   }
-  if (authStore(resolvedFeatures) === 'cms' && (authMethods.includes('oauth') || oauth.length)) {
-    throw new Error('OAuth sign-in is not available with the cms feature yet. Use --auth-methods credentials.');
+  // The CMS's first administrator is created with a password, and every account can have one.
+  if (authStore(resolvedFeatures) === 'cms' && !authMethods.includes('credentials')) {
+    throw new Error('The cms feature always signs in with email and password. Add oauth to it: --auth-methods credentials,oauth.');
   }
   if (!authMethods.includes('oauth') && oauth.length) {
     throw new Error('OAuth providers were configured but the oauth auth method is not enabled');

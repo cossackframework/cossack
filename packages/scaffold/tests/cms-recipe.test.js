@@ -16,7 +16,8 @@ describe('cms recipe', () => {
     expect(recipe.resolvedFeatures).toEqual(['ui', 'auth', 'dashboard', 'markdown', 'cms']);
     expect(authStore(recipe.resolvedFeatures)).toBe('cms');
     expect(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['auth'] }).resolvedFeatures).toContain('database');
-    expect(() => resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'], authMethods: 'credentials,oauth', oauth: 'github' })).toThrow(/OAuth sign-in is not available with the cms feature/);
+    // OAuth is added to email and password, never in their place: setup creates the first administrator with a password.
+    expect(() => resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'], authMethods: 'oauth', oauth: 'github' })).toThrow(/always signs in with email and password/);
   });
 
   it('mounts the CMS from its package: the project holds its own configuration and no shell', async () => {
@@ -134,6 +135,21 @@ describe('cms recipe', () => {
     // The package's home page gives way to the application's: an application page overrides a package page of the same URL.
     expect(files.has('src/pages/(site)/index.ts')).toBe(false);
     expect(JSON.parse(text(files, 'package.json')).dependencies).not.toHaveProperty('@aws-sdk/client-s3');
+  });
+
+  it('lists the OAuth providers in src/cms.config.ts and serves their routes from the package', async () => {
+    const recipe = resolveRecipe({ adapter: 'cloudflare', preset: 'minimal', features: ['cms'], authMethods: 'credentials,oauth', oauth: 'github,google' });
+    const files = await renderRecipe(recipe, { authSecret: 'abcdefghijklmnopqrstuvwxyz123456' });
+    expect(text(files, 'src/cms.config.ts')).toContain("    oauth: ['github', 'google'],");
+    expect(text(files, '.dev.vars.example')).toContain('GOOGLE_CLIENT_ID=');
+    expect(JSON.parse(text(files, 'wrangler.jsonc').replace(/^\s*\/\/.*$/gm, '')).secrets.required).toEqual(expect.arrayContaining(['OAUTH_SECRET', 'GITHUB_CLIENT_SECRET']));
+    // The routes are the package's, like the sign-in page; the project has no OAuth code.
+    expect(files.has('src/pages/auth/[provider]/callback.ts')).toBe(false);
+    expect((await import('../src/cms-recipe.js')).isServedCmsPath('src/pages/auth/[provider]/callback.ts')).toBe(true);
+    expect(text(files, 'src/index.ts')).not.toContain('oauth');
+    // Without providers the option is a comment.
+    const plain = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'] }));
+    expect(text(plain, 'src/cms.config.ts')).toContain("    // oauth: ['github'],");
   });
 
   it('leaves the default theme and the editor out of applications without cms', async () => {

@@ -37,7 +37,7 @@ export function isCmsPath(rel) {
   return cmsRendered.has(rel);
 }
 
-export function cmsRecipeFiles({ adapter }) {
+export function cmsRecipeFiles({ adapter, oauth = [] }) {
   return {
     // The project's own file: written once, then merged on upgrades like any owned file.
     'src/cms.config.ts': `import { contentModule, formsModule, type ResourceDeclaration } from '@cossackframework/cms';
@@ -70,6 +70,9 @@ export const modules = [contentModule, formsModule];
 export const options: CmsProjectConfig = {
     // First path segments an entry's address cannot take, added to the CMS's own and to this project's routes.
     // reservedPaths: ['pricing'],
+    // OAuth providers on the sign-in page. Each reads <PROVIDER>_CLIENT_ID and <PROVIDER>_CLIENT_SECRET;
+    // OAUTH_SECRET signs the state. The provider's verified email names the account.
+    ${oauth.length ? `oauth: [${oauth.map(provider => `'${provider}'`).join(', ')}],` : "// oauth: ['github'],"}
     // Blocks and settings groups declared in code. Plugins declare theirs in their manifest.
     // blocks: [],
     // settings: [],
