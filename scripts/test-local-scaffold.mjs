@@ -32,6 +32,8 @@ const packageDirectories = [
   'auth',
   'romedb',
   'cms',
+  // The sign-in pages and the dashboard of projects on the database ORM, mounted like the CMS.
+  'dashboard',
   'ui',
   'framework',
   'database',
@@ -104,6 +106,7 @@ async function useTarballs(projectDir, tarballs, { documentation = false } = {})
   if (documentation) for (const name of [
     '@cossackframework/ui', '@cossackframework/auth', '@cossackframework/database',
     '@cossackframework/node-adapter', '@cossackframework/studio', '@cossackframework/romedb', '@cossackframework/cms',
+    '@cossackframework/dashboard',
   ]) {
     if (!pkg.dependencies?.[name]) pkg.devDependencies[name] = `file:${tarballs.get(name)}`;
   }
@@ -584,10 +587,8 @@ export default class PackagingSsgPage extends Cossack {
   await run('pnpm', ['run', 'migrate'], { cwd: projectDir });
   await run('pnpm', ['run', 'build'], { cwd: projectDir });
   await verifyGeneratedMigrationPlans(projectDir);
-  const cloudflareManifest = JSON.parse(await fs.readFile(
-    path.join(projectDir, '.cossack/scaffold.json'),
-    'utf8',
-  ));
+  // The recipe is recorded in package.json#cossack.
+  const cloudflareManifest = JSON.parse(await fs.readFile(path.join(projectDir, 'package.json'), 'utf8')).cossack;
   if (cloudflareManifest.runtime !== 'cloudflare') {
     throw new Error('Node to Cloudflare smoke switch did not update the manifest');
   }
@@ -613,10 +614,7 @@ export default class PackagingSsgPage extends Cossack {
   await verifyReleaseStripping(projectDir);
   await run('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: projectDir });
   await verifyNodeProductionAssets(projectDir);
-  const nodeManifest = JSON.parse(await fs.readFile(
-    path.join(projectDir, '.cossack/scaffold.json'),
-    'utf8',
-  ));
+  const nodeManifest = JSON.parse(await fs.readFile(path.join(projectDir, 'package.json'), 'utf8')).cossack;
   if (nodeManifest.runtime !== 'node') {
     throw new Error('Cloudflare to Node smoke switch did not update the manifest');
   }

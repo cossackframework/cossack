@@ -16,6 +16,9 @@ export const publishedPackageNames = [
 /** Packages that publish TypeScript source for the application bundler. */
 const sourcePackages = ['@cossackframework/auth', '@cossackframework/romedb', '@cossackframework/cms', '@cossackframework/dashboard'];
 
+/** Entries that import `cloudflare:workers`; the packed Workers CMS application compiles them. */
+const workersOnly = new Set(['@cossackframework/cms/cloudflare', '@cossackframework/cms/isolate']);
+
 /** Inspect the installed artifacts, never workspace package manifests or aliases. */
 export async function publishedImportPlan(projectDir) {
   const declarations = new Set();
@@ -41,6 +44,13 @@ export async function publishedImportPlan(projectDir) {
       for (const target of targets) assert.equal(target.status, 'present', `${entry.import} ${target.conditions.join('/')} target ${target.target} is not present`);
       exports.push({ ...entry, package: name });
       if (entry.import.endsWith('.json')) continue;
+      // Application sources a package serves (package.json#cossack.root) are compiled inside a
+      // project that mounts them: they import its `@/` modules and its generated config types.
+      // The packed CMS applications and the generated-app suites build and type-check them.
+      const served = typeof pkg.cossack?.root === 'string' ? `./${pkg.cossack.root.replace(/^\.\//, '')}/` : null;
+      if (served && targets.some(target => target.target.startsWith(served))) continue;
+      // Workers-only entries need the Workers runtime types of a Cloudflare project.
+      if (workersOnly.has(entry.import)) continue;
       for (const target of targets) {
         if (target.conditions.includes('types') || /\.(?:ts|mts)$/.test(target.target)) {
           declarations.add(entry.import);
