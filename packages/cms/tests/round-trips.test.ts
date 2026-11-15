@@ -62,8 +62,9 @@ describe.skipIf(!live)('round trips', () => {
         clock += 60_000;
         reads.reset();
         await cms.ready();
-        // Collections, taxonomies, field groups, the plugins' activation and the settings.
-        expect(reads.most()).toBeGreaterThanOrEqual(4);
+        // Collections, taxonomies and field groups together. The plugins' activation and the settings are
+        // read by the steps that need them: started beside these, they stopped a Worker from answering.
+        expect(reads.most()).toBeGreaterThanOrEqual(3);
         expect(cms.collections().map(collection => collection.name)).toContain('posts');
     });
 });
