@@ -39,6 +39,7 @@ beforeEach(async () => {
     '@cossackframework': path.join(scaffold, 'node_modules/@cossackframework'),
     prompts: fileURLToPath(new URL('../../../node_modules/prompts', import.meta.url)),
     yaml: fileURLToPath(new URL('../../../node_modules/yaml', import.meta.url)),
+    'node-diff3': fileURLToPath(new URL('../../../node_modules/node-diff3', import.meta.url)),
   })) await fs.symlink(directory, path.join(release, 'node_modules', name), 'junction');
   let source = await fs.readFile(path.join(release, 'src/index.js'), 'utf8');
   source = source.replace("dependencies.ws = dependencyVersion('ws');", "dependencies['release-added'] = '^2.0.0';");
@@ -117,7 +118,7 @@ describe('release-aligned upgrade planning and application', () => {
     await write('.cossack/scaffold.json', manifest);
     const before = await snapshot();
     const preview = await run(['--tag=next', '--dry-run']);
-    expect(preview.ok).toBe(true);
+    expect(preview.ok, JSON.stringify(preview.diagnostics)).toBe(true);
     expect(preview.data.plan.templateVersion).toBe('1.2.3');
     expect(preview.data.plan.dependencies.additions).toContainEqual({ name: 'release-added', section: 'dependencies', to: '^2.0.0' });
     expect(preview.data.plan.dependencies.removals).toContainEqual(expect.objectContaining({ name: 'ws' }));

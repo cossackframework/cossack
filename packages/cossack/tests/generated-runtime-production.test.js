@@ -953,7 +953,7 @@ it('generates typed URLs that execute real grouped, dynamic, catch-all and API h
   const manifest = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8'));
   const user = manifest.routes.find(route => route.name === '/users/[id]');
   expect(user).toMatchObject({ pattern: '/users/:id', layoutPaths: ['/src/pages/layout.ts', '/src/pages/(account)/layout.ts'], errorBoundary: '/src/pages/(account)/error/index.ts' });
-  expect(JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8')).scripts.typecheck).toBe('cossack routes --generate && tsc --noEmit');
+  expect(JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8')).scripts.typecheck).toBe('cossack typecheck');
   await fs.rm(path.join(root, '.cossack/routes.ts'));
   const cli = await promisify(execFile)(process.execPath, [path.join(repository, 'packages/cossack/bin/cossack.js'), 'routes', '--generate', '--json'], { cwd: root, timeout: 30000 });
   const inspected = JSON.parse(cli.stdout).data;

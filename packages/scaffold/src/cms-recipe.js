@@ -85,63 +85,31 @@ export const options: CmsProjectConfig = {
 }
 
 /**
- * Worker entry: export the pending-write Durable Object, run maintenance from cron, and run
- * isolated plugins through the Worker Loader binding with the bridge they call back.
+ * Worker entry: export the CMS's Durable Object classes and entrypoints, and run its
+ * maintenance from cron. The package holds the code (`app/src/cms/entry.ts`, `worker.ts`).
  */
 export function patchCmsWorkerEntry(source, { schedules }) {
-  let patched = source.replace("import { template } from './root';", "import { template } from './root';\nimport { cloudflarePluginRunner, createPluginBridge, PluginTail } from '@cossackframework/cms/cloudflare';\nimport { networkFor, setPluginRunner } from '@cossackframework/cms/app/cms/index';\nimport { runNetworkMaintenance } from '@cossackframework/cms/app/cms/maintenance';\nimport { pluginRouteActive } from '@cossackframework/cms/app/cms/middleware';");
-  patched = patched.replace('  htmlTemplate: template,\n', '  htmlTemplate: template,\n  // A rendered plugin\'s pages and handlers answer only while the plugin is active in the CMS.\n  isPluginActive: pluginRouteActive,\n');
+  let patched = source.replace("import { template } from './root';", "import { template } from './root';\nimport { cmsAppOptions, cmsScheduled } from '@cossackframework/cms/app/cms/entry';");
+  patched = patched.replace('  htmlTemplate: template,\n', '  htmlTemplate: template,\n  // A rendered plugin\'s pages and handlers answer only while the plugin is active in the CMS.\n  ...cmsAppOptions,\n');
   patched = patched.replace('export { SseDurableObject };', `export { SseDurableObject };
-// Unconfirmed RomeDB writes (ROMEDB_PENDING) survive isolate restarts here.
-export { RomeDBPendingWrites } from '@cossackframework/romedb/cloudflare';
-// Isolated plugins run in Workers of their own through the Worker Loader binding (LOADER, which
-// cossack add plugin adds with the first one), and call the CMS back through PluginBridge.
-setPluginRunner(cloudflarePluginRunner());
-export const PluginBridge = createPluginBridge<CloudflareBindings>((env, site) => networkFor(env as never).hostById(site));
-export { PluginTail };`);
-  const maintenance = 'ctx.waitUntil(runNetworkMaintenance(networkFor(env as never), { warm: true }));';
+// The CMS's Durable Object class and Worker entrypoints, which wrangler.jsonc names: pending
+// RomeDB writes (ROMEDB_PENDING), and the bridge and log tail of isolated plugins.
+export { RomeDBPendingWrites, PluginBridge, PluginTail } from '@cossackframework/cms/app/cms/worker';`);
   if (schedules) {
     return patched.replace(
       'async scheduled(controller: ScheduledController, env: CloudflareBindings) { await createSchedules(env).scheduled(controller); },',
-      `async scheduled(controller: ScheduledController, env: CloudflareBindings, ctx: ExecutionContext) {\n    ${maintenance}\n    await createSchedules(env).scheduled(controller);\n  },`,
+      'async scheduled(controller: ScheduledController, env: CloudflareBindings, ctx: ExecutionContext) {\n    cmsScheduled(env, ctx);\n    await createSchedules(env).scheduled(controller);\n  },',
     );
   }
-  return patched.replace('fetch: app.fetch,', `fetch: app.fetch,\n  // Recover unconfirmed writes, deliver outbox events and keep the Cloud database warm.\n  async scheduled(_controller: ScheduledController, env: CloudflareBindings, ctx: ExecutionContext) {\n    ${maintenance}\n  },`);
+  return patched.replace('fetch: app.fetch,', 'fetch: app.fetch,\n  // Recover unconfirmed writes, deliver outbox events and keep the Cloud database warm.\n  async scheduled(_controller: ScheduledController, env: CloudflareBindings, ctx: ExecutionContext) {\n    cmsScheduled(env, ctx);\n  },');
 }
 
-/** Node entry: run maintenance every minute in the server process. */
+/** Node entry: the same options, and maintenance every minute in the server process. */
 export function patchCmsNodeEntry(source) {
   return source
-    .replace("import { template } from './root';", "import { template } from './root';\nimport { networkFor } from '@cossackframework/cms/app/cms/index';\nimport { runNetworkMaintenance } from '@cossackframework/cms/app/cms/maintenance';\nimport { pluginRouteActive } from '@cossackframework/cms/app/cms/middleware';")
-    // A rendered plugin's pages and handlers answer only while the plugin is active in the CMS.
-    .replace('htmlTemplate: template, runtimeAdapter: runtime })', 'htmlTemplate: template, runtimeAdapter: runtime, isPluginActive: pluginRouteActive })')
-    .replace('  runtime.attach(server, fetch);', `  runtime.attach(server, fetch);
-  // Recover unconfirmed writes and deliver outbox events in the background, on each site in turn.
-  const maintenance = setInterval(() => {
-    runNetworkMaintenance(networkFor(env as never)).catch(error => console.error('[cms] maintenance failed', error));
-  }, 60_000);
-  maintenance.unref();`);
-}
-
-/**
- * Vite: plugin policy lints fail builds (raw RomeQL, undeclared network, permissions or hooks).
- * `pnpm dev` starts \`romedb serve\` for a loopback ROMEDB_URL; on Node, RomeDB's native
- * addon loads with Node rather than through Vite.
- */
-export function patchCmsViteConfig(source, { adapter }) {
-  const cloudflare = adapter === 'cloudflare';
-  let patched = source
-    .replace("import { cossackSsg } from '@cossackframework/framework/vite-ssg-plugin';", `import { cossackSsg } from '@cossackframework/framework/vite-ssg-plugin';\nimport { cossackPluginPolicy } from 'cossack/plugin-policy';\nimport { ${cloudflare ? 'romedbDev, romedbDevVars' : 'romedbDev'} } from '@cossackframework/romedb/dev';\nimport { cossackCmsIcons } from '@cossackframework/cms/vite';`)
-    .replace('  plugins: [\n', '  plugins: [\n    // Starts `romedb serve` in development when ROMEDB_URL is a loopback URL.\n    romedbDev(),\n')
-    .replace('    cossackConfig(),', '    cossackConfig(),\n    // Rendered plugins must stay within their manifest; violations fail the build.\n    cossackPluginPolicy(),\n    // The icon sprites under /assets/icons/, served in development and emitted into the client build.\n    cossackCmsIcons(),')
-    // Plugins with only server code run in Workers of their own on Cloudflare (specs/cms-plugin-isolation.md).
-    .replace('cossackPages({ ', "cossackPages({ pluginIsolation: { runtime: '@cossackframework/cms/isolate' }, ");
-  if (cloudflare) {
-    patched = patched.replace("      viteEnvironment: { name: 'ssr' },\n", "      viteEnvironment: { name: 'ssr' },\n      // The token of the local romedb serve that romedbDev started.\n      config: romedbDevVars,\n");
-  } else {
-    patched = patched.replace("            noExternal: [\n              'hono',", "            // RomeDB's native addon loads with Node, not through Vite, and shares @romedb/client's classes.\n            external: ['@romedb/client', '@romedb/node'],\n            noExternal: [\n              'hono',");
-  }
-  return patched;
+    .replace("import { template } from './root';", "import { template } from './root';\nimport { cmsAppOptions, startCmsMaintenance } from '@cossackframework/cms/app/cms/entry';")
+    .replace('htmlTemplate: template, runtimeAdapter: runtime })', 'htmlTemplate: template, runtimeAdapter: runtime, ...cmsAppOptions })')
+    .replace('  dev: import.meta.env?.DEV,\n', '  dev: import.meta.env?.DEV,\n  // Recover unconfirmed writes and deliver outbox events in the background.\n  started: startCmsMaintenance,\n');
 }
 
 export function cmsSetupCode() {

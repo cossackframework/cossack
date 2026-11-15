@@ -13,7 +13,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { mountedPackages, rewriteServedImports, servedKind } from '@cossackframework/framework/package-mounts';
 import { discoverRoutes } from '@cossackframework/framework/route-codegen';
-import { diffLines, hasConflictMarkers, mergeText, pruneBases, putBase, readBase } from '@cossackframework/scaffold';
+import { MANIFEST_SCHEMA_VERSION, diffLines, hasConflictMarkers, mergeText, pruneBases, putBase, readBase, readManifest as scaffoldManifest } from '@cossackframework/scaffold';
 
 const MANIFEST = '.cossack/scaffold.json';
 const sha256 = content => createHash('sha256').update(content).digest('hex');
@@ -24,12 +24,17 @@ const exists = file => fs.access(file).then(() => true, () => false);
 async function readManifest(root) {
   try { return JSON.parse(await fs.readFile(path.join(root, MANIFEST), 'utf8')); }
   catch (error) {
+    // A project that records no scaffold files has a manifest only for its ejected copies.
+    if (error.code === 'ENOENT' && (await scaffoldManifest(root))?.recordsFiles === false) {
+      return { schemaVersion: MANIFEST_SCHEMA_VERSION, tool: '@cossackframework/scaffold', ejected: {} };
+    }
     if (error.code === 'ENOENT') throw fail('COSSACK_EJECT_MANIFEST_MISSING', `No ${MANIFEST}: ejected files are recorded there. Create the project with cossack create.`);
     throw fail('COSSACK_EJECT_MANIFEST_INVALID', `${MANIFEST} is not valid JSON.`);
   }
 }
 
 async function writeManifest(root, manifest) {
+  await fs.mkdir(path.dirname(path.join(root, MANIFEST)), { recursive: true });
   await fs.writeFile(path.join(root, MANIFEST), JSON.stringify(manifest, null, 2) + '\n');
   await pruneBases(root);
 }

@@ -529,8 +529,8 @@ export async function verifyDesktopDevelopmentApplication(
             configFile,
             replaceOnce(
               configSource,
-              'plugins: [',
-              "plugins: [{name:'restart-acceptance',config:()=>{process.env.DESKTOP_RELOAD_ACCEPTANCE='configuration';}},",
+              'cossackApp({',
+              "cossackApp({ plugins: [{name:'restart-acceptance',config:()=>{process.env.DESKTOP_RELOAD_ACCEPTANCE='configuration';}}],",
             ),
           ),
         'configuration',

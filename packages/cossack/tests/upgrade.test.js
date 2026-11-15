@@ -298,7 +298,7 @@ describe('recipe upgrades', () => {
 
   it('renders adapter-specific files from the recorded Node recipe', async () => {
     const project = await seedProject();
-    const relative = 'vite.config.ts';
+    const relative = 'src/index.ts';
     const old = '// node scaffold v1\n';
     const manifest = await readManifest(project.projectDir);
     manifest.files[relative].hash = await write(project.projectDir, relative, old);
@@ -310,8 +310,8 @@ describe('recipe upgrades', () => {
 
     await runUpgrade(project.projectDir, []);
     const updated = await fs.readFile(path.join(project.projectDir, relative), 'utf8');
-    expect(updated).not.toContain('@cloudflare/vite-plugin');
-    expect(updated).toContain('cossackPages');
+    expect(updated).not.toContain('AppDurableObject');
+    expect(updated).toContain('nodeApplication');
   });
 
   it('renders project metadata from the declared package name', async () => {
@@ -485,7 +485,7 @@ describe('upgrades merge local edits', () => {
     expect(output.data.plan.files.noBase).toEqual([relative]);
     expect(output.data.plan.files.conflicts).toContainEqual({ path: relative, reason: 'no-base', resolution: 'preserve' });
     expect(await fs.readFile(path.join(project.projectDir, relative), 'utf8')).toBe('// user edit\n');
-    expect(await fs.readFile(path.join(project.projectDir, 'vite.config.ts'), 'utf8')).toContain('cossackPages');
+    expect(await fs.readFile(path.join(project.projectDir, 'vite.config.ts'), 'utf8')).toContain('cossackApp');
 
     // The first write moves the manifest to schema 4, with a base for every file equal to the template's.
     const upgraded = await readManifest(project.projectDir);
@@ -525,5 +525,89 @@ describe('upgrades merge local edits', () => {
     await expect(fs.access(path.join(project.projectDir, 'src/shell'))).rejects.toMatchObject({ code: 'ENOENT' });
     await expect(fs.access(path.join(project.projectDir, 'src/mixed/gone.ts'))).rejects.toMatchObject({ code: 'ENOENT' });
     expect(await fs.readFile(path.join(project.projectDir, 'src/mixed/mine.ts'), 'utf8')).toBe('// the project\'s own\n');
+  });
+});
+
+// A CMS project records no file hashes: the package serves what a release changes, and the
+// project's files are its own. An upgrade changes its dependencies and never its files.
+describe('a project that records no files', () => {
+  async function cmsProject() {
+    return (await createApp('app', { cwd: temporaryParent, adapter: 'cloudflare', preset: 'minimal', features: ['cms'], interactive: false })).projectDir;
+  }
+  /** A stand-in for the installed CMS package: what it mounts and what it asks of the project. */
+  async function installCms(root, field) {
+    const directory = path.join(root, 'node_modules/@cossackframework/cms');
+    await fs.mkdir(path.join(directory, 'app/src'), { recursive: true });
+    await fs.writeFile(path.join(directory, 'package.json'), JSON.stringify({ name: '@cossackframework/cms', version: '0.9.0',
+      cossack: { root: 'app/src', host: ['cms.config.ts', 'stores.client.ts'], ...field } }));
+  }
+  const exists = file => fs.access(file).then(() => true, () => false);
+
+  it('changes dependencies only, and leaves the project\'s files as they are', async () => {
+    const root = await cmsProject();
+    const entry = path.join(root, 'src/index.ts');
+    const edited = (await fs.readFile(entry, 'utf8')) + '\n// The project\'s own line.\n';
+    await fs.writeFile(entry, edited);
+    // A file the project deleted stays deleted: the upgrade cannot tell it from a file a release added.
+    await fs.rm(path.join(root, 'vitest.config.ts'));
+    await fs.appendFile(path.join(root, 'pnpm-workspace.yaml'), "# The project's own.\noverrides:\n  left-pad: 1.3.0\n");
+    await installCms(root, {});
+
+    const [code, output] = await upgradeJson(root, []);
+    expect(code).toBe(0);
+    expect(output.data.status).toBe('completed');
+    expect(output.data.plan.files).toMatchObject({ deletes: [], conflicts: [], merges: [] });
+    expect(output.data.plan.files.writes.map(file => file.path).filter(file => file !== 'pnpm-workspace.yaml')).toEqual([]);
+    expect(output.data.plan.manifest.changed).toBe(false);
+    expect(await fs.readFile(entry, 'utf8')).toBe(edited);
+    expect(await exists(path.join(root, 'vitest.config.ts'))).toBe(false);
+    const workspace = await fs.readFile(path.join(root, 'pnpm-workspace.yaml'), 'utf8');
+    expect(workspace).toContain('left-pad: 1.3.0');
+    expect(workspace).toContain('workerd: true');
+    expect(await exists(path.join(root, '.cossack'))).toBe(false);
+    expect(output.data.applied.hostSteps).toEqual([]);
+    // With nothing to add, the file keeps its own text: no key is quoted again, no comment is lost.
+    const [, again] = await upgradeJson(root, []);
+    expect(again.data.plan.files.writes).toEqual([]);
+    expect(await fs.readFile(path.join(root, 'pnpm-workspace.yaml'), 'utf8')).toBe(workspace);
+  });
+
+  it('writes a host module the package needs and the project lacks, and lists the changes it asks for', async () => {
+    const root = await cmsProject();
+    await fs.rm(path.join(root, 'src/stores.client.ts'));
+    await installCms(root, { hostTemplate: '99.0.0', hostSteps: { '99.0.0': ['wrangler.jsonc: add the SEARCH binding.'], '0.1.0': ['An old step.'] } });
+    const before = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8')).cossack.template;
+
+    const [code, output] = await upgradeJson(root, []);
+    expect(code).toBe(0);
+    expect(output.data.applied.files).toContain('src/stores.client.ts');
+    expect(await exists(path.join(root, 'src/stores.client.ts'))).toBe(true);
+    expect(output.data.applied.hostSteps).toEqual([{ package: '@cossackframework/cms', version: '0.9.0', template: '99.0.0', steps: ['wrangler.jsonc: add the SEARCH binding.'] }]);
+    // The project raises its template itself, when the changes are made.
+    expect(JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8')).cossack.template).toBe(before);
+  });
+
+  it('moves a recipe from an older manifest into package.json and removes the file records', async () => {
+    const root = await cmsProject();
+    const manifestFile = path.join(root, '.cossack/scaffold.json');
+    const packageFile = path.join(root, 'package.json');
+    const recorded = await readManifest(root);
+    const pkg = JSON.parse(await fs.readFile(packageFile, 'utf8'));
+    const { features: _features, template: _template, ...cossack } = pkg.cossack;
+    await fs.writeFile(packageFile, JSON.stringify({ ...pkg, cossack }, null, 2) + '\n');
+    await fs.mkdir(path.dirname(manifestFile), { recursive: true });
+    const base = await putBase(root, '// an old base\n');
+    await fs.writeFile(manifestFile, JSON.stringify({ ...recorded, recordsFiles: undefined, templateVersion: '0.8.5',
+      dependencyBaseline: { dependencies: {}, devDependencies: {} }, files: { 'src/index.ts': { capability: 'base', hash: sha('x'), base } } }));
+    await installCms(root, {});
+
+    const [code, output] = await upgradeJson(root, []);
+    expect(code).toBe(0);
+    expect(output.data.status).toBe('completed');
+    expect(JSON.parse(await fs.readFile(packageFile, 'utf8')).cossack).toMatchObject({ runtime: 'cloudflare', packages: ['@cossackframework/cms'], features: ['cms'], template: '0.8.5' });
+    expect(await exists(path.join(root, '.cossack'))).toBe(false);
+    // A second run has nothing to move.
+    const [, again] = await upgradeJson(root, []);
+    expect(again.data.applied.manifest).toBe(false);
   });
 });

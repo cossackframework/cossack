@@ -23,6 +23,8 @@ export async function createBudgetModuleGraphFixture(mode, installedRoot, { star
   if (!installedRoot) {
     await fs.mkdir(path.join(modules, '@cossackframework'));
     for (const name of ['framework', 'core', 'renderer', 'auth', 'database', 'ui', 'scaffold']) await fs.symlink(path.join(repository, 'packages', name), path.join(modules, '@cossackframework', name), 'junction');
+    // The application's vite.config.ts imports the preset from the CLI package.
+    await fs.symlink(path.join(repository, 'packages/cossack'), path.join(modules, 'cossack'), 'junction');
   }
   const nativeManifestPath = require.resolve('wrangler/package.json');
   const nativeManifest = JSON.parse(await fs.readFile(nativeManifestPath, 'utf8'));
@@ -52,8 +54,8 @@ export async function createBudgetModuleGraphFixture(mode, installedRoot, { star
   // Let the real Cloudflare build finish, then require Wrangler to rebundle its
   // actual emitted graph. The rebundled entry also imports a source outside the
   // output tree, which conservative receipt inventories cannot authenticate.
-  if (mode !== 'dynamic') viteSource = viteSource.replace('cossackBuildBudgets()', `cossackBuildBudgets(), {name:'native-budget-graph-artifact',writeBundle:{order:'post',async handler(){if(this.environment.config.consumer!=='server')return;const out=graphPath.resolve(this.environment.config.root,this.environment.config.build.outDir);const file=graphPath.join(out,'wrangler.json');let config;try{config=JSON.parse(await graphFs.readFile(file,'utf8'));}catch{return;}config.no_bundle=false;await graphFs.writeFile(file,JSON.stringify(config));${mode === 'rebundled' ? `const main=graphPath.resolve(out,config.main);const relative=graphPath.relative(out,graphPath.join(this.environment.config.root,'outside-output.js')).replaceAll('\\\\','/');await graphFs.writeFile(main,"import {value as externalValue} from "+JSON.stringify(relative.startsWith('.')?relative:'./'+relative)+";globalThis.__externalGraph=externalValue;\\n"+await graphFs.readFile(main,'utf8'));` : ''}}},}`);
-  viteSource = viteSource.replaceAll('build: {', 'build: { sourcemap: true,');
+  if (mode !== 'dynamic') viteSource = viteSource.replace('cossackApp({', `cossackApp({ plugins: [{name:'native-budget-graph-artifact',writeBundle:{order:'post',async handler(){if(this.environment.config.consumer!=='server')return;const out=graphPath.resolve(this.environment.config.root,this.environment.config.build.outDir);const file=graphPath.join(out,'wrangler.json');let config;try{config=JSON.parse(await graphFs.readFile(file,'utf8'));}catch{return;}config.no_bundle=false;await graphFs.writeFile(file,JSON.stringify(config));${mode === 'rebundled' ? `const main=graphPath.resolve(out,config.main);const relative=graphPath.relative(out,graphPath.join(this.environment.config.root,'outside-output.js')).replaceAll('\\\\','/');await graphFs.writeFile(main,"import {value as externalValue} from "+JSON.stringify(relative.startsWith('.')?relative:'./'+relative)+";globalThis.__externalGraph=externalValue;\\n"+await graphFs.readFile(main,'utf8'));` : ''}}},}],`);
+  viteSource = viteSource.replace('cossackApp({', 'cossackApp({ config: { build: { sourcemap: true }, environments: { client: { build: { sourcemap: true } }, ssr: { build: { sourcemap: true } } } },');
   await fs.writeFile(viteFile, viteSource);
   const cli = installedRoot ? path.join(installedRoot, 'node_modules/cossack/bin/cossack.js') : path.join(repository, 'packages/cossack/bin/cossack.js');
   const invoke = async () => {

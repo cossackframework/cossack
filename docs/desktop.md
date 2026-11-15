@@ -42,7 +42,7 @@ variables, and uses its result in place of the `env` export.
 Generated projects export a `createEnv` that passes every variable through,
 and build `env` from it only in production. Narrow it to the variables the
 application needs.
-Enable `developmentTraces: true` in `cossackPages()` for the shared
+Enable `developmentTraces: true` in `cossackPages()` (`cossackApp({ pages: { developmentTraces: true } })`) for the shared
 [inspector and CLI/MCP trace readers](./development-traces.md).
 Electron Forge creates the host installer only: DEB on Linux, MSI on Windows,
 and DMG on macOS. See the package [guide](../packages/desktop/docs/guide.md).

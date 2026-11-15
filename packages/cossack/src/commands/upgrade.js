@@ -11,8 +11,12 @@ import {
   pruneBases,
   putBase,
   readBase,
+  readManifest,
+  recipeRecord,
+  dropFileRecords,
   resolveRecipe,
 } from '@cossackframework/scaffold';
+import { hostStepsSince, mountedPackages, projectTemplate, versionBelow } from '@cossackframework/framework/package-mounts';
 import { readPluginState, upgradePlugin } from '@cossackframework/scaffold/plugins';
 import { loadUpgradeScaffold, resolveRegistryVersion } from '../upgrade-scaffold.js';
 import { mergeEjected } from '../eject.js';
@@ -94,7 +98,7 @@ async function upgradeCommandInner(args, ctx) {
   const projectPkg = await readJsonIfExists(path.join(root, 'package.json'));
   if (!projectPkg) throw Object.assign(new Error('No package.json found. Is this a Cossack project?'),
     { code: 'COSSACK_PROJECT_MISSING' });
-  const manifest = await fs.readFile(path.join(root, '.cossack/scaffold.json'), 'utf8')
+  let manifest = await fs.readFile(path.join(root, '.cossack/scaffold.json'), 'utf8')
     .then(source => {
       const value = JSON.parse(source);
       if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid manifest');
@@ -111,6 +115,12 @@ async function upgradeCommandInner(args, ctx) {
     'This project holds a copied CMS (src/cms/, src/pages/dashboard/(cms)/, ...), which this release no longer updates. ' +
     'Create a new project with cossack create --features cms, then copy your plugins (src/plugins/<name>), content and seed scripts into it. ' +
     'See docs/upgrading.md.'), { code: 'COSSACK_UPGRADE_CMS_COPIED' });
+  // A project that records no file hashes (a CMS project): its files are its own. The upgrade
+  // changes its dependencies, and writes a host file only when a package needs one it lacks.
+  const record = await readManifest(root);
+  const ownFiles = record?.recordsFiles === false;
+  // Its dependencies were last set by the release it declares; that release's recipe is their baseline.
+  if (ownFiles) manifest = { ...record, templateVersion: declaredRelease(projectPkg) ?? record.templateVersion };
   if (manifest?.dependencyBaseline !== undefined && (!manifest.dependencyBaseline ||
     typeof manifest.dependencyBaseline !== 'object' || Array.isArray(manifest.dependencyBaseline) ||
     Object.values(manifest.dependencyBaseline).some(section => !section || typeof section !== 'object' ||
@@ -146,7 +156,7 @@ async function upgradeCommandInner(args, ctx) {
     }
 
     // Compute every file decision before changing package.json or installing.
-    const report = await buildDriftReport(root, projectPkg.name || path.basename(root), manifest, target.api, target.version);
+    const report = await buildDriftReport(root, projectPkg.name || path.basename(root), manifest, target.api, target.version, ownFiles);
     for (const relative of forceFiles) {
       if (!report.rendered?.has(relative) || EXCLUDE_FROM_SYNC.has(relative) ||
           report.rendered.get(relative).capability === 'local-environment' || !safeRelative(relative)) {
@@ -187,6 +197,13 @@ async function upgradeCommandInner(args, ctx) {
       : { changed: false, packageChanged: false, workspaceChanged: false };
     // The build-settings migration merges user approvals. A raw template copy
     // would overwrite that merged result, so it owns this file for this run.
+    if (ownFiles && !migration.workspaceChanged && report.rendered?.has('pnpm-workspace.yaml')) {
+      // The template's keys (build approvals, overrides) go over the project's file; its own stay.
+      const workspace = Buffer.from(await target.api.upgradedPnpmWorkspace(root, report.rendered.get('pnpm-workspace.yaml').content));
+      const current = await fs.readFile(path.join(root, 'pnpm-workspace.yaml')).catch(() => null);
+      report.currentHashes.set('pnpm-workspace.yaml', current ? createHash('sha256').update(current).digest('hex') : null);
+      if (!current || !current.equals(workspace)) { selected.add('pnpm-workspace.yaml'); contents.set('pnpm-workspace.yaml', workspace); }
+    }
     if (migration.workspaceChanged) selected.delete('pnpm-workspace.yaml');
     // Otherwise the template's keys go over the project's file: its own overrides and approvals stay.
     else if (selected.has('pnpm-workspace.yaml') && !forceFiles.includes('pnpm-workspace.yaml') && report.rendered?.has('pnpm-workspace.yaml')) {
@@ -200,7 +217,9 @@ async function upgradeCommandInner(args, ctx) {
     const packageManager = await detectPackageManager(root);
     const dependencyChanges = dependencies.updates.some(update => update.changed) ||
       dependencies.additions.length > 0 || dependencies.removals.length > 0;
-    const manifestChanges = !!manifest && (selected.size > 0 || selectedDeletes.length > 0 || dependencyChanges || migration.changed ||
+    // The recipe of a project without file records moves to package.json once, and its old records go.
+    const recordMoves = ownFiles && (!Array.isArray(projectPkg.cossack?.features) || await hashFile(path.join(root, '.cossack/scaffold.json')) !== null && !record.ejected);
+    const manifestChanges = !ownFiles && !!manifest && (selected.size > 0 || selectedDeletes.length > 0 || dependencyChanges || migration.changed ||
       rebased.length > 0 || manifest.schemaVersion !== MANIFEST_SCHEMA_VERSION || manifest.templateVersion !== target.version || JSON.stringify(manifest.dependencyBaseline) !== JSON.stringify(merged.baseline));
     const kept = relative => !selected.has(relative);
     const openConflicts = report.conflict.filter(kept);
@@ -236,7 +255,7 @@ async function upgradeCommandInner(args, ctx) {
       },
       // Copies made by cossack eject: `status` is what merging the installed package's version does to each.
       ejected: ejectedPreview.map(({ text: _text, ...entry }) => entry),
-      manifest: { changed: manifestChanges, path: '.cossack/scaffold.json' },
+      manifest: { changed: manifestChanges || recordMoves, path: ownFiles ? 'package.json' : '.cossack/scaffold.json' },
       install: { packageManager, required: dependencyChanges }, nextActions,
     };
     ctx.out.line(`Upgrading ${projectPkg.name || 'project'} at ${root}`);
@@ -259,6 +278,11 @@ async function upgradeCommandInner(args, ctx) {
       for (const relative of selected) ctx.out.file('planned', path.join(root, relative));
       for (const relative of selectedDeletes) ctx.out.file('planned-delete', path.join(root, relative));
       if (manifestChanges) ctx.out.file('planned', path.join(root, '.cossack/scaffold.json'));
+      if (recordMoves) {
+        // The recipe goes to package.json; the file records and their stored texts are removed.
+        if (!dependencyChanges && !migration.packageChanged) ctx.out.file('planned', path.join(root, 'package.json'));
+        ctx.out.file('planned-delete', path.join(root, '.cossack/scaffold.json'));
+      }
       return ctx.out.data({ status: 'dry-run', plan });
     }
 
@@ -309,6 +333,17 @@ async function upgradeCommandInner(args, ctx) {
         applied.deleted.push(relative);
         ctx.out.file('deleted', path.join(root, relative));
       }
+      if (recordMoves) {
+        const current = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
+        const recipe = recipeFromManifest(record);
+        current.cossack = { ...current.cossack, runtime: recipe.adapter, ...recipeRecord(recipe),
+          // The project's files are as old as its last template, not as new as this release.
+          template: record.templateVersion ?? recipeRecord(recipe).template };
+        await fs.writeFile(path.join(root, 'package.json'), JSON.stringify(current, null, 2) + '\n');
+        await dropFileRecords(root, record);
+        applied.manifest = true;
+        ctx.out.file('overwritten', path.join(root, 'package.json'));
+      }
       if (manifestChanges) {
         await refreshManifest(root, [...applied.files,
           ...(dependencyChanges || migration.packageChanged ? ['package.json'] : []),
@@ -320,6 +355,31 @@ async function upgradeCommandInner(args, ctx) {
         ctx.out.line(`Reinstalling with ${packageManager}...`);
         await runInstall(packageManager, root);
         applied.installed = true;
+      }
+      if (ownFiles) {
+        // With the target installed: a host module a package needs and the project lacks is written,
+        // and the changes a package asks of the project's own files are listed, never made.
+        let mounted = [];
+        try { mounted = mountedPackages(root); } catch (error) { ctx.out.warn(error.message); }
+        const template = projectTemplate(root).version;
+        applied.hostSteps = [];
+        for (const entry of mounted) {
+          for (const module of entry.host) {
+            const relative = `src/${module}`;
+            if (!report.rendered?.has(relative) || await hashFile(path.join(root, relative)) !== null) continue;
+            await fs.mkdir(path.dirname(path.join(root, relative)), { recursive: true });
+            await fs.writeFile(path.join(root, relative), report.rendered.get(relative).content);
+            applied.files.push(relative);
+            ctx.out.file('created', path.join(root, relative));
+          }
+          if (!versionBelow(template, entry.hostTemplate)) continue;
+          const steps = hostStepsSince(entry, template);
+          applied.hostSteps.push({ package: entry.name, version: entry.version, template: entry.hostTemplate, steps });
+          ctx.out.warn(`${entry.name} ${entry.version} needs changes in this project's own files (template ${entry.hostTemplate}; the project is at ${template}):`);
+          for (const step of steps) ctx.out.warn(`  - ${step}`);
+          if (!steps.length) ctx.out.warn(`  See the release notes of ${entry.name} ${entry.hostTemplate}.`);
+          ctx.out.warn(`  Then set cossack.template to "${entry.hostTemplate}" in package.json. The build stops until then.`);
+        }
       }
       // With the target installed: merge the package's new text into each ejected copy, and
       // render each plugin that came from an npm package again from its installed version.
@@ -409,7 +469,13 @@ export function classifyFile({ baseline, current, newHash, excluded }) {
   return 'modified';
 }
 
-async function buildDriftReport(root, projectName, manifest, api, version) {
+/** The release a project's dependencies declare (`^0.9.0` gives 0.9.0), or undefined for a link or a tag. */
+function declaredRelease(pkg) {
+  const range = pkg.dependencies?.['@cossackframework/framework'] ?? pkg.dependencies?.cossack ?? pkg.devDependencies?.cossack;
+  return /^[~^]?(\d+\.\d+\.\d+(?:[-+][\w.-]+)?)$/.exec(range ?? '')?.[1];
+}
+
+async function buildDriftReport(root, projectName, manifest, api, version, ownFiles = false) {
   const adapter = manifest?.runtime ?? manifest?.adapter;
 
   const report = {
@@ -436,6 +502,8 @@ async function buildDriftReport(root, projectName, manifest, api, version) {
     missing: [],
     rendered: null,
     currentHashes: new Map(),
+    // The project records no file hashes: no file is compared.
+    ownFiles,
   };
 
   if (!manifest) return report;
@@ -449,6 +517,7 @@ async function buildDriftReport(root, projectName, manifest, api, version) {
   report.rendered = rendered;
   for (const rel of rendered.keys()) if (!safeRelative(rel)) throw Object.assign(new Error('Target scaffold contains an invalid relative path.'),
     { code: 'COSSACK_UPGRADE_TEMPLATE_INVALID' });
+  if (ownFiles) return report;
   const paths = new Set([...Object.keys(manifest.files ?? {}), ...rendered.keys()]);
   for (const rel of paths) {
     const owned = manifest.files?.[rel];
@@ -526,6 +595,11 @@ function printReport(report, out) {
       '  No .cossack/scaffold.json found — skipping file-level drift analysis.\n' +
         '  Only dependency versions are planned.',
     );
+    return;
+  }
+  if (report.ownFiles) {
+    out.line('  This project records no file hashes: its files are its own, and the packages it mounts\n' +
+      '  serve what a release changes. Only dependency versions are planned.\n');
     return;
   }
   section(out, 'Unchanged, update available', report.canUpdate);

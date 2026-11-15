@@ -100,7 +100,8 @@ const markdownProcessor = createMarkdownProcessor<GuideMetadata>({
   },
 });
 
-// Use this processor in your existing Vite plugin configuration.
+// Give this processor to the preset in vite.config.ts: cossackApp({ markdownProcessor }).
+// A configuration written by hand passes it to the plugin:
 const pages = cossackPages({ markdownProcessor });
 ```
 

@@ -127,15 +127,17 @@ pnpm exec cossack ssg
 ```
 
 Vite options such as `--mode staging` are forwarded by `cossack build` and
-`cossack ssg`. Configure SSG-specific options on the existing plugin entry in
-`vite.config.ts`:
+`cossack ssg`. Configure SSG-specific options through the preset in
+`vite.config.ts`; they are the options of `cossackSsg()`:
 
 ```typescript
-cossackSsg({
-  baseUrl: 'https://example.com',
-  outDir: 'dist/client',
-  enabled: true,
-})
+export default cossackApp({
+  ssg: {
+    baseUrl: 'https://example.com',
+    outDir: 'dist/client',
+    enabled: true,
+  },
+});
 ```
 
 The `--base-url`, `--out-dir`, `--app`, `--template`, and `--project-root`

@@ -228,11 +228,9 @@ it('enforces selected database recipe requirements before compiling its modules'
   const root = await project('node', ['database']);
   const file = path.join(root, 'vite.config.ts');
   const config = await fs.readFile(file, 'utf8');
-  expect(config).toContain('"feature":"database/sqlite"');
   // Simulate selecting a build runtime that cannot run the recorded local database.
   // This must fail through the generated requirement, before importing native SQLite.
-  await fs.writeFile(file, config.replace("mode === 'desktop' ? 'desktop' : 'node'", "mode === 'desktop' ? 'desktop' : 'cloudflare'")
-    .replace('capabilities: { runtime:', 'capabilities: { bindings: [], runtime:'));
+  await fs.writeFile(file, config.replace('cossackApp({', "cossackApp({ pages: { capabilities: { bindings: [], runtime: 'cloudflare' } },"));
   await expect(vite(root, [])).rejects.toThrow(/\.cossack\/scaffold.json: database\/sqlite requires filesystem on cloudflare/);
 }, 30000);
 it('rejects a generated Desktop target that retains a native Cloudflare database', async () => {
@@ -425,7 +423,7 @@ it.skipIf(process.env.COSSACK_DESKTOP_ACCEPTANCE!=='1').each([false,true])('exec
   await writeDesktopRuntimeAcceptance(root);
   const config=path.join(root,'vite.config.ts');
   const source=await fs.readFile(config,'utf8');
-  await fs.writeFile(config,source.replace('cossackPages({','cossackPages({ developmentTraces:true,').replace('plugins: [',`plugins: [{name:'acceptance-fs',config:()=>({server:{fs:{allow:${JSON.stringify([repository,root])}}}})},`));
+  await fs.writeFile(config,source.replace('cossackApp({',`cossackApp({ pages: { developmentTraces: true }, plugins: [{name:'acceptance-fs',config:()=>({server:{fs:{allow:${JSON.stringify([repository,root])}}}})}],`));
   await verifyDesktopDevelopmentApplication(root,{launcher,startupError:launcher,crash:launcher,
     onRecorded: record => verifyDesktopTraceReaders(root,record,path.join(repository,'packages/cossack')),
   });

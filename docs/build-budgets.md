@@ -122,23 +122,13 @@ CLOUDFLARE_VITE_WRANGLER_CONFIG_PATH=deployment/worker.jsonc pnpm exec cossack d
 
 Paths resolve from the project/Vite root. A missing selected file fails without
 falling back to a root Wrangler file. For direct Vite composition, explicit
-`configPath` takes priority over the environment variable. Pass one shared value
-to every plugin that inspects the Worker:
+`configPath` takes priority over the environment variable. The preset passes one value to
+every plugin that inspects the Worker:
 
 ```ts
-import { cloudflare } from '@cloudflare/vite-plugin';
-import { cossackBuildBudgets, cossackPages, cossackConfig } from '@cossackframework/framework/vite-plugin';
-import { cossackSsg } from '@cossackframework/framework/vite-ssg-plugin';
+import { cossackApp } from 'cossack/vite';
 
-const configPath = 'deployment/worker.jsonc';
-const plugins = [
-  cloudflare({ configPath }),
-  cossackBuildBudgets({ configPath }),
-  cossackPages({ configPath, capabilities: { runtime: 'cloudflare' } }),
-  cossackConfig({ configPath }),
-  // If the application uses SSG:
-  cossackSsg({ configPath }),
-];
+export default cossackApp({ configPath: 'deployment/worker.jsonc' });
 ```
 
 The CLI does not evaluate the Vite configuration to discover plugin options. Use the

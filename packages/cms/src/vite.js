@@ -133,3 +133,28 @@ export function cossackCmsIcons() {
         },
     };
 }
+
+/**
+ * The CMS's part of a project's Vite configuration; the `cossack/vite` preset calls it
+ * (`cossack.vite` in this package's package.json).
+ */
+export async function cossackVite({ runtime, mode, command }) {
+    const { romedbDev, romedbDevVars } = await import('@cossackframework/romedb/dev');
+    return {
+        // Starts `romedb serve` in development when ROMEDB_URL is a loopback URL.
+        setup: [romedbDev()],
+        // The icon sprites under /assets/icons/, served in development and emitted into the client build.
+        plugins: [cossackCmsIcons()],
+        // Rendered plugins must stay within their manifest: raw RomeQL, undeclared network,
+        // permissions or hooks fail the build.
+        pluginPolicy: true,
+        // Plugins with only server code run in Workers of their own on Cloudflare (specs/cms-plugin-isolation.md).
+        pages: { pluginIsolation: { runtime: '@cossackframework/cms/isolate' } },
+        // The token of the local romedb serve that romedbDev started.
+        cloudflare: { config: romedbDevVars },
+        // RomeDB's native addon loads with Node, not through Vite, and shares @romedb/client's classes.
+        config: runtime === 'node' && !(mode === 'desktop' && command === 'build')
+            ? { environments: { ssr: { resolve: { external: ['@romedb/client', '@romedb/node'] } } } }
+            : undefined,
+    };
+}

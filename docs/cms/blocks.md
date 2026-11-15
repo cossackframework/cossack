@@ -66,8 +66,8 @@ Templates and block renderers draw an icon with `helpers.icon(name, { class, lab
 colored by `currentColor`, sized by `class` (default `size-5`), decorative unless `label` names
 it, and null for a name outside the catalog. The artwork is not in the HTML: the icon is
 `<svg><use href="/assets/icons/<style>/<group>.<version>.svg#name">`, a reference into one of
-the sprites the `cossackCmsIcons()` Vite plugin (`@cossackframework/cms/vite`, in every
-generated application's `vite.config.ts`) serves in development and emits into the client
+the sprites the `cossackCmsIcons()` Vite plugin (`@cossackframework/cms/vite`, which the
+`cossack/vite` preset adds for every project that mounts the CMS) serves in development and emits into the client
 build. There is one sprite per style and category, plus one of the hot set (the site's
 `SITE_ICON_NAMES` and the dashboard's `DASHBOARD_ICON_NAMES`), so a dashboard page loads its
 icons in one request, and an icon outside that set costs one more request for its category.

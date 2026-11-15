@@ -98,6 +98,12 @@ export declare function migratePnpmBuildSettings(
 export declare function planChanges(projectDir: string, recipe: ScaffoldRecipe, manifest?: unknown): Promise<ChangeSet>;
 export declare function resolveManifestRecipe(manifest: unknown): ScaffoldRecipe;
 export declare function readManifest(projectDir: string): Promise<any | null>;
+/** Whether a project of this recipe records its scaffold files (false for a CMS project). */
+export declare function recordsFiles(recipe: any): boolean;
+/** The recipe as package.json#cossack records it for a project without file records. */
+export declare function recipeRecord(recipe: any): { features: string[]; template: string; options?: Record<string, unknown> };
+/** Remove a project's file records; returns the path of the file that holds its recipe. */
+export declare function dropFileRecords(projectDir: string, previousManifest?: any): Promise<string>;
 export declare function detectProjectRuntime(projectDir: string, manifest?: unknown): Promise<Adapter | undefined>;
 export declare function writeManifest(
   projectDir: string,

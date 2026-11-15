@@ -65,6 +65,7 @@ Run `cossack --help` to list all commands, or `cossack <command> --help` for com
 | `seeder <sub>` (`seed`) | Run registered seeders (`list`, `run`). |
 | `studio` | Inspect the configured database in a local browser. |
 | `routes` | List all routes in the project. |
+| `typecheck` | Write the generated types (bindings, typed URLs, `config()` keys), then run `tsc --noEmit`. |
 | `config` | List configuration factory type origins. Use `--generate` before standalone type checking. |
 | `ssg` | Pre-render pages marked `ssg:true` to static HTML. |
 | `image optimize` | Generate optimized image variants from `<Image>` usages (requires ImageMagick). |

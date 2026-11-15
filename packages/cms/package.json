@@ -88,6 +88,7 @@
     "./package.json": "./package.json"
   },
   "cossack": {
+    "vite": "src/vite.js",
     "root": "app/src",
     "alias": "cms",
     "pages": [

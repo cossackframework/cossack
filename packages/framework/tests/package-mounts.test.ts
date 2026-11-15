@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { hostContractProblems, mountedPackages, PackageMountError } from '../src/package-mounts';
+import { hostContractProblems, hostStepsSince, mountedPackages, PackageMountError, projectTemplate } from '../src/package-mounts';
 import { listPlugins, overrideReport, pluginLocations, readRenderedPlugins, scanPageSources } from '../src/plugin-sources';
 import { discoverConfigSources, generateConfigTypes } from '../src/config-codegen';
 import { discoverRoutes, renderRouteSource } from '../src/route-codegen';
@@ -268,6 +268,18 @@ describe('mounted packages', () => {
     expect(both).toEqual(expect.arrayContaining(['@acme/kit > @cossackframework/solar-icons/users/line', '@cossackframework/solar-icons/users/line', '@acme/kit > @tiptap/core']));
     expect(both).not.toContain('@tiptap/core');
 
+    // The application's own files are read the same way, and named plainly; a project's
+    // vite.config.ts lists nothing.
+    const own = project({ 'src/pages/editor.ts': "import { Editor } from '@tiptap/core';\nimport { Pen } from '@cossackframework/solar-icons/pen/line';\nexport default class Page {}\n",
+      'src/pages/editor.test.ts': "import '@tiptap/starter-kit';\n" });
+    const ownConfig = (cossackPages().config as Function)({ root: own.root }, { command: 'serve' });
+    expect(ownConfig.environments.client.optimizeDeps.include).toEqual(expect.arrayContaining(['@tiptap/core', '@cossackframework/solar-icons/pen/line']));
+    expect(ownConfig.environments.ssr.optimizeDeps.include).toEqual(expect.arrayContaining(['@tiptap/core', '@cossackframework/solar-icons/pen/line']));
+    expect(ownConfig.environments.client.optimizeDeps.include.join(' ')).not.toMatch(/starter-kit/);
+    // An application that mounts nothing gets its list too.
+    write(own.root, { 'package.json': JSON.stringify({ name: 'app' }) });
+    expect((cossackPages().config as Function)({ root: own.root }, { command: 'serve' }).environments.client.optimizeDeps.include).toContain('@tiptap/core');
+
     // A linked package is outside the project: the dev server must be allowed to serve its files.
     const linked = project({}, { linked: true });
     expect((cossackPages().config as Function)({ root: linked.root }, { command: 'serve' }).server.fs.allow).toContain(linked.kit);
@@ -286,6 +298,22 @@ describe('mounted packages', () => {
       ['COSSACK_PACKAGE_HOST_OUTDATED', expect.stringContaining('@acme/kit 1.4.0 needs project files from template 0.10.0, and this project is at 0.9.3. Run cossack upgrade.')],
     ]);
     write(root, { '.cossack/scaffold.json': JSON.stringify({ templateVersion: '0.10.0' }) });
+    expect(hostContractProblems(root)).toEqual([]);
+  });
+
+  it('tells a project that keeps no file hashes which changes to make, and takes its word when they are made', () => {
+    const { root, kit } = project();
+    // Such a project records the template of its own files in package.json; no upgrade edits them.
+    write(root, { 'package.json': JSON.stringify({ name: 'app', cossack: { packages: ['@acme/kit'], template: '0.9.3' } }) });
+    expect(hostContractProblems(root)[0]!.message).toBe('[Cossack] COSSACK_PACKAGE_HOST_OUTDATED: @acme/kit 1.4.0 needs project files from template 0.10.0, and this project is at 0.9.3. ' +
+      'See the release notes of @acme/kit 0.10.0 for the changes. Then set cossack.template to "0.10.0" in package.json.');
+    // The package names the steps by the template that needs them; older ones are not repeated.
+    write(kit, { 'package.json': JSON.stringify({ name: '@acme/kit', version: '1.4.0', cossack: { ...field,
+      hostSteps: { '0.10.0': ['src/index.ts: export { Bridge } from "@acme/kit/app/worker".'], '0.9.5': ['wrangler.jsonc: add the BRIDGE binding.'], '0.9.0': ['An older step.'] } } }) });
+    expect(hostStepsSince(mountedPackages(root)[0]!, '0.9.3')).toEqual(['wrangler.jsonc: add the BRIDGE binding.', 'src/index.ts: export { Bridge } from "@acme/kit/app/worker".']);
+    expect(hostContractProblems(root)[0]!.message).toContain('Make these changes:\n  - wrangler.jsonc: add the BRIDGE binding.\n  - src/index.ts: export { Bridge } from "@acme/kit/app/worker".\nThen set cossack.template to "0.10.0" in package.json.');
+    expect(projectTemplate(root)).toEqual({ version: '0.9.3', recorded: 'package' });
+    write(root, { 'package.json': JSON.stringify({ name: 'app', cossack: { packages: ['@acme/kit'], template: '0.10.0' } }) });
     expect(hostContractProblems(root)).toEqual([]);
   });
 

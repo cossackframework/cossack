@@ -46,6 +46,7 @@ const LOADERS = {
   check: [() => import('./commands/inspect.js'), 'checkCommand', 'checkHelp'],
   routes: [() => import('./commands/routes.js'), 'routesCommand', 'routesHelp'],
   config: [() => import('./commands/config.js'), 'configCommand', 'configHelp'],
+  typecheck: [() => import('./commands/typecheck.js'), 'typecheckCommand', 'typecheckHelp'],
   specs: [() => import('./commands/specs.js'), 'specsCommand', 'specsHelp'],
   info: [() => import('./commands/info.js'), 'infoCommand', 'infoHelp'],
   version: [() => import('./commands/version.js'), 'versionCommand', 'versionHelp'],
@@ -235,6 +236,7 @@ ${wrapList(FEATURES, 31)}
   studio                       Inspect the configured database in a local browser.
   routes                       List all routes in the project.
   config                       List configuration factory type origins; --generate emits types.
+  typecheck                    Write the generated types, then run tsc --noEmit.
   upgrade [dir]                Update Cossack deps and scaffold files; merge your edits.
   eject <package> <path>       Copy a served page, config or plugin into the project.
   ssg                          Pre-render pages marked ssg:true to static HTML.

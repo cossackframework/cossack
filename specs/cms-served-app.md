@@ -31,10 +31,52 @@ decisions below, which describe the first build.
   every `isServedCmsPath` file). `renderRecipe(recipe, { servedFiles: true })` keeps
   them, for `sync.mjs` only.
 - **The package serves `pages/` whole**, and `config/auth.ts` beside `config/cms.ts`.
-  A CMS project's `typecheck` script also runs `cossack config --generate`, because
-  served configuration is typed by `.cossack/config.d.ts`.
+  Served configuration is typed by `.cossack/config.d.ts`, which `cossack typecheck`
+  (every project's `typecheck` script) writes before it runs `tsc`.
 - Projects without the CMS keep the shell as files (`auth` and `dashboard` on the
   ORM), updated by `cossack upgrade`. Serving that shell is in `NOTES.md`.
+
+## Update 2 (2026-11-15): thin project files, no file records
+
+Built the same day, from the first open item of `NOTES.md` ("no tracked files").
+
+- **`vite.config.ts` is one call:** `cossackApp()` from `cossack/vite`
+  (`packages/cossack/src/vite.js`). The preset composes the framework's plugins,
+  the runtime's, and each mounted package's part (`cossack.vite` in the package's
+  `package.json`; the CMS's is `cossackVite` in `src/vite.js`: `romedbDev`, the icon
+  sprites, the plugin policy, plugin isolation). It reads the recipe and the
+  installed packages. Options: `docs/vite-plugins.md`. The framework finds the
+  dependencies to pre-bundle in the project's `src/` itself (`servedPrebundle`),
+  so the file lists none.
+- **`src/index.ts` is thin.** Node: `nodeApplication()` from the Node adapter holds
+  the server (static files, bindings, shutdown). The CMS adds `cmsAppOptions`,
+  `cmsScheduled` and `startCmsMaintenance` from the served `cms/entry.ts`, and a
+  Workers entry exports `RomeDBPendingWrites`, `PluginBridge` and `PluginTail` from
+  the served `cms/worker.ts`.
+- **The `typecheck` script is `cossack typecheck`**: the command writes the
+  generated types and runs `tsc`, so a release never changes a project's scripts.
+- **A CMS project records no files** (`recordsFiles(recipe)` in the scaffold): no
+  `.cossack/scaffold.json`, no `.cossack/base/`. Its recipe is in
+  `package.json#cossack` (`features`, `template`, `options` when not the defaults).
+  A manifest exists only for `cossack eject` copies.
+  - `cossack upgrade` changes dependencies (their baseline is the release the
+    project declares, rendered again), merges `pnpm-workspace.yaml` by key,
+    installs, writes a missing host module, and merges ejected copies and plugins.
+    It never compares or changes a project file.
+  - `cossack add`, `remove` and `adapter` compare with what the current recipe
+    renders now: that rendering stands in for the record (`withRenderedFiles`),
+    so an edit is merged and a clash on the same lines stops the command.
+  - A release that needs a change in a project file raises `cossack.hostTemplate`
+    and lists the change in `cossack.hostSteps`. The upgrade prints the steps, the
+    build stops with them (`COSSACK_PACKAGE_HOST_OUTDATED`), and the project sets
+    `cossack.template` when they are done. Nothing else raises `template`.
+  - A CMS manifest from before (schema 4 with `files`) is read without its file
+    records; the next add, remove or upgrade moves the recipe and deletes them.
+- **Projects without the CMS still record files** and get merged upgrades
+  (`specs/upgrade-merges.md`), because their sign-in pages and dashboard are still
+  files in the project. `NOTES.md` has the open design for serving that shell.
+- **`packages/cms/app` mounts nothing**, so `sync.mjs` adds `parts: [cossackVite]`
+  to its `vite.config.ts` and leaves `src/cms/worker.ts` out of its type check.
 
 ## Why
 

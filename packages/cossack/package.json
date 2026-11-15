@@ -53,6 +53,10 @@
       "import": "./src/vitest-reporter.js"
     },
     "./plugin-policy": "./src/plugin-policy.js",
+    "./vite": {
+      "types": "./src/vite.d.ts",
+      "import": "./src/vite.js"
+    },
     "./package.json": "./package.json",
     "./src/*": "./src/*",
     "./bin/*": "./bin/*"

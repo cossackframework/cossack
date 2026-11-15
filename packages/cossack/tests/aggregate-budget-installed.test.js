@@ -57,7 +57,7 @@ for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>child.kill(signal
         await fs.writeFile(path.join(directory, 'wrangler.jsonc'), JSON.stringify({ name: `installed-budget-${name}`, main: 'worker.ts', compatibility_date: '2026-01-01', vars: { PRIVATE: 'PRIVATE_INSTALLED_BUDGET_VALUE' } }));
       }
       const vite = path.join(root, 'vite.config.ts');
-      await fs.writeFile(vite, (await fs.readFile(vite, 'utf8')).replace('cloudflare({', `cloudflare({auxiliaryWorkers:${JSON.stringify(manifest.cossack.auxiliaryBuildBudgets.map(policy => ({ configPath: policy.configPath })))},`));
+      await fs.writeFile(vite, (await fs.readFile(vite, 'utf8')).replace('cossackApp({', `cossackApp({ cloudflare: { auxiliaryWorkers: ${JSON.stringify(manifest.cossack.auxiliaryBuildBudgets.map(policy => ({ configPath: policy.configPath })))} },`));
     }
     const invoke = async args => {
       const result = await runCaptured(process.execPath, [path.join(gate, 'node_modules/cossack/bin/cossack.js'), ...args, '--json'], {

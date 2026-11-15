@@ -225,7 +225,8 @@ export function recipeCapabilityRequirements(recipe, target = 'web') {
   if (target !== 'web' && target !== 'desktop') throw new Error(`Unknown recipe target: ${target}`);
   const requirements = [];
   const add = (feature, requires) => requirements.push({
-    feature, source: { file: '.cossack/scaffold.json' }, requires,
+    // Where the recipe is recorded: a CMS project keeps it in package.json (see recordsFiles).
+    feature, source: { file: recipe.resolvedFeatures.includes('cms') ? 'package.json' : '.cossack/scaffold.json' }, requires,
   });
   if (recipe.resolvedFeatures.includes('workflows')) add('workflows/cloudflare', { cloudflareBindings: ['WORKFLOWS'] });
   if (recipe.resolvedFeatures.includes('jobs')) add('jobs/cloudflare-queues', { cloudflareBindings: ['JOBS', 'JOB_STATE'] });

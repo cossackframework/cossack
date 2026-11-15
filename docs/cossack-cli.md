@@ -128,8 +128,10 @@ cossack create my-app --adapter node --preset full-stack
 cossack create my-app --adapter cloudflare --preset minimal --features desktop
 ```
 
-`cossack create` writes a `.cossack/scaffold.json` manifest used by
-`cossack add`, `cossack remove`, `cossack adapter`, and `cossack upgrade`.
+`cossack create` records the project's recipe for `cossack add`, `cossack remove`,
+`cossack adapter` and `cossack upgrade`: in `.cossack/scaffold.json`, with a record of
+every file it wrote. A CMS project records no files, and keeps the recipe in
+`package.json#cossack` (see [Upgrading](./upgrading.md)).
 
 Use `--dry-run` to inspect planned files without creating the project or its
 manifest. It does not prompt and does not test for CLI updates. Use `--json` for scripts
@@ -422,7 +424,7 @@ cossack d component UserCard
 
 ### `cossack add <feature>`
 
-Add an opinionated, working feature to the current project. Each feature adds its package dependencies and files, and wires them into the application (for example, middleware in `src/bootstrap/middlewares.ts`). Missing prerequisites are added first. The result is recorded in `.cossack/scaffold.json`.
+Add an opinionated, working feature to the current project. Each feature adds its package dependencies and files, and wires them into the application (for example, middleware in `src/bootstrap/middlewares.ts`). Missing prerequisites are added first. The result is recorded in `.cossack/scaffold.json`, or in `package.json#cossack` for a CMS project.
 
 ```bash
 cossack add <feature> [options]
@@ -757,6 +759,17 @@ Markdown requires a recorded scaffold feature or explicit `--markdown` selection
 For a custom processor, configure the same feature in Vite.
 See [typed URLs](./routing.md#typed-urls) for imports, parameters, and existing-project setup.
 
+### `cossack typecheck`
+
+Write the generated types, then run the project's TypeScript compiler with `--noEmit`. A project's `typecheck` script is this command.
+
+1. Cloudflare projects: `wrangler types`, which writes `worker-configuration.d.ts` from `wrangler.jsonc`.
+2. `.cossack/routes.ts`: the typed URLs of the project's pages and of the pages a mounted package serves.
+3. `.cossack/config.d.ts`: the keys and types of `config()`.
+4. `tsc --noEmit`.
+
+A clean checkout has none of the generated files, and the command needs no build to write them. When a release adds a generated file, the command writes it: the project's script does not change.
+
 ### `cossack specs`
 
 ```bash
@@ -809,6 +822,8 @@ cossack upgrade --force-file <path>   # replace one file with the release's vers
 | `--conflicts=markers` | Write git-style conflict markers into a file whose merge conflicts. Without it the file is not changed. |
 | `--force` | Also restore deleted scaffold files. Locally modified files remain protected. |
 | `--force-file <path>` | Replace one specific file even if you modified it. You can use this option more than once. |
+
+A CMS project records no files: `upgrade` changes its dependencies, installs, and lists the changes a release asks of the project's own files, which the build then requires (`COSSACK_PACKAGE_HOST_OUTDATED`). The rest of this section is about projects without the CMS.
 
 The `.cossack/scaffold.json` manifest records, for every file the scaffold wrote, a SHA-256 of the file and the name of its merge base. The base is the release's text that your file descends from. It is stored in `.cossack/base/`, which you commit, so a fresh clone can merge. `upgrade` compares three texts for each file: yours, the base, and the release's. It classifies the file as:
 

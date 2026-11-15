@@ -1,5 +1,5 @@
 import { workflowsRecipeFiles } from './workflow-recipes.js';
-import { CMS_PACKAGE, cmsRecipeFiles, cmsSetupCode, isCmsPath, isServedCmsPath, patchCmsNodeEntry, patchCmsViteConfig, patchCmsWorkerEntry } from './cms-recipe.js';
+import { CMS_PACKAGE, cmsRecipeFiles, cmsSetupCode, isCmsPath, isServedCmsPath, patchCmsNodeEntry, patchCmsWorkerEntry } from './cms-recipe.js';
 import { jobsRecipeFiles, turnstileRecipeFiles, schedulesRecipeFiles, notificationsRecipeFiles } from './service-recipes.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -7,8 +7,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import prompts from 'prompts';
 import { parseDocument } from 'yaml';
-import { ASSETS_RUN_WORKER_FIRST, STATIC_ASSET_DIRECTORY } from '@cossackframework/core/static-assets';
-import { prebundleDependencies } from '@cossackframework/core/prebundle-dependencies';
+import { ASSETS_RUN_WORKER_FIRST } from '@cossackframework/core/static-assets';
 import { dependencyBaseline, planDependencyChanges } from './dependencies.js';
 export { dependencyBaseline, planDependencyChanges } from './dependencies.js';
 import { mergeText } from './merge.js';
@@ -84,22 +83,6 @@ export function readmeFor(template, recipe) {
     result = result.replace(/<!-- @cossack:([a-z0-9-]+) -->\n((?:(?!<!-- @cossack:)[\s\S])*?)<!-- \/@cossack:\1 -->\n/g, (_, name, body) => kept[name] ? body : '');
   }
   return `${result.replace(/\n{3,}/g, '\n\n').trimEnd()}\n`;
-}
-
-/**
- * Fill the dependency lists of vite.config.ts from the rendered source files. Vite cannot see
- * page imports before a page loads, so the generated config lists them for the first bundle.
- * The rules are shared with the framework, which adds a mounted package's imports by itself.
- */
-export function withClientDependencies(viteConfig, files) {
-  const sources = [];
-  for (const [rel, entry] of files) if (rel.startsWith('src/') && rel.endsWith('.ts')) sources.push(entry.content.toString('utf8'));
-  const { client: list, server } = prebundleDependencies(sources);
-  return viteConfig
-    .replace(/(\/\/ @cossack:client-dependencies\n)(\s*)include: \[\],/, (_, marker, indent) =>
-      `${marker}${indent}include: [${list.length ? `\n${list.map(name => `${indent}  '${name}',`).join('\n')}\n${indent}` : ''}],`)
-    .replace(/(\/\/ @cossack:server-dependencies\n)(\s*)\.\.\.\(\[\] as string\[\]\),/, (_, marker, indent) =>
-      `${marker}${server.map(name => `${indent}'${name}',`).join('\n')}`.replace(/\n$/, ''));
 }
 
 function dependencyVersion(name) {
@@ -698,10 +681,9 @@ function packageJson(recipe, projectName) {
         'cf-typegen': 'wrangler types --env-interface CloudflareBindings',
         deploy: 'cossack deploy',
       };
-  // Cloudflare's names and the app's bindings come from generated types, so they are generated first.
-  // Configuration served from a mounted package (auth, cms) is typed by .cossack/config.d.ts,
-  // which a build also writes: a clean checkout type-checks without one.
-  scripts.typecheck = `${recipe.adapter === 'cloudflare' ? 'pnpm run cf-typegen && ' : ''}cossack routes --generate && ${recipe.resolvedFeatures.includes('cms') ? 'cossack config --generate && ' : ''}tsc --noEmit`;
+  // The command writes the generated types first (Cloudflare's bindings, typed URLs, config()
+  // keys) and then runs tsc. It owns the steps, so a release never has to change this script.
+  scripts.typecheck = 'cossack typecheck';
   scripts['check:templates'] = 'cossack check templates';
   scripts.format = 'prettier --write "src/**/*.ts"';
   if (recipe.resolvedFeatures.includes('desktop')) {
@@ -727,7 +709,7 @@ function packageJson(recipe, projectName) {
     ...(recipe.resolvedFeatures.includes('desktop') ? { engines: { node: '>=22' } } : {}),
     description: 'The Borderless TypeScript Framework',
     // The packages whose pages the application mounts (specs/package-routes.md).
-    cossack: { runtime: recipe.adapter, ...(recipe.resolvedFeatures.includes('cms') ? { packages: [CMS_PACKAGE] } : {}) },
+    cossack: { runtime: recipe.adapter, ...(recipe.resolvedFeatures.includes('cms') ? { packages: [CMS_PACKAGE] } : {}), ...(recordsFiles(recipe) ? {} : recipeRecord(recipe)) },
     scripts,
     dependencies,
     devDependencies,
@@ -994,70 +976,22 @@ function nodeEntry(providers = [], { sqlite = false } = {}) {
     ? "import { oauth, handleOAuthUser } from './auth';\n"
     : '';
   const routes = oauthRouteBlock(providers, 'frameworkApp');
-  return `import { serve } from '@hono/node-server';
-import { Hono } from 'hono';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { setClientAddress } from '@cossackframework/core';
-import { createApp } from '@cossackframework/framework/router';
-import { createNodeAdapter, createStaticAssets, serveStatic, installNodeShutdown } from '@cossackframework/node-adapter';
+  return `import { createApp } from '@cossackframework/framework/router';
+import { createNodeAdapter, nodeApplication } from '@cossackframework/node-adapter';
 import { App } from './App';
 import { template } from './root';
 ${oauthImport}
-
 export const runtime = createNodeAdapter();
 const frameworkApp = createApp({ AppComponent: App, htmlTemplate: template, runtimeAdapter: runtime });
 ${routes}
-export const app = new Hono();
-// Hashed build output skips the request pipeline, as Cloudflare serves
-// /${STATIC_ASSET_DIRECTORY}/* without the Worker. Missing files continue to the framework.
-app.use('/${STATIC_ASSET_DIRECTORY}/*', serveStatic({
-  root: fileURLToPath(new URL('../client/${STATIC_ASSET_DIRECTORY}', import.meta.url)),
-  prefix: '/${STATIC_ASSET_DIRECTORY}',
-  index: false,
-  cacheControl: (_filePath, urlPath) => /\\.[a-zA-Z0-9_-]{8,}\\.[^/]+$/.test(urlPath)
-    ? 'public, max-age=31536000, immutable'
-    : 'public, max-age=0, must-revalidate',
-}));
-// Everything else, including public/ files, runs global and page policies
-// first; the framework serves those files from ASSETS. Delegation preserves
-// the framework's custom 404 handler and request scope.
-app.all('*', c => frameworkApp.fetch(c.req.raw, c.env));
-
-// The same binding factory is used by production and the Node Vite plugin.
-export async function createEnv(variables: Record<string, string | undefined> = process.env): Promise<Record<string, unknown>> {
-  const bindings: Record<string, unknown> = {
-    ...variables,${sqlite ? "\n    DB_PATH: variables.DB_PATH ?? './database.sqlite'," : ''}
-    ASSETS: createStaticAssets({ root: fileURLToPath(new URL('../client', import.meta.url)), index: false, cacheControl: 'public, max-age=0, must-revalidate' }),
-  };
-  if (variables.SMTP_HOST) {
-    const { SMTP_USER: user, SMTP_PASS: pass } = variables;
-    if (!user || !pass) throw new Error('SMTP_HOST requires SMTP_USER and SMTP_PASS');
-    const { createNodeEmailSender } = await import('@cossackframework/node-adapter');
-    bindings.EMAIL = createNodeEmailSender({
-      host: variables.SMTP_HOST,
-      port: Number(variables.SMTP_PORT ?? 587),
-      secure: variables.SMTP_SECURE === 'true',
-      auth: { user, pass },
-      from: variables.MAIL_FROM ?? 'no-reply@example.com',
-    });
-  }
-  return bindings;
-}
-export const env: Record<string, unknown> = import.meta.env?.DEV ? {} : await createEnv();
-
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  // Record the socket peer so rate limits never trust client-supplied IP headers.
-  const fetch = (request: Request, node?: { incoming?: { socket?: { remoteAddress?: string } } }) => {
-    setClientAddress(request, node?.incoming?.socket?.remoteAddress);
-    return app.fetch(request, env);
-  };
-  const server = serve({ fetch, port: Number(process.env.PORT) || 3000 });
-  runtime.attach(server, fetch);
-  installNodeShutdown(server, {
-    dispose: () => runtime.dispose(),
-    onComplete: result => process.exit(result.forced || result.cleanupFailed ? 1 : 0),
-  });
-}
+// The Node server: static files, the bindings (production and the Node Vite plugin share
+// createEnv) and a clean shutdown. It starts when Node runs this module.
+export const { app, createEnv, env } = await nodeApplication({
+  runtime,
+  fetch: frameworkApp.fetch,
+  entry: import.meta.url,
+  dev: import.meta.env?.DEV,${sqlite ? "\n  bindings: variables => ({ DB_PATH: variables.DB_PATH ?? './database.sqlite' })," : ''}
+});
 `;
 }
 
@@ -1555,6 +1489,29 @@ function ensureEnvironmentSecrets(recipe, existingSecrets) {
   };
 }
 
+/**
+ * Whether a project records the hash and the upstream text of each scaffold file
+ * (`.cossack/scaffold.json`, `.cossack/base/`), which is what lets `cossack upgrade` update
+ * and merge those files. A CMS project records none: the package serves everything a release
+ * changes, the project's files are its own, and an upgrade changes its dependencies. Its
+ * recipe is in `package.json#cossack` (`features`, `template`, `options`).
+ */
+export function recordsFiles(recipe) {
+  return !recipe.resolvedFeatures.includes('cms');
+}
+
+const RECIPE_OPTIONS = ['database', 'authMethods', 'oauth', 'theme'];
+/** The recipe as `package.json#cossack` records it: the features, and the options that are not the defaults. */
+export function recipeRecord(recipe) {
+  const defaults = resolveRecipe({ adapter: recipe.adapter, preset: 'minimal', features: recipe.explicitFeatures });
+  const options = {};
+  for (const key of RECIPE_OPTIONS) {
+    if (JSON.stringify(recipe.config[key]) !== JSON.stringify(defaults.config[key])) options[key] = recipe.config[key];
+  }
+  if (JSON.stringify(recipe.dashboardModules) !== JSON.stringify(defaults.dashboardModules)) options.dashboardModules = recipe.dashboardModules;
+  return { features: recipe.explicitFeatures, template: templateVersion, ...(Object.keys(options).length ? { options } : {}) };
+}
+
 function publicRecipe(recipe) {
   const {
     appSecret: _appSecret,
@@ -1746,12 +1703,8 @@ export async function renderRecipe(recipe, options = {}) {
     if (rel === 'src/style.css') content = text(applyStyles(content.toString('utf8'), recipe));
     if (rel === 'vite.config.ts' && recipe.resolvedFeatures.includes('markdown')) {
       content = text(content.toString('utf8')
-        .replace(
-          "import { cossackSsg } from '@cossackframework/framework/vite-ssg-plugin';",
-          "import { cossackSsg } from '@cossackframework/framework/vite-ssg-plugin';\n" +
-          "import { processMarkdown } from './src/markdown-processor.ts';",
-        )
-        .replace('    cossackPages(),', '    cossackPages({ markdownProcessor: processMarkdown }),'));
+        .replace("import { cossackApp } from 'cossack/vite';", "import { cossackApp } from 'cossack/vite';\nimport { processMarkdown } from './src/markdown-processor.ts';")
+        .replace('export default cossackApp({\n', 'export default cossackApp({\n  markdownProcessor: processMarkdown,\n'));
     }
     if (rel === 'src/config/database.ts') {
       content = text(content.toString('utf8').replace(
@@ -1795,43 +1748,6 @@ export async function renderRecipe(recipe, options = {}) {
         { sqlite: recipe.resolvedFeatures.includes('database') && recipe.config.database === 'sqlite' },
       ));
       if (recipe.resolvedFeatures.includes('cms')) content = text(patchCmsNodeEntry(content.toString('utf8')));
-    }
-    if ((recipe.adapter === 'node') && rel === 'vite.config.ts') {
-      content = text(content.toString('utf8').replace(/\/\/ @cossack:cloudflare-start[\s\S]*?\/\/ @cossack:cloudflare-end\n?/g, ''));
-    }
-    if (rel === 'vite.config.ts') {
-      let viteConfig = content.toString('utf8');
-      if (recipe.adapter === 'node') {
-        viteConfig = "import { cossackNode } from '@cossackframework/node-adapter/vite';\n" + viteConfig;
-        viteConfig = viteConfig.replace('plugins: [', "plugins: [\n    ...(mode === 'desktop' ? [] : [cossackNode()]),");
-      }
-      const webRequirements = JSON.stringify(recipeCapabilityRequirements(recipe));
-      const desktopRequirements = JSON.stringify(recipeCapabilityRequirements(recipe, 'desktop'));
-      const runtimeCapability = `capabilities: { runtime: mode === 'desktop' ? 'desktop' : '${recipe.adapter}', requirements: mode === 'desktop' ? ${desktopRequirements} : ${webRequirements} }`;
-      viteConfig = viteConfig.replace('cossackPages(),', `cossackPages({ ${runtimeCapability} }),`)
-        .replace('cossackPages({ markdownProcessor: processMarkdown }),',
-          `cossackPages({ markdownProcessor: processMarkdown, ${runtimeCapability} }),`);
-      if (!recipe.resolvedFeatures.includes('ui')) {
-        viteConfig = viteConfig.replace(
-          /^\s*exclude: \['@cossackframework\/solar-icons'\],\n/gm,
-          '',
-        );
-      }
-      const optionalPackages = [
-        ['ui', '@cossackframework/ui'],
-        ['ui', '@cossackframework/solar-icons'],
-        ['auth', '@cossackframework/auth'],
-        ['database', '@cossackframework/database'],
-      ];
-      for (const [feature, packageName] of optionalPackages) {
-        if (!recipe.resolvedFeatures.includes(feature)) {
-          viteConfig = viteConfig.replace(
-            new RegExp(`^\\s*['\"]${packageName.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}['\"],?\\n`, 'gm'),
-            '',
-          );
-        }
-      }
-      content = text(viteConfig);
     }
     files.set(rel, { content, capability });
   }
@@ -1969,11 +1885,6 @@ export async function renderRecipe(recipe, options = {}) {
     const entry = files.get('src/index.ts');
     files.set('src/index.ts', { ...entry, content: text(entry.content.toString('utf8') + "\nexport { ApprovalWorkflow } from './workflows/entry';\n") });
   }
-  if (recipe.resolvedFeatures.includes('workflows')) {
-    const vite = files.get('vite.config.ts');
-    const source = vite.content.toString('utf8').replace('cossackConfig }', 'cossackConfig, cossackWorkflows }').replace('    cossackConfig(),', '    cossackConfig(),\n    cossackWorkflows(),');
-    files.set('vite.config.ts', { ...vite, content: text(source) });
-  }
   if (recipe.resolvedFeatures.includes('jobs')) {
     const entry = files.get('src/index.ts');
     const source = entry.content.toString('utf8').replace("import { template } from './root';", "import { template } from './root';\nimport { createJobs } from './jobs';")
@@ -1985,14 +1896,9 @@ export async function renderRecipe(recipe, options = {}) {
     const source = entry.content.toString('utf8').replace("import { createJobs } from './jobs';", "import { createJobs } from './jobs';\nimport { createSchedules } from './schedules/index';")
       .replace('fetch: app.fetch,', "fetch: app.fetch,\n  async scheduled(controller: ScheduledController, env: CloudflareBindings) { await createSchedules(env).scheduled(controller); },");
     files.set('src/index.ts', { ...entry, content: text(source) });
-    const vite = files.get('vite.config.ts');
-    const config = vite.content.toString('utf8').replace('cossackConfig }', 'cossackConfig, cossackSchedules }').replace('    cossackConfig(),', '    cossackConfig(),\n    cossackSchedules(),');
-    files.set('vite.config.ts', { ...vite, content: text(config) });
   }
   if (recipe.resolvedFeatures.includes('cms')) {
     for (const [file, source] of Object.entries(cmsRecipeFiles({ adapter: recipe.adapter }))) files.set(file, { content: text(source), capability: 'cms' });
-    const vite = files.get('vite.config.ts');
-    files.set('vite.config.ts', { ...vite, content: text(patchCmsViteConfig(vite.content.toString('utf8'), { adapter: recipe.adapter })) });
     if (recipe.adapter === 'cloudflare') {
       const entry = files.get('src/index.ts');
       files.set('src/index.ts', { ...entry, content: text(patchCmsWorkerEntry(entry.content.toString('utf8'), { schedules: recipe.resolvedFeatures.includes('schedules') })) });
@@ -2070,8 +1976,6 @@ export async function renderRecipe(recipe, options = {}) {
   if (recipe.resolvedFeatures.includes('cms') && options.servedFiles !== true) {
     for (const rel of [...files.keys()]) if (isServedCmsPath(rel)) files.delete(rel);
   }
-  const vite = files.get('vite.config.ts');
-  if (vite) files.set('vite.config.ts', { ...vite, content: text(withClientDependencies(vite.content.toString('utf8'), files)) });
   const readme = files.get('README.md');
   if (readme) files.set('README.md', { ...readme, content: text(readmeFor(readme.content.toString('utf8'), recipe)) });
   return files;
@@ -2086,12 +1990,87 @@ async function access(file) {
   }
 }
 
-export async function readManifest(projectDir) {
+async function readJson(file) {
   try {
-    return JSON.parse(await fs.readFile(path.join(projectDir, '.cossack/scaffold.json'), 'utf8'));
+    return JSON.parse(await fs.readFile(file, 'utf8'));
   } catch {
     return null;
   }
+}
+
+/**
+ * The project's recorded recipe. A project that records its files keeps it, with the file
+ * records, in `.cossack/scaffold.json`. A project that records none (`recordsFiles: false`
+ * in the result) keeps it in `package.json#cossack`; its manifest, when it has one, holds
+ * only the copies `cossack eject` made.
+ */
+export async function readManifest(projectDir) {
+  const stored = await readJson(path.join(projectDir, '.cossack/scaffold.json'));
+  const record = (await readJson(path.join(projectDir, 'package.json')))?.cossack;
+  if (Array.isArray(record?.features) && ADAPTERS.includes(record.runtime)) {
+    let recipe;
+    try {
+      recipe = resolveRecipe({ adapter: record.runtime, preset: 'minimal', features: record.features, ...record.options });
+    } catch {
+      return stored;
+    }
+    return {
+      schemaVersion: MANIFEST_SCHEMA_VERSION,
+      tool: '@cossackframework/scaffold',
+      recordsFiles: false,
+      templateVersion: record.template,
+      runtime: recipe.adapter,
+      preset: 'minimal',
+      explicitFeatures: recipe.explicitFeatures,
+      resolvedFeatures: recipe.resolvedFeatures,
+      dashboardModules: recipe.dashboardModules,
+      config: publicRecipe(recipe).config,
+      ...(stored?.ejected && Object.keys(stored.ejected).length ? { ejected: stored.ejected } : {}),
+    };
+  }
+  // A CMS project whose recipe is still in the manifest: its file records are not used, and
+  // the next change (add, remove, upgrade) moves the recipe to package.json.
+  if (stored && supportedManifest(stored) && Array.isArray(stored.resolvedFeatures) && stored.resolvedFeatures.includes('cms')) {
+    const { files: _files, dependencyBaseline: _baseline, ...recipe } = stored;
+    return { ...recipe, recordsFiles: false };
+  }
+  return stored;
+}
+
+/**
+ * For a project that records no files, the files as its recipe renders them now stand in
+ * for the record: a file equal to the rendering is replaced, another one is merged over it.
+ */
+function withRenderedFiles(manifest, rendered) {
+  if (manifest?.recordsFiles !== false) return manifest;
+  const files = {};
+  const bases = new Map();
+  for (const [rel, entry] of rendered) {
+    if (entry.capability === LOCAL_ENV_CAPABILITY) continue;
+    const name = hash(entry.content);
+    files[rel] = { capability: entry.capability, hash: name, ...(KEY_MERGED.has(rel) ? {} : { base: name }) };
+    bases.set(name, entry.content);
+  }
+  return { ...manifest, files, bases };
+}
+
+/**
+ * Leave a project without file records: the manifest keeps only the copies `cossack eject`
+ * made, and goes when there are none. The recipe is in package.json, which the rendering wrote.
+ */
+export async function dropFileRecords(projectDir, previousManifest = undefined) {
+  const manifestPath = path.join(projectDir, '.cossack/scaffold.json');
+  const ejected = previousManifest?.ejected;
+  if (ejected && Object.keys(ejected).length) {
+    await fs.mkdir(path.dirname(manifestPath), { recursive: true });
+    await fs.writeFile(manifestPath, JSON.stringify({ schemaVersion: MANIFEST_SCHEMA_VERSION, tool: '@cossackframework/scaffold', ejected }, null, 2) + '\n');
+  } else {
+    await fs.rm(manifestPath, { force: true });
+  }
+  await pruneBases(projectDir);
+  await fs.rmdir(path.join(projectDir, BASE_DIRECTORY)).catch(() => {});
+  await fs.rmdir(path.join(projectDir, '.cossack')).catch(() => {});
+  return path.join(projectDir, 'package.json');
 }
 
 export async function detectProjectRuntime(projectDir, manifest = undefined) {
@@ -2160,7 +2139,8 @@ async function buildPlan(projectDir, rendered, manifest, force = false) {
     }
     if ((userOwned || (modified && recipeChanged)) && !mergeSafe && !canForce(rel)) {
       // Both the project and the recipe changed the file: merge them over the stored upstream text.
-      const base = modified && existingHash !== null ? await readBase(projectDir, owned[rel]?.base) : null;
+      const base = modified && existingHash !== null
+        ? manifest?.bases?.get(owned[rel]?.base) ?? await readBase(projectDir, owned[rel]?.base) : null;
       const merged = base ? mergeText(base, await fs.readFile(absolute), entry.content) : null;
       if (merged?.status !== 'clean') {
         conflicts.push(rel);
@@ -2198,6 +2178,11 @@ export async function planChanges(projectDir, recipe, manifest = undefined) {
 /** `package.json#cossack`: the recipe's values win; mounted packages the project added itself are kept. */
 function mergeCossackField(current = {}, desired = {}, previous = {}) {
   const merged = { ...current, ...desired };
+  // The recorded recipe goes when the recipe is no longer recorded here.
+  for (const key of ['features', 'options']) if (!Object.hasOwn(desired, key)) delete merged[key];
+  // The template is the version of the project's own files: only the project raises it.
+  if (!Object.hasOwn(desired, 'template')) delete merged.template;
+  else if (typeof current.template === 'string') merged.template = current.template;
   const own = (current.packages ?? []).filter(name => !(previous.packages ?? []).includes(name));
   const packages = [...new Set([...(desired.packages ?? []), ...own])];
   if (packages.length) merged.packages = packages;
@@ -2238,7 +2223,8 @@ async function mergePackage(
   const recorded = await readManifest(projectDir);
   let ownedDependencies = recorded?.dependencyBaseline ?? previous;
   if (recorded && !recorded.dependencyBaseline) {
-    if (recorded.templateVersion !== templateVersion) throw Object.assign(new Error(
+    // A project without file records states its dependencies through its recipe, as rendered now.
+    if (recorded.recordsFiles !== false && recorded.templateVersion !== templateVersion) throw Object.assign(new Error(
       'Run cossack upgrade to record dependency ownership before composing this older scaffold.'),
     { code: 'COSSACK_SCAFFOLD_DEPENDENCY_BASELINE_MISSING' });
     // Current-version manifests can be reconstructed locally. Rendering an old
@@ -2345,7 +2331,11 @@ async function mergePnpmWorkspace(
     // Removing the feature that required the linker restores pnpm's default.
     current.delete('nodeLinker');
   }
-  entry.content = text(current.toString());
+  // Nothing changed: the file keeps its own text, its comments and quoting included.
+  const canonical = value => JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item)
+    ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
+  const unchanged = canonical(current.toJS()) === canonical(parseDocument(currentSource).toJS());
+  entry.content = text(unchanged ? currentSource : current.toString());
   return entry;
 }
 
@@ -2435,10 +2425,14 @@ export async function writeManifest(
   previousManifest = undefined,
   plan = undefined,
 ) {
+  if (!recordsFiles(recipe)) return dropFileRecords(projectDir, previousManifest);
   const files = {};
   const written = plan
     ? new Set(plan.writes.map((change) => change.path))
     : undefined;
+  // A base that exists only in memory (the project recorded no files until now) is stored.
+  const keptBase = async (name) => previousManifest?.bases?.has(name)
+    ? putBase(projectDir, previousManifest.bases.get(name)) : name;
   for (const [rel, entry] of rendered) {
     if (entry.capability === LOCAL_ENV_CAPABILITY) continue;
     const previous = previousManifest?.files?.[rel];
@@ -2452,7 +2446,7 @@ export async function writeManifest(
           capability: entry.capability,
           hash: recorded,
           // A preserved edit keeps the base it was made on.
-          ...(unchanged ? await upstream() : typeof previous.base === 'string' ? { base: previous.base } : {}),
+          ...(unchanged ? await upstream() : typeof previous.base === 'string' ? { base: await keptBase(previous.base) } : {}),
         };
       }
       // A matching pre-existing file without a prior manifest entry remains
@@ -3078,10 +3072,11 @@ export async function switchAdapter(projectDir, target, options = {}) {
       rendered,
     );
     await mergePackage(root, rendered, previousRendered, options.force === true);
+    const recorded = withRenderedFiles(manifest, previousRendered);
     const plan = await buildPlan(
       root,
       rendered,
-      manifest,
+      recorded,
       (rel) => options.force === true && ADAPTER_PATHS.has(rel),
     );
     if (!options.force) plan.conflicts.push(...packageConflicts);
@@ -3127,7 +3122,7 @@ export async function switchAdapter(projectDir, target, options = {}) {
       rendered,
       plan,
       recipe,
-      manifest,
+      recorded,
     );
     return adapterSwitchResult(
       'changed',
@@ -3320,7 +3315,10 @@ export async function addFeature(projectDir, feature, options = {}) {
       environmentContent: environment.content,
     });
     await mergePackage(root, rendered);
-    const plan = await buildPlan(root, rendered, manifest, prompted.force);
+    const recorded = manifest?.recordsFiles === false
+      ? withRenderedFiles(manifest, await renderRecipe(current, { projectName: path.basename(root), environmentContent: environment.content }))
+      : manifest;
+    const plan = await buildPlan(root, rendered, recorded, prompted.force);
     if (plan.conflicts.length) {
       throw new Error(`Scaffold conflicts: ${plan.conflicts.join(', ')}. Re-run with --force to overwrite.`);
     }
@@ -3368,7 +3366,7 @@ export async function addFeature(projectDir, feature, options = {}) {
         manifestPath: path.join(root, '.cossack/scaffold.json'),
       };
     }
-    const manifestPath = await applyPlanAndManifestAtomically(root, rendered, plan, recipe, manifest);
+    const manifestPath = await applyPlanAndManifestAtomically(root, rendered, plan, recipe, recorded);
     return {
       status: 'added',
       recipe: publicRecipe(recipe),
@@ -3418,7 +3416,8 @@ export async function removeFeatureFromProject(projectDir, feature, options = {}
     environmentContent: environment.content,
   });
   await mergePackage(root, rendered, previousRendered);
-  const plan = await buildPlan(root, rendered, manifest, options.force);
+  const recorded = withRenderedFiles(manifest, previousRendered);
+  const plan = await buildPlan(root, rendered, recorded, options.force);
   if (plan.conflicts.length) {
     throw new Error(
       `Scaffold conflicts: ${plan.conflicts.join(', ')}. ` +
@@ -3456,7 +3455,7 @@ export async function removeFeatureFromProject(projectDir, feature, options = {}
       manifestPath: path.join(root, '.cossack/scaffold.json'),
     };
   }
-  const manifestPath = await applyPlanAndManifestAtomically(root, rendered, plan, recipe, manifest);
+  const manifestPath = await applyPlanAndManifestAtomically(root, rendered, plan, recipe, recorded);
   return {
     status: 'removed',
     recipe: publicRecipe(recipe),

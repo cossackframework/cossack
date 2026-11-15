@@ -11,3 +11,5 @@ export {
 export { createNodeAdapter, DEFAULT_WEBSOCKET_MAX_PAYLOAD, type NodeAdapterOptions, type NodeWebSocketUpgrade, type NodeUpgradeServer } from './adapter';
 
 export { installNodeShutdown, type NodeShutdownServer, type NodeShutdownOptions, type NodeShutdownResult } from './shutdown';
+
+export { nodeApplication, type NodeApplication, type NodeApplicationOptions } from './application';

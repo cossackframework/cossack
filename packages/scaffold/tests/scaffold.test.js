@@ -159,11 +159,13 @@ describe('recipe resolution', () => {
     expect(files.has('worker-configuration.d.ts')).toBe(false);
     expect(files.has('vitest.config.ts')).toBe(true);
     expect(files.has('scripts/dev.js')).toBe(adapter === 'node');
-    expect(files.get('vite.config.ts').content.toString().includes('@cossackframework/node-adapter/vite')).toBe(adapter === 'node');
+    // One call: what the configuration holds is the preset's to decide (cossack/vite).
+    expect(files.get('vite.config.ts').content.toString()).toContain("import { cossackApp } from 'cossack/vite';");
     if (adapter === 'node') {
       const entry = files.get('src/index.ts').content.toString();
-      expect(entry).toContain('createStaticAssets');
-      expect(entry).toContain("ASSETS: createStaticAssets({ root: fileURLToPath(new URL('../client', import.meta.url)), index: false, cacheControl: 'public, max-age=0, must-revalidate' })");
+      // The server itself is the adapter's: static files, bindings and shutdown.
+      expect(entry).toContain('export const { app, createEnv, env } = await nodeApplication({');
+      expect(entry).not.toContain('createStaticAssets');
     }
     expect(pkg.devDependencies.typescript).toBe(dependencyVersions.typescript);
     expect(JSON.parse(files.get('tsconfig.json').content.toString()).include).toContain('.cossack/config.d.ts');
@@ -220,37 +222,6 @@ describe('recipe resolution', () => {
       .toBe(recipe.resolvedFeatures.includes('auth'));
     expect(files.has('.env')).toBe(adapter !== 'cloudflare');
     expect(files.has('.env.example')).toBe(adapter !== 'cloudflare');
-    expect(files.get('vite.config.ts').content.toString())
-      .toContain('minify: true');
-    expect(files.get('vite.config.ts').content.toString())
-      .toContain("dedupe: [");
-    expect(files.get('vite.config.ts').content.toString().includes(
-      "'@cossackframework/solar-icons'",
-    )).toBe(recipe.resolvedFeatures.includes('ui'));
-    expect(files.get('vite.config.ts').content.toString())
-      .toContain("'hono'");
-    expect(files.get('vite.config.ts').content.toString())
-      .not.toContain("exclude: ['@cossackframework/solar-icons']");
-    expect(files.get('vite.config.ts').content.toString().includes(
-      "'@cossackframework/auth'",
-    )).toBe(recipe.resolvedFeatures.includes('auth'));
-    expect(files.get('vite.config.ts').content.toString().includes(
-      "'@cossackframework/database'",
-    )).toBe(recipe.resolvedFeatures.includes('database'));
-    expect(files.get('vite.config.ts').content.toString())
-      .toContain("resolve: mode === 'desktop'");
-    expect(files.get('vite.config.ts').content.toString())
-      .toContain("'css-tree'");
-    if (recipe.resolvedFeatures.includes('ui')) {
-      expect(files.get('vite.config.ts').content.toString())
-        .toMatch(/noExternal:\s*\[[\s\S]*'@cossackframework\/ui'[\s\S]*'@cossackframework\/solar-icons'/);
-    }
-    expect(files.get('vite.config.ts').content.toString())
-      .toContain("ignored: ['**/.wrangler/**', '**/storage/**', '**/.cossack/*-pending/**']");
-    expect(files.get('vite.config.ts').content.toString())
-      .toContain("path.resolve(import.meta.dirname, './src')");
-    expect(files.get('vite.config.ts').content.toString())
-      .not.toContain('__dirname');
   });
 
   it('preserves the pre-paint theme through hydration', async () => {
@@ -284,13 +255,6 @@ describe('recipe resolution', () => {
     expect(iconImports.length).toBeGreaterThan(0);
     expect(iconImports.every((statement) => statement.endsWith("/line'"))).toBe(true);
 
-    const viteConfig = files.get('vite.config.ts').content.toString();
-    expect(viteConfig).toContain("include: [");
-    expect(viteConfig).toContain("'@cossackframework/ui'");
-    expect(viteConfig).toContain("'@cossackframework/auth'");
-    expect(viteConfig).toContain("'@cossackframework/database'");
-    expect(viteConfig).toContain("'@cossackframework/framework/cache'");
-    expect(viteConfig).toContain("'hono/cookie'");
   });
 });
 
@@ -312,7 +276,7 @@ describe('composition', () => {
       path.join(project.projectDir, 'package.json'),
       'utf8',
     ));
-    expect(viteConfig).toContain("cossackPages({ capabilities: { runtime: mode === 'desktop' ? 'desktop' : 'cloudflare', requirements: mode === 'desktop' ? [] : [] } }),");
+    expect(viteConfig).toContain('export default cossackApp({');
     expect(viteConfig).not.toContain('processMarkdown');
     expect(pkg.devDependencies).not.toHaveProperty('unified');
 
@@ -326,7 +290,7 @@ describe('composition', () => {
     )).resolves.toContain('export async function processMarkdown');
     viteConfig = await fs.readFile(path.join(project.projectDir, 'vite.config.ts'), 'utf8');
     pkg = JSON.parse(await fs.readFile(path.join(project.projectDir, 'package.json'), 'utf8'));
-    expect(viteConfig).toContain("cossackPages({ markdownProcessor: processMarkdown, capabilities: { runtime: mode === 'desktop' ? 'desktop' : 'cloudflare', requirements: mode === 'desktop' ? [] : [] } })");
+    expect(viteConfig).toContain('export default cossackApp({\n  markdownProcessor: processMarkdown,\n');
     expect(viteConfig).toContain("from './src/markdown-processor.ts'");
     expect(pkg.devDependencies).toHaveProperty('unified');
     expect(pkg.devDependencies).toHaveProperty('remark-parse');
@@ -341,7 +305,7 @@ describe('composition', () => {
     )).rejects.toThrow();
     viteConfig = await fs.readFile(path.join(project.projectDir, 'vite.config.ts'), 'utf8');
     pkg = JSON.parse(await fs.readFile(path.join(project.projectDir, 'package.json'), 'utf8'));
-    expect(viteConfig).toContain("cossackPages({ capabilities: { runtime: mode === 'desktop' ? 'desktop' : 'cloudflare', requirements: mode === 'desktop' ? [] : [] } }),");
+    expect(viteConfig).toContain('export default cossackApp({');
     expect(viteConfig).not.toContain('processMarkdown');
     expect(pkg.devDependencies).not.toHaveProperty('unified');
   });
@@ -647,22 +611,10 @@ describe('composition', () => {
     expect(devEntry).toContain('createServer');
     expect(devEntry).not.toContain('ssrLoadModule');
     expect(devEntry).not.toContain('buildEnv');
-    expect(productionEntry).toContain('export async function createEnv');
-    expect(productionEntry).toContain('...variables');
-    expect(productionEntry).toContain('bindings.EMAIL = createNodeEmailSender');
-    expect(productionEntry).toContain("import { createNodeAdapter, createStaticAssets, serveStatic, installNodeShutdown } from '@cossackframework/node-adapter'");
-    expect(productionEntry).toContain("new URL('../client', import.meta.url)");
-    // Only hashed build output is served before the framework, matching
-    // Cloudflare's `!/assets/*` rule; public/ files go through policies.
-    expect(productionEntry).toContain("app.use('/assets/*', serveStatic({\n  root: fileURLToPath(new URL('../client/assets', import.meta.url)),\n  prefix: '/assets',\n  index: false,");
-    expect(productionEntry).not.toContain("app.use('*', serveStatic");
-    expect(productionEntry).toContain("/\\.[a-zA-Z0-9_-]{8,}\\.[^/]+$/");
-    expect(productionEntry).toContain("'public, max-age=31536000, immutable'");
-    expect(productionEntry.indexOf("app.use('/assets/*', serveStatic"))
-      .toBeLessThan(productionEntry.indexOf("app.all('*', c => frameworkApp.fetch(c.req.raw, c.env))"));
-    expect(productionEntry.indexOf('...variables')).toBeLessThan(
-      productionEntry.indexOf("DB_PATH: variables.DB_PATH ?? './database.sqlite'"),
-    );
+    expect(productionEntry).toContain("import { createNodeAdapter, nodeApplication } from '@cossackframework/node-adapter'");
+    expect(productionEntry).toContain('export const { app, createEnv, env } = await nodeApplication({');
+    expect(productionEntry).toContain('entry: import.meta.url,');
+    expect(productionEntry).toContain("bindings: variables => ({ DB_PATH: variables.DB_PATH ?? './database.sqlite' }),");
     expect(await detectProjectRuntime(project.projectDir)).toBe('node');
     const environment = await fs.readFile(path.join(project.projectDir, '.env'), 'utf8');
     const appSecret = environment.match(/^APP_SECRET=(.+)$/m)?.[1];
@@ -851,10 +803,6 @@ describe('composition', () => {
       // with ERR_PNPM_UNUSED_PATCH as soon as maker-dmg resolves appdmg 0.6.7.
       expect(parseYaml(pnpmWorkspace).patchedDependencies).toEqual({ 'appdmg@^0.6.6': 'patches/appdmg@0.6.6.patch' });
       expect(targetFiles.get('patches/appdmg@0.6.6.patch').capability).toBe('desktop');
-      expect(targetFiles.get('vite.config.ts').content.toString())
-        .toContain("external: ['electron']");
-      expect(targetFiles.get('vite.config.ts').content.toString())
-        .toContain('noExternal: true');
       expect(targetFiles.has('src/desktop/index.ts')).toBe(true);
       expect(targetFiles.get('src/desktop/index.ts').content.toString())
         .toContain('startDesktop(createApplication = createDesktopApp)');
@@ -1351,14 +1299,11 @@ describe('prompt navigation and cancellation', () => {
   });
 });
 
-it.each(['cloudflare', 'node'])('enables build capability discovery for generated %s recipes and their Desktop target', async adapter => {
+it.each(['cloudflare', 'node'])('names the Markdown processor in the generated %s Vite configuration', async adapter => {
   for (const features of [[], ['markdown']]) {
     const files = await renderRecipe(resolveRecipe({ adapter, preset: 'minimal', features }));
     const config = files.get('vite.config.ts').content.toString();
-    expect(config).toContain(`capabilities: { runtime: mode === 'desktop' ? 'desktop' : '${adapter}', requirements:`);
     expect(config.includes('markdownProcessor: processMarkdown')).toBe(features.includes('markdown'));
-    // Binding names must come from the selected build environment, not a fixed template list.
-    expect(config).not.toContain('bindings: [');
   }
 });
 
@@ -1375,15 +1320,6 @@ it('derives capability requirements only from selected recipe features and targe
   expect(recipeCapabilityRequirements(resolveRecipe({ adapter: 'cloudflare', preset: 'minimal', features: ['desktop'] }))).toEqual([]);
   expect(() => recipeCapabilityRequirements(recipe, 'invalid')).toThrow('Unknown recipe target');
 });
-it('emits selected capability requirements into the generated Vite configuration', async () => {
-  const files = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'database', features: ['desktop'] }));
-  const config = files.get('vite.config.ts').content.toString();
-  expect(config).toContain('"feature":"database/sqlite"');
-  expect(config).toContain('"feature":"desktop"');
-  expect(config).toContain('"file":".cossack/scaffold.json"');
-  expect(config).toContain('"filesystem":true');
-});
-
 it.each([['d1', 'DB'], ['hyperdrive-postgres', 'HYPERDRIVE'], ['hyperdrive-mysql', 'HYPERDRIVE']])('declares native %s requirements for both targets', (database, binding) => {
   const recipe = resolveRecipe({ adapter: 'cloudflare', preset: 'database', database });
   for (const target of ['web', 'desktop']) {

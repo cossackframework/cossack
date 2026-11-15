@@ -1,4 +1,4 @@
-import type { Plugin } from 'vite';
+import type { Plugin, UserConfig } from 'vite';
 import type { IconStyleName } from './icons';
 
 /** Puts the space back between attributes the icon package's artwork glues together, so a sprite is well-formed XML. */
@@ -13,3 +13,13 @@ export function iconSprite(style: IconStyleName, group: string): Promise<string 
  * client build.
  */
 export function cossackCmsIcons(): Plugin;
+
+/** The CMS's part of a project's Vite configuration, which the `cossack/vite` preset adds. */
+export function cossackVite(context: { root: string; runtime: string; mode: string; command: 'build' | 'serve' }): Promise<{
+    setup: Plugin[];
+    plugins: Plugin[];
+    pluginPolicy: boolean;
+    pages: Record<string, unknown>;
+    cloudflare: Record<string, unknown>;
+    config: UserConfig | undefined;
+}>;

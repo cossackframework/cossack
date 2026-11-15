@@ -39,11 +39,10 @@ export async function verifyDevelopmentTraceApplication(root,{onRecorded,additio
   }
   const configFile=path.join(root,'vite.config.ts');
   const generatedConfig=await fs.readFile(configFile,'utf8');
-  expect(generatedConfig).toContain('cossackPages({');
-  let traceConfig=generatedConfig.replace('cossackPages({','cossackPages({ developmentTraces: true,');
+  expect(generatedConfig).toContain('cossackApp({');
+  let traceConfig=generatedConfig.replace('cossackApp({','cossackApp({ pages: { developmentTraces: true },');
   if(launcher){
-    expect(traceConfig).toContain('plugins: [');
-    traceConfig=traceConfig.replace('plugins: [',`plugins: [{name:'trace-server-options',config:()=>({server:${JSON.stringify({https:tls,fs:{allow:[root,...additionalAllowedPaths]}})}})},`);
+    traceConfig=traceConfig.replace('cossackApp({',`cossackApp({ plugins: [{name:'trace-server-options',config:()=>({server:${JSON.stringify({https:tls,fs:{allow:[root,...additionalAllowedPaths]}})}})}],`);
   }
   await fs.writeFile(configFile,traceConfig);
   await fs.mkdir(path.join(root,'src/pages/api'),{recursive:true});

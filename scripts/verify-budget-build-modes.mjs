@@ -50,12 +50,9 @@ export async function verifyBudgetBuildModes(projectDir) {
       assert.match(JSON.parse(await fs.readFile(path.join(projectDir, '.cossack/build-budget-receipt.json'), 'utf8')).signature, /^[a-f\d]{64}$/);
     }
     const source = saved[2];
-    assert.ok(source.includes('cloudflare({') && source.includes('cossackBuildBudgets()') && source.includes('cossackConfig()') && source.includes('cossackPages({'));
+    assert.ok(source.includes('cossackApp({'));
     const literal = JSON.stringify(custom);
-    await fs.writeFile(path.join(projectDir, 'vite.config.ts'), source.replace('cloudflare({', `cloudflare({ configPath: ${literal},`)
-      .replace('cossackBuildBudgets()', `cossackBuildBudgets({ configPath: ${literal} })`)
-      .replace('cossackConfig()', `cossackConfig({ configPath: ${literal} })`)
-      .replace('cossackPages({', `cossackPages({ configPath: ${literal},`));
+    await fs.writeFile(path.join(projectDir, 'vite.config.ts'), source.replace('cossackApp({', `cossackApp({ configPath: ${literal},`));
     options.env.CLOUDFLARE_VITE_WRANGLER_CONFIG_PATH = '';
     const explicitUrlScript = `import { getSiteUrl } from '@cossackframework/framework/ssg-config'; console.log(getSiteUrl({ projectRoot: process.cwd(), configPath: ${literal} }));`;
     const explicitUrl = await exec(process.execPath, ['--input-type=module', '-e', explicitUrlScript], options);

@@ -47,6 +47,18 @@ export interface MountedPackage {
   /** Oldest scaffold template whose host modules the served code works with. */
   hostTemplate?: string;
   /**
+   * Changes a project makes by hand in its own files, by the template version that needs them
+   * (`cossack.hostSteps`): `{ "0.10.0": ["src/index.ts: export NewObject from ..."] }`. A project
+   * that records no file hashes is not edited by an upgrade; it is told these steps instead.
+   */
+  hostSteps?: Record<string, string[]>;
+  /**
+   * Real path of the module that gives the package's part of the Vite configuration
+   * (`cossack.vite`, a path from the package directory). The `cossack/vite` preset calls its
+   * `cossackVite` export.
+   */
+  vite?: string;
+  /**
    * How the package exports its served root, from an `exports` entry such as
    * `"./app/*": "./app/src/*.ts"`: the subpath before the star, and the suffix the target adds.
    */
@@ -154,6 +166,8 @@ export function mountedPackages(projectRoot: string): MountedPackage[] {
       ...(field.middlewares !== undefined ? { middlewares: field.middlewares } : {}),
       host: list('host', () => true, 'paths under the application\'s src'),
       ...(typeof field.hostTemplate === 'string' ? { hostTemplate: field.hostTemplate } : {}),
+      ...(typeof field.vite === 'string' && safe(field.vite) ? { vite: join(directory, field.vite) } : {}),
+      ...(hostStepsOf(field.hostSteps) ? { hostSteps: hostStepsOf(field.hostSteps) } : {}),
       ...(exportedRoot(manifest.exports, field.root) ? { exported: exportedRoot(manifest.exports, field.root) } : {}),
     });
   }
@@ -229,47 +243,91 @@ export function versionBelow(version: string | undefined, minimum: string | unde
  * The `@/` modules a mounted package needs must exist, and the project's template must not be
  * older than the package asks for. Returns the problems; an empty list is a pass.
  */
+function hostStepsOf(value: unknown): Record<string, string[]> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const steps: Record<string, string[]> = {};
+  for (const [version, list] of Object.entries(value as Record<string, unknown>)) {
+    if (Array.isArray(list) && list.every(step => typeof step === 'string')) steps[version] = list as string[];
+  }
+  return Object.keys(steps).length ? steps : undefined;
+}
+
+/**
+ * The template version of the project's own files, and where it is recorded: `cossack.template`
+ * in package.json for a project that keeps no file hashes (its files are its own, and it raises
+ * the version by hand), else the scaffold manifest, which `cossack upgrade` keeps.
+ */
+export function projectTemplate(projectRoot: string): { version: string | undefined; recorded: 'package' | 'manifest' } {
+  const read = (file: string): any => { try { return JSON.parse(readFileSync(join(projectRoot, file), 'utf8')); } catch { return undefined; } };
+  const own = read('package.json')?.cossack?.template;
+  if (typeof own === 'string') return { version: own, recorded: 'package' };
+  const manifest = read('.cossack/scaffold.json')?.templateVersion;
+  return { version: typeof manifest === 'string' ? manifest : undefined, recorded: 'manifest' };
+}
+
+/** The steps a package names for templates newer than `template`, oldest first. */
+export function hostStepsSince(mounted: MountedPackage, template: string | undefined): string[] {
+  return Object.keys(mounted.hostSteps ?? {})
+    .filter(version => versionBelow(template, version))
+    .sort((a, b) => versionBelow(a, b) ? -1 : versionBelow(b, a) ? 1 : 0)
+    .flatMap(version => mounted.hostSteps![version]);
+}
+
 export function hostContractProblems(projectRoot: string): PackageMountError[] {
   const problems: PackageMountError[] = [];
-  let templateVersion: string | undefined;
-  try { templateVersion = JSON.parse(readFileSync(join(projectRoot, '.cossack/scaffold.json'), 'utf8')).templateVersion; }
-  catch { templateVersion = undefined; }
+  const { version: templateVersion, recorded } = projectTemplate(projectRoot);
   for (const mounted of mountedPackages(projectRoot)) {
     const missing = mounted.host.filter(path => !existsSync(resolve(projectRoot, 'src', path)));
     if (missing.length) problems.push(new PackageMountError('COSSACK_PACKAGE_HOST_MISSING',
       `${mounted.name} needs ${missing.map(path => 'src/' + path).join(', ')} in the application. Run cossack upgrade to write the missing files.`));
-    if (versionBelow(templateVersion, mounted.hostTemplate)) problems.push(new PackageMountError('COSSACK_PACKAGE_HOST_OUTDATED',
-      `${mounted.name} ${mounted.version} needs project files from template ${mounted.hostTemplate}, and this project is at ${templateVersion}. Run cossack upgrade.`));
+    if (!versionBelow(templateVersion, mounted.hostTemplate)) continue;
+    const needs = `${mounted.name} ${mounted.version} needs project files from template ${mounted.hostTemplate}, and this project is at ${templateVersion}.`;
+    if (recorded === 'manifest') { problems.push(new PackageMountError('COSSACK_PACKAGE_HOST_OUTDATED', `${needs} Run cossack upgrade.`)); continue; }
+    // The project's files are its own: it makes the changes, then records the template itself.
+    const steps = hostStepsSince(mounted, templateVersion);
+    problems.push(new PackageMountError('COSSACK_PACKAGE_HOST_OUTDATED', `${needs} ` +
+      (steps.length ? `Make these changes:\n${steps.map(step => `  - ${step}`).join('\n')}\n` : `See the release notes of ${mounted.name} ${mounted.hostTemplate} for the changes. `) +
+      `Then set cossack.template to "${mounted.hostTemplate}" in package.json.`));
   }
   return problems;
 }
 
 const packageOf = (specifier: string) => specifier.split('/').slice(0, specifier.startsWith('@') ? 2 : 1).join('/');
 
+const sourceTexts = (root: string): string[] => {
+  const sources: string[] = [];
+  const visit = (directory: string) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (entry.isDirectory()) { if (entry.name !== 'node_modules' && !entry.name.startsWith('.')) visit(join(directory, entry.name)); continue; }
+      if (entry.name.endsWith('.ts') && !/\.(?:d|test|spec)\.ts$/.test(entry.name)) sources.push(readFileSync(join(directory, entry.name), 'utf8'));
+    }
+  };
+  if (existsSync(root)) visit(root);
+  return sources;
+};
+
 /**
- * Bare imports of the served files that Vite must pre-bundle up front, for the browser and
- * for the server. A dependency the package declares itself is named through the package
- * (`<package> > <import>`): under a strict install the application cannot resolve it.
+ * Bare imports of the application's own files and of the served files that Vite must
+ * pre-bundle up front, for the browser and for the server: Vite cannot see a page's imports
+ * before the page loads, and each late find bundles again and reloads. A dependency a mounted
+ * package declares itself is named through the package (`<package> > <import>`): under a
+ * strict install the application cannot resolve it.
  */
 export function servedPrebundle(projectRoot: string): { client: string[]; server: string[] } {
   const client = new Set<string>(), server = new Set<string>();
+  const own = prebundleDependencies(sourceTexts(join(projectRoot, 'src')));
+  for (const specifier of own.client) client.add(specifier);
+  for (const specifier of own.server) server.add(specifier);
   let application: Record<string, unknown> = {};
   try {
     const manifest = JSON.parse(readFileSync(join(projectRoot, 'package.json'), 'utf8'));
     application = { ...manifest.dependencies, ...manifest.devDependencies };
   } catch { /* No application dependencies to name. */ }
   for (const mounted of mountedPackages(projectRoot)) {
-    const sources: string[] = [];
-    const visit = (directory: string) => {
-      for (const entry of readdirSync(directory, { withFileTypes: true })) {
-        if (entry.isDirectory()) { if (entry.name !== 'node_modules' && !entry.name.startsWith('.')) visit(join(directory, entry.name)); continue; }
-        if (entry.name.endsWith('.ts') && !/\.(?:d|test|spec)\.ts$/.test(entry.name)) sources.push(readFileSync(join(directory, entry.name), 'utf8'));
-      }
-    };
-    visit(mounted.root);
-    let own: Record<string, unknown> = {};
-    try { own = JSON.parse(readFileSync(join(mounted.directory, 'package.json'), 'utf8')).dependencies ?? {}; } catch { /* Listed plainly. */ }
-    const viaPackage = (specifier: string) => packageOf(specifier) !== mounted.name && Object.hasOwn(own, packageOf(specifier));
+    const sources = sourceTexts(mounted.root);
+    let declared: Record<string, unknown> = {};
+    try { declared = JSON.parse(readFileSync(join(mounted.directory, 'package.json'), 'utf8')).dependencies ?? {}; } catch { /* Listed plainly. */ }
+    const viaPackage = (specifier: string) => packageOf(specifier) !== mounted.name && Object.hasOwn(declared, packageOf(specifier));
     // A dependency the application declares too is also listed plainly: the application's
     // `resolve.dedupe` sends the served file's import to the application's copy, which is
     // another file than the package's when the package is linked from a workspace.

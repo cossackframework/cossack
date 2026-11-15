@@ -176,7 +176,9 @@ describe('adapter, image, upgrade, and Studio machine contracts', () => {
     expect(planned.stderr).toBe('');
     const plan = parseEnvelope(planned.stdout).data.plan;
     expect(plan.files.preserved).toContain('src/App.ts');
-    expect(plan.files.conflicts).toContainEqual({ path: 'src/App.ts', resolution: 'preserve' });
+    // Only the project changed it: it is kept, and it is not a conflict.
+    expect(plan.files.local).toContain('src/App.ts');
+    expect(plan.files.conflicts).toEqual([]);
     expect(plan.dependencies).toMatchObject({ updates: [], additions: [], removals: [] });
     expect(await fs.readFile(path.join(cwd, 'package.json'), 'utf8')).toBe(before);
     const invalid = await runCli(['upgrade', '--force-file=../outside.ts', '--json'], { cwd });

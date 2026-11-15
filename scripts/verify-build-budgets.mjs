@@ -14,7 +14,7 @@ export async function verifyBuildBudgets(projectDir) {
     const manifest = JSON.parse(saved[0]);
     const config = JSON.parse(saved[1]);
     const source = saved[2];
-    assert.ok(source.includes('cossackBuildBudgets()'), 'Cloudflare scaffold must include the build budget gate.');
+    assert.ok(source.includes('cossackApp({'), 'Cloudflare scaffold must use the Cossack Vite preset, which holds the build budget gate.');
     config.env ??= {};
     config.env.budgetAcceptance = { name: `${config.name}-budget`, vars: { ...config.vars, APP_URL: 'https://budget-acceptance.example.test', BUDGET_MARKER: 'PRIVATE_INSTALLED_BUDGET_SENTINEL' },
       secrets: config.secrets, durable_objects: config.durable_objects, d1_databases: config.d1_databases, kv_namespaces: config.kv_namespaces, r2_buckets: config.r2_buckets };

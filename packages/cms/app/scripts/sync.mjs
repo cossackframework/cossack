@@ -28,6 +28,16 @@ const tracked = rel => !manifest.rendered.includes(rel) && manifest.served.some(
 const recipe = resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'] });
 // This folder is where the package serves the shell from, so the render keeps it.
 const rendered = await renderRecipe(recipe, { projectName: 'Cossack', servedFiles: true });
+// This application runs on Node and holds the served files as source, the Workers entry
+// module among them, which needs Workers types. A Workers project checks it through its own
+// src/index.ts, which exports it.
+// It mounts no package either, so its Vite configuration names the CMS's part itself.
+const vite = rendered.get('vite.config.ts');
+rendered.set('vite.config.ts', { ...vite, content: Buffer.from(vite.content.toString('utf8')
+  .replace("import { cossackApp } from 'cossack/vite';", "import { cossackApp } from 'cossack/vite';\nimport { cossackVite } from '@cossackframework/cms/vite';")
+  .replace('export default cossackApp({\n', 'export default cossackApp({\n  parts: [cossackVite],\n')) });
+const tsconfig = rendered.get('tsconfig.json');
+rendered.set('tsconfig.json', { ...tsconfig, content: Buffer.from(JSON.stringify({ ...JSON.parse(tsconfig.content.toString('utf8')), exclude: ['src/cms/worker.ts'] }, null, 2) + '\n') });
 
 const previous = JSON.parse(await fs.readFile(statePath, 'utf8').catch(() => '{"files":[]}'));
 const written = [];

@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { addFeature, createApp, renderRecipe, resolveRecipe, withClientDependencies } from '../src/index.js';
+import { addFeature, createApp, renderRecipe, resolveRecipe } from '../src/index.js';
 import { authStore } from '../src/registry.js';
 
 const directories = [];
@@ -23,7 +23,8 @@ describe('cms recipe', () => {
     const files = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'] }));
     // The application names the package it mounts; installing it alone adds no routes.
     const pkg = JSON.parse(text(files, 'package.json'));
-    expect(pkg.cossack).toEqual({ runtime: 'node', packages: ['@cossackframework/cms'] });
+    // The mount, and the recipe: a CMS project records no files, so its recipe is here (file-records.test.js).
+    expect(pkg.cossack).toEqual({ runtime: 'node', packages: ['@cossackframework/cms'], features: ['cms'], template: expect.stringMatching(/^\d+\.\d+\.\d+/) });
     // The sign-in pages, the dashboard, its kit, the services and auth are the package's: the project holds none.
     for (const rel of ['src/pages/auth/login/index.ts', 'src/pages/dashboard/layout.ts', 'src/pages/dashboard/users/index.ts', 'src/dashboard/list-table.ts', 'src/dashboard/registry.ts',
       'src/dashboard/modules/users.ts', 'src/dashboard/types.ts', 'src/auth.ts', 'src/auth-input.ts', 'src/brand.ts', 'src/services/users.ts', 'src/middlewares/auth.ts', 'src/config/auth.ts', 'src/lib/permissions.ts'])
@@ -48,7 +49,10 @@ describe('cms recipe', () => {
     expect(middlewares).toContain("import { cmsMiddlewares } from '@cossackframework/cms/app/cms/middlewares';");
     expect(middlewares).toContain('  ...cmsMiddlewares,');
     expect(middlewares).not.toContain('../auth');
-    expect(text(files, 'src/index.ts')).toContain("import { networkFor } from '@cossackframework/cms/app/cms/index';");
+    // The entry names the CMS's options and its background work; the package holds the code.
+    expect(text(files, 'src/index.ts')).toContain("import { cmsAppOptions, startCmsMaintenance } from '@cossackframework/cms/app/cms/entry';");
+    expect(text(files, 'src/index.ts')).toContain('  started: startCmsMaintenance,');
+    expect(text(files, 'vite.config.ts')).not.toContain('@cossackframework/cms');
     // Block styles come from the package, and Tailwind is told to scan the served files.
     expect(text(files, 'src/style.css')).toContain('@import "@cossackframework/cms/app/cms/blocks.css";');
     expect(text(files, 'src/style.css')).toContain('@source "../node_modules/@cossackframework/cms/app/src";');
@@ -59,11 +63,6 @@ describe('cms recipe', () => {
     expect(pkg.dependencies['@romedb/client']).toMatch(/^\d/);
     expect(pkg.dependencies['@romedb/client']).toBe(pkg.dependencies['@romedb/node']);
     expect(text(files, '.gitignore')).toContain('storage/media/');
-    const config = text(files, 'vite.config.ts');
-    expect(config).toContain("external: ['@romedb/client', '@romedb/node']");
-    // The icon sprites come from the CMS package's Vite plugin, not from files in the application.
-    expect(config).toContain("import { cossackCmsIcons } from '@cossackframework/cms/vite';");
-    expect(config).toContain('    cossackCmsIcons(),');
     // Applications with database auth keep passwords only, in their own modules.
     const orm = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['dashboard'] }));
     expect(text(orm, 'src/auth.ts')).toContain('export const twoFactorAvailable = false;');
@@ -107,7 +106,8 @@ describe('cms recipe', () => {
     const worker = await renderRecipe(resolveRecipe({ adapter: 'cloudflare', preset: 'minimal', features: ['cms'] }));
     const cms = files => [...files].filter(([, entry]) => entry.capability === 'cms').map(([rel]) => rel).sort();
     expect(cms(worker)).toEqual(cms(node));
-    expect(text(worker, 'src/index.ts')).toContain("import { networkFor, setPluginRunner } from '@cossackframework/cms/app/cms/index';");
+    expect(text(worker, 'src/index.ts')).toContain("export { RomeDBPendingWrites, PluginBridge, PluginTail } from '@cossackframework/cms/app/cms/worker';");
+    expect(text(worker, 'src/index.ts')).toContain('    cmsScheduled(env, ctx);');
     expect(text(worker, 'src/cms.config.ts')).toContain("import { cloudflareStorage } from '@cossackframework/cms/storage/cloudflare';");
     expect(text(worker, 'src/cms.config.ts')).toContain('export const storage = cloudflareStorage;');
     const afterStorage = source => source.slice(source.indexOf('export const resources'));
@@ -133,34 +133,6 @@ describe('cms recipe', () => {
     // The package's home page gives way to the application's: an application page overrides a package page of the same URL.
     expect(files.has('src/pages/(site)/index.ts')).toBe(false);
     expect(JSON.parse(text(files, 'package.json')).dependencies).not.toHaveProperty('@aws-sdk/client-s3');
-  });
-
-  it('lists the browser dependencies of rendered pages for the first Vite bundle', async () => {
-    const files = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'] }));
-    const config = text(files, 'vite.config.ts');
-    const list = config.slice(config.indexOf('@cossack:client-dependencies'), config.indexOf('],', config.indexOf('@cossack:client-dependencies')));
-    expect(list).toContain("'@cossackframework/cms'");
-    // The served files' imports are the framework's to add, from the mounted package: the dashboard's icons, the editor.
-    expect(list).not.toContain('@cossackframework/solar-icons');
-    expect(list).not.toContain('@tiptap/core');
-    expect(list).not.toContain('@cossackframework/cms/server');
-    const source = (content) => ({ content: Buffer.from(content) });
-    const synthetic = new Map([
-      ['src/a.ts', source("import type { Tag } from '@cossackframework/solar-icons/tag/line';\nimport { Star } from '@cossackframework/solar-icons/star/line';\nconst editor = await import('@tiptap/core');")],
-      ['src/b.ts', source("import { createCMS } from '@cossackframework/cms/server';\nimport { x } from 'left-pad';")],
-    ]);
-    expect(withClientDependencies("      // @cossack:client-dependencies\n      include: [],", synthetic))
-      .toBe("      // @cossack:client-dependencies\n      include: [\n        '@cossackframework/solar-icons/star/line',\n        '@tiptap/core',\n      ],");
-    // The Worker's list gets the icon subpaths and the editor's packages, never the framework's own (one copy of each).
-    const both = new Map([...synthetic, ['src/c.ts', source("import { ui } from '@cossackframework/ui';\nimport { plugins } from '@cossackframework/framework/plugins';")]]);
-    expect(withClientDependencies("      // @cossack:server-dependencies\n      ...([] as string[]),\n      '@cossackframework/renderer > parse5',", both))
-      .toBe("      // @cossack:server-dependencies\n      '@cossackframework/solar-icons/star/line',\n      '@tiptap/core',\n      '@cossackframework/renderer > parse5',");
-    expect(withClientDependencies("      // @cossack:server-dependencies\n      ...([] as string[]),\n      'x',", new Map())).toBe("      // @cossack:server-dependencies\n      'x',");
-    const rendered = text(files, 'vite.config.ts');
-    const held = text(await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'] }), { servedFiles: true }), 'vite.config.ts');
-    expect(held.slice(held.indexOf('@cossack:server-dependencies'), held.indexOf('parse5'))).toContain("'@cossackframework/solar-icons/users-group-rounded/line'");
-    expect(rendered.slice(rendered.indexOf('@cossack:server-dependencies'), rendered.indexOf('parse5'))).not.toContain("'@cossackframework/ui'");
-    expect(text(await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: [] })), 'vite.config.ts')).toContain('// @cossack:client-dependencies\n        include: [],');
   });
 
   it('leaves the default theme and the editor out of applications without cms', async () => {

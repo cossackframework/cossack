@@ -5,14 +5,18 @@
   "type": "module",
   "description": "The Cossack CMS as an application: the source of the files `cossack add cms` renders, run from the workspace",
   "cossack": {
-    "runtime": "node"
+    "runtime": "node",
+    "features": [
+      "cms"
+    ],
+    "template": "0.9.0"
   },
   "scripts": {
     "sync": "node scripts/sync.mjs",
     "dev": "node scripts/start.mjs",
     "build": "node scripts/sync.mjs && vite build && vite build --ssr src/index.ts --outDir dist/server",
     "start": "node --env-file-if-exists=.env dist/server/index.js",
-    "typecheck": "node scripts/sync.mjs && cossack routes --generate && cossack config --generate && tsc --noEmit"
+    "typecheck": "node scripts/sync.mjs && cossack typecheck"
   },
   "devDependencies": {
     "@cossackframework/typescript-plugin": "workspace:*",

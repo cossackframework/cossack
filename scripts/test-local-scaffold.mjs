@@ -692,7 +692,7 @@ try {
   } else if (desktopRuntimeOnly) {
     await writeDesktopRuntimeAcceptance(minimalProjectDir);
     const configFile = path.join(minimalProjectDir, 'vite.config.ts');
-    await fs.writeFile(configFile, (await fs.readFile(configFile, 'utf8')).replace('cossackPages({', 'cossackPages({ developmentTraces:true,'));
+    await fs.writeFile(configFile, (await fs.readFile(configFile, 'utf8')).replace('cossackApp({', 'cossackApp({ pages: { developmentTraces: true },'));
     await run('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: minimalProjectDir });
     await run('pnpm', ['run', 'build:desktop'], { cwd: minimalProjectDir });
     await verifyDesktopRuntimeApplication(minimalProjectDir);

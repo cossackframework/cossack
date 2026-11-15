@@ -205,6 +205,7 @@ export const commandSpecs = {
     env, output: str('Write the app model JSON to this file instead of stdout.'),
     schema: bool('Print the JSON Schema of the app model.'),
   } }),
+  typecheck: new CommandSpec({ name: 'typecheck', globals: ['json', 'help'] }),
   info: new CommandSpec({ name: 'info', globals: readonly }),
   version: new CommandSpec({ name: 'version', aliases: ['v'], globals: readonly }),
   upgrade: new CommandSpec({ name: 'upgrade', globals: mutations, positionals: ['dir'], flags: {

@@ -29,7 +29,7 @@ async function fixture(budgets) {
 it('enforces direct installed Vite budgets for a completed selected-environment Worker', async () => {
   const { projectDir, manifestPath, manifest, configPath, config } = await fixture({ uploadKiB: { warning: 0.001 } });
   const viteConfig = path.join(projectDir, 'vite.config.ts');
-  expect(await fs.readFile(viteConfig, 'utf8')).toContain('cossackBuildBudgets()');
+  expect(await fs.readFile(viteConfig, 'utf8')).toContain('cossackApp({');
   config.env = { staging: { name: config.name + '-staging', vars: { ...config.vars, APP_URL: 'https://staging-budget.example.test', BUDGET_MARKER: 'PRIVATE_BUDGET_VALUE_SENTINEL' }, secrets: config.secrets, durable_objects: config.durable_objects } };
   await fs.writeFile(configPath, JSON.stringify(config));
   await fs.mkdir(path.join(projectDir, '.wrangler/deploy'), { recursive: true });
@@ -76,10 +76,7 @@ it('builds and validates a nested custom config through CLI environment selectio
   expect(report.data.buildBudgets.valid).toBe(true); expect(captured.mock.calls.filter(call => call[1] === 'wrangler')).toHaveLength(0);
   const viteConfig = path.join(projectDir, 'vite.config.ts');
   const source = await fs.readFile(viteConfig, 'utf8');
-  await fs.writeFile(viteConfig, source.replace('cloudflare({', "cloudflare({ configPath: 'deployment/worker.jsonc',")
-    .replace('cossackBuildBudgets()', "cossackBuildBudgets({ configPath: 'deployment/worker.jsonc' })")
-    .replace('cossackConfig()', "cossackConfig({ configPath: 'deployment/worker.jsonc' })")
-    .replace('cossackPages({', "cossackPages({ configPath: 'deployment/worker.jsonc',"));
+  await fs.writeFile(viteConfig, source.replace('cossackApp({', "cossackApp({ configPath: 'deployment/worker.jsonc',"));
   vi.stubEnv('CLOUDFLARE_VITE_WRANGLER_CONFIG_PATH', '');
   const require = createRequire(path.join(projectDir, 'package.json'));
   const vite = path.join(path.dirname(require.resolve('vite/package.json')), 'bin/vite.js');
@@ -119,7 +116,7 @@ it('reuses a complete primary and auxiliary batch through a real two-auxiliary b
     await fs.writeFile(path.join(directory, 'wrangler.jsonc'), JSON.stringify({ name: `cossack-budget-${name}`, main: 'worker.ts', compatibility_date: '2026-01-01', vars: { PRIVATE: 'PRIVATE_AUXILIARY_SENTINEL' } }));
   }
   const vite = path.join(projectDir, 'vite.config.ts');
-  await fs.writeFile(vite, (await fs.readFile(vite, 'utf8')).replace('cloudflare({', `cloudflare({ auxiliaryWorkers: ${JSON.stringify(workers.map(name => ({ configPath: `workers/${name}/wrangler.jsonc` })))},`));
+  await fs.writeFile(vite, (await fs.readFile(vite, 'utf8')).replace('cossackApp({', `cossackApp({ cloudflare: { auxiliaryWorkers: ${JSON.stringify(workers.map(name => ({ configPath: `workers/${name}/wrangler.jsonc` })))} },`));
   const log = vi.spyOn(console, 'log').mockImplementation(() => {});
   expect(await buildCommand([], { cwd: projectDir, flags: { json: true } })).toBe(0);
   const report = JSON.parse(log.mock.calls.at(-1)[0]);

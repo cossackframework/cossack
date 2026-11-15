@@ -37,7 +37,6 @@ it('schedules compose jobs and render validated registry, provider entry, Cron c
   expect(await read(root, 'src/index.ts')).toContain('await createSchedules(env).scheduled(controller)');
   expect(await read(root, 'src/index.ts')).toContain("from './schedules/index'");
   expect(await read(root, 'src/index.ts')).toContain('await createJobs(env).queue(batch)');
-  expect(await read(root, 'vite.config.ts')).toContain('cossackSchedules()');
   for (const file of ['src/index.ts', 'src/schedules/index.ts', 'vite.config.ts']) await expect(transform(await read(root, file), { loader: 'ts' })).resolves.toBeDefined();
 });
 it.each(['node'])('schedules require an explicit supported scheduler before any %s project writes', async adapter => {

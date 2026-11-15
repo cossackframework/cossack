@@ -309,10 +309,10 @@ and RPC without a source registration.
 
 ## Read captures from CLI and MCP
 
-Enable the project bridge in the existing Vite page plugin:
+Enable the project bridge through the preset in `vite.config.ts`:
 
 ```ts
-cossackPages({ developmentTraces: true })
+cossackApp({ pages: { developmentTraces: true } })
 ```
 
 The option defaults to false. During development the client route registry loads
