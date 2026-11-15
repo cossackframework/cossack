@@ -10,9 +10,43 @@ in the dashboard and stored schemaless, content is blocks and rich text, and the
 site is drawn by a theme. Plugins add resources, hooks, blocks, dashboard pages, commands
 and themes without touching the application's own code.
 
-`cossack add cms` renders the CMS into an application's `auth` and `dashboard` pages and
-puts a default theme in `src/plugins/default-theme/` for you to edit or copy. See
-[`cossack add cms`](/docs/cossack-cli.md#cossack-add-cms) for what the recipe sets up.
+`cossack add cms` adds the CMS to an application's `auth` and `dashboard` pages. The CMS's own
+pages, modules and default theme stay in the package: the application mounts them
+(`package.json#cossack.packages`) and holds no copy, so a package update replaces them whole.
+See [`cossack add cms`](/docs/cossack-cli.md#cossack-add-cms) for what the recipe sets up.
+
+## What the project holds
+
+| File | What it is |
+| --- | --- |
+| `src/cms.config.ts` | Your configuration: code-declared resources, the built-in modules, and the options below. |
+| `src/cms/database.ts`, `media.ts`, `pending.ts` | How the CMS reaches its database and media on your runtime. |
+| `src/auth.ts`, `src/brand.ts`, `src/services/*.ts` and a few more | One line each: they re-export the CMS's version of a module that the dashboard shell imports. |
+| `src/plugins/<name>/` | Your plugins and themes. |
+
+`src/cms.config.ts` exports `resources`, `modules` and `options`. `options` may set
+`reservedPaths`, `blocks`, `settings`, `taxonomies`, the `payments`, `ai`, `purgers` and `mail`
+providers, and `updates`. Give an object, or a function of the environment bindings and the
+site: `(env, site) => ({ ... })`. An option you leave out keeps its default.
+
+## Changing the CMS
+
+In order of preference:
+
+1. **A plugin**: resources, hooks, blocks, dashboard pages, commands ([Plugins](/docs/cms/plugins.md)).
+2. **`src/cms.config.ts`**: providers, reserved paths, blocks and settings groups declared in code.
+3. **A child theme**: it changes the look and keeps receiving the parent's fixes ([Themes](/docs/cms/themes.md#child-themes)).
+4. **`cossack eject`**: copy one page, configuration file or the default theme into the project,
+   where it replaces the package's. `cossack upgrade` merges later changes into the copy
+   ([`cossack eject`](/docs/cossack-cli.md#cossack-eject-package-path)).
+
+A shared module of the CMS, such as `cms/site.ts`, cannot be replaced by a copy.
+
+## Updating
+
+`pnpm cossack upgrade` updates the CMS with the rest of the project. Tools → Updates in the
+dashboard shows when a version is available and can ask your pipeline to run the upgrade. See
+[Updates](/docs/cms/updates.md) and [Upgrading](/docs/upgrading.md).
 
 ## Guides
 
@@ -32,6 +66,8 @@ puts a default theme in `src/plugins/default-theme/` for you to edit or copy. Se
   place, documents and their revisions, markers, and what stays code.
 - [Settings](/docs/cms/settings.md): reading and writing settings, declaring groups and
   subpages, discussions, and the site logo.
+- [Updates](/docs/cms/updates.md): the update notice, what it sends, the Update button and its
+  hook, and backups.
 - [Multisite](/docs/cms/multisite.md): many sites from one application, one database per
   site, accounts shared across the network, and the network dashboard.
 - [Co-editing](/docs/cms/collaboration.md): several people in one entry, live text and

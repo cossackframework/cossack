@@ -1,12 +1,40 @@
 # The CMS application
 
 `@cossackframework/cms` is a library and an application. This folder is the application:
-the `node` + `cms` recipe, run from the workspace. The files the `cms` feature owns are
-tracked here and are what `cossack add cms` renders into a project; they are listed in
-`cossack-recipe.json`. Every other file (the shared auth and dashboard shell, `vite.config.ts`,
-entries, `.env.example`, …) comes from `packages/scaffold/template` and is written here by
-`pnpm sync`, which `dev`, `build` and `typecheck` run first. Rendered files are gitignored, so
-each file has one source: CMS code here, shell code in the scaffold template.
+the `node` + `cms` recipe, run from the workspace.
+
+A project does not get a copy of these files. It mounts them from the package: the `cossack`
+field of `../package.json` lists what the package serves (pages, the default theme,
+configuration), and the project names the package in its own `package.json`
+(`cossack.packages`). So the files tracked here are the CMS that every project runs.
+`cossack-recipe.json` lists them in three groups:
+
+- `served`: mounted by the project, never copied;
+- `facades`: served modules that the dashboard shell imports by relative path; the project
+  holds a one-line re-export for each;
+- `rendered`: written into the project by the scaffold (`packages/scaffold/src/cms-recipe.js`):
+  the storage glue per runtime and `src/cms.config.ts`.
+
+Every other file here (the shared auth and dashboard shell, `vite.config.ts`, entries,
+`.env.example`, …) comes from `packages/scaffold/template` and is written by `pnpm sync`,
+which `dev`, `build` and `typecheck` run first. Rendered files are gitignored, so each file
+has one source: CMS code here, shell code in the scaffold template. This folder mounts
+nothing: it is the package's served source itself.
+
+## The host contract
+
+Served code reaches the project only through `@/…` imports, and `../package.json` lists those
+modules in `cossack.host`. Every other import is relative and stays inside the served files, or
+names a package. `tests/host-contract.test.ts` holds this:
+
+- import a project module (`@/dashboard/list-table`, `@/cms.config`) through `@/`, and add a new
+  one to `cossack.host`;
+- import another CMS file by relative path;
+- import the CMS core as `@cossackframework/cms`, never by a path into `../src`.
+
+When served code starts to need something new from a project file, raise
+`cossack.hostTemplate` in the same commit: projects on an older template then get a clear
+"run cossack upgrade" at build time.
 
 ## Run
 
@@ -39,4 +67,5 @@ not cover them.
 
 Everything under `src/plugins/` except `default-theme` is ignored by git and left alone by
 `sync`, so a plugin or theme under development can be rendered or symlinked there. To ship
-one with the CMS, add it to `cossack-recipe.json` and un-ignore it in `.gitignore`.
+one with the CMS, add it to `served` in `cossack-recipe.json`, to `cossack.plugins` in
+`../package.json`, and un-ignore it in `.gitignore`.

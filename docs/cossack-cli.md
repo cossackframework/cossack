@@ -461,8 +461,11 @@ sessions stored in RomeDB, posts and pages written in a rich text editor that
 saves JSON, collections you define in the dashboard (fields and blocks, each in
 its own document table), categories, tags and other taxonomies, a media library,
 site settings, themes, menus with drag and drop, plugins and the plugin policy
-lints. The public site is drawn by the active theme, a plugin; the default one is
-rendered into `src/plugins/default-theme/` for you to edit or copy. It serves
+lints. The CMS's pages and modules are not copied into the project: the project mounts them
+from the `@cossackframework/cms` package (`package.json#cossack.packages`) and gets
+`src/cms.config.ts`, the storage glue for its runtime and a workflow for the dashboard's Update
+button (see [CMS](/docs/cms/index.md#what-the-project-holds)). The public site is drawn by the
+active theme, a plugin; the default one is served from the package. It serves
 collections, term archives, nested pages, `/search`, `/feed`, `/sitemap.xml`,
 `/robots.txt` and a content API (`/api/cms/content/<collection>`,
 `/api/cms/menus/<location>`, `/api/cms/comments`) that apps write to with

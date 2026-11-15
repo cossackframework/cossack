@@ -1,6 +1,6 @@
 # CMS updates: the update notice, the Update button, and the update server
 
-Status: planned 2026-11-15. Part 4 of 4, after `specs/package-routes.md`,
+Status: built 2026-11-15, except the update server (step 6). Part 4 of 4, after `specs/package-routes.md`,
 `specs/cms-served-app.md` and `specs/upgrade-merges.md`. The update server is a
 separate service that is built later; this spec fixes its contract.
 
@@ -46,9 +46,10 @@ deploys as it does for any other commit.
   `updates: { check: true, url: 'https://cms.cossack.dev/update', channel: 'latest' }`.
   `check: false` turns the request off; the dashboard then shows only the installed
   version.
-- **Where it shows:** Tools → Updates (new page) and a badge on the admin taskbar,
-  only for users who hold the new `updates.manage` permission (administrators by
-  default; in a network, network administrators only). The page shows the
+- **Where it shows:** Tools → Updates (new page), and the Tools menu entry reads
+  `Updates (1)` while a newer version is known. Only for users who hold the new
+  `cms:updates` permission (administrators hold every permission), on the main
+  site; in a network, network administrators only. The page shows the
   installed version, the latest version, the release notes link, and whether the
   release is marked as a security fix.
 - **The installed version** comes from the package's `package.json` at build time
@@ -83,11 +84,11 @@ deploys as it does for any other commit.
 - **Conflicts never block silently.** If `cossack upgrade` reports conflicts, the
   workflow always opens a pull request with the plan in its description, also in
   `push` mode.
-- **A backup first.** Before it sends the request, the button starts a site
-  export, and it waits for the export to finish. The confirm dialog says that an
-  older build cannot open the database after the update, and that going back means
-  restoring this export together with the older code. A checkbox skips the export
-  for sites with their own backups.
+- **A backup first.** The form says that an older build cannot open the database
+  after the update, and that going back means restoring a backup together with the
+  older code. It links to Tools → Export, and the button works only after the
+  person ticks "I have a backup". The button does not take the export itself: an
+  export streams to the browser, and nothing keeps one on the server.
 - **State.** One settings row holds `requestedVersion`, `requestedAt` and
   `requestedBy`. While it is set, the page shows "Update requested" and the button
   is disabled. The row clears when the running version is at least the requested
@@ -95,7 +96,7 @@ deploys as it does for any other commit.
   repository's Actions page when the hook URL is a GitHub URL. The pipeline does
   not call the site back in this version.
 - **Safety:**
-  - Only `updates.manage` holders can press it. In a network, only network
+  - Only `cms:updates` holders can press it. In a network, only network
     administrators.
   - The request is written to the activity log, with the user and the version.
   - The target version is the one stored by the update check. The browser cannot

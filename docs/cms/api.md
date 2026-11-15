@@ -234,5 +234,7 @@ application password. A CMS refusal answers `{ error, code, fields? }` with its 
 | `POST /api/auth/session` `{ email, password, code?, turnstile? }` | Signs in with a session cookie, for tools that make a password. While the Turnstile bot check is on it needs a `turnstile` token (403 `CMS_BOT_CHECK`); use an application password instead. When General settings require two-step sign-in, a session whose sign-in used no second factor (a code with `code`, or a passkey in the browser) gets 403 `CMS_SECOND_FACTOR_REQUIRED` from the API and no application passwords. |
 | `DELETE /api/auth/session` | Ends the session (same-origin), for tools that signed in to make a password. |
 
-In the application, every route calls `src/cms/manage.ts`, and so do the MCP tools in
-`src/cms/mcp-tools.ts`: an operation added there is one route and one tool away from both.
+In the CMS package, every route calls `cms/manage.ts`, and so do the MCP tools in
+`cms/mcp-tools.ts`. These are the package's modules, not the project's. A project adds its own
+operations as plugin commands ([Plugins](/docs/cms/plugins.md)) or as API routes of its own under
+`src/pages/api/`.

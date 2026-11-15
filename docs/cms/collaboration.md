@@ -93,6 +93,6 @@ can build another co-edited screen on them:
 - `participantColor`, `groupPeers`, `livePeers`, `checkPresence`: colors by user, the room's
   users from its tabs, the presence timeout, and presence from client input.
 
-The room itself is `EntryRoom` in `src/cms/collab/room.ts` of the application, a realtime
+The room itself is `EntryRoom` in `cms/collab/room.ts` of the CMS package, a realtime
 component scoped to `site:<site>:<collection>:<entry>`; the editor page talks to it through a
 `RoomHandle`. `cms.drafts` (`CmsDrafts`) is the draft store.

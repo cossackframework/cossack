@@ -1,6 +1,6 @@
 # The CMS app is served from the package
 
-Status: planned 2026-11-15. Part 2 of 4. Needs `specs/package-routes.md` first;
+Status: built 2026-11-15. Part 2 of 4. Needs `specs/package-routes.md` first;
 `specs/upgrade-merges.md` covers upgrades and `specs/cms-updates.md` the dashboard's Update button. Builds on
 `specs/cms-package-app.md`, whose "Not in this change" named this step.
 

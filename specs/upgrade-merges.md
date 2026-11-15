@@ -1,6 +1,6 @@
 # Upgrades: one command that merges, and ejected overrides
 
-Status: planned 2026-11-15. Part 3 of 4, after `specs/package-routes.md` and
+Status: built 2026-11-15. Part 3 of 4, after `specs/package-routes.md` and
 `specs/cms-served-app.md`; `specs/cms-updates.md` follows. Steps 1 to 4 do not depend on them and can be built first.
 
 ## Why

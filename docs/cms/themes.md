@@ -11,9 +11,12 @@ Themes own templates, not routes; the site's pages, URLs, feeds and API belong t
 host, and the active theme is a per-request setting an administrator changes under
 Appearance → Themes.
 
-`cossack add cms` renders the default theme into `src/plugins/default-theme/`. The fastest
-way to a theme of your own is to copy that directory, rename it in `plugin.json`, edit the
-templates and activate it.
+The default theme is served from the `@cossackframework/cms` package, so it updates with the
+package. The way to a theme of your own that keeps those updates is a
+[child theme](#child-themes): it ships only the templates and styles it changes. To start from
+the whole default theme instead, copy it into the project with
+`cossack eject cms plugins/default-theme`, rename the folder and the name in `plugin.json`, edit
+the templates and activate it.
 
 ```
 src/plugins/my-theme/
