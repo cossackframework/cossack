@@ -46,3 +46,11 @@ export async function dashboardSearch(c: Context): Promise<{ id: string; label: 
     }
     return commands;
 }
+
+/**
+ * What the command palette finds for its text besides the screens. This application has nothing
+ * more to search; with the CMS, the palette also finds entries.
+ */
+export async function dashboardFind(_c: Context, _text: string): Promise<{ id: string; label: string; group: string; href: string }[]> {
+    return [];
+}
