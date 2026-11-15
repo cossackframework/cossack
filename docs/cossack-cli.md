@@ -747,6 +747,8 @@ TypeScript compile. Use `--generate --dry-run --json` to preview generation with
 writes. Plain route inspection stays read-only. JSON output includes the shared
 structural manifest and the effective inspection facts.
 
+Routes that a mounted package serves are listed with the package's name after the file, and JSON entries carry a `package` field. The generated `.cossack/routes.ts` imports a package's API modules by package specifier (`@cossackframework/cms/app/pages/api/cms/…`), so the file does not change with the package's version or install path.
+
 Markdown requires a recorded scaffold feature or explicit `--markdown` selection.
 For a custom processor, configure the same feature in Vite.
 See [typed URLs](./routing.md#typed-urls) for imports, parameters, and existing-project setup.

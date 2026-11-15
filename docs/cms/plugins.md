@@ -527,6 +527,14 @@ manifest's resources are migrated again; added grants need a new grant.
 `cossack plugins list` shows rendered plugins and installed packages that declare
 `cossack.plugin` in their `package.json` but are not rendered yet.
 
+## Plugins served by a package
+
+A package that the application mounts can serve plugins (`cossack.plugins` in its `package.json`; see [Routes from a package](../routing.md#routes-from-a-package)). The default theme comes from `@cossackframework/cms` this way. Such a plugin is not rendered into `src/plugins/`, has no entry in `.cossack/plugins.json`, and updates with its package.
+
+It is otherwise a plugin like any other: it has a manifest, it is activated and granted in the dashboard, its pages answer only while it is active, and a server-only plugin can run isolated.
+
+To change one, extend it (a child theme), or put a plugin with the same name under `src/plugins/`. The application's plugin then replaces the package's plugin as a whole.
+
 ## Testing a plugin
 
 - Pack with `npm pack --ignore-scripts`, render into a generated application, then run

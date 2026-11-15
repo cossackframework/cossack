@@ -271,6 +271,62 @@ export default class MyLayout extends Cossack {
 }
 ```
 
+### Routes from a package
+
+A package can serve pages, layouts, API routes, plugins and configuration to the application that installs it. The CMS works this way: its pages are in `@cossackframework/cms`, not in your project, so a package update replaces them whole.
+
+The application names the packages it mounts in `package.json`. Installing a package mounts nothing by itself.
+
+```json
+{
+  "cossack": { "packages": ["@cossackframework/cms"] }
+}
+```
+
+The package states what it serves in its own `package.json`. Paths are relative to `root`, and a trailing slash names a directory.
+
+```json
+{
+  "exports": { "./app/*": "./app/src/*.ts" },
+  "cossack": {
+    "root": "app/src",
+    "pages": ["pages/dashboard/(cms)/", "pages/(site)/"],
+    "plugins": ["plugins/default-theme/"],
+    "config": ["config/cms.ts"],
+    "middlewares": "cms/middleware.ts",
+    "host": ["cms/database.ts"],
+    "hostTemplate": "0.10.0"
+  }
+}
+```
+
+A served file at `<root>/pages/blog/index.ts` behaves like `src/pages/blog/index.ts` in the application:
+
+- It takes the same route, and it renders in the application's layouts.
+- Server code is removed from the browser bundle, as for your own files.
+- A plugin the package serves is a plugin like any other. Its pages answer only while the plugin is active.
+- Package middleware runs after the application's list and before plugin middleware.
+
+#### Overriding a package file
+
+A file in the application replaces the package's file at the same path. The package's file is then left out of the build.
+
+- A page, layout or loading state: put a file at the same path under `src/pages/`. A page at another path that answers the same URL also replaces the package's page.
+- A configuration file: put a file with the same name in `src/config/`.
+- A plugin: a plugin with the same name under `src/plugins/` replaces the package's plugin as a whole, never file by file.
+
+The dev server and the build print each override once:
+
+```
+[cossack] src/pages/(site)/search/index.ts overrides @cossackframework/cms
+```
+
+An override means the whole file. It stops receiving the package's fixes for that file, so prefer a plugin or a configuration value where one exists. Two packages, or a package and a plugin, that define the same route are an error (`COSSACK_PLUGIN_ROUTE_CONFLICT`).
+
+#### What the package needs from the application
+
+Inside a served file, a relative import stays inside the package, and an `@/…` import is a module the application provides. The package lists these modules in `cossack.host`. The build stops when one is missing (`COSSACK_PACKAGE_HOST_MISSING`), or when the project's template is older than `cossack.hostTemplate` (`COSSACK_PACKAGE_HOST_OUTDATED`). Run `cossack upgrade` to fix both.
+
 ### Global App Component
 
 Use `src/App.ts` for logic outside the routing system, such as global CSS, theme providers, or a top-level progress bar. This component wraps the application and remains mounted during client-side navigation.
