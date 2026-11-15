@@ -33,10 +33,23 @@ request: request logs are off in `wrangler.jsonc`.
 ## The release list
 
 `releases.json` holds the published versions of each channel and is bundled with the
-Worker. After a release is published:
+Worker. A release fills and ships it without a manual step:
+
+1. `pnpm bump <version>` adds the version to `releases.json`, with the CMS's `hostTemplate`.
+   Pass `--security` for a release that fixes a security problem and `--minimum-from <version>`
+   when older sites must update in two steps. The entry is part of the release commit.
+2. `publish.yml` refuses a tag that the list does not name (`scripts/verify-release-version.mjs`).
+3. After the packages are on npm, its `update-server` job runs the tests here and deploys the
+   Worker. The job needs the repository secrets `CLOUDFLARE_API_TOKEN` (Workers Scripts: Edit,
+   and Workers Routes: Edit on the `cossack.dev` zone) and `CLOUDFLARE_ACCOUNT_ID`.
+
+By hand, to correct an entry or to add one outside a release:
 
 ```bash
 pnpm --filter cossack-update-server run release -- --version 0.10.0
+```
+
+```bash
 pnpm --filter cossack-update-server run deploy
 ```
 

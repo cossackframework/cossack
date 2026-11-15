@@ -7,7 +7,10 @@
  * The tag must be `X.Y.Z` or `vX.Y.Z` (existing release tags are bare, e.g.
  * `0.9.0`; prerelease suffixes such as `1.0.0-rc.1` are allowed). Its version
  * must equal the root package.json version and every packages/* package.json
- * version, so publish.yml never publishes a version nobody tagged.
+ * version, so publish.yml never publishes a version nobody tagged. The CMS
+ * update server's release list (services/update-server/releases.json, which
+ * `pnpm bump` fills) must name the version too: sites learn about a release
+ * from that list.
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -39,6 +42,11 @@ export function verifyReleaseVersion(tag, root) {
     }
   }
   if (checked === 0) errors.push('No packages/*/package.json found.');
+  const releases = path.join(root, 'services/update-server/releases.json');
+  if (existsSync(releases)) {
+    const listed = Object.values(read(releases).channels ?? {}).some(channel => channel.some(release => release.version === version));
+    if (!listed) errors.push(`services/update-server/releases.json does not list ${version}. Run pnpm bump, or pnpm --filter cossack-update-server run release -- --version ${version}.`);
+  }
   return errors;
 }
 
@@ -54,5 +62,5 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     for (const error of errors) console.error(`::error::${error}`);
     process.exit(1);
   }
-  console.log(`Release tag ${tag} matches the root and all packages/* versions.`);
+  console.log(`Release tag ${tag} matches the root, all packages/* versions and the update server's release list.`);
 }

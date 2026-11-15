@@ -136,8 +136,10 @@ deploys as it does for any other commit.
   valid version that is newer than the installed one.
 - **Implementation:** `services/update-server`, a Cloudflare Worker on the custom
   domain `cms.cossack.dev`. `releases.json` lists each channel's published
-  versions and is bundled with the Worker; `pnpm --filter cossack-update-server run
-  release -- --version <v>` adds one after a release, then `run deploy` ships it.
+  versions and is bundled with the Worker. `pnpm bump` adds the new version to it,
+  `publish.yml` refuses a tag the list does not name, and its `update-server` job
+  deploys the Worker after the packages are published (secrets
+  `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`).
   It computes `security` and `minimumFrom` over the releases the asking site would
   skip. Request logs are off. Deploying needs access to the `cossack.dev` zone.
 
