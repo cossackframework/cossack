@@ -803,9 +803,10 @@ export class CmsHost {
     ready(options: { force?: boolean } = {}): Promise<void> {
         const now = this.#now();
         if (options.force || !this.#definitions || now - this.#definitions.at > this.#activationTtl) {
-            // What the next steps read anyway starts now, beside the definitions: each is one round trip to the database, and they need not wait for each other.
-            void this.#state().catch(() => undefined);
-            void this.settings.all().catch(() => undefined);
+            // The activation state and the settings are read by the steps that need them, not started here
+            // beside the definitions. Starting them early made a Worker stop answering: after two page
+            // renders before setup, every later request waited on this promise for good
+            // (generated-runtime-cms.test.js, the Workers case).
             const state = this.#loadDefinitions().then(() => options.force ? undefined : this.#upgrade()).then(() => this.#refreshPlugins());
             this.#definitions = { at: now, state };
             state.catch(() => { this.#definitions = undefined; });
