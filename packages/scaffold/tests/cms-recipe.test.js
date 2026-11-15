@@ -30,7 +30,7 @@ describe('cms recipe', () => {
       expect(files.has(rel), rel).toBe(true);
     // What the cms feature writes: storage glue for the runtime, the project's configuration, and re-exports.
     expect([...files].filter(([, entry]) => entry.capability === 'cms').map(([rel]) => rel).sort()).toEqual([
-      'src/auth.ts', 'src/brand.ts', 'src/cms.config.ts', 'src/cms/database.ts', 'src/cms/media.ts', 'src/cms/pending.ts',
+      '.github/workflows/cossack-update.yml', 'src/auth.ts', 'src/brand.ts', 'src/cms.config.ts', 'src/cms/database.ts', 'src/cms/media.ts', 'src/cms/pending.ts',
       'src/dashboard/access.ts', 'src/dashboard/head.ts', 'src/dashboard/icons.ts', 'src/dashboard/user-sections.ts',
       'src/lib/permissions.ts', 'src/passkeys.client.ts', 'src/services/rbac.ts', 'src/services/roles.ts', 'src/services/users.ts',
     ]);
@@ -80,6 +80,28 @@ describe('cms recipe', () => {
     expect(text(orm, 'src/passkeys.client.ts')).not.toContain('@simplewebauthn');
     expect(JSON.parse(text(orm, 'package.json')).cossack).toEqual({ runtime: 'node' });
     expect(orm.has('src/pages/dashboard/index.ts')).toBe(true);
+  });
+
+  it('renders the workflow that the dashboard\'s Update button starts', async () => {
+    const files = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'] }));
+    const workflow = text(files, '.github/workflows/cossack-update.yml');
+    expect(files.get('.github/workflows/cossack-update.yml').capability).toBe('cms');
+    // The site's request and a manual start both run it.
+    expect(workflow).toContain('repository_dispatch:\n    types: [cossack-update]');
+    expect(workflow).toContain('workflow_dispatch:');
+    // The version comes from the request through the environment, and is checked before it is used.
+    expect(workflow).toContain("VERSION: ${{ github.event.client_payload.version || inputs.version || 'latest' }}");
+    expect(workflow.indexOf('Check the requested version')).toBeLessThan(workflow.indexOf('actions/checkout'));
+    expect(workflow).not.toMatch(/run:[^\n]*\$\{\{/);
+    expect(workflow).toContain('pnpm exec cossack upgrade --tag "$VERSION" --json');
+    // A pull request by default; a push only on request, without conflicts and with passing checks.
+    expect(workflow).toContain("MODE: ${{ vars.COSSACK_UPDATE_MODE || 'pull-request' }}");
+    expect(workflow).toContain('if [ "$MODE" = "push" ] && [ "$NEEDS_REVIEW" = "false" ] && [ "$CHECKS" = "success" ]; then');
+    // It holds no deploy secret.
+    expect(workflow).not.toMatch(/secrets\./);
+    // A project without the CMS has no dashboard to press the button in.
+    const plain = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['dashboard'] }));
+    expect(plain.has('.github/workflows/cossack-update.yml')).toBe(false);
   });
 
   it('renders the same project files on every runtime, apart from the storage glue', async () => {

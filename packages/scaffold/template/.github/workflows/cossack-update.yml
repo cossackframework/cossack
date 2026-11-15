@@ -1,0 +1,107 @@
+# Updates this project to a Cossack release. It runs when someone presses Update under
+# Tools → Updates in the dashboard (the site sends a repository_dispatch), or when you start it by hand.
+#
+# It runs `cossack upgrade`, which updates the dependencies and merges the files the scaffold wrote
+# with your edits. Then it type-checks and builds. The result is a pull request, or a push to the
+# default branch when the repository variable COSSACK_UPDATE_MODE is `push` and nothing needs a
+# person: no merge conflict, and the checks pass. Your normal deploy ships the commit.
+#
+# This workflow holds no deploy secret. Take a database backup before you merge an update: an
+# older build cannot open the database afterwards.
+name: Cossack update
+on:
+  repository_dispatch:
+    types: [cossack-update]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to update to (default latest)
+        required: false
+        type: string
+permissions:
+  contents: write
+  pull-requests: write
+concurrency:
+  group: cossack-update
+  cancel-in-progress: false
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: 'true'
+      # Read through the environment, never pasted into a script.
+      VERSION: ${{ github.event.client_payload.version || inputs.version || 'latest' }}
+      MODE: ${{ vars.COSSACK_UPDATE_MODE || 'pull-request' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check the requested version
+        run: |
+          if ! printf '%s' "$VERSION" | grep -Eq '^(latest|canary|[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)$'; then
+            echo "Not a version: $VERSION" >&2
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Install the locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Upgrade
+        run: |
+          pnpm exec cossack upgrade --tag "$VERSION" --json > "$RUNNER_TEMP/upgrade.json"
+          node -e '
+            const result = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
+            const data = result.data ?? {};
+            const kept = (data.plan?.files?.conflicts ?? []).filter(entry => entry.resolution === "preserve");
+            const ejected = (data.applied?.ejected ?? []).filter(entry => ["conflict", "unresolved", "removed-upstream"].includes(entry.status));
+            const plugins = (data.applied?.plugins ?? []).filter(entry => entry.status === "failed");
+            const lines = [
+              `Updates this project to Cossack ${data.plan?.templateVersion ?? process.env.VERSION}.`, "",
+              ...(kept.length ? ["Files kept as they are, for you to review:", ...kept.map(entry => `- \`${entry.path}\` (${entry.reason})`), ""] : []),
+              ...(ejected.length ? ["Ejected copies that need you:", ...ejected.map(entry => `- \`${entry.path}\` (${entry.status})`), ""] : []),
+              ...(plugins.length ? ["Plugins that were not upgraded:", ...plugins.map(entry => `- \`${entry.name}\`: ${entry.message}`), ""] : []),
+              ...((data.plan?.nextActions ?? []).length ? ["Next:", ...data.plan.nextActions.map(action => `- ${action}`), ""] : []),
+              "Take a database backup before you deploy this: an older build cannot open the database afterwards.",
+            ];
+            require("node:fs").writeFileSync(process.argv[2], lines.join("\n") + "\n");
+            require("node:fs").appendFileSync(process.env.GITHUB_ENV, `NEEDS_REVIEW=${kept.length + ejected.length + plugins.length > 0}\n`);
+          ' "$RUNNER_TEMP/upgrade.json" "$RUNNER_TEMP/body.md"
+          cat "$RUNNER_TEMP/body.md"
+      - name: Stop when nothing changed
+        id: changes
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then echo "changed=false" >> "$GITHUB_OUTPUT"; echo "Already up to date."; else echo "changed=true" >> "$GITHUB_OUTPUT"; fi
+      - name: Type-check and build
+        id: checks
+        if: steps.changes.outputs.changed == 'true'
+        continue-on-error: true
+        run: |
+          pnpm run typecheck
+          pnpm run build
+      - name: Commit, then push or open a pull request
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          CHECKS: ${{ steps.checks.outcome }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          git config user.name "cossack-update"
+          git config user.email "cossack-update@users.noreply.github.com"
+          branch="cossack-update/$VERSION-$GITHUB_RUN_ID"
+          git checkout -b "$branch"
+          git add -A
+          git commit -m "chore: update Cossack to $VERSION"
+          if [ "$CHECKS" != "success" ]; then printf '\n**The type check or the build failed on this branch.** See the workflow run.\n' >> "$RUNNER_TEMP/body.md"; fi
+          if [ "$MODE" = "push" ] && [ "$NEEDS_REVIEW" = "false" ] && [ "$CHECKS" = "success" ]; then
+            git push origin "HEAD:$DEFAULT_BRANCH"
+          else
+            git push origin "$branch"
+            gh pr create --base "$DEFAULT_BRANCH" --head "$branch" --title "Update Cossack to $VERSION" --body-file "$RUNNER_TEMP/body.md"
+          fi
+      - name: Fail when the checks failed
+        if: steps.changes.outputs.changed == 'true' && steps.checks.outcome != 'success'
+        run: exit 1

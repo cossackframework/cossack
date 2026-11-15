@@ -406,6 +406,8 @@ function capabilityFor(rel, recipe) {
   // The CMS package serves these paths: a template file there would override the package's.
   if (recipe.resolvedFeatures.includes('cms') && isServedCmsPath(rel)) return null;
   if (rel === '.github/workflows/preview.yml') return recipe.adapter === 'cloudflare' ? 'base' : null;
+  // The Update button under Tools → Updates asks this workflow to run cossack upgrade.
+  if (rel === '.github/workflows/cossack-update.yml') return recipe.resolvedFeatures.includes('cms') ? 'cms' : null;
   if (rel === 'src/pages/resource/index.ts') return recipe.resolvedFeatures.includes('resource') ? 'resource' : null;
   if (rel === 'src/pages/mutation/index.ts') return recipe.resolvedFeatures.includes('mutation') ? 'mutation' : null;
   if (rel.startsWith('src/pages/scoped-service/') || rel === 'src/services/scoped-counter.ts') {
