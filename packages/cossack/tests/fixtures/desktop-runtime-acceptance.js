@@ -527,11 +527,14 @@ export async function verifyDesktopDevelopmentApplication(
         () =>
           fs.writeFile(
             configFile,
-            replaceOnce(
-              configSource,
-              'cossackApp({',
-              "cossackApp({ plugins: [{name:'restart-acceptance',config:()=>{process.env.DESKTOP_RELOAD_ACCEPTANCE='configuration';}}],",
-            ),
+            // The caller may have given the preset plugins already: a second `plugins` key would replace this one.
+            configSource.includes('plugins: [')
+              ? replaceOnce(configSource, 'plugins: [', "plugins: [{name:'restart-acceptance',config:()=>{process.env.DESKTOP_RELOAD_ACCEPTANCE='configuration';}},")
+              : replaceOnce(
+                configSource,
+                'cossackApp({',
+                "cossackApp({ plugins: [{name:'restart-acceptance',config:()=>{process.env.DESKTOP_RELOAD_ACCEPTANCE='configuration';}}],",
+              ),
           ),
         'configuration',
       );

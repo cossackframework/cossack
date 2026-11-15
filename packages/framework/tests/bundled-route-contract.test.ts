@@ -18,7 +18,8 @@ it.each([
   for (const key of [...pageKeys, ...layoutKeys, ...loadingKeys]) {
     if (!key.endsWith('.ts')) continue; // Markdown has its own generated class export.
     const source = fs.readFileSync(path.join(directory, key.slice('/src/pages/'.length)), 'utf8');
-    if (key.startsWith('/src/pages/api/') && await isHttpHandlerModule(source)) continue;
+    // An endpoint is told by its shape, wherever it is: the OAuth routes sit beside the sign-in pages.
+    if (await isHttpHandlerModule(source)) continue;
     const result = await inspectDefaultClassExport(source);
     if (result.status !== 'resolved') failures.push(`${key}: ${result.reason}`);
   }

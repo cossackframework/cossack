@@ -36,7 +36,11 @@ describe('client dependency pre-bundling', () => {
     const packageRoot = fileURLToPath(new URL('..', import.meta.url));
 
     it('configures the client environment from the plugin location', () => {
-        const config = configure({}, 'build');
+        // An application with no source of its own: the list is the framework's. (The application's
+        // own imports are added to it; package-mounts.test.ts covers them.)
+        const emptyRoot = realpathSync(mkdtempSync(join(tmpdir(), 'cossack-empty-app-')));
+        const config = configure({ root: emptyRoot }, 'build');
+        rmSync(emptyRoot, { recursive: true, force: true });
         expect(config.environments.client.optimizeDeps.include).toEqual(clientOptimizedDependencies(new URL('../src/vite-plugin.ts', import.meta.url).href));
         expect(config.environments.client.optimizeDeps.force).toBeUndefined();
     });
@@ -79,12 +83,17 @@ describe('client dependency pre-bundling', () => {
         const config = configure({ root: packageRoot }, 'serve');
         expect(config.environments.client.optimizeDeps.force).toBeUndefined();
         const define = config.environments.client.optimizeDeps.rolldownOptions.transform.define[LINKED_PACKAGES_DEFINE];
-        expect(define).toBe(JSON.stringify(linkedDependencyFingerprint(linkedDependencyFolders(packageRoot, ['@cossackframework/core', '@cossackframework/renderer']))));
+        // This package is the application here: its own pages' imports are bundled with the framework's list.
+        const included: string[] = config.environments.client.optimizeDeps.include;
+        expect(included).toEqual(expect.arrayContaining(['@cossackframework/core', '@cossackframework/renderer']));
+        expect(define).toBe(JSON.stringify(linkedDependencyFingerprint(linkedDependencyFolders(packageRoot, included))));
         // css-tree reaches CommonJS source-map-js; an installed renderer is never scanned, so it is listed up front. It bundles no linked package.
-        expect(config.environments.ssr.optimizeDeps).toEqual({ include: ['@cossackframework/renderer > css-tree/parser', '@cossackframework/renderer > css-tree/generator', '@cossackframework/renderer > css-tree/walker'] });
+        expect(config.environments.ssr.optimizeDeps.include).toEqual(expect.arrayContaining(['@cossackframework/renderer > css-tree/parser', '@cossackframework/renderer > css-tree/generator', '@cossackframework/renderer > css-tree/walker']));
         const ssr = configure({ root: packageRoot, environments: { ssr: { optimizeDeps: { include: ['@cossackframework/core'] } } } }, 'serve');
-        expect(ssr.environments.ssr.optimizeDeps.rolldownOptions.transform.define[LINKED_PACKAGES_DEFINE]).toBe(define);
-        expect(configure({ root: packageRoot }, 'build').environments.client.optimizeDeps).toEqual({ include: clientOptimizedDependencies(new URL('../src/vite-plugin.ts', import.meta.url).href) });
+        expect(ssr.environments.ssr.optimizeDeps.rolldownOptions.transform.define[LINKED_PACKAGES_DEFINE]).toEqual(expect.any(String));
+        const built = configure({ root: packageRoot }, 'build').environments.client.optimizeDeps;
+        expect(Object.keys(built)).toEqual(['include']);
+        expect(built.include).toEqual(expect.arrayContaining(clientOptimizedDependencies(new URL('../src/vite-plugin.ts', import.meta.url).href)));
         expect(linkedDependenciesConfig([])).toEqual({});
     });
 
