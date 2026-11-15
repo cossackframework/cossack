@@ -3,8 +3,14 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import {
+  MANIFEST_SCHEMA_VERSION,
   dependencyBaseline,
+  hasConflictMarkers,
+  mergeText,
   planDependencyChanges,
+  pruneBases,
+  putBase,
+  readBase,
   resolveRecipe,
 } from '@cossackframework/scaffold';
 import { loadUpgradeScaffold, resolveRegistryVersion } from '../upgrade-scaffold.js';
@@ -38,6 +44,10 @@ const EXCLUDE_FROM_SYNC = new Set([
 import { runWithSpec, createCommandOutput } from '../command-spec.js';
 
 const spec = commandSpecs.upgrade;
+// Schema 3 is read as a manifest without merge bases.
+const supportedManifest = manifest => manifest.schemaVersion === 3 || manifest.schemaVersion === MANIFEST_SCHEMA_VERSION;
+// These merge by key, so they keep no base text.
+const KEY_MERGED = new Set(['package.json', 'pnpm-workspace.yaml']);
 const safeRelative = value => typeof value === 'string' && value.length > 0 &&
   !path.isAbsolute(value) && !/^(?:[a-z]:|\\)/i.test(value) && !value.includes('\0') && !value.includes('\\') &&
   !value.split(/[\\/]/).some(part => part === '..' || part === '.');
@@ -92,7 +102,7 @@ async function upgradeCommandInner(args, ctx) {
       throw Object.assign(new Error('Cannot read the scaffold ownership manifest. Restore valid JSON before upgrading.'),
         { code: 'COSSACK_UPGRADE_MANIFEST_INVALID' });
     });
-  if (manifest && manifest.schemaVersion !== 3 && manifest.schemaVersion !== 4) throw unsupportedManifestError(manifest);
+  if (manifest && !supportedManifest(manifest)) throw unsupportedManifestError(manifest);
   if (manifest?.dependencyBaseline !== undefined && (!manifest.dependencyBaseline ||
     typeof manifest.dependencyBaseline !== 'object' || Array.isArray(manifest.dependencyBaseline) ||
     Object.values(manifest.dependencyBaseline).some(section => !section || typeof section !== 'object' ||
@@ -128,7 +138,7 @@ async function upgradeCommandInner(args, ctx) {
     }
 
     // Compute every file decision before changing package.json or installing.
-    const report = await buildDriftReport(root, projectPkg.name || path.basename(root), manifest, target.api);
+    const report = await buildDriftReport(root, projectPkg.name || path.basename(root), manifest, target.api, target.version);
     for (const relative of forceFiles) {
       if (!report.rendered?.has(relative) || EXCLUDE_FROM_SYNC.has(relative) ||
           report.rendered.get(relative).capability === 'local-environment' || !safeRelative(relative)) {
@@ -140,13 +150,27 @@ async function upgradeCommandInner(args, ctx) {
       JSON.parse(report.rendered.get('package.json').content.toString()), previousDependencies) : null;
     const resolved = merged ?? await resolveVersions(collectCossackDeps(projectPkg), tag);
     const unresolved = resolved.updates.filter(update => !update.to);
-    const applyTemplate = ctx.flags['apply-template'] === true || ctx.force || forceFiles.length > 0;
-    const selected = new Set(applyTemplate ? report.canUpdate : []);
-    const selectedDeletes = applyTemplate ? report.canDelete : [];
+    const unresolvedConflicts = report.unresolved.filter(relative => !forceFiles.includes(relative));
+    if (unresolvedConflicts.length) return {
+      exitCode: 1, data: ctx.out.data({ status: 'unresolved-conflicts', files: unresolvedConflicts }),
+      diagnostics: unresolvedConflicts.map(relative => ({ code: 'COSSACK_UPGRADE_UNRESOLVED_CONFLICT', severity: 'error', path: relative,
+        message: `${relative} still has conflict markers from an earlier upgrade. Resolve them and remove the marker lines, then run upgrade again.` })),
+    };
+    const markers = flagString(ctx.flags.conflicts) === 'markers';
+    // What each selected file receives: the template's text, or a merge of it with the project's edits.
+    const contents = new Map();
+    const selected = new Set(report.canUpdate);
+    for (const relative of report.canMerge) selected.add(relative);
+    if (markers) for (const relative of report.conflict) selected.add(relative);
+    for (const relative of selected) if (report.merges.has(relative)) contents.set(relative, Buffer.from(report.merges.get(relative).text));
+    const selectedDeletes = report.canDelete;
     if (ctx.force) for (const relative of report.missing) {
       if (report.rendered?.has(relative)) selected.add(relative);
     }
-    for (const relative of forceFiles) selected.add(relative);
+    for (const relative of forceFiles) { selected.add(relative); contents.delete(relative); }
+    // An unchanged file whose recorded base is older than the template's text takes the new base.
+    const rebased = report.upToDate.filter(relative => report.rendered?.has(relative) && !KEY_MERGED.has(relative) &&
+      manifest?.files?.[relative]?.base !== report.newHashes.get(relative));
     const migration = manifest
       ? await target.api.migratePnpmBuildSettings(root, recipeFromManifest(manifest, target.api.resolveRecipe), { dryRun: true })
       : { changed: false, packageChanged: false, workspaceChanged: false };
@@ -162,10 +186,13 @@ async function upgradeCommandInner(args, ctx) {
     const dependencyChanges = dependencies.updates.some(update => update.changed) ||
       dependencies.additions.length > 0 || dependencies.removals.length > 0;
     const manifestChanges = !!manifest && (selected.size > 0 || selectedDeletes.length > 0 || dependencyChanges || migration.changed ||
-      manifest.templateVersion !== target.version || JSON.stringify(manifest.dependencyBaseline) !== JSON.stringify(merged.baseline));
+      rebased.length > 0 || manifest.schemaVersion !== MANIFEST_SCHEMA_VERSION || manifest.templateVersion !== target.version || JSON.stringify(manifest.dependencyBaseline) !== JSON.stringify(merged.baseline));
+    const kept = relative => !selected.has(relative);
+    const openConflicts = report.conflict.filter(kept);
     const nextActions = [
-      ...((report.canUpdate.length || report.canDelete.length) && !applyTemplate ? [`cossack upgrade --tag=${target.version} --apply-template`] : []),
-      ...(report.modified.some(relative => !selected.has(relative))
+      ...openConflicts.map(relative => `Resolve ${relative}: edit it by hand, run cossack upgrade --tag=${target.version} --conflicts=markers ` +
+        `to write both versions into the file, or use --force-file ${relative} to take the template's version.`),
+      ...([...report.modified, ...report.noBase].some(kept)
         ? ['Review preserved files; use --force-file <path> for each intentional overwrite.'] : []),
       ...(dependencies.conflicts.length ? ['Review preserved dependency edits in package.json before changing their versions.'] : []),
     ];
@@ -173,10 +200,20 @@ async function upgradeCommandInner(args, ctx) {
       root, tag, templateVersion: target.version, adapter: report.adapter ?? null,
       hasManifest: report.hasManifest, dependencies, pnpmBuildSettings: migration,
       files: {
-        writes: [...selected].map(relative => ({ path: relative, forced: forceFiles.includes(relative) || report.missing.includes(relative) })),
+        writes: [...selected].map(relative => ({ path: relative, forced: forceFiles.includes(relative) || report.missing.includes(relative),
+          ...(contents.has(relative) ? { merged: true } : {}) })),
         deletes: selectedDeletes,
-        preserved: report.modified.filter(relative => !selected.has(relative)),
-        conflicts: report.modified.map(relative => ({ path: relative, resolution: selected.has(relative) ? 'force' : 'preserve' })),
+        preserved: [...report.modified, ...report.conflict, ...report.noBase, ...report.local].filter(kept),
+        conflicts: [
+          ...report.modified.map(relative => ({ path: relative, reason: report.reasons.get(relative) ?? 'modified' })),
+          ...report.conflict.map(relative => ({ path: relative, reason: 'merge-conflict' })),
+          ...report.noBase.map(relative => ({ path: relative, reason: 'no-base' })),
+        ].map(entry => ({ ...entry, resolution: !selected.has(entry.path) ? 'preserve'
+          : forceFiles.includes(entry.path) ? 'force' : 'markers' })),
+        merges: [...report.merges].map(([relative, merge]) => ({ path: relative, result: merge.result, conflicts: merge.conflicts,
+          // A conflicting merge is shown, not written, unless --conflicts=markers asks for it.
+          ...(merge.result === 'conflict' ? { text: merge.text } : {}) })),
+        noBase: report.noBase, local: report.local,
         missing: report.missing, excluded: report.excluded, upToDate: report.upToDate,
         available: report.canUpdate,
         availableDeletions: report.canDelete,
@@ -241,7 +278,7 @@ async function upgradeCommandInner(args, ctx) {
       // which template files were selected after the plan was computed.
       for (const relative of selected) {
         await fs.mkdir(path.dirname(path.join(root, relative)), { recursive: true });
-        await fs.writeFile(path.join(root, relative), report.rendered.get(relative).content);
+        await fs.writeFile(path.join(root, relative), contents.get(relative) ?? report.rendered.get(relative).content);
         applied.files.push(relative);
         ctx.out.file(report.currentHashes.get(relative) === null ? 'created' : 'overwritten', path.join(root, relative));
       }
@@ -253,7 +290,7 @@ async function upgradeCommandInner(args, ctx) {
       if (manifestChanges) {
         await refreshManifest(root, [...applied.files,
           ...(dependencyChanges || migration.packageChanged ? ['package.json'] : []),
-          ...(migration.workspaceChanged ? ['pnpm-workspace.yaml'] : [])], report.rendered, target.version, merged.baseline, applied.deleted);
+          ...(migration.workspaceChanged ? ['pnpm-workspace.yaml'] : []), ...rebased], report.rendered, target.version, merged.baseline, applied.deleted);
         applied.manifest = true;
         ctx.out.file('overwritten', path.join(root, '.cossack/scaffold.json'));
       }
@@ -331,7 +368,7 @@ export function classifyFile({ baseline, current, newHash, excluded }) {
   return 'modified';
 }
 
-async function buildDriftReport(root, projectName, manifest, api) {
+async function buildDriftReport(root, projectName, manifest, api, version) {
   const adapter = manifest?.runtime ?? manifest?.adapter;
 
   const report = {
@@ -339,6 +376,19 @@ async function buildDriftReport(root, projectName, manifest, api) {
     adapter,
     canUpdate: [],
     canDelete: [],
+    // Both sides changed the file and the merge is clean.
+    canMerge: [],
+    // Both sides changed the same lines.
+    conflict: [],
+    // Only the project changed the file.
+    local: [],
+    // Edited, and no stored upstream text to merge over.
+    noBase: [],
+    // Owned files that still hold conflict markers from an earlier upgrade.
+    unresolved: [],
+    merges: new Map(),
+    reasons: new Map(),
+    newHashes: new Map(),
     modified: [],
     upToDate: [],
     excluded: [],
@@ -348,7 +398,7 @@ async function buildDriftReport(root, projectName, manifest, api) {
   };
 
   if (!manifest) return report;
-  if (manifest.schemaVersion !== 3 && manifest.schemaVersion !== 4) {
+  if (!supportedManifest(manifest)) {
     throw unsupportedManifestError(manifest);
   }
   const recipe = recipeFromManifest(manifest, api.resolveRecipe);
@@ -374,14 +424,27 @@ async function buildDriftReport(root, projectName, manifest, api) {
     await assertOwnedPath(root, rel);
     const current = await hashFile(path.join(root, rel));
     report.currentHashes.set(rel, current);
+    report.newHashes.set(rel, newHash);
+    const text = owned && current !== null ? await fs.readFile(path.join(root, rel)) : null;
+    if (text && text.length <= 1024 * 1024 && !text.includes(0) && hasConflictMarkers(text.toString('utf8'))) report.unresolved.push(rel);
     if (!owned) {
       if (current === null && candidate) report.canUpdate.push(rel);
       else if (candidate && current === newHash) report.upToDate.push(rel);
       else report.modified.push(rel);
       continue;
     }
-    const bucket = classifyFile({ baseline, current, newHash, excluded });
-    report[bucket].push(rel);
+    // The base is the upstream text the file descends from. A schema-3 entry has only the hash it was written with.
+    const baseName = typeof owned === 'object' ? owned.base : undefined;
+    const bucket = classifyFile({ baseline: baseName ?? baseline, current, newHash, excluded });
+    if (bucket !== 'modified') { report[bucket].push(rel); continue; }
+    if (newHash === null) { report.modified.push(rel); report.reasons.set(rel, 'removed-upstream'); continue; }
+    const base = await readBase(root, baseName);
+    if (!base) { report.noBase.push(rel); continue; }
+    if (newHash === baseName) { report.local.push(rel); continue; }
+    const merge = mergeText(base, text, candidate.content, { labels: { theirs: `cossack ${version}` } });
+    if (merge.status === 'unmergeable') { report.modified.push(rel); report.reasons.set(rel, merge.reason); continue; }
+    report.merges.set(rel, { result: merge.status, conflicts: merge.conflicts ?? 0, text: merge.text });
+    report[merge.status === 'clean' ? 'canMerge' : 'conflict'].push(rel);
   }
   return report;
 }
@@ -426,6 +489,10 @@ function printReport(report, out) {
   }
   section(out, 'Unchanged, update available', report.canUpdate);
   section(out, 'Unchanged, removed by target template', report.canDelete);
+  section(out, 'Changed by you and by the template, merged', report.canMerge);
+  section(out, 'Conflicts (kept as they are)', report.conflict);
+  section(out, 'Changed only by you (kept)', report.local);
+  section(out, 'Modified by you, no merge base (skipped)', report.noBase);
   section(out, 'Modified by you (skipped)', report.modified);
   section(out, 'Up to date', report.upToDate);
   section(out, 'Excluded (adapter/version-specific)', report.excluded);
@@ -449,16 +516,21 @@ async function refreshManifest(root, rels, rendered, version, baseline, deleted 
     const h = await hashFile(path.join(root, rel));
     if (h) {
       const previous = manifest.files[rel];
+      const upstream = rendered?.get(rel);
       manifest.files[rel] = {
-        capability: rendered?.get(rel)?.capability ??
+        capability: upstream?.capability ??
           (typeof previous === 'object' ? previous.capability : 'base'),
         hash: h,
+        // Each file records the template text it now descends from: written, merged or already equal.
+        ...(upstream && !KEY_MERGED.has(rel) ? { base: await putBase(root, upstream.content) } : {}),
       };
     }
   }
+  manifest.schemaVersion = MANIFEST_SCHEMA_VERSION;
   manifest.templateVersion = version;
   manifest.dependencyBaseline = baseline;
   await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
+  await pruneBases(root);
 }
 
 export function upgradeHelp() {
@@ -466,9 +538,11 @@ export function upgradeHelp() {
 
 Upgrade dependencies and compare templates from the release selected by --tag.
 Owned dependencies follow the target recipe; local pins, deleted dependencies,
-and user-added packages are preserved and reported. Source file updates and
-removal of unchanged obsolete files require --apply-template or --force.
---force-file replaces one edited source file; configuration and secret files
-cannot be forced. Dry runs leave the application unchanged; target templates
+and user-added packages are preserved and reported. Unchanged source files are
+updated, obsolete unchanged files are removed, and a file that both you and the
+template changed is merged. A file whose merge conflicts is left as it is and
+listed; --conflicts=markers writes both versions into it instead. --force
+restores deleted owned files. --force-file replaces one edited source file;
+configuration and secret files cannot be forced. Dry runs leave the application unchanged; target templates
 may be fetched with pnpm into temporary storage and removed after planning.`);
 }

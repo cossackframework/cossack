@@ -153,7 +153,7 @@ runtime. See [Reserved paths](./routing.md#reserved-paths).
 Projects generated before this layout mount `serveStatic` for every path, so
 page and global policies do not protect their `public/` files. Change that
 mount to `app.use('/assets/*', ...)` as in a newly generated `src/index.ts`.
-`cossack upgrade --apply-template` updates the entry if you have not edited it.
+`cossack upgrade` updates the entry, and merges the change if you edited it.
 Node does not read `public/_headers`. The entry sets the `/assets/*` cache
 header itself. Set headers for `public/` files in middleware.
 

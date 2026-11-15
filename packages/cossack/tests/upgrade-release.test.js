@@ -116,7 +116,7 @@ describe('release-aligned upgrade planning and application', () => {
     await write('src/edited-obsolete.ts', '// user-owned implementation\n');
     await write('.cossack/scaffold.json', manifest);
     const before = await snapshot();
-    const preview = await run(['--tag=next', '--apply-template', '--dry-run']);
+    const preview = await run(['--tag=next', '--dry-run']);
     expect(preview.ok).toBe(true);
     expect(preview.data.plan.templateVersion).toBe('1.2.3');
     expect(preview.data.plan.dependencies.additions).toContainEqual({ name: 'release-added', section: 'dependencies', to: '^2.0.0' });
@@ -125,7 +125,7 @@ describe('release-aligned upgrade planning and application', () => {
     expect(preview.data.plan.files.deletes).toContain('src/obsolete.ts');
     expect(preview.data.plan.files.preserved).toEqual(expect.arrayContaining(['src/auth.ts', 'src/edited-obsolete.ts']));
     expect(await snapshot()).toEqual(before);
-    const applied = await run(['--tag=1.2.3', '--apply-template']);
+    const applied = await run(['--tag=1.2.3']);
     expect(applied.ok, JSON.stringify(applied.diagnostics)).toBe(true);
     expect(await read('src/App.ts')).toContain('// target release 1.2.3');
     expect(await read('src/auth.ts')).toBe('// local authentication module\n');
@@ -142,7 +142,7 @@ describe('release-aligned upgrade planning and application', () => {
     expect(owned.dependencyBaseline.dependencies).not.toHaveProperty('user-only');
     expect(owned.files).not.toHaveProperty('src/obsolete.ts');
     const completed = await snapshot();
-    const repeat = await run(['--tag=1.2.3', '--apply-template']);
+    const repeat = await run(['--tag=1.2.3']);
     expect(repeat.ok).toBe(true);
     expect(repeat.data.effects).toEqual([]);
     expect(repeat.data.plan.install.required).toBe(false);
@@ -183,7 +183,7 @@ describe('release-aligned upgrade planning and application', () => {
 
   it('detects ownership manifest edits made during target package loading', async () => {
     const before = await read('package.json');
-    const result = await run(['--tag=1.2.3', '--apply-template'], { FIXTURE_EDIT: path.join(app, '.cossack/scaffold.json') });
+    const result = await run(['--tag=1.2.3'], { FIXTURE_EDIT: path.join(app, '.cossack/scaffold.json') });
     expect(result.ok).toBe(false);
     expect(result.diagnostics[0].code).toBe('COSSACK_UPGRADE_PLAN_STALE');
     expect(await read('package.json')).toBe(before);
@@ -215,7 +215,7 @@ describe('release-aligned upgrade planning and application', () => {
     await fs.rm(path.join(app, 'src/App.ts'));
     await fs.symlink(outside, path.join(app, 'src/App.ts'));
     const before = await read('package.json');
-    const result = await run(['--tag=1.2.3', '--apply-template']);
+    const result = await run(['--tag=1.2.3']);
     expect(result.ok).toBe(false);
     expect(result.diagnostics[0].code).toBe('COSSACK_UPGRADE_PATH_UNSAFE');
     expect(await fs.readFile(outside, 'utf8')).toBe(original);
@@ -269,7 +269,7 @@ describe('release-aligned upgrade planning and application', () => {
     origin = `http://127.0.0.1:${server.address().port}`;
     try {
       const before = await snapshot();
-      const { stdout, stderr } = await exec(process.execPath, [bin, 'upgrade', '--tag=1.2.3', '--apply-template', '--dry-run', '--json'],
+      const { stdout, stderr } = await exec(process.execPath, [bin, 'upgrade', '--tag=1.2.3', '--dry-run', '--json'],
         { cwd: app, timeout: 45000, env: { ...process.env, pnpm_config_registry: origin,
           // A warm developer cache can satisfy the same fixture version without
           // contacting this registry. Isolate both metadata and content caches

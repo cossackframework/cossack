@@ -781,30 +781,61 @@ Print the installed CLI version.
 
 ### `cossack upgrade [dir]`
 
-Upgrade Cossack dependencies in the current project and report template drift. The command is non-destructive by default. It updates `package.json`, reinstalls, and prints which scaffolded files have upstream changes. It never overwrites source files unless you opt in.
+Update a project to a release with one command. It moves the Cossack dependencies to the release, reinstalls, and updates the files the scaffold wrote. It keeps your edits:
+
+- A file you did not change is replaced with the release's version.
+- A file that you and the release both changed is merged.
+- A file whose merge conflicts is left as it is and listed, with the next command to run.
+- A file that only you changed is kept.
 
 ```bash
-cossack upgrade                       # bump deps + print drift report
-cossack upgrade --apply-template      # also update files you have NOT edited
-cossack upgrade --force               # apply safe updates + restore deleted files
-cossack upgrade --force-file <path>   # surgically overwrite one file, even if edited
+cossack upgrade                       # update dependencies and files, merge your edits
+cossack upgrade --dry-run             # show the plan and write nothing
+cossack upgrade --conflicts=markers   # write both versions into a conflicting file
+cossack upgrade --force               # also restore owned files you deleted
+cossack upgrade --force-file <path>   # replace one file with the release's version, even if edited
 ```
-
-Options:
 
 | Option | Description |
 | --- | --- |
 | `--tag <latest\|canary\|<version>>` | Version to upgrade to (default: `latest`). |
-| `--apply-template` | Update scaffolded files you have not modified. Modified files are always skipped. |
-| `--force` | Apply safe updates and restore deleted scaffold files. Locally modified files remain protected. |
-| `--force-file <path>` | Force-update one specific file even if you modified it. You can use this option more than once. |
 | `--dry-run` | Show planned changes without writing them. |
+| `--conflicts=markers` | Write git-style conflict markers into a file whose merge conflicts. Without it the file is not changed. |
+| `--force` | Also restore deleted scaffold files. Locally modified files remain protected. |
+| `--force-file <path>` | Replace one specific file even if you modified it. You can use this option more than once. |
 
-Drift detection uses the `.cossack/scaffold.json` manifest written at project-creation time, which records a SHA-256 of every scaffolded file. `upgrade` classifies each file as `upToDate`, `canUpdate` (unchanged locally, changed upstream), `canDelete` (unchanged locally and removed upstream), `modified` (you edited it), or `missing` (deleted). You decide which changes the command applies.
+The `.cossack/scaffold.json` manifest records, for every file the scaffold wrote, a SHA-256 of the file and the name of its merge base. The base is the release's text that your file descends from. It is stored in `.cossack/base/`, which you commit, so a fresh clone can merge. `upgrade` compares three texts for each file: yours, the base, and the release's. It classifies the file as:
+
+| Class | Meaning | What happens |
+| --- | --- | --- |
+| `upToDate` | Yours equals the release's. | Nothing. |
+| `canUpdate` | You did not change it. | The release's version is written. |
+| `canDelete` | You did not change it, and the release removed it. | Deleted. |
+| `canMerge` | Both changed it, on different lines. | The merge is written. |
+| `conflict` | Both changed the same lines. | Kept, and listed. |
+| `local` | Only you changed it. | Kept. |
+| `modified` | You changed a file the release removed, or the file is binary or larger than 1 MiB. | Kept, and listed. |
+| `noBase` | You changed it, and the manifest has no base for it (a project created before bases were stored). | Kept, and listed. |
+| `missing` | You deleted it. | Restored only with `--force`. |
+
+To resolve a conflict, edit the file by hand, or run `cossack upgrade --conflicts=markers` and edit between the markers:
+
+```
+<<<<<<< yours
+...
+||||||| base
+...
+=======
+...
+>>>>>>> cossack <version>
+```
+
+While an owned file still contains marker lines, `cossack upgrade` stops with `COSSACK_UPGRADE_UNRESOLVED_CONFLICT`. The command exits with 0 when it lists conflicts, so a pipeline can open a pull request with the plan.
 
 Use `cossack upgrade --dry-run --json` to inspect the complete current plan.
 It includes dependency updates, additions and removals, selected file writes and
-deletions, preserved edits, conflicts, manifest changes, build-setting migration,
+deletions, merges (with the marked text of a conflicting merge), preserved edits,
+conflicts with their reasons, manifest changes, build-setting migration,
 installation requirements, and follow-up actions. `--tag` resolves the scaffold
 release used for both templates and recipe dependencies. `templateVersion` is
 that exact version. Foreign releases are installed into temporary storage with
@@ -814,14 +845,14 @@ files unchanged. pnpm can populate its package cache.
 The manifest records `dependencyBaseline` separately from the merged package.
 Unchanged owned versions follow the target recipe, including additions, removals,
 and moves between dependency sections. Local pins, intentionally deleted
-dependencies, and user-added packages remain intact. Existing schema-v3 manifests
+dependencies, and user-added packages remain intact. Existing manifests
 without this field reconstruct it from their recorded exact scaffold release.
 The plan labels this ownership source as `reconstructed`. An unavailable baseline
 or target release fails before project writes. Custom URL/path specifiers are
 redacted from JSON plans.
 
-`--apply-template` also deletes unchanged owned files removed by the target
-recipe. Edited obsolete files remain preserved conflicts. `--force-file` cannot
+Unchanged owned files that the target recipe removed are deleted. Edited
+obsolete files remain preserved conflicts. `--force-file` cannot
 replace package/runtime configuration or local secret files. Symbolic links in
 owned paths are rejected before effects.
 

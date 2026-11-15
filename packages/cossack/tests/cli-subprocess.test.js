@@ -171,7 +171,7 @@ describe('adapter, image, upgrade, and Studio machine contracts', () => {
     const appPath = path.join(cwd, 'src/App.ts');
     await fs.writeFile(appPath, '// custom application\n');
     const before = await fs.readFile(path.join(cwd, 'package.json'), 'utf8');
-    const planned = await runCli(['upgrade', '--apply-template', '--dry-run', '--json'], { cwd });
+    const planned = await runCli(['upgrade', '--dry-run', '--json'], { cwd });
     expect(planned.code).toBe(0);
     expect(planned.stderr).toBe('');
     const plan = parseEnvelope(planned.stdout).data.plan;
@@ -184,7 +184,7 @@ describe('adapter, image, upgrade, and Studio machine contracts', () => {
     expect(invalid.stderr).toBe('');
     expect(parseEnvelope(invalid.stdout).diagnostics[0].code).toBe('COSSACK_UPGRADE_FILE_UNKNOWN');
     expect(await fs.readFile(path.join(cwd, 'package.json'), 'utf8')).toBe(before);
-    const applied = await runCli(['upgrade', '--apply-template', '--json'], { cwd });
+    const applied = await runCli(['upgrade', '--json'], { cwd });
     expect(applied.code).toBe(0);
     expect(parseEnvelope(applied.stdout).data.status).toBe('completed');
     expect(await fs.readFile(appPath, 'utf8')).toBe('// custom application\n');
@@ -234,7 +234,7 @@ describe('adapter, image, upgrade, and Studio machine contracts', () => {
     await fs.writeFile(path.join(toolDir, 'pnpm'), '#!/usr/bin/env node\n' +
       'require("node:fs").writeFileSync(process.env.FIXTURE_EDIT_PATH, "// edit during planning\\n");\n' +
       `console.log(JSON.stringify(${JSON.stringify(installedVersion)}));\n`, { mode: 0o755 });
-    const result = await runCli(['upgrade', '--tag=latest', '--apply-template', '--json'], { cwd,
+    const result = await runCli(['upgrade', '--tag=latest', '--json'], { cwd,
       env: { ...process.env, FIXTURE_EDIT_PATH: file, PATH: `${toolDir}${path.delimiter}${process.env.PATH}` } });
     expect(result.code).toBe(1);
     expect(parseEnvelope(result.stdout).diagnostics[0].code).toBe('COSSACK_UPGRADE_PLAN_STALE');

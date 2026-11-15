@@ -122,7 +122,7 @@ cossack seeder run
 cossack image optimize --format webp --quality 80
 
 # Stay current
-cossack upgrade --apply-template
+cossack upgrade
 ```
 
 ## How it works
