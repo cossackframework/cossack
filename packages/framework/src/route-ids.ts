@@ -402,14 +402,18 @@ export interface RouterContext {
  * chunk and its imports were found only once the page's code ran: a second
  * round of requests before the page could hydrate.
  *
+ * The build manifest is keyed by a module's real path. `sources` maps a route
+ * key to it where they differ (a plugin's page or layout); other keys are
+ * their own path.
+ *
  * Shared by the SSR router and the SSG renderer so their output matches.
  * Returns `[]` in dev (Vite serves modules directly) and for empty page paths.
  */
-export function getModulePreloads(mfest: Record<string, any>, pagePath: string, layoutPaths: readonly string[] = []): string[] {
+export function getModulePreloads(mfest: Record<string, any>, pagePath: string, layoutPaths: readonly string[] = [], sources: Readonly<Record<string, string>> = {}): string[] {
   if (!pagePath) return [];
   if (import.meta.env && import.meta.env.DEV) return [];
 
-  const normalizedPath = pagePath.replace(/^\//, '');
+  const manifestKey = (routeKey: string) => (sources[routeKey] ?? routeKey).replace(/^\//, '');
   const collected = new Set<string>();
 
   const collect = (key: string) => {
@@ -425,8 +429,8 @@ export function getModulePreloads(mfest: Record<string, any>, pagePath: string, 
     }
   };
 
-  collect(normalizedPath);
-  for (const layoutPath of layoutPaths) collect(layoutPath.replace(/^\//, ''));
+  collect(manifestKey(pagePath));
+  for (const layoutPath of layoutPaths) collect(manifestKey(layoutPath));
 
   const entryClient = mfest['src/client/entry-client.ts'];
   if (entryClient?.imports) {

@@ -237,6 +237,7 @@ function getLocalePreloadHref(manifest: Record<string, any>): string | undefined
 const { pages, layouts } = registry;
 /** Route key -> rendered plugin whose `pages/` the module comes from (pages and layouts). */
 const owners: Record<string, string> = registry.owners ?? {};
+const sources: Record<string, string> = registry.sources ?? {};
 const HTTP_HANDLER_EXPORTS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'] as const;
 /** A function the router can call as a handler. Classes, component or not, are never handlers. */
 function isHandlerFunction(value: unknown): value is Handler {
@@ -890,7 +891,7 @@ export function createApp(options: CreateAppOptions = {}) {
         // Personalized HTML must never be stored by shared caches.
         if (user) c.header('Cache-Control', 'private, no-store');
         const manifest = await getManifest(c.env);
-        const modulePreloads = getModulePreloads(manifest, path, layoutPaths);
+        const modulePreloads = getModulePreloads(manifest, path, layoutPaths, sources);
         return c.body(
           renderRoot({
             body: finalHtml,

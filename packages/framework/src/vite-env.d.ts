@@ -34,6 +34,8 @@ declare module 'virtual:cossack-pages' {
     components: Record<string, ComponentModule>;
     /** Route key -> rendered plugin whose `pages/` the page or layout comes from. */
     owners?: Record<string, string>;
+    /** Route key -> real source path (`/src/plugins/<name>/pages/...`), where it differs from the key. Server registry only. */
+    sources?: Record<string, string>;
     /** Route keys of functional HTTP handlers (client registry only). */
     handlers?: string[];
   }

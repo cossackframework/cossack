@@ -427,6 +427,8 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           ${!isSsrEnvironment && traceBridge ? `import ${JSON.stringify(TRACE_BRIDGE_MODULE)};` : ''}
           // Route key -> plugin name, so the router can ask the host whether a plugin's routes answer.
           const owners = {};
+          // Route key -> real source path, for the keys a plugin provides. The build manifest is keyed by it.
+          const sources = {};
           function overlay(application, plugins) {
             const merged = { ...application };
             for (const [file, module] of Object.entries(plugins)) {
@@ -437,6 +439,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
               }
               merged[key] = module;
               owners[key] = file.split('/')[3];
+              ${isSsrEnvironment ? 'sources[key] = file;' : ''}
             }
             return merged;
           }
@@ -471,7 +474,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           // Functional HTTP handler routes: client navigation loads them as documents, without fetching first.
           const handlers = ${isSsrEnvironment ? '[]' : JSON.stringify(discoverGetHandlers(projectRoot, markdownEnabled))};
 
-          export default { pages, layouts, loadings, components, owners, handlers };
+          export default { pages, layouts, loadings, components, owners, sources, handlers };
         `;
       }
     },

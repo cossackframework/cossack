@@ -23,6 +23,23 @@ describe('module preloads', () => {
         expect(hrefs).not.toContain('/assets/entry-client.js');
     });
 
+    it("preload a plugin's page and layout through their real paths", () => {
+        const pluginManifest = {
+            ...manifest,
+            'src/plugins/shop/pages/shop/index.ts': { file: 'assets/shop.js', imports: ['_cart.js'] },
+            '_cart.js': { file: 'assets/cart.js' },
+            'src/plugins/shop/pages/shop/layout.ts': { file: 'assets/shop-layout.js' },
+        };
+        const sources = {
+            '/src/pages/shop/index.ts': '/src/plugins/shop/pages/shop/index.ts',
+            '/src/pages/shop/layout.ts': '/src/plugins/shop/pages/shop/layout.ts',
+        };
+        const hrefs = getModulePreloads(pluginManifest, '/src/pages/shop/index.ts', ['/src/pages/(site)/layout.ts', '/src/pages/shop/layout.ts'], sources);
+        expect(hrefs).toEqual(expect.arrayContaining(['/assets/shop.js', '/assets/cart.js', '/assets/shop-layout.js', '/assets/layout.js']));
+        // Without the map, the route key is not in the manifest and the page's chunks are missing.
+        expect(getModulePreloads(pluginManifest, '/src/pages/shop/index.ts')).not.toContain('/assets/shop.js');
+    });
+
     it('preload the page alone without layouts', () => {
         expect(getModulePreloads(manifest, '/src/pages/(site)/index.ts')).not.toContain('/assets/layout.js');
     });
