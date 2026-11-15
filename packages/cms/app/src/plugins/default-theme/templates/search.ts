@@ -1,6 +1,6 @@
 /** Search results, with the search form: each result's snippet marks the words that matched. */
 import { html, type TemplateResult } from '@cossackframework/renderer';
-import type { ArchiveView, EntryView } from '@cossackframework/cms';
+import type { ArchiveContext, EntryView } from '@cossackframework/cms';
 import { pageHref } from '../parts/list';
 
 function result(entry: EntryView): TemplateResult {
@@ -12,7 +12,7 @@ function result(entry: EntryView): TemplateResult {
     </article>`;
 }
 
-export default function search(view: ArchiveView): TemplateResult {
+export default function search({ view }: ArchiveContext): TemplateResult {
     const { paging } = view;
     return html`<div class="cms-measure space-y-8">
         <form method="get" action="" role="search" class="flex gap-2">

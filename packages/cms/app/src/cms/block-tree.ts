@@ -9,7 +9,7 @@
 import { Client, ClientState, Component, Cossack, getTabbable } from '@cossackframework/core';
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
 import { AlertDialog, Badge, DropdownMenu, Icon } from '@cossackframework/ui';
-import { blockId, BREAKPOINTS, cloneBlocks, FIELD_GROUP_LAYOUT, insertBlock, placeBlocks, removeBlock, shiftBlock, updateBlock, type BlockDeclaration, type BlockMove, type Breakpoint } from '@cossackframework/cms';
+import { blockId, BLOCK_LIMITS, BREAKPOINTS, cloneBlocks, FIELD_GROUP_LAYOUT, insertBlock, placeBlocks, removeBlock, shiftBlock, updateBlock, type BlockDeclaration, type BlockMove, type Breakpoint } from '@cossackframework/cms';
 import { fieldName } from './builder';
 import { BlockInserter } from './block-inserter';
 import { reorderBlocks } from './block-rows';
@@ -410,7 +410,7 @@ export class BlockTree extends Cossack {
         const moving = new Set(placeBlocks([original[from]!.block]).map(place => place.block._id));
         // The rows that stay, in the order they show now; the one under the pointer decides the drop.
         const rest = placeBlocks(drag.blocks).filter(place => !moving.has(place.block._id));
-        const depth = Math.min(Math.max(pointer.depth + Math.round((x - pointer.x) / 24), 0), 3);
+        const depth = Math.min(Math.max(pointer.depth + Math.round((x - pointer.x) / 24), 0), BLOCK_LIMITS.depth - 1);
         let to: number | null = null;
         for (const [index, place] of rest.entries()) {
             const rect = this.headers.get(place.block._id)?.getBoundingClientRect();

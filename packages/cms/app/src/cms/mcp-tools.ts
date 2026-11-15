@@ -265,8 +265,13 @@ export const cmsTools: readonly Tool[] = [
     },
     {
         name: 'list_media', description: 'Files in the media library (their IDs go in media fields and image blocks). q searches titles and names; kind keeps image, video, audio, document or archive files.',
-        inputSchema: schema({ q: str('Search words.'), kind: str('image, video, audio, document or archive.', { enum: ['image', 'video', 'audio', 'document', 'archive'] }) }), annotations: READ,
-        async run(input, { c }) { return manage.mediaList(c, query(input, ['q', 'kind'])); },
+        inputSchema: schema({ q: str('Search words.'), kind: str('image, video, audio, document or archive.', { enum: ['image', 'video', 'audio', 'document', 'archive'] }), page: { type: 'integer', description: 'The page, from 1.' }, perPage: { type: 'integer', description: 'Files a page, 40 by default and at most 100.' } }), annotations: READ,
+        async run(input, { c }) { return manage.mediaList(c, query(input, ['q', 'kind', 'page', 'perPage'])); },
+    },
+    {
+        name: 'update_media', description: 'Change a library file\'s title, alternative text (read where an image cannot be seen), caption or description.',
+        inputSchema: schema({ id: str('The file\'s ID (see list_media).'), title: str('The title.'), alt: str('The alternative text.'), caption: str('The caption.'), description: str('The description.') }, ['id']), annotations: CHANGE,
+        async run(input, { c }) { return manage.mediaUpdate(c, string(input.id), Object.fromEntries(['title', 'alt', 'caption', 'description'].filter(name => typeof input[name] === 'string').map(name => [name, input[name]]))); },
     },
     {
         name: 'list_menus', description: 'The site\'s navigation menus: ID, name, how many items and the theme locations each shows in.',
@@ -292,6 +297,16 @@ export const cmsTools: readonly Tool[] = [
         name: 'delete_menu', description: 'Delete a menu; the locations it held show no menu (primary then lists the top-level pages).',
         inputSchema: schema({ id: menuId }, ['id']), annotations: DESTROY,
         async run(input, { c }) { await manage.menuDelete(c, string(input.id)); return { deleted: true, id: input.id }; },
+    },
+    {
+        name: 'list_themes', description: 'The themes the site may use, the active one marked, each with the problems that keep it from being used.',
+        inputSchema: schema({}), annotations: READ,
+        async run(_input, { c }) { return manage.themesList(c); },
+    },
+    {
+        name: 'activate_theme', description: 'Make a theme the site\'s: its templates draw every page, its menu locations and widget areas apply, and its patterns and field groups are stored.',
+        inputSchema: schema({ name: str('The theme\'s name (see list_themes).') }, ['name']), annotations: CHANGE,
+        async run(input, { c }) { return manage.themeActivate(c, string(input.name)); },
     },
     {
         name: 'list_menu_locations', description: 'The themes\' menu locations (the active theme\'s first, such as primary and footer) and the menu shown at each.',
@@ -367,7 +382,7 @@ export async function siteInstructions(c: Context): Promise<string> {
         'Navigation: menus are trees of items shown at the theme\'s locations (list_menu_locations; primary is the header menu). Build one with create_menu and place it with locations or assign_menu_location. A mega menu is an item with heading children (columns) or a panel: a synced pattern (create_entry in patterns with synced true) shown beside its links.',
         'The theme\'s header, footer and sidebars are widget areas of blocks (list_widget_areas, update_widget_area); the header\'s core/navigation block names the location it renders.',
         'Layout: blocks sit in the content column unless their data.align is wide or full; a core/group with align full is a band across the page whose children keep the column (data.height short|medium|tall|screen and data.valign center make a hero). A block\'s style holds preset slugs (background, text, padding, margin, fontSize) or hex colors; containers also take gradient (a gradients preset slug), image (a media ID, with imageSize, imageRepeat, imageFixed), overlay (a color) with overlayOpacity 0-100, and video (a media ID).',
-        'Section blocks for landing pages: core/card (an image or a site icon with a title, text and a link), core/icon-list with core/icon-item children, core/testimonial, core/stat, core/pricing (one plan; put plans in core/columns), core/social-links (profile URLs; the icon comes from the address), core/map (an address or an embed URL), core/accordion with core/accordion-item children, core/tabs with core/tab children, core/spacer. Icon fields take a site icon name from get_collection_schema.',
+        'Section blocks for landing pages: core/card (an image or a site icon with a title, text and a link; layout overlay puts the image behind the text as one linked tile), core/compare with core/compare-item children (before and after media IDs under a handle), core/gallery (layout masonry, lightbox true for a portfolio), core/carousel (thumbnails, perView), core/video (a library file or an https url; lightbox true plays it over the page), core/steps (layout row), core/button (style primary|outline|light|link, size, icon; url may be tel: or #section), core/heading (level h1-h4; *words* between asterisks take the accent color), core/icon-list with core/icon-item children, core/testimonial, core/stat, core/pricing (one plan; put plans in core/columns), core/social-links (profile URLs; the icon comes from the address), core/map (an address or an embed URL), core/accordion with core/accordion-item children, core/tabs with core/tab children, core/spacer. Icon fields take a site icon name from get_collection_schema.',
         'Destructive tools (delete_*, reset_widget_area, set_site_status) are final or hard to undo: confirm intent before calling them.',
     ].join('\n');
 }

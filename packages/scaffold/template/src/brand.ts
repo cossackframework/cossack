@@ -8,10 +8,17 @@ export async function siteLogo(): Promise<string> {
     return '/logo.svg';
 }
 
+/** Whether the site set its own logo: it then stands alone, without the name beside it. The bundled logo does not. */
+export async function siteHasLogo(): Promise<boolean> {
+    return false;
+}
+
 /** Who the sign-in pages sign in to. */
 export interface SignInBrand {
     name: string;
     logo: string;
+    /** The site set its own logo: the pages show it without the name. */
+    logoOnly: boolean;
     /** Where "Back to Home" goes. */
     home: string;
     /** The network whose account signs the visitor in to another site; empty otherwise. */
@@ -21,5 +28,5 @@ export interface SignInBrand {
 }
 
 export async function signInBrand(): Promise<SignInBrand> {
-    return { name: await siteName(), logo: await siteLogo(), home: '/', network: '', networkSignIn: null };
+    return { name: await siteName(), logo: await siteLogo(), logoOnly: await siteHasLogo(), home: '/', network: '', networkSignIn: null };
 }

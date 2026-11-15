@@ -7,11 +7,11 @@ const { default: MediaFile } = await import('../src/pages/(site)/media/[id]/[nam
 
 /** A host with one uploaded image and its resized variant. */
 function app() {
-    const file = { id: 'f1', name: 'photo.jpg', contentType: 'image/jpeg', size: 3 };
+    const file = { id: 'f1', name: 'photo.jpg', contentType: 'image/jpeg', size: 3, updatedAt: 1700 };
     const cms = {
         purge: { tag: { site: () => 'cms:main' } },
         files: {
-            variant: async (id: string) => id === 'f1' ? { body: new Response('jpg').body!, contentType: 'image/webp', size: 3 } : null,
+            variant: async (id: string) => id === 'f1' ? { file, body: new Response('jpg').body!, contentType: 'image/webp', size: 3 } : null,
             open: async (id: string) => id === 'f1' ? { file, body: new Response('jpg').body! } : null,
         },
     } as unknown as CmsHost;
@@ -33,8 +33,12 @@ describe('media answers', () => {
         expect(resized.headers.get('cache-tag')).toBe('cms:main');
     });
 
-    it('keep an original for an hour, not for good; a resized copy is named by its version', async () => {
+    it('keep an original for an hour, not for good; a resized copy at its current version for a year', async () => {
         expect((await app().request('/media/f1/photo.jpg')).headers.get('cache-control')).toBe('public, max-age=3600');
+        // The version the site's srcsets write: an edit makes a new one, so this URL never answers differently.
+        expect((await app().request('/media/f1/photo.jpg?w=320&v=1700')).headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+        // No version, or one the file no longer has: what answers there can change.
         expect((await app().request('/media/f1/photo.jpg?w=320')).headers.get('cache-control')).toBe('public, max-age=3600');
+        expect((await app().request('/media/f1/photo.jpg?w=320&v=1699')).headers.get('cache-control')).toBe('public, max-age=3600');
     });
 });

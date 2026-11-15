@@ -1,7 +1,7 @@
 import { Cossack, Page, State, type HeadValue } from '@cossackframework/core';
 import type { ArchiveView, ThemeData } from '@cossackframework/cms';
-import { pageNumber, searchBase, searchEntries, themeData, themeState, type ThemeState } from '../../../cms/site';
-import { archiveTemplate, siteContent, siteTheme, themeHelpers } from '../../../cms/site-view';
+import { pageNumber, searchBase, searchEntries, siteInfo, themeData, themeState, type SiteInfo, type ThemeState } from '../../../cms/site';
+import { archiveTemplate, siteContent, siteTheme, themeContext } from '../../../cms/site-view';
 
 /** Search published entries of every collection on the site. */
 @Page({ transport: 'http' })
@@ -10,6 +10,8 @@ export default class SearchPage extends Cossack {
     @State() theme: ThemeState = { name: null, options: {} };
     /** What the theme's loader for search returned. */
     @State() data: ThemeData = {};
+    /** The site's title, logo and URLs, for the template's `site`. */
+    @State() site: SiteInfo | null = null;
 
     head(): HeadValue {
         return { title: this.view.query ? `${__('Search results for')} “${this.view.query}”` : __('Search'), meta: [{ tag: 'meta', attributes: { name: 'robots', content: 'noindex' } }] };
@@ -23,11 +25,12 @@ export default class SearchPage extends Cossack {
         const base = searchBase('/search', query);
         const found = query ? await searchEntries(cms, query, { locale, page: pageNumber(this.c.req.query('page')), base }) : { entries: [], paging: { page: 1, pages: 1, base }, loose: false };
         this.view = { ...this.view, query, title: query ? `${__('Results for')} “${query}”` : __('Search'), ...found };
-        this.data = await themeData(cms, this.theme, this.view, this.view, this.c.get('principal'), locale);
+        [this.data, this.site] = await Promise.all([themeData(cms, this.theme, this.view, this.view, this.c.get('principal'), locale), siteInfo(cms, locale, { url: this.c.req.url }).catch(() => null)]);
     }
 
     render() {
         const theme = siteTheme(this.theme);
-        return siteContent(archiveTemplate(theme, this.view)(this.view, themeHelpers(theme, { ...this.theme, data: { page: this.data } }, (path, exact) => this.isActive(path, exact))), this.theme);
+        const context = themeContext(theme, { ...this.theme, data: { page: this.data }, site: this.site ?? undefined }, (path, exact) => this.isActive(path, exact));
+        return siteContent(archiveTemplate(theme, this.view)({ ...context, view: this.view }), this.theme);
     }
 }

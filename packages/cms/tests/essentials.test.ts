@@ -5,7 +5,7 @@ import {
     ANONYMOUS, contentModule, createCMS, DEFAULT_ROLES, field, imageSrcset, MAX_FILE_VARIANTS, VARIANT_ASPECTS, posts, verifyWebhookSignature,
     type CmsHost, type CmsModule, type ImageTransformer, type Principal,
 } from '../src/server/index';
-import { romedbService, live } from './helpers';
+import { romedbService, live, smallRequests } from './helpers';
 import { RecordId } from '@cossackframework/romedb';
 
 const admin: Principal = { kind: 'user', id: 'admin-1', roles: ['admin'], permissions: ['*'] };
@@ -51,7 +51,7 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
 
     beforeAll(async () => {
         cms = createCMS({
-            db: service.database(), modules: [contentModule], storage, images, now: () => clock, siteUrl: 'https://essentials.example',
+            db: smallRequests(service.database()), modules: [contentModule], storage, images, now: () => clock, siteUrl: 'https://essentials.example',
             fetch: async (input, init) => {
                 sent.push({ url: String(input), headers: new Headers(init?.headers), body: String(init?.body) });
                 return new Response('ok', { status: answer });
@@ -467,6 +467,13 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         await cms.saveLanguages({ default: 'en', others: ['fr'], urls: 'all' }, admin);
         expect((await cms.languages()).prefixDefault).toBe(true);
         expect((await cms.entryUrls(cms.collection('pages'), [about, published]))).toEqual(new Map([[about.id, '/en/about'], [french.id, '/fr/a-propos']]));
+        // The page Settings → Reading shows on the front is the home page: it and its translations take their language's home address, not their slugs'.
+        await cms.settings.update('reading', { showOnFront: 'page', pageOnFront: about.id }, { principal: admin });
+        const home = (await pages.get(about.id, { principal: editor }))!;
+        expect((await cms.entryUrls(cms.collection('pages'), [home, published]))).toEqual(new Map([[about.id, '/en'], [french.id, '/fr']]));
+        expect((await cms.entryUrls(cms.collection('pages'), [published]))).toEqual(new Map([[french.id, '/fr']]));
+        await cms.settings.update('reading', { showOnFront: 'posts' }, { principal: admin });
+        expect((await cms.entryUrls(cms.collection('pages'), [about]))).toEqual(new Map([[about.id, '/en/about']]));
         expect(await cms.archiveUrl(cms.collection('posts'), 'en')).toBe('/en/posts');
         await expect(cms.saveLanguages({ default: 'en', others: ['fr'], urls: 'some' as 'all' }, admin)).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         // Saving without a mode keeps it.

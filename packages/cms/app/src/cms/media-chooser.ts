@@ -58,7 +58,7 @@ export function mediaChooser(state: MediaChooserState, handlers: MediaChooserHan
     return component(Modal, { open: state.open, size: 'max-w-3xl', 'aria-label': __('Choose media'), onOpenChange: (open: boolean) => { if (!open) handlers.close(); } }, html`
         <div class="space-y-4">
             <div class="flex items-center justify-between gap-3">
-                <h2 class="text-lg font-semibold text-foreground">${__('Choose media')}</h2>
+                <div role="heading" aria-level="2" class="text-lg font-semibold text-foreground">${__('Choose media')}</div>
                 ${component(Button, { type: 'button', variant: 'ghost', size: 'sm', '@click': () => handlers.close() }, state.multiple ? __('Done') : __('Close'))}
             </div>
             <div class="flex flex-wrap items-center gap-2">

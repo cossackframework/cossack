@@ -1,5 +1,5 @@
 import { Cossack, Page, State, ClientState, Server, Client, type HeadValue } from '@cossackframework/core';
-import { AlertDialog, Button, Card, CardBody, Checkbox, Icon, Input, Tabs } from '@cossackframework/ui';
+import { AlertDialog, Button, Card, CardBody, Checkbox, Icon, Input, Sheet, Tabs } from '@cossackframework/ui';
 import { html, component, repeat, type TemplateResult } from '@cossackframework/renderer';
 import {
     allowedMoves, buildMenu, dropDepths, flattenMenu, isCmsError, MENU_ATTRIBUTE, MENU_LIMITS, menuItemId, moveRows, PERMISSIONS, recordTitle, safeLinkUrl, shiftRows, subtreeEnd,
@@ -7,7 +7,7 @@ import {
 } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
 import { requireAny } from '../../../../../../cms/guards';
-import { groupsView, metaInput, metaValues, type GroupsView } from '../../../../../../cms/content';
+import { groupsView, listUpTo, metaInput, metaValues, type GroupsView } from '../../../../../../cms/content';
 import { fieldControl } from '../../../../../../cms/field-controls';
 import { FieldGroupView, plainBlocks, visibilityTypes, type RowPath } from '../../../../../../cms/field-group-view';
 import { fieldVisibility } from '@cossackframework/cms';
@@ -29,6 +29,7 @@ interface Drag { from: number; to: number; depth: number; valid: boolean; y: num
 /** Pixels of horizontal drag per nesting level, and the indent of each level in the list. */
 const INDENT = 32;
 const MOVE_LABELS: Record<MenuMove, string> = { up: 'Move up', down: 'Move down', in: 'Move under the item above', out: 'Move out one level' };
+const MOVE_ICONS: Record<MenuMove, string> = { up: 'arrow-up', down: 'arrow-down', in: 'arrow-right', out: 'arrow-left' };
 
 /** Item titles and types, read as the editor so drafts show too. */
 async function describe(cms: CmsHost, rows: readonly MenuRow[], principal: Principal): Promise<Record<string, Target>> {
@@ -69,8 +70,8 @@ async function describe(cms: CmsHost, rows: readonly MenuRow[], principal: Princ
 /** Synced patterns an item can show as its mega menu panel, by title. */
 async function syncedPatterns(cms: CmsHost, principal: Principal): Promise<{ id: string; title: string }[]> {
     try {
-        const page = await cms.resource('cms/patterns').list({ where: { synced: true }, order: { field: 'title', direction: 'asc' }, limit: 200 }, { principal });
-        return page.records.map(record => ({ id: record.id, title: recordTitle(record, 'title') }));
+        const records = await listUpTo(cms, 'cms/patterns', { where: { synced: true }, order: { field: 'title', direction: 'asc' } }, principal, 200);
+        return records.map(record => ({ id: record.id, title: recordTitle(record, 'title') }));
     } catch (error) { if (isCmsError(error)) return []; throw error; }
 }
 
@@ -125,7 +126,8 @@ export default class MenuEditor extends Cossack {
     @ClientState() linkError = '';
     @ClientState() heading = '';
     @ClientState() headingError = '';
-    @ClientState() open: string[] = [];
+    /** The item open in the side sheet, one at a time, as blocks are edited. */
+    @ClientState() editing: string | null = null;
     /** The tab shown under each open item. */
     @ClientState() tabs: Record<string, ItemTab> = {};
     /** Attributes as typed, by item; saved into the row when complete. */
@@ -254,7 +256,7 @@ export default class MenuEditor extends Cossack {
 
     @Client()
     toggle(id: string) {
-        this.open = this.open.includes(id) ? this.open.filter(entry => entry !== id) : [...this.open, id];
+        this.editing = this.editing === id ? null : id;
     }
 
     @Client()
@@ -289,6 +291,7 @@ export default class MenuEditor extends Cossack {
         if (!row) return;
         const end = subtreeEnd(this.rows, index);
         this.rows = [...this.rows.slice(0, index), ...this.rows.slice(index + 1, end).map(entry => ({ ...entry, depth: entry.depth - 1 })), ...this.rows.slice(end)];
+        if (this.editing === row.id) this.editing = null;
         this.changed(`${this.labelOf(row)} ${__('removed.')}`);
     }
 
@@ -558,11 +561,9 @@ export default class MenuEditor extends Cossack {
 
     private row(row: MenuRow, index: number): TemplateResult {
         const target = this.targets[row.id];
-        const open = this.open.includes(row.id);
-        const tab = this.tabs[row.id] ?? 'general';
+        const open = this.editing === row.id;
         const drag = this.drag;
         const dragging = drag?.moved && index >= drag.from && index < subtreeEnd(this.rows, drag.from);
-        const moves = allowedMoves(this.rows, index);
         const label = this.labelOf(row);
         return html`<li class=${`transition-opacity ${dragging ? 'opacity-40' : ''}`} style=${`margin-left: ${row.depth * INDENT}px`} data-menu-item=${row.id} data-depth=${row.depth}
             ref=${(element: Element) => this.rowRef(row.id, element)}>
@@ -578,40 +579,65 @@ export default class MenuEditor extends Cossack {
                 <span class="inline-flex shrink-0 text-muted-foreground [&_svg]:size-4" title=${target?.type ?? ''}>${component(Icon, { entry: icon(target?.icon, 'document-text'), size: 16 })}</span>
                 <span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">${label}</span>
                 <span class="hidden shrink-0 text-xs text-muted-foreground sm:inline">${target?.type ?? ''}${target?.draft ? ` · ${__('Draft')}` : ''}${target?.missing ? ` · ${__('Missing')}` : ''}</span>
-                ${iconButton(`item-${row.id}-toggle`, open ? 'close-circle' : 'pen', `${open ? __('Close') : __('Edit')} ${label}`, () => this.toggle(row.id), { class: 'shrink-0 border-transparent bg-transparent', pressed: open })}
+                ${iconButton(`item-${row.id}-toggle`, 'pen', `${__('Edit')} ${label}`, () => this.toggle(row.id), { class: 'shrink-0 border-transparent bg-transparent', pressed: open })}
             </div>
-            ${open ? html`<div id=${`item-${row.id}`} class="mt-1 space-y-3 rounded-md border border-border bg-muted/30 p-3">
-                ${component(Tabs, {
-                    id: `menu-item-${row.id}`, label: label.trim() || __('Menu item'), value: tab, variant: 'underline',
-                    onValueChange: (value: string) => this.showTab(row.id, value as ItemTab),
-                    items: [
-                        { value: 'general', label: __('Navigation label'), content: html`<div class="space-y-3">
-                <div class="grid gap-3 sm:grid-cols-2">
-                    <div class="space-y-1"><label for=${`label-${row.id}`} class="block text-xs font-medium text-foreground">${__('Navigation label')}</label>
-                        <input id=${`label-${row.id}`} class=${CONTROL} maxlength=${MENU_LIMITS.label} .value=${row.label} placeholder=${target?.title ?? ''}
-                            @input=${(event: Event) => this.setRow(index, { label: (event.target as HTMLInputElement).value })}></div>
-                    ${row.kind === 'link' ? html`<div class="space-y-1"><label for=${`url-${row.id}`} class="block text-xs font-medium text-foreground">${__('URL')}</label>
-                        <input id=${`url-${row.id}`} class=${CONTROL} .value=${row.url ?? ''} @input=${(event: Event) => this.setRow(index, { url: (event.target as HTMLInputElement).value.trim() })}></div>` : null}
-                </div>
-                <div class="space-y-1"><label for=${`description-${row.id}`} class="block text-xs font-medium text-foreground">${__('Description')}</label>
-                    <input id=${`description-${row.id}`} class=${CONTROL} maxlength=${MENU_LIMITS.description} .value=${row.description ?? ''} placeholder=${__('Shown under the link in a mega menu')}
-                        @input=${(event: Event) => this.setRow(index, { description: (event.target as HTMLInputElement).value })}></div>
-                ${row.kind === 'heading' ? null : html`<div>${component(Checkbox, { label: __('Open link in a new tab'), checked: row.newTab === true, '@change': (event: Event) => this.setRow(index, { newTab: (event.target as HTMLInputElement).checked })})}</div>`}
-                ${row.kind !== 'link' && row.kind !== 'heading' && target ? html`<p class="text-xs text-muted-foreground">${__('Original')}: ${target.edit ? html`<a href=${target.edit} class="text-primary hover:underline">${target.title}</a>` : target.title}</p>` : null}
-                ${this.panelControl(row, index)}
-                        </div>` },
-                        ...(this.fieldGroups.groups.length ? [{ value: 'fields', label: __('Fields'), content: this.fieldsTab(row, index) }] : []),
-                        { value: 'advanced', label: __('Advanced'), content: this.advanced(row, index) },
-                    ],
-                })}
-                <div class="flex flex-wrap items-center gap-2 text-xs">
-                    <span class="text-muted-foreground">${__('Move')}:</span>
-                    ${(['up', 'down', 'in', 'out'] as const).map(move => html`<button type="button" ?disabled=${!moves.has(move)} @click=${() => this.shift(index, move)}
-                        class="rounded border border-border bg-background px-2 py-1 text-foreground hover:bg-muted cursor-pointer disabled:cursor-default disabled:opacity-40">${__(MOVE_LABELS[move])}</button>`)}
-                    <button type="button" class="ml-auto text-destructive hover:underline border-none bg-transparent p-0 cursor-pointer" @click=${() => this.removeRow(index)}>${__('Remove')}</button>
-                </div>
-            </div>` : null}
         </li>`;
+    }
+
+    /**
+     * The item being edited, in a sheet at the side of the screen as a block is: its tabs, then
+     * its moves and Remove. Changes apply to the menu at once; Save menu keeps them.
+     */
+    private itemSheet(): TemplateResult {
+        const index = this.editing ? this.rows.findIndex(entry => entry.id === this.editing) : -1;
+        const row = index >= 0 ? this.rows[index]! : null;
+        const close = () => { this.editing = null; };
+        if (!row) return component(Sheet, { id: 'menu-item-sheet', open: false, side: 'right', size: '30rem', 'aria-label': __('Menu item'), onOpenChange: () => close() }, html``);
+        const target = this.targets[row.id];
+        const tab = this.tabs[row.id] ?? 'general';
+        const moves = allowedMoves(this.rows, index);
+        const label = this.labelOf(row);
+        return component(Sheet, { id: 'menu-item-sheet', open: true, side: 'right', size: '30rem', 'aria-label': `${__('Edit')} ${label.trim() || __('Menu item')}`, onOpenChange: (open: boolean) => { if (!open) close(); } },
+            html`<form id=${`item-${row.id}`} class="flex h-full flex-col" @submit=${(event: Event) => { event.preventDefault(); close(); }}>
+                <header class="flex items-start gap-3 border-b border-border px-5 py-4">
+                    <span class="mt-0.5 inline-flex shrink-0 text-muted-foreground [&_svg]:size-5">${component(Icon, { entry: icon(target?.icon, 'document-text'), size: 20 })}</span>
+                    <div class="min-w-0 flex-1">
+                        <h2 class="truncate text-base font-semibold text-foreground">${label.trim() || __('Menu item')}</h2>
+                        <p class="text-xs text-muted-foreground">${target?.type ?? ''}${target?.draft ? ` · ${__('Draft')}` : ''}${target?.missing ? ` · ${__('Missing')}` : ''}</p>
+                    </div>
+                    <button type="button" class="inline-flex size-8 shrink-0 items-center justify-center rounded-md border-none bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer" aria-label=${__('Close')} @click=${close}>✕</button>
+                </header>
+                <div class="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+                ${component(Tabs, {
+                        id: `menu-item-${row.id}`, label: label.trim() || __('Menu item'), value: tab, variant: 'underline',
+                        onValueChange: (value: string) => this.showTab(row.id, value as ItemTab),
+                        items: [
+                            { value: 'general', label: __('Navigation label'), content: html`<div class="space-y-3">
+                    <div class="grid gap-3">
+                        <div class="space-y-1"><label for=${`label-${row.id}`} class="block text-xs font-medium text-foreground">${__('Navigation label')}</label>
+                            <input id=${`label-${row.id}`} class=${CONTROL} maxlength=${MENU_LIMITS.label} .value=${row.label} placeholder=${target?.title ?? ''}
+                                @input=${(event: Event) => this.setRow(index, { label: (event.target as HTMLInputElement).value })}></div>
+                        ${row.kind === 'link' ? html`<div class="space-y-1"><label for=${`url-${row.id}`} class="block text-xs font-medium text-foreground">${__('URL')}</label>
+                            <input id=${`url-${row.id}`} class=${CONTROL} .value=${row.url ?? ''} @input=${(event: Event) => this.setRow(index, { url: (event.target as HTMLInputElement).value.trim() })}></div>` : null}
+                    </div>
+                    <div class="space-y-1"><label for=${`description-${row.id}`} class="block text-xs font-medium text-foreground">${__('Description')}</label>
+                        <input id=${`description-${row.id}`} class=${CONTROL} maxlength=${MENU_LIMITS.description} .value=${row.description ?? ''} placeholder=${__('Shown under the link in a mega menu')}
+                            @input=${(event: Event) => this.setRow(index, { description: (event.target as HTMLInputElement).value })}></div>
+                    ${row.kind === 'heading' ? null : html`<div>${component(Checkbox, { label: __('Open link in a new tab'), checked: row.newTab === true, '@change': (event: Event) => this.setRow(index, { newTab: (event.target as HTMLInputElement).checked })})}</div>`}
+                    ${row.kind !== 'link' && row.kind !== 'heading' && target ? html`<p class="text-xs text-muted-foreground">${__('Original')}: ${target.edit ? html`<a href=${target.edit} class="text-primary hover:underline">${target.title}</a>` : target.title}</p>` : null}
+                    ${this.panelControl(row, index)}
+                            </div>` },
+                            ...(this.fieldGroups.groups.length ? [{ value: 'fields', label: __('Fields'), content: this.fieldsTab(row, index) }] : []),
+                            { value: 'advanced', label: __('Advanced'), content: this.advanced(row, index) },
+                        ],
+                    })}
+                </div>
+                <footer class="flex flex-wrap items-center gap-1 border-t border-border px-5 py-3">
+                    ${(['up', 'down', 'out', 'in'] as const).map(move => iconButton(`item-${row.id}-move-${move}`, MOVE_ICONS[move], __(MOVE_LABELS[move]), () => this.shift(index, move), { disabled: !moves.has(move) }))}
+                    ${iconButton(`item-${row.id}-remove`, 'trash-bin-trash', `${__('Remove')} ${label}`, () => this.removeRow(index), { danger: true, class: 'ml-1' })}
+                    <span class="ml-auto">${component(Button, { type: 'submit' }, __('Done'))}</span>
+                </footer>
+            </form>`);
     }
 
     render() {
@@ -665,6 +691,7 @@ export default class MenuEditor extends Cossack {
                 onAction: () => { this.confirmDelete = false; void this.deleteMenu(); },
                 onOpenChange: () => { this.confirmDelete = false; },
             })}
+            ${this.itemSheet()}
         </div>`;
     }
 }

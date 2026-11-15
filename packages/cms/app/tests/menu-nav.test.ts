@@ -9,7 +9,7 @@ const { html, renderToString } = await import('@cossackframework/renderer/server
 
 const item = (id: string, label: string, url: string | null, extra: Partial<MenuItemView> = {}): MenuItemView =>
     ({ id, label, url, kind: url === null ? 'heading' : 'link', newTab: false, description: '', className: '', attributes: {}, fields: {}, panel: null, children: [], ...extra });
-const icon: MediaView = { url: '/media/rocket.svg', alt: '', width: 20, height: 20, contentType: 'image/svg+xml', caption: '', srcset: '', wideSrcset: '', sizes: '', placeholder: null, priority: false };
+const icon: MediaView = { url: '/media/rocket.svg', alt: '', width: 20, height: 20, contentType: 'image/svg+xml', caption: '', srcset: '', sizes: '', placeholder: null, priority: false };
 const helpers = { block: () => html`<div class="panel-card">Try it free</div>`, isActive: (url: string) => url === '/sales' };
 const render = (items: readonly MenuItemView[], options = {}) => renderToString(menuNav(items, options, helpers)!);
 

@@ -236,6 +236,13 @@ export interface BlockStyleAttributes {
     nosnippet: boolean;
     /** The video behind the block, when its style names one the block's media resolved; the renderer places the element. */
     video?: MediaView;
+    /**
+     * The image behind the block as an element, with where it is anchored (`object-position`):
+     * an image that covers the block and has resized variants. The renderer places an `<img>`,
+     * so the browser picks a variant for the screen, finds it early and loads it when it nears
+     * the screen. Other images (tiled, fixed, contained, or over a gradient) stay in `style`.
+     */
+    image?: { media: MediaView; position: string };
 }
 
 /**
@@ -258,7 +265,8 @@ export function backgroundImageUrl(media: Pick<MediaView, 'url' | 'srcset'>): st
  * through the presets' variables. A container's advanced background renders as layers (a
  * gradient over an image from the block's resolved media, positioned at its focal point), an
  * overlay as the `--cms-overlay` color the stylesheet paints over them, and a video as a
- * `MediaView` for the renderer. Null for an unstyled block.
+ * `MediaView` for the renderer. An image that covers the block is an element for the renderer
+ * too (`image`), not a layer. Null for an unstyled block.
  */
 export function blockStyleAttributes(block: { readonly style?: BlockStyle; readonly layout?: BlockLayout; readonly media?: { readonly [id: string]: MediaView } }): BlockStyleAttributes | null {
     const classes: string[] = [];
@@ -279,8 +287,9 @@ export function blockStyleAttributes(block: { readonly style?: BlockStyle; reado
     if (text) { classes.push(`cms-text-${text}`); rules.push(`color: var(--cms-color-${text})`); }
     else if (custom('text')) { classes.push('cms-text-custom'); rules.push(`color: ${custom('text')}`); }
     const padding = slug('padding');
-    // A padded block holds its own gutter: `cms-padded` zeroes `--cms-gutter` for its content (cms/blocks.css).
-    if (padding) { classes.push(`cms-p-${padding}`, 'cms-padded'); rules.push(`padding: var(--cms-space-${padding})`); }
+    // A padded block holds its own gutter: `cms-padded` pads by `--cms-pad` and zeroes `--cms-gutter` for its content. A band
+    // across the page pads top and bottom alone and keeps the page's gutter at its sides (cms/blocks.css).
+    if (padding) { classes.push(`cms-p-${padding}`, 'cms-padded'); rules.push(`--cms-pad: var(--cms-space-${padding})`); }
     const margin = slug('margin');
     if (margin) { classes.push(`cms-m-${margin}`); rules.push(`margin-block: var(--cms-space-${margin})`); }
     const fontSize = slug('fontSize');
@@ -292,15 +301,23 @@ export function blockStyleAttributes(block: { readonly style?: BlockStyle; reado
     const gradient = slug('gradient');
     if (gradient) { classes.push(`cms-gradient-${gradient}`); layers.push(`var(--cms-gradient-${gradient})`); }
     const image = typeof block.style?.image === 'string' ? block.media?.[block.style.image] : undefined;
+    let element: BlockStyleAttributes['image'];
     if (image && image.contentType.startsWith('image/')) {
         classes.push('cms-has-image');
-        layers.push(`url("${backgroundImageUrl(image)}")`);
-        const size = block.style?.imageSize;
-        rules.push(`background-size: ${size && (BACKGROUND_SIZES as readonly string[]).includes(size) ? size : 'cover'}`);
+        const size = block.style?.imageSize && (BACKGROUND_SIZES as readonly string[]).includes(block.style.imageSize) ? block.style.imageSize : 'cover';
         const focus = image.focus;
-        rules.push(`background-position: ${focus ? `${Math.round(focus.x * 100)}% ${Math.round(focus.y * 100)}%` : '50% 50%'}`);
-        rules.push(`background-repeat: ${block.style?.imageRepeat === true ? 'repeat' : 'no-repeat'}`);
-        if (block.style?.imageFixed === true) rules.push('background-attachment: fixed');
+        const position = focus ? `${Math.round(focus.x * 100)}% ${Math.round(focus.y * 100)}%` : '50% 50%';
+        // An element where one does the same as the layer: it covers, once, scrolls with the page, and nothing is painted over it but the overlay.
+        if (size === 'cover' && image.srcset && !gradient && block.style?.imageRepeat !== true && block.style?.imageFixed !== true) {
+            classes.push('cms-has-image-element');
+            element = { media: image, position };
+        } else {
+            layers.push(`url("${backgroundImageUrl(image)}")`);
+            rules.push(`background-size: ${size}`);
+            rules.push(`background-position: ${position}`);
+            rules.push(`background-repeat: ${block.style?.imageRepeat === true ? 'repeat' : 'no-repeat'}`);
+            if (block.style?.imageFixed === true) rules.push('background-attachment: fixed');
+        }
     }
     if (layers.length) rules.push(`background-image: ${layers.join(', ')}`);
     const overlay = slug('overlay') ? `var(--cms-color-${slug('overlay')})` : custom('overlay');
@@ -315,7 +332,10 @@ export function blockStyleAttributes(block: { readonly style?: BlockStyle; reado
     const id = /^[A-Za-z][\w-]{0,59}$/.test(block.layout?.anchor ?? '') ? block.layout!.anchor! : '';
     const nosnippet = block.layout?.nosnippet === true;
     if (!classes.length && !extra.length && !id && !nosnippet) return null;
-    return { className: ['cms-block', ...classes, ...extra].join(' '), style: rules.join('; '), id, nosnippet, ...(video && video.contentType.startsWith('video/') ? { video } : {}) };
+    // A box: a wrapper you can see, whose padding or background holds its content, so its first and last blocks drop their outer margins (cms/blocks.css).
+    // A wrapper that only names, colors or sizes a block leaves the block's spacing as it would be unwrapped.
+    const box = Boolean(padding || background || custom('background') || gradient || overlay) || classes.includes('cms-has-image') || classes.includes('cms-has-video');
+    return { className: ['cms-block', ...(box ? ['cms-box'] : []), ...classes, ...extra].join(' '), style: rules.join('; '), id, nosnippet, ...(video && video.contentType.startsWith('video/') ? { video } : {}), ...(element ? { image: element } : {}) };
 }
 
 /**
@@ -354,10 +374,8 @@ export interface MediaView {
     readonly name: string;
     readonly size: number;
     readonly caption: string;
-    /** Resized variants for `<img srcset>`; empty when the image is served as uploaded. */
+    /** Resized variants for `<img srcset>`; empty when the image is served as uploaded. `wideSrcset(media.srcset)` gives them in a 16:9 shape around the focal point, for cards and headers. */
     readonly srcset: string;
-    /** `srcset` variants in a 16:9 shape around the focal point, for cards and headers. */
-    readonly wideSrcset: string;
     /** A tiny stand-in as a `data:` URL, shown blurred while the image loads (`placeholderStyle`); null for other files or when Settings → Files says none. */
     readonly placeholder: string | null;
     /** How wide content images show, from Settings → Files, for `<img sizes>`. */
@@ -682,11 +700,18 @@ export interface EntryView {
      * `helpers.block(entry.content)`; `fields` has each field's blocks apart.
      */
     readonly content: readonly RenderedBlock[];
+    /**
+     * The fields `content` is made of, in its order, each with the number of blocks it gave.
+     * These fields are not carried a second time: `fields.<name>` reads them from `content`
+     * (`withContentFields`), and a loop over `fields` skips them.
+     */
+    readonly contentFields: readonly (readonly [name: string, blocks: number])[];
     readonly image: MediaView | null;
     readonly terms: readonly { readonly label: string; readonly terms: readonly TermLink[] }[];
     /**
      * Every field by name with its typed value (see `FieldView`), so a theme can lay out a
-     * collection's own fields. Rich text, Markdown and blocks are present in full views only.
+     * collection's own fields. Rich text, Markdown and blocks are present in full views only,
+     * and the ones in `contentFields` are not listed by `Object.keys`.
      */
     readonly fields: { readonly [name: string]: FieldView };
     /** Scalar fields with values as labelled text, derived from `fields`, for a details list. */
@@ -774,7 +799,7 @@ export interface ArchiveView {
 export interface SiteView {
     readonly title: string;
     readonly tagline: string;
-    /** The logo's URL from Settings → General, or null; `helpers.logo(site)` renders it. */
+    /** The logo's URL from Settings → General, or null; `helpers.logo()` renders it. */
     readonly logo: string | null;
     /** The blog's URL, when posts are on the site. */
     readonly blog: string | null;
@@ -803,7 +828,12 @@ export interface SiteView {
  * plugin is active, merged under the theme's and the page's own. `plugin.asset(path)` is the
  * URL of a file in the plugin's `assets/`, for a stylesheet its blocks need.
  */
-export type PluginHead = (site: SiteView, helpers: ThemeHelpers, plugin: { readonly asset: (path: string) => string }) => HeadValue;
+export type PluginHead = (context: PluginHeadContext) => HeadValue;
+
+/** What a plugin's `head` receives: the theme's context and the plugin's own `asset()`. */
+export interface PluginHeadContext extends HeadContext {
+    readonly plugin: { readonly asset: (path: string) => string };
+}
 
 /** One step of a page's breadcrumbs; the current page has no `url`. */
 export interface BreadcrumbView {
@@ -845,7 +875,7 @@ export interface ThemeHelpers {
      * without one; null on the home page. `separator` is `chevron` (the default), `slash` or
      * `arrow`; `home: false` leaves Home out. The `core/breadcrumbs` block renders the same.
      */
-    breadcrumbs(site: SiteView, options?: { readonly class?: string; readonly separator?: string; readonly home?: boolean }): TemplateResult | null;
+    breadcrumbs(options?: { readonly class?: string; readonly separator?: string; readonly home?: boolean }): TemplateResult | null;
     /**
      * A search form posting to the site's search page in the page's language: a box, or a
      * button that opens one (`style: 'icon'`). The `core/search` block renders the same.
@@ -866,7 +896,7 @@ export interface ThemeHelpers {
     /** Whether a URL is the current page or one of its ancestors. */
     isActive(url: string): boolean;
     /** The site's logo as an image named after the site, or null when none is set; `class` sizes it (default `h-10 w-auto`). */
-    logo(site: SiteView, options?: { readonly class?: string }): TemplateResult | null;
+    logo(options?: { readonly class?: string }): TemplateResult | null;
     /**
      * The page in the site's other languages (`site.languages`) as a `nav` of links, named by
      * language name, flag, both or code; null on a site with one language. The `core/languages`
@@ -882,10 +912,53 @@ export interface ThemeHelpers {
     menu(source: string | readonly MenuItemView[], options?: MenuOptions): TemplateResult | null;
 }
 
+/**
+ * What a page's templates know of the site: its title, logo, URLs, language, breadcrumbs,
+ * menus and languages. The layout and the head get all of `SiteView`, widget areas included.
+ */
+export type SiteBasics = Pick<SiteView, 'title' | 'tagline' | 'logo' | 'locale' | 'homeUrl' | 'searchUrl' | 'url' | 'breadcrumbs' | 'menus' | 'languages'>;
+
+/**
+ * What every template receives, as one object a template destructures for what it uses:
+ * `({ entry, helpers }) => ...`. Each kind of template adds its own keys, so a new value is a
+ * new key and never moves an argument.
+ */
+export interface ThemeContext {
+    readonly site: SiteBasics;
+    readonly helpers: ThemeHelpers;
+}
+/** The frame around every page: the page's content inside it. */
+export interface LayoutContext extends ThemeContext {
+    readonly site: SiteView;
+    readonly content: TemplateResult;
+}
+/** The document head of every page. */
+export interface HeadContext extends ThemeContext {
+    readonly site: SiteView;
+}
+export interface EntryContext extends ThemeContext {
+    readonly entry: EntryView;
+}
+export interface ArchiveContext extends ThemeContext {
+    readonly view: ArchiveView;
+}
+export interface LockedContext extends ThemeContext {
+    readonly view: LockedView;
+}
+export interface MembersContext extends ThemeContext {
+    readonly view: MembersView;
+}
+/** A theme's renderer of one block type. */
+export interface BlockContext extends ThemeContext {
+    readonly block: RenderedBlock;
+}
+
 /** An entry template, from `templates/entry.ts` or `templates/entry-<collection>.ts`. */
-export type EntryTemplate = (entry: EntryView, helpers: ThemeHelpers) => TemplateResult;
+export type EntryTemplate = (context: EntryContext) => TemplateResult;
 /** A list template: an archive, a term, the home page or search results. */
-export type ArchiveTemplate = (view: ArchiveView, helpers: ThemeHelpers) => TemplateResult;
+export type ArchiveTemplate = (context: ArchiveContext) => TemplateResult;
+/** A block renderer that replaces the core one; null renders nothing. */
+export type BlockRenderer = (context: BlockContext) => TemplateResult | null;
 
 /**
  * A theme's templates: the `theme` export of its `ui.ts`, or the default exports of its
@@ -894,27 +967,27 @@ export type ArchiveTemplate = (view: ArchiveView, helpers: ThemeHelpers) => Temp
  */
 export interface SiteTheme {
     /** The frame around every page. */
-    layout(site: SiteView, content: TemplateResult, helpers: ThemeHelpers): TemplateResult;
+    layout(context: LayoutContext): TemplateResult;
     /** One entry: a post, a page or an entry of another collection. */
-    entry(entry: EntryView, helpers: ThemeHelpers): TemplateResult;
+    entry(context: EntryContext): TemplateResult;
     /** A collection or term archive. Also the front page and search results when those are absent. */
-    archive(view: ArchiveView, helpers: ThemeHelpers): TemplateResult;
-    home?(view: ArchiveView, helpers: ThemeHelpers): TemplateResult;
-    search?(view: ArchiveView, helpers: ThemeHelpers): TemplateResult;
-    notFound?(helpers: ThemeHelpers): TemplateResult;
+    archive(context: ArchiveContext): TemplateResult;
+    home?(context: ArchiveContext): TemplateResult;
+    search?(context: ArchiveContext): TemplateResult;
+    notFound?(context: ThemeContext): TemplateResult;
     /** The form asking for a protected entry's password; the host draws a plain one otherwise. */
-    password?(view: LockedView, helpers: ThemeHelpers): TemplateResult;
+    password?(context: LockedContext): TemplateResult;
     /** What a members-only entry shows visitors who are not signed in; the host draws a plain sign-in prompt otherwise. */
-    members?(view: MembersView, helpers: ThemeHelpers): TemplateResult;
+    members?(context: MembersContext): TemplateResult;
     /** Tags for the document head: stylesheets, fonts, meta. The page's own title and meta win. */
-    head?(site: SiteView, helpers: ThemeHelpers): HeadValue;
+    head?(context: HeadContext): HeadValue;
     /**
      * More specific templates by name: `entry-<collection>`, `archive-<collection>`, `term` and
      * `term-<taxonomy>`. A file `templates/entry-posts.ts` lands here as `entry-posts`.
      */
     readonly templates?: { readonly [name: string]: EntryTemplate | ArchiveTemplate };
     /** Block renderers that replace the core ones, by block type. */
-    readonly blocks?: { readonly [type: string]: (block: RenderedBlock, helpers: ThemeHelpers) => TemplateResult | null };
+    readonly blocks?: { readonly [type: string]: BlockRenderer };
 }
 
 /** Template files that fill the theme's named slots; every other file is a specific template. */
@@ -1029,7 +1102,22 @@ export function pickTemplate(theme: SiteTheme, candidates: readonly string[]): s
     return candidates.find(name => typeof namedTemplate(theme, name) === 'function') ?? null;
 }
 
-/** The template for an entry: the one an editor chose, `entry-<collection>`, else `entry`. */
+/**
+ * Give `entry.fields` the content fields, each the part of `entry.content` it gave. They are
+ * defined as hidden properties, so a view sent to the browser carries its blocks once; the
+ * browser's copy gets them back here. Returns the same entry.
+ */
+export function withContentFields<Entry extends Pick<EntryView, 'content' | 'contentFields' | 'fields'>>(entry: Entry): Entry {
+    let start = 0;
+    for (const [name, count] of entry.contentFields ?? []) {
+        const blocks = entry.content.slice(start, start + count);
+        start += count;
+        if (Object.isExtensible(entry.fields)) Object.defineProperty(entry.fields, name, { value: blocks, enumerable: false, configurable: true, writable: true });
+    }
+    return entry;
+}
+
+/** The template for an entry: the one an editor chose, `entry-<collection>`, else `entry`. Give it the entry through `withContentFields`. */
 export function entryTemplate(theme: SiteTheme, collection: string, template?: string | null): EntryTemplate {
     const name = pickTemplate(theme, templateCandidates({ kind: 'entry', collection, template }));
     return name ? namedTemplate(theme, name) as EntryTemplate : theme.entry;

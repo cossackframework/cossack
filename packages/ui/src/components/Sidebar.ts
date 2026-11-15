@@ -121,7 +121,7 @@ export class Sidebar extends Cossack {
         }
         const suppliedStyle = style instanceof IfDefinedResult ? style.value : style;
         const dimensions = `width:${rail ? '72px' : width};min-width:${rail ? '72px' : width};${typeof suppliedStyle === 'string' ? suppliedStyle : ''}${hidden ? ';display:none!important;' : ''}`;
-        return html`<aside id=${id} class=${`cs-sidebar group flex flex-col min-h-screen bg-sidebar border-e border transition-[width,min-width] motion-reduce:transition-none duration-300 ${collapsed ? 'cs-sidebar--collapsed' : ''} ${rail ? 'cs-sidebar--icon-rail is-collapsed' : ''}`}
+        return html`<aside id=${id} class=${`cs-sidebar group sticky top-0 flex flex-col h-dvh bg-sidebar border-e border transition-[width,min-width] motion-reduce:transition-none duration-300 ${collapsed ? 'cs-sidebar--collapsed' : ''} ${rail ? 'cs-sidebar--icon-rail is-collapsed' : ''}`}
             style=${dimensions} ...=${{...rest,'@keydown':sidebarListener(keydown,event=>this.keydown(event as KeyboardEvent))}}
             ?hidden=${hidden} ?inert=${hidden} aria-hidden=${hidden ? 'true' : 'false'} ref=${(el:Element)=>this.connect(el)}>
             <div class=${`cs-sidebar__header group flex items-center gap-2 border-b shrink-0 ${rail ? 'flex-col py-3 px-0' : 'px-4 h-14'}`}>

@@ -890,7 +890,7 @@ export function createApp(options: CreateAppOptions = {}) {
         // Personalized HTML must never be stored by shared caches.
         if (user) c.header('Cache-Control', 'private, no-store');
         const manifest = await getManifest(c.env);
-        const modulePreloads = getModulePreloads(manifest, path);
+        const modulePreloads = getModulePreloads(manifest, path, layoutPaths);
         return c.body(
           renderRoot({
             body: finalHtml,

@@ -37,7 +37,8 @@ for the address under ~/.config/cossack/. In a project, the address defaults to 
 COSSACK_CMS_URL, COSSACK_CMS_TOKEN and COSSACK_CMS_SITE override the stored login, for CI.
 On a network, --site <id> acts on one site (site accounts sign in with --site too).
 Writes take --data '{"title":"Hello"}' (or @file, @- for stdin) and --set title=Hello; deletes and resets need --yes.
-Menus, their locations and the theme's widget areas (menus, locations, areas) take the appearance permission.
+Themes, menus, their locations and the theme's widget areas (themes, menus, locations, areas) take the appearance permission.
+Plugins (plugins list, grant, revoke) take the plugins permission.
 \`cossack cms mcp\` prints the configuration an MCP client needs for the same site.
 Locked out? With CMS_RECOVERY_CODE set in the site's environment, \`cossack cms password reset --email you@example.com\`
 prints a one-hour reset link without signing in (the code from CMS_RECOVERY_CODE, the project's .env, or a prompt).

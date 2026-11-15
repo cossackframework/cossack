@@ -4,9 +4,9 @@
  * Choose it under Template in the editor's sidebar.
  */
 import { html, type TemplateResult } from '@cossackframework/renderer';
-import type { EntryView, ThemeHelpers } from '@cossackframework/cms';
+import type { EntryContext } from '@cossackframework/cms';
 
-export default function entryBlank(entry: EntryView, helpers: ThemeHelpers): TemplateResult {
+export default function entryBlank({ entry, helpers }: EntryContext): TemplateResult {
     return html`<article class="cms-blank" data-template="entry-blank">
         ${helpers.layout(entry.content)}
     </article>`;

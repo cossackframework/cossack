@@ -118,8 +118,8 @@ export default class SiteLayout extends Cossack {
      */
     head(context: HeadContext): HeadValue {
         const theme = siteTheme(this.theme);
-        const helpers = themeHelpers(theme, { ...this.theme, data: { layout: this.data }, languages: this.site.languages }, () => false);
-        const contributed = theme.head?.(this.site, helpers) ?? {};
+        const helpers = themeHelpers(theme, { ...this.theme, data: { layout: this.data }, languages: this.site.languages, menus: this.site.menus, site: this.site }, () => false);
+        const contributed = theme.head?.({ site: this.site, helpers }) ?? {};
         // Active plugins add their tags under the theme's: a stylesheet for their blocks, say.
         const added = pluginHeads(this.theme, this.site, helpers);
         const key = (tag: HeadTag) => String(tag.attributes?.name ?? tag.attributes?.property ?? '');
@@ -212,7 +212,8 @@ export default class SiteLayout extends Cossack {
         const patterns = editing ? new Map(this.editing!.patterns.map(pattern => [pattern.id, !pattern.editable])) : undefined;
         const areas: Record<string, readonly RenderedBlock[]> = editing ? Object.fromEntries(Object.entries(this.site.areas).map(([name, blocks]) => [name, tagDocument(blocks, `area:${name}`, !this.editing!.editable, patterns)])) : this.site.areas;
         const site = editing ? { ...this.site, areas } : this.site;
-        const frame = theme.layout(site, html`${this.children}`, themeHelpers(theme, { ...this.theme, data: { layout: this.data }, editing, languages: this.site.languages, menus: this.site.menus, site: this.site }, (path, exact) => this.isActive(path, exact)));
+        const helpers = themeHelpers(theme, { ...this.theme, data: { layout: this.data }, editing, languages: this.site.languages, menus: this.site.menus, site: this.site }, (path, exact) => this.isActive(path, exact));
+        const frame = theme.layout({ site, content: html`${this.children}`, helpers });
         return this.taskbar ? html`${frame}${taskbar(this.taskbar, { logout: () => this.doLogout(), error: this.logoutError })}` : frame;
     }
 }

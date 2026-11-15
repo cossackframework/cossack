@@ -12,7 +12,7 @@
 import { Client, ClientState, Component, Cossack } from '@cossackframework/core';
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
 import { Button, Checkbox, Icon, MultiSelect, Sheet } from '@cossackframework/ui';
-import { blockId, BREAKPOINTS, findBlock, formatNoteTarget, insertBlock, noteBlock, noteThreads, parseNoteTarget, parseRichTextPath, placeBlocks, removeBlock, richTextPath, shiftBlock, updateBlock, type BlockMove, type BlockPlace, type Breakpoint, type EmbeddedBlock, type Note, type NoteRange, type NoteStatus, type RichTextDoc } from '@cossackframework/cms';
+import { blockId, BLOCK_LIMITS, BREAKPOINTS, findBlock, formatNoteTarget, insertBlock, noteBlock, noteThreads, parseNoteTarget, parseRichTextPath, placeBlocks, removeBlock, richTextPath, shiftBlock, updateBlock, type BlockMove, type BlockPlace, type Breakpoint, type EmbeddedBlock, type Note, type NoteRange, type NoteStatus, type RichTextDoc } from '@cossackframework/cms';
 import { blockDefaults, controlValue, editorInput, newBlock, type BlockOption, type EditorValues } from './editor';
 import { BREAKPOINT_DEVICES, blockSummary, declarationsOf, offeredIn } from './block-tree';
 import { icon } from './icons';
@@ -441,7 +441,7 @@ export class SiteEditor extends Cossack {
         let to = 0;
         while (to < rest.length && (pointer.tops[rest[to]!]! + pointer.bottoms[rest[to]!]!) / 2 < y) to++;
         const line = to < rest.length ? pointer.tops[rest[to]!]! : pointer.bottoms[rest.at(-1) ?? 0] ?? 0;
-        const depth = Math.min(Math.max((places[drag.from]?.depth ?? 0) + Math.round((event.clientX - pointer.x) / 24), 0), 3);
+        const depth = Math.min(Math.max((places[drag.from]?.depth ?? 0) + Math.round((event.clientX - pointer.x) / 24), 0), BLOCK_LIMITS.depth - 1);
         if (drag.to !== to || drag.depth !== depth || !drag.moved) this.drag = { ...drag, to, depth, y: line - 2, moved: true };
     }
 
@@ -751,7 +751,7 @@ export class SiteEditor extends Cossack {
         const hide = block.layout?.hide ?? [];
         return html`<form data-site-editor-form class="flex h-full flex-col" @submit=${(event: Event) => this.apply(event)}>
             <header class="flex items-center justify-between gap-2 border-b border-border px-5 py-4">
-                <h2 class="min-w-0 truncate text-base font-semibold text-foreground">${option.label}</h2>
+                <div role="heading" aria-level="2" class="min-w-0 truncate text-base font-semibold text-foreground">${option.label}</div>
                 <span class="flex flex-wrap gap-1">
                     ${this.iconButton('↑', __('Move up'), () => this.shift(block._id, 'up'), place.index === 0)}
                     ${this.iconButton('↓', __('Move down'), () => this.shift(block._id, 'down'), place.index === siblings.length - 1)}
@@ -834,10 +834,10 @@ export class SiteEditor extends Cossack {
         const drag = this.drag?.doc === key ? this.drag : null;
         const options = this.optionsFor(key);
         return html`<section class="space-y-3" data-site-doc=${key} aria-label=${label}>
-            ${titled ? html`<h3 class="flex flex-wrap items-center gap-x-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">${label}
+            ${titled ? html`<div role="heading" aria-level="3" class="flex flex-wrap items-center gap-x-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">${label}
                 ${doc?.kind === 'pattern' ? html`<span class="font-normal normal-case tracking-normal">· ${__('Pattern: changes apply everywhere it is used')}</span>` : null}
                 ${editable ? null : html`<span class="font-normal normal-case tracking-normal" data-locked>· ${doc?.kind === 'pattern' ? __('You cannot change this pattern') : __('Administrators edit this')}</span>`}
-                ${doc?.changed ? html`<span class="font-normal normal-case tracking-normal">· ${__('Unsaved changes')}</span>` : null}</h3>` : null}
+                ${doc?.changed ? html`<span class="font-normal normal-case tracking-normal">· ${__('Unsaved changes')}</span>` : null}</div>` : null}
             ${doc?.error ? html`<p role="alert" class="flex flex-wrap items-center gap-2 text-xs text-destructive">${doc.error}
                 ${doc.conflict ? component(Button, { type: 'button', size: 'sm', variant: 'outline', '@click': () => this.props.onReload() }, __('Reload')) : null}</p>` : null}
             ${places.length ? html`<ol class="relative space-y-1.5" aria-label=${label} ref=${(element: Element) => { if (element) this.lists.set(key, element as HTMLElement); else this.lists.delete(key); }}>
@@ -931,7 +931,7 @@ export class SiteEditor extends Cossack {
                 ...this.notesFor(richTextPath(field.name)),
             })}
             ${form && option ? html`<form class="space-y-3 rounded-md border border-border bg-card p-3" @submit=${(event: Event) => this.applyEmbedded(event)}>
-                <h3 class="text-sm font-semibold">${option.label}</h3>
+                <div role="heading" aria-level="3" class="text-sm font-semibold">${option.label}</div>
                 ${blockFields(option, form.values, (name, value) => this.setEmbeddedValue(name, value), `site-embedded-${form.id}`, name => this.media({ kind: 'embedded', field: name }), form.errors, [], this.props.draft.view.sources)}
                 <div class="flex justify-end gap-2">
                     ${component(Button, { type: 'button', variant: 'outline', size: 'sm', '@click': () => { this.embedded = null; } }, __('Cancel'))}
@@ -948,7 +948,7 @@ export class SiteEditor extends Cossack {
         // The open Notes rail takes the right edge: the panel sits beside it.
         return html`<aside role="dialog" aria-label=${titles[this.panel]} class=${`${PANEL} bottom-12 right-4 top-4 w-[min(30rem,calc(100vw-2rem))] rounded-lg`} style=${this.notesOpen ? 'right: 27rem' : ''}>
             <header class="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
-                <h2 class="text-base font-semibold">${titles[this.panel]}</h2>
+                <div role="heading" aria-level="2" class="text-base font-semibold">${titles[this.panel]}</div>
                 ${this.panel === 'body' ? component(Button, { type: 'button', size: 'sm', '@click': () => this.closeBody() }, __('Done'))
                     : component(Button, { type: 'button', variant: 'ghost', size: 'sm', '@click': () => { this.panel = null; } }, __('Close'))}
             </header>

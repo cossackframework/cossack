@@ -39,7 +39,7 @@ export const slots = { 'dashboard.overview': [ExampleWidget] };
 export const blocks = { callout: ExampleCallout };
 
 /** The callout's stylesheet, on every site page while the plugin is active. */
-export const head: PluginHead = (_site, _helpers, plugin) => {
+export const head: PluginHead = ({ plugin }) => {
     const href = plugin.asset('assets/example.css');
     return href ? { links: [{ tag: 'link', attributes: { rel: 'stylesheet', href } }] } : {};
 };

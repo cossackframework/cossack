@@ -66,7 +66,10 @@ export const CMS_FLAGS = {
   out: str('Write the result to this file instead of stdout.'),
   slug: str('A term\'s slug.'),
   parent: str('A term\'s parent ID; empty for the top level.'),
-  description: str('A term\'s description.'),
+  description: str('A term\'s or a file\'s description.'),
+  title: str('A file\'s title.'),
+  alt: str('A file\'s alternative text, read where the image cannot be seen.'),
+  caption: str('A file\'s caption.'),
   'no-starter': bool('Add no starter content to a new site (sites create).'),
   tag: str('A cache tag to purge, such as cms:main:c:posts; repeat for several (cache purge).', { repeated: true }),
   path: str('A page to purge, by URL; repeat for several (cache purge).', { repeated: true }),
@@ -195,6 +198,18 @@ export const CMS_COMMANDS = [
   { noun: 'menus', verb: 'delete', summary: 'Delete a menu; its locations show none.', positionals: ['id'], flags: ['yes'], destructive: true,
     request: ([id]) => ({ method: 'DELETE', path: `/api/cms/appearance/menus/${seg(id)}` }) },
 
+  { noun: 'plugins', verb: 'list', summary: 'The installed plugins, whether each is active and what it still needs.', positionals: [], flags: [],
+    request: () => ({ method: 'GET', path: '/api/cms/plugins' }), table: { rows: data => data.items, columns: ['name', 'version', 'active', { name: 'theme', value: row => row.themeOnly }, { name: 'needs', value: row => row.reason || row.missing.join(' ') }] } },
+  { noun: 'plugins', verb: 'grant', summary: 'Grant a plugin what its manifest asks for. Unrestricted access is granted in the dashboard alone.', positionals: ['name'], flags: [],
+    request: ([name]) => ({ method: 'POST', path: `/api/cms/plugins/${seg(name)}/grant` }) },
+  { noun: 'plugins', verb: 'revoke', summary: 'Disable a plugin: its grants go and its code stops running.', positionals: ['name'], flags: [],
+    request: ([name]) => ({ method: 'POST', path: `/api/cms/plugins/${seg(name)}/revoke` }) },
+
+  { noun: 'themes', verb: 'list', summary: 'The themes the site may use, the active one marked.', positionals: [], flags: [],
+    request: () => ({ method: 'GET', path: '/api/cms/appearance/themes' }), table: { rows: data => data.items, columns: ['name', 'label', 'version', 'active', { name: 'problems', value: row => row.problems.join(' ') }] } },
+  { noun: 'themes', verb: 'activate', summary: 'Make a theme the site\'s; its patterns and field groups are stored.', positionals: ['name'], flags: [],
+    request: ([name]) => ({ method: 'POST', path: `/api/cms/appearance/themes/${seg(name)}/activate` }) },
+
   { noun: 'locations', verb: 'list', summary: 'The themes\' menu locations and the menu at each.', positionals: [], flags: [],
     request: () => ({ method: 'GET', path: '/api/cms/appearance/locations' }), table: { rows: data => data.items, columns: ['name', 'label', 'theme', 'active', 'menu'] } },
   { noun: 'locations', verb: 'set', summary: 'Show a menu at a location.', positionals: ['location', 'menu'], flags: [],
@@ -211,8 +226,10 @@ export const CMS_COMMANDS = [
   { noun: 'areas', verb: 'reset', summary: 'Forget an area\'s saved blocks; the theme\'s defaults show again.', positionals: ['name'], flags: ['yes'], destructive: true,
     request: ([name]) => ({ method: 'DELETE', path: `/api/cms/appearance/areas/${seg(name)}` }) },
 
-  { noun: 'media', verb: 'list', summary: 'Files in the media library.', positionals: [], flags: ['q', 'kind'],
-    request: (_args, flags) => ({ method: 'GET', path: '/api/cms/media', query: { q: flags.q, kind: flags.kind } }), table: { rows: data => data.items, columns: ['id', 'name', 'kind', 'url'] } },
+  { noun: 'media', verb: 'list', summary: 'Files in the media library, newest first.', positionals: [], flags: [...PAGED, 'kind'],
+    request: (_args, flags) => ({ method: 'GET', path: '/api/cms/media', query: { ...paged(flags), kind: flags.kind } }), table: { rows: data => data.items, columns: ['id', 'name', 'kind', 'alt', 'url'], total: true } },
+  { noun: 'media', verb: 'update', summary: 'Change a file\'s title, alternative text, caption or description.', positionals: ['id'], flags: ['title', 'alt', 'caption', 'description'],
+    request: ([id], flags) => ({ method: 'PATCH', path: `/api/cms/media/${seg(id)}`, body: picked(flags, ['title', 'alt', 'caption', 'description']) }) },
   { noun: 'media', verb: 'upload', summary: 'Upload files to the media library.', positionals: ['file...'], flags: [],
     request: files => ({ method: 'POST', path: '/api/cms/media', files }) },
 

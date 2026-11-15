@@ -47,6 +47,8 @@ export class CmsMenus {
     readonly #now: () => number;
     readonly #ttl: number;
     #cache = new Map<string, { at: number; value: Promise<ResolvedMenuItem[] | null> }>();
+    /** Every location's items, read in one query: a page shows several menus, so the first one asked for reads them all. */
+    #locations: { at: number; value: Promise<Map<string, MenuItem[]>> } | undefined;
 
     constructor(db: RomeDB, options: CmsMenusOptions) {
         this.#db = db;
@@ -165,16 +167,42 @@ export class CmsMenus {
 
     /**
      * The resolved menu at a location, or null when none is assigned. With a language, entry
-     * items link to their translations in it. Cached.
+     * items link to their translations in it. Cached. When a location's menu is not cached, the
+     * menus of every location are resolved together, so a page's header and footer menus cost
+     * one read and their entries are read side by side, not one menu after another.
      */
     forLocation(location: string, locale?: string): Promise<ResolvedMenuItem[] | null> {
         const now = this.#now();
-        const key = `${location}\n${locale ?? ''}`;
-        const cached = this.#cache.get(key);
+        const key = (name: string) => `${name}\n${locale ?? ''}`;
+        const cached = this.#cache.get(key(location));
         if (cached && now - cached.at <= this.#ttl) return cached.value;
-        const value = this.#read(location, locale);
-        this.#cache.set(key, { at: now, value });
-        value.catch(() => this.#cache.delete(key));
+        const all = this.#allLocations(now);
+        const resolved = (name: string) => all.then(items => {
+            const found = items.get(name);
+            return found ? this.#resolve(found, locale) : null;
+        });
+        const value = resolved(location);
+        this.#remember(key(location), now, value);
+        void all.then(items => {
+            for (const name of items.keys()) {
+                const other = this.#cache.get(key(name));
+                if (name !== location && !(other && now - other.at <= this.#ttl)) this.#remember(key(name), now, resolved(name));
+            }
+        }, () => undefined);
+        return value;
+    }
+
+    #remember(key: string, at: number, value: Promise<ResolvedMenuItem[] | null>): void {
+        this.#cache.set(key, { at, value });
+        value.catch(() => { if (this.#cache.get(key)?.value === value) this.#cache.delete(key); });
+    }
+
+    #allLocations(now: number): Promise<Map<string, MenuItem[]>> {
+        if (this.#locations && now - this.#locations.at <= this.#ttl) return this.#locations.value;
+        const value = this.#readLocations();
+        const entry = { at: now, value };
+        this.#locations = entry;
+        value.catch(() => { if (this.#locations === entry) this.#locations = undefined; });
         return value;
     }
 
@@ -184,20 +212,18 @@ export class CmsMenus {
     }
 
     /** Forget resolved menus, for example after content they link to changed. */
-    refresh(): void { this.#cache.clear(); }
+    refresh(): void { this.#cache.clear(); this.#locations = undefined; }
 
-    async #read(location: string, locale?: string): Promise<ResolvedMenuItem[] | null> {
-        let row;
+    async #readLocations(): Promise<Map<string, MenuItem[]>> {
         try {
-            const result = await this.#db.read([{ rql: `SELECT m.items FROM cms_menu_locations l JOIN cms_menus m ON m.id = l.menu_id WHERE l.location = $location`, params: { $location: location } }]);
-            row = result.results[0]!.rows[0];
+            // Each menu holds up to 300 items: several large ones may come in smaller reads.
+            const rows = await readPaged(this.#db, (size, at) => ({ rql: 'SELECT l.location, m.items FROM cms_menu_locations l JOIN cms_menus m ON m.id = l.menu_id ORDER BY l.location LIMIT $limit OFFSET $offset', params: { $limit: size, $offset: at } }), 200, 0);
+            return new Map(rows.map(([location, items]) => [location as string, parseItems(items as string)]));
         } catch (error) {
             // Before setup the tables do not exist.
-            if (error instanceof ClientError && /cms_menu|no such table|not found/i.test(error.message)) return null;
+            if (error instanceof ClientError && /cms_menu|no such table|not found/i.test(error.message)) return new Map();
             throw error;
         }
-        if (!row) return null;
-        return this.#resolve(parseItems(row[0] as string), locale);
     }
 
     /** The items after the before-save filter, checked again. */
@@ -217,7 +243,7 @@ export class CmsMenus {
             if (error instanceof ClientError && error.outcome === 'rolled-back' && /UNIQUE|constraint/i.test(error.message)) throw new CmsError('CMS_CONFLICT', 'Another menu has this name.', { fields: { name: 'is taken.' } });
             throw error;
         } finally {
-            this.#cache.clear();
+            this.refresh();
         }
     }
 }

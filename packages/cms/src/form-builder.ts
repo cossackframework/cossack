@@ -23,6 +23,9 @@ const REQUIRED = field.boolean({ default: false, label: 'Required' });
 const PLACEHOLDER = field.string({ max: 200, label: 'Placeholder' });
 const OPTIONS = field.list('string', { label: 'Choices', description: 'One per line. Write value|Label to store a value other than the label.' });
 const INLINE = field.boolean({ default: false, label: 'Show choices in a row' });
+/** How much of the form's row an input takes: a half or a third shares its row with the inputs beside it, where the form is wide enough. */
+export const FORM_INPUT_WIDTHS = Object.freeze(['full', 'half', 'third'] as const);
+const WIDTH = field.enum([...FORM_INPUT_WIDTHS], { default: 'full', label: 'Width', choices: { full: 'Full width', half: 'Half', third: 'A third' } });
 const DATE = '\\d{4}-\\d{2}-\\d{2}';
 /** Items a multiple input takes at most, whatever its settings. */
 export const FORM_ITEM_LIMIT = 50;
@@ -48,7 +51,7 @@ const ACCEPT_TOKEN = '(?:\\.[A-Za-z0-9]{1,16}|[a-z]+/(?:\\*|[a-z0-9][a-z0-9.+\\-
 
 /** The fields every input block has, then its own. Plugins build their input blocks with it. */
 export function inputFields(own: { readonly [name: string]: FieldDeclaration } = {}): { [name: string]: FieldDeclaration } {
-    return { label: LABEL, name: NAME, description: HELP, required: REQUIRED, ...own };
+    return { label: LABEL, name: NAME, description: HELP, required: REQUIRED, width: WIDTH, ...own };
 }
 
 const textInput = (name: string, label: string, icon: string, kind: InputKind, description: string, keywords: readonly string[]): BlockDeclaration => ({

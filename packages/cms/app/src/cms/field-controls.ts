@@ -171,8 +171,7 @@ export function mediaControl(value: unknown, change: (value: unknown) => void, l
                 ${file && mediaKind(file.contentType) === 'image'
                     ? html`<img src=${file.url} alt=${file.alt} class="aspect-video w-full object-cover" loading="lazy">`
                     : html`<p class="p-3 text-xs text-muted-foreground">${file?.title ?? id}</p>`}
-                <button type="button" class="absolute right-1 top-1 rounded bg-background/90 px-2 py-0.5 text-xs text-destructive border border-border cursor-pointer"
-                    @click=${() => remove(id)} aria-label=${`${__('Remove')} ${file?.title ?? ''}`}>${__('Remove')}</button>
+                <div class="absolute right-1 top-1 rounded bg-background">${iconButton(`media-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${id}-remove`, 'trash-bin-trash', __('Remove'), () => remove(id), { danger: true, class: 'shadow-sm' })}</div>
             </figure>`;
         })}</div>` : null}
         ${component(Button, { type: 'button', variant: 'outline', size: 'sm', '@click': () => media.choose(multiple) },

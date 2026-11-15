@@ -304,7 +304,7 @@ export async function renderSsgPage(
       };
 
       const manifest = readManifestFile();
-      const modulePreloads = getModulePreloads(manifest, pageFilePath ?? '');
+      const modulePreloads = getModulePreloads(manifest, pageFilePath ?? '', layoutPaths);
 
       const supported = getSupportedLocales();
       const activeLocale = getLocale();

@@ -244,8 +244,8 @@ const core: BlockDeclaration[] = [
     { name: 'core/richtext', keywords: ['wysiwyg', 'editor', 'word processor', 'text'], common: true, label: 'Rich text', icon: 'text-selection', category: 'text', description: 'Formatted text with headings, lists, links and images.', fields: { text: field.richText({ label: 'Text' }) } },
     { name: 'core/paragraph', inline: true, body: 'text',  keywords: ['text', 'markdown'], common: true, label: 'Paragraph', icon: 'paragraph-spacing', category: 'text', fields: { text: field.text({ required: true, max: 20_000, format: 'markdown', label: 'Text' }) } },
     { name: 'core/heading', inline: true, body: 'text',  keywords: ['title', 'h2', 'h3', 'subtitle'], common: true, label: 'Heading', icon: 'text-bold', category: 'text', fields: {
-        text: field.string({ required: true, max: 200, label: 'Text' }),
-        level: field.enum(['h2', 'h3', 'h4'], { default: 'h2', label: 'Level' }),
+        text: field.string({ required: true, max: 200, label: 'Text', description: 'Words between *asterisks* show in the accent color.' }),
+        level: field.enum(['h1', 'h2', 'h3', 'h4'], { default: 'h2', label: 'Level', choices: { h1: 'H1: the page title, once a page', h2: 'H2', h3: 'H3', h4: 'H4' } }),
     } },
     { name: 'core/image', inline: true,  keywords: ['picture', 'photo', 'figure'], common: true, label: 'Image', icon: 'gallery', category: 'media', fields: {
         image: field.media({ required: true, nullable: false, label: 'Image' }),
@@ -256,9 +256,11 @@ const core: BlockDeclaration[] = [
     { name: 'core/gallery', inline: true,  keywords: ['images', 'photos', 'logos', 'clients', 'partners'], label: 'Gallery', icon: 'gallery-wide', category: 'media', fields: {
         images: field.gallery({ label: 'Images' }),
         columns: field.integer({ default: 3, min: 1, max: 6, label: 'Columns' }),
-        layout: field.enum(['grid', 'logos'], { default: 'grid', label: 'Layout', choices: { grid: 'Square tiles', logos: 'Logos: whole images at one height' } }),
+        layout: field.enum(['grid', 'masonry', 'logos'], { default: 'grid', label: 'Layout', choices: { grid: 'Square tiles', masonry: 'Masonry: whole images in columns', logos: 'Logos: whole images at one height' } }),
+        lightbox: field.boolean({ default: false, label: 'Open images in a lightbox', description: 'A click shows the image large, with arrows to the others.' }),
         align: WIDTH,
     }, variations: [
+        { name: 'masonry', label: 'Masonry gallery', description: 'Whole images in columns, opening large when clicked: a portfolio.', icon: 'gallery-wide', keywords: ['portfolio', 'lightbox', 'photos'], data: { layout: 'masonry', lightbox: true } },
         { name: 'logos', label: 'Logo wall', description: 'Whole images at one height, grey until hovered: clients, partners, press.', icon: 'buildings', keywords: ['clients', 'partners', 'brands'], data: { layout: 'logos', columns: 4 } },
     ] },
     { name: 'core/quote', inline: true, body: 'text',  keywords: ['blockquote', 'citation'], label: 'Quote', icon: 'chat-round-line', category: 'text', fields: {
@@ -290,8 +292,10 @@ const core: BlockDeclaration[] = [
     } },
     { name: 'core/button', inline: true, body: 'label',  keywords: ['link', 'cta', 'call to action'], label: 'Button', icon: 'cursor-square', category: 'design', fields: {
         label: field.string({ required: true, max: 80, label: 'Label' }),
-        url: field.string({ required: true, max: 2048, pattern: '(?:https?://|/|mailto:)\\S*', label: 'URL' }),
-        style: field.enum(['primary', 'outline'], { default: 'primary', label: 'Style' }),
+        url: field.string({ required: true, max: 2048, pattern: LINK, label: 'URL', description: 'A page, an address, a mailto: or tel: link, or #section on this page.' }),
+        style: field.enum(['primary', 'outline', 'light', 'link'], { default: 'primary', label: 'Style', choices: { primary: 'Primary', outline: 'Outline', light: 'Light, for dark backgrounds', link: 'Text link' } }),
+        size: field.enum(['medium', 'large'], { default: 'medium', label: 'Size' }),
+        icon: field.icon({ label: 'Icon', description: 'Shown after the label, such as an arrow.' }),
     } },
     { name: 'core/embed', inline: true,  keywords: ['youtube', 'vimeo', 'video', 'tweet', 'x', 'instagram', 'tiktok', 'spotify', 'soundcloud', 'codepen', 'figma', 'loom'], label: 'Embed', icon: 'play-circle', category: 'embeds',
         description: 'A post, video, track, pen or design from YouTube, Vimeo, X, Instagram, TikTok, Spotify, SoundCloud, CodePen, Figma or Loom, from its address; it loads from their servers.', fields: {
@@ -299,8 +303,10 @@ const core: BlockDeclaration[] = [
         caption: field.string({ max: 300, label: 'Caption' }),
         align: WIDTH,
     } },
-    { name: 'core/video', inline: true,  keywords: ['movie', 'film', 'mp4', 'player'], label: 'Video', icon: 'video-frame', category: 'media', description: 'A video file from the library, with the browser\'s player.', fields: {
-        video: field.media({ required: true, nullable: false, kinds: ['video'], label: 'Video', description: 'An MP4 or WebM file from the library.' }),
+    { name: 'core/video', inline: true,  keywords: ['movie', 'film', 'mp4', 'player', 'lightbox'], label: 'Video', icon: 'video-frame', category: 'media', description: 'A video file from the library or another server, with the browser\'s player.', fields: {
+        video: field.media({ kinds: ['video'], label: 'Video', description: 'An MP4 or WebM file from the library.' }),
+        url: field.string({ max: 2048, pattern: '(?:https://\\S*)?', label: 'Video address', description: 'An MP4 or WebM file on another server, when there is none in the library.' }),
+        lightbox: field.boolean({ default: false, label: 'Play in a lightbox', description: 'Shows the poster with a play button; the video opens large over the page.' }),
         poster: field.media({ label: 'Poster', description: 'The image shown before the video plays.' }),
         caption: field.string({ max: 300, label: 'Caption' }),
         captions: field.media({ kinds: ['document'], label: 'Captions', description: 'A WebVTT (.vtt) file of subtitles.' }),
@@ -332,12 +338,15 @@ const core: BlockDeclaration[] = [
     } },
     { name: 'core/faq', keywords: ['questions', 'answers', 'q&a', 'accordion'], label: 'Questions and answers', icon: 'question-circle', category: 'text', description: 'Questions readers ask, each with its answer. Optionally as FAQPage structured data.', fields: {
         schema: field.boolean({ default: false, label: 'Add FAQPage structured data', description: 'Valid schema.org markup. Google no longer shows FAQ rich results for it.' }),
+        open: field.boolean({ default: true, label: 'Show the answers at first', description: 'Off folds every answer under its question until it is opened.' }),
     }, children: { allowed: ['core/faq-item'], max: 50 } },
     { name: 'core/faq-item', label: 'Question', icon: 'question-circle', category: 'text', parent: ['core/faq'], fields: {
         question: field.string({ required: true, max: 300, label: 'Question' }),
         answer: field.text({ required: true, max: 5000, format: 'markdown', label: 'Answer' }),
     } },
-    { name: 'core/steps', keywords: ['how to', 'instructions', 'procedure', 'tutorial'], label: 'Steps', icon: 'list-check', category: 'text', description: 'Numbered steps with a title and text each.', fields: {}, children: { allowed: ['core/step'], max: 50 } },
+    { name: 'core/steps', keywords: ['how to', 'instructions', 'procedure', 'tutorial'], label: 'Steps', icon: 'list-check', category: 'text', description: 'Numbered steps with a title and text each.', fields: {
+        layout: field.enum(['list', 'row'], { default: 'list', label: 'Layout', choices: { list: 'A list, one under the other', row: 'Side by side, stacked on phones' } }),
+    }, children: { allowed: ['core/step'], max: 50 } },
     { name: 'core/step', label: 'Step', icon: 'list-check', category: 'text', parent: ['core/steps'], fields: {
         title: field.string({ required: true, max: 200, label: 'Title' }),
         text: field.text({ max: 5000, format: 'markdown', label: 'Text' }),
@@ -361,22 +370,38 @@ const core: BlockDeclaration[] = [
         text: field.text({ max: 5000, format: 'markdown', label: 'Text' }),
         url: field.string({ max: 2048, pattern: LINK, label: 'Link' }),
         linkLabel: field.string({ max: 80, label: 'Link text', description: 'Empty links the title and the image.' }),
-        layout: field.enum(['top', 'left', 'right'], { default: 'top', label: 'Image position', choices: { top: 'Above the text', left: 'Left of the text', right: 'Right of the text' } }),
+        layout: field.enum(['top', 'left', 'right', 'overlay'], { default: 'top', label: 'Image position', description: 'Without an image, left and right place the icon beside the text.', choices: { top: 'Above the text', left: 'Left of the text', right: 'Right of the text', overlay: 'Behind the text' } }),
     }, variations: [
+        { name: 'image-tile', label: 'Image tile', description: 'A picture filling the card, its title and text over it; the whole tile is the link.', icon: 'gallery', keywords: ['service', 'category', 'cover'], data: { layout: 'overlay' } },
         { name: 'icon-box', label: 'Icon box', description: 'An icon, a title and text, without a box.', icon: 'star', keywords: ['feature', 'service', 'benefit'], data: { style: 'plain', icon: 'star' } },
     ] },
     // A carousel shows its images, or slides of blocks when it holds any: the hero slider of page builders.
     { name: 'core/carousel', keywords: ['slider', 'slideshow', 'slides', 'hero slider'], label: 'Carousel', icon: 'posts-carousel-horizontal', category: 'media', description: 'Images, or slides of blocks, one at a time, with arrows and dots; swipe on touch screens.', fields: {
         images: field.gallery({ label: 'Images' }),
-        aspect: field.enum(['video', 'wide', 'square', 'auto'], { default: 'video', label: 'Shape', choices: { video: '16:9', wide: '21:9', square: 'Square', auto: 'As uploaded' } }),
+        aspect: field.enum(['video', 'wide', 'photo', 'square', 'auto'], { default: 'video', label: 'Shape', choices: { video: '16:9', wide: '21:9', photo: '4:3', square: 'Square', auto: 'As uploaded' } }),
         autoplay: field.boolean({ default: false, label: 'Play automatically' }),
         interval: field.integer({ default: 5, min: 2, max: 30, label: 'Seconds per image' }),
         captions: field.boolean({ default: true, label: 'Show captions' }),
+        thumbnails: field.boolean({ default: false, label: 'Thumbnails', description: 'Small images under the carousel, in place of the dots. For images.' }),
+        perView: field.integer({ default: 1, min: 1, max: 4, label: 'Shown at once', description: 'On wide screens; fewer show on tablets, one on phones.' }),
         align: WIDTH,
     }, children: { allowed: ['core/slide'], max: 12 } },
     { name: 'core/slide', label: 'Slide', icon: 'gallery-wide', category: 'media', parent: ['core/carousel'], description: 'One slide of a carousel: any blocks over a background from its Style tab.', fields: {
         valign: field.enum(['top', 'center', 'bottom'], { default: 'center', label: 'Vertical alignment' }),
-    }, children: {}, supports: { background: true } },
+    }, children: {}, supports: { background: true, typography: ['align'] } },
+    // Before and after: two images of one scene under a handle. Several pairs get thumbnails to pick from.
+    { name: 'core/compare', keywords: ['before', 'after', 'slider', 'comparison', 'retouch', 'staging', 'renovation'], label: 'Before and after', icon: 'slider-vertical', category: 'media', description: 'Two images of one scene; a handle slides between them. Several pairs get thumbnails.', fields: {
+        aspect: field.enum(['video', 'wide', 'photo', 'square'], { default: 'video', label: 'Shape', choices: { video: '16:9', wide: '16:10', photo: '4:3', square: 'Square' } }),
+        beforeLabel: field.string({ max: 40, default: 'Before', label: 'Label of the first image', description: 'Empty shows none.' }),
+        afterLabel: field.string({ max: 40, default: 'After', label: 'Label of the second image' }),
+        start: field.integer({ default: 50, min: 0, max: 100, label: 'Handle starts at', description: 'Percent from the left.' }),
+        align: WIDTH,
+    }, children: { allowed: ['core/compare-item'], max: 24 } },
+    { name: 'core/compare-item', label: 'Pair', icon: 'gallery', category: 'media', parent: ['core/compare'], description: 'One scene: the image before and the image after.', fields: {
+        before: field.media({ required: true, nullable: false, label: 'Before' }),
+        after: field.media({ required: true, nullable: false, label: 'After' }),
+        caption: field.string({ max: 300, label: 'Caption' }),
+    } },
     { name: 'core/latest-entries', inline: true,  keywords: ['posts', 'recent', 'query', 'loop'], label: 'Latest entries', icon: 'list-arrow-down', category: 'widgets', description: 'The newest published entries of a collection, kept up to date.', fields: {
         collection: field.string({ required: true, max: 40, pattern: '[a-z][a-z0-9_]*', default: 'posts', choicesFrom: 'collections', label: 'Collection' }),
         count: field.integer({ default: 5, min: 1, max: 24, label: 'How many' }),
@@ -507,7 +532,7 @@ const core: BlockDeclaration[] = [
         home: field.boolean({ default: true, label: 'Show Home' }),
         separator: field.enum(['chevron', 'slash', 'arrow'], { default: 'chevron', label: 'Separator', choices: { chevron: '›', slash: '/', arrow: '→' } }),
     }, supports: { color: false, typography: ['align'] } },
-    // Layout: containers that hold other blocks. They render as CSS grid and respond to the
+    // Layout: containers that hold other blocks, and may align the text of what they hold. They render as CSS grid and respond to the
     // width of the content they are in, so columns inside a column stack on their own.
     // A group is also the section and the hero: a full-width band with a background from its Style
     // tab keeps its children at the content width, and a height with a vertical alignment centers them.
@@ -517,7 +542,7 @@ const core: BlockDeclaration[] = [
         justify: field.enum(['start', 'center', 'end', 'between'], { default: 'start', label: 'Justify', description: 'Where the blocks of a row sit.', choices: { start: 'Start', center: 'Center', end: 'End', between: 'Spread out' } }),
         height: field.enum(['auto', 'short', 'medium', 'tall', 'screen'], { default: 'auto', label: 'Height', description: 'At least this tall, for banners and heroes.', choices: { auto: 'Fits the blocks', short: 'Short', medium: 'Medium', tall: 'Tall', screen: 'The whole screen' } }),
         valign: field.enum(['top', 'center', 'bottom'], { default: 'top', label: 'Vertical alignment', description: 'Where the blocks sit when the group is taller than them.' }),
-    }, children: {}, supports: { background: true }, variations: [
+    }, children: {}, supports: { background: true, typography: ['align'] }, variations: [
         { name: 'hero', label: 'Hero', description: 'A band across the page, at least medium tall, its blocks centered. Give it a background under Style.', icon: 'gallery-wide', keywords: ['cover', 'banner', 'jumbotron', 'call to action'], data: { align: 'full', height: 'medium', valign: 'center' } },
         { name: 'row', label: 'Row', description: 'Blocks side by side in one line, spread out.', icon: 'widget-2', keywords: ['inline', 'toolbar', 'buttons'], data: { direction: 'row', justify: 'between' } },
     ] },
@@ -525,18 +550,18 @@ const core: BlockDeclaration[] = [
         gap: GAP,
         stack: field.enum(['mobile', 'tablet', 'never'], { default: 'mobile', label: 'Stack', choices: { mobile: 'On phones', tablet: 'On phones and tablets', never: 'Never' } }),
         align: WIDTH,
-    }, children: { allowed: ['core/column'], max: 6 }, supports: { background: true } },
+    }, children: { allowed: ['core/column'], max: 6 }, supports: { background: true, typography: ['align'] } },
     { name: 'core/column', inline: true,  label: 'Column', icon: 'widget', category: 'design', parent: ['core/columns'], fields: {
         span: field.integer({ min: 1, max: 12, label: 'Width', description: 'Out of 12; empty shares the space equally.' }),
         verticalAlign: field.enum(['top', 'center', 'bottom'], { default: 'top', label: 'Vertical alignment' }),
-    }, children: {}, supports: { background: true } },
+    }, children: {}, supports: { background: true, typography: ['align'] } },
     { name: 'core/grid', inline: true,  keywords: ['cells', 'layout'], label: 'Grid', icon: 'widget-3', category: 'design', description: 'Blocks in equal cells.', fields: {
         columns: field.integer({ default: 3, min: 1, max: 6, label: 'Columns' }),
         columnsMd: field.integer({ default: 2, min: 1, max: 6, label: 'Columns on tablets' }),
         columnsSm: field.integer({ default: 1, min: 1, max: 6, label: 'Columns on phones' }),
         gap: GAP,
         align: WIDTH,
-    }, children: { max: 24 }, supports: { background: true } },
+    }, children: { max: 24 }, supports: { background: true, typography: ['align'] } },
     // Tabs: one panel shown at a time. In a field group they are the dashboard's tabs.
     { name: 'core/tabs', keywords: ['panels'], label: 'Tabs', icon: 'window-frame', category: 'design', description: 'Panels shown one at a time.', fields: {}, children: { allowed: ['core/tab'], max: 12 } },
     { name: 'core/tab', label: 'Tab', icon: 'tuning-square', category: 'design', parent: ['core/tabs'], fields: {

@@ -43,7 +43,7 @@ export function formBlock(block: RenderedBlock, helpers: ThemeHelpers): Template
         <input type="hidden" name="_started" value=${String(form.startedAt)}>
         <div aria-hidden="true" class="cms-form-trap"><label>${__('Leave this empty')} <input type="text" name="_website" tabindex="-1" autocomplete="off"></label></div>
         <div data-cms-form-done role="status" hidden class="rounded-md border border-border bg-muted px-4 py-3 text-sm text-foreground [&_p]:my-1"></div>
-        <div data-cms-form-fields class="space-y-4">
+        <div data-cms-form-fields class="cms-form-fields">
             ${form.notice?.kind === 'error' ? html`<div role="alert" data-cms-server-error class="rounded-md border border-destructive/50 px-3 py-2 text-sm text-destructive [&_p]:my-0">${unsafeHTML(form.notice.html)}</div>` : null}
             <p role="alert" data-cms-form-error class="rounded-md border border-destructive/50 px-3 py-2 text-sm text-destructive empty:hidden"></p>
             ${form.blocks.map(child => helpers.block(child))}
@@ -53,6 +53,8 @@ export function formBlock(block: RenderedBlock, helpers: ThemeHelpers): Template
     </form>`;
 }
 
+/** An input's width when it shares its row (`data-width`); none for a full-width input. */
+const inputWidth = (block: RenderedBlock): 'half' | 'third' | undefined => block.data.width === 'half' || block.data.width === 'third' ? block.data.width : undefined;
 const text = (block: RenderedBlock, name: string): string => typeof block.data[name] === 'string' ? block.data[name] as string : '';
 const number = (block: RenderedBlock, name: string): number | undefined => typeof block.data[name] === 'number' ? block.data[name] as number : undefined;
 
@@ -64,7 +66,7 @@ const BUTTON = 'rounded-md border border-input bg-background px-3 py-1.5 text-sm
  * copies. Without the script, Add and Remove post the form back and it returns with the
  * rows changed; the server validates nothing for those posts.
  */
-function repeaterBlock(block: RenderedBlock, helpers: ThemeHelpers | undefined, parts: { label: TemplateResult; help: TemplateResult | null; errors: TemplateResult }): TemplateResult {
+function repeaterBlock(block: RenderedBlock, helpers: ThemeHelpers | undefined, parts: { label: TemplateResult; help: TemplateResult | null; errors: TemplateResult; width: string | undefined }): TemplateResult {
     const input = block.input!;
     const view = block.repeater!;
     const name = input.name;
@@ -76,7 +78,7 @@ function repeaterBlock(block: RenderedBlock, helpers: ThemeHelpers | undefined, 
         </div>
         ${template ? html`<fieldset disabled class="contents">${entry.blocks.map(renderRow)}</fieldset>` : entry.blocks.map(renderRow)}
     </div>`;
-    return html`<fieldset class="cms-field cms-repeater space-y-3" data-input=${input.key} data-cms-repeater=${name} data-min=${String(view.min)} data-max=${String(view.max)}>
+    return html`<fieldset class="cms-field cms-repeater space-y-3" data-input=${input.key} data-width=${ifDefined(parts.width)} data-cms-repeater=${name} data-min=${String(view.min)} data-max=${String(view.max)}>
         <legend class=${LABEL}>${parts.label}</legend>${parts.help}
         <div data-cms-rows class="space-y-3">${view.rows.map((entry, index) => row(entry, index + 1))}</div>
         ${row({ id: '__row__', blocks: view.template }, 0, true)}
@@ -105,7 +107,7 @@ function textControl(block: RenderedBlock, input: InputView, state: { readonly i
  * copies. Items are numbered by position; the script renumbers them after a change. Without
  * the script, Add and Remove post the form back and it returns with the items changed.
  */
-function multipleField(block: RenderedBlock, input: InputView, parts: { label: TemplateResult; help: TemplateResult | null; errors: TemplateResult }): TemplateResult {
+function multipleField(block: RenderedBlock, input: InputView, parts: { label: TemplateResult; help: TemplateResult | null; errors: TemplateResult; width: string | undefined }): TemplateResult {
     const items = input.items!;
     const label = text(block, 'label') || input.name;
     const item = (value: string, index: number, error: string, template = false) => {
@@ -120,7 +122,7 @@ function multipleField(block: RenderedBlock, input: InputView, parts: { label: T
             <button type="submit" name="_remove" value=${key} formnovalidate data-cms-item-remove ?disabled=${template || items.values.length <= items.min} aria-label=${`${__('Remove')} ${label} ${index}`} class=${BUTTON}>${__('Remove')}</button>
         </div>`;
     };
-    return html`<fieldset class="cms-field cms-multiple space-y-2" data-input=${input.key} data-cms-multiple=${input.key} data-id=${input.id} data-min=${String(items.min)} data-max=${String(items.max)}>
+    return html`<fieldset class="cms-field cms-multiple space-y-2" data-input=${input.key} data-width=${ifDefined(parts.width)} data-cms-multiple=${input.key} data-id=${input.id} data-min=${String(items.min)} data-max=${String(items.max)}>
         <legend class=${LABEL}>${parts.label}</legend>${parts.help}
         <div data-cms-items class="space-y-2">${items.values.map((value, index) => item(value, index + 1, items.errors[index] ?? ''))}</div>
         ${item('', 0, '', true)}
@@ -134,13 +136,13 @@ function multipleField(block: RenderedBlock, input: InputView, parts: { label: T
  * its allowed types and limits under it. A page cannot fill it in again, so after a post
  * that came back with errors the visitor chooses the files again.
  */
-function fileField(block: RenderedBlock, input: InputView, parts: { label: TemplateResult; help: TemplateResult | null; errors: TemplateResult; described: string; invalid: string | undefined; required: boolean }): TemplateResult {
+function fileField(block: RenderedBlock, input: InputView, parts: { label: TemplateResult; help: TemplateResult | null; errors: TemplateResult; described: string; invalid: string | undefined; required: boolean; width: string | undefined }): TemplateResult {
     const accept = acceptList(block.data.accept);
     const several = block.data.multipleFiles === true;
     const most = Math.min(number(block, 'maxFiles') ?? FORM_FILE_LIMIT, FORM_FILE_LIMIT);
     const largest = Math.min(number(block, 'maxSize') ?? FORM_FILE_MAX_MB, FORM_FILE_MAX_MB);
     const limits = [accept.join(', '), `${__('up to')} ${largest} MB${several ? ` ${__('each')}` : ''}`, several ? `${__('at most')} ${most} ${__('files')}` : ''].filter(Boolean).join(' · ');
-    return html`<div class="cms-field space-y-1" data-input=${input.key}>
+    return html`<div class="cms-field space-y-1" data-input=${input.key} data-width=${ifDefined(parts.width)}>
         <label for=${input.id} class=${LABEL}>${parts.label}</label>
         <input type="file" id=${input.id} name=${input.name} accept=${ifDefined(accept.length ? accept.join(',') : undefined)} ?multiple=${several} ?required=${parts.required}
             aria-describedby=${`${input.id}-limits ${parts.described}`} aria-invalid=${ifDefined(parts.invalid)}
@@ -157,6 +159,7 @@ function fileField(block: RenderedBlock, input: InputView, parts: { label: Templ
 export function inputBlock(block: RenderedBlock, helpers?: ThemeHelpers): TemplateResult | null {
     const input = block.input;
     if (!input) return null;
+    const width = inputWidth(block);
     const required = block.data.required === true;
     const label = text(block, 'label') || input.name;
     const help = text(block, 'description');
@@ -168,12 +171,12 @@ export function inputBlock(block: RenderedBlock, helpers?: ThemeHelpers): Templa
     const mark = required ? html`<span aria-hidden="true" class="text-destructive"> *</span>` : null;
     const helpText = help ? html`<p id=${`${input.id}-help`} class=${HELP}>${help}</p>` : null;
     const errors = html`${input.error ? html`<p class=${ERROR} data-cms-server-error=${input.key}>${input.error}</p>` : null}<p id=${`${input.id}-error`} class=${ERROR} data-cms-error=${input.key}></p>`;
-    if (block.repeater) return repeaterBlock(block, helpers, { label: html`${label}${mark}`, help: helpText, errors });
-    if (input.kind === 'file') return fileField(block, input, { label: html`${label}${mark}`, help: helpText, errors, described, invalid, required });
-    if (input.items) return multipleField(block, input, { label: html`${label}${mark}`, help: helpText, errors });
-    const field = (control: TemplateResult) => html`<div class="cms-field space-y-1" data-input=${input.key}>
+    if (block.repeater) return repeaterBlock(block, helpers, { label: html`${label}${mark}`, help: helpText, errors, width });
+    if (input.kind === 'file') return fileField(block, input, { label: html`${label}${mark}`, help: helpText, errors, described, invalid, required, width });
+    if (input.items) return multipleField(block, input, { label: html`${label}${mark}`, help: helpText, errors, width });
+    const field = (control: TemplateResult) => html`<div class="cms-field space-y-1" data-input=${input.key} data-width=${ifDefined(width)}>
         <label for=${input.id} class=${LABEL}>${label}${mark}</label>${control}${helpText}${errors}</div>`;
-    const group = (controls: TemplateResult, inline: boolean) => html`<fieldset class="cms-field space-y-1" data-input=${input.key} aria-describedby=${described}>
+    const group = (controls: TemplateResult, inline: boolean) => html`<fieldset class="cms-field space-y-1" data-input=${input.key} data-width=${ifDefined(width)} aria-describedby=${described}>
         <legend class=${LABEL}>${label}${mark}</legend>
         <div class=${inline ? 'flex flex-wrap gap-x-4 gap-y-1' : 'space-y-1'}>${controls}</div>${helpText}${errors}</fieldset>`;
     const choice = (type: 'radio' | 'checkbox', inline: boolean) => group(html`${input.options.map((option, index) => html`<label class="flex items-center gap-2 text-sm text-foreground">
@@ -189,7 +192,7 @@ export function inputBlock(block: RenderedBlock, helpers?: ThemeHelpers): Templa
         case 'form/checkboxes': return choice('checkbox', block.data.inline === true);
         case 'form/checkbox': case 'form/consent': {
             const caption = block.type === 'form/consent' ? html`<span class="[&_p]:my-0 [&_a]:text-primary [&_a]:underline">${unsafeHTML(block.html.text ?? '')}</span>` : html`<span>${text(block, 'text') || label}</span>`;
-            return html`<div class="cms-field space-y-1" data-input=${input.key}>
+            return html`<div class="cms-field space-y-1" data-input=${input.key} data-width=${ifDefined(width)}>
                 ${block.type === 'form/checkbox' && text(block, 'text') ? html`<p class=${LABEL}>${label}${mark}</p>` : null}
                 <label for=${input.id} class="flex items-start gap-2 text-sm text-foreground">
                     <input type="checkbox" id=${input.id} name=${input.name} value="on" ?checked=${value === true} ?required=${required} aria-describedby=${described} aria-invalid=${ifDefined(invalid)} class="mt-0.5 size-4 accent-primary">

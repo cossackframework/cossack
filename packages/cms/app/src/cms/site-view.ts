@@ -9,9 +9,9 @@ import { plugins } from '@cossackframework/framework/plugins';
 import { formBlock, inputBlock } from './form-view';
 import { iconHref, safeLinkUrl } from '@cossackframework/cms';
 import { iconStyle } from './icons';
-import { archiveTemplate, assembleSiteTheme, blockStyleAttributes, entryTemplate, MAP_EMBED_URL, SHARE_NETWORKS, type BreadcrumbView, type PluginHead, type ShareNetwork, type SiteView, placeholderStyle, presetStyle, resolvePresets, siteThemeProblems, type ArchiveView, type EntryView, type LanguageLink, type LanguageSwitcherOptions, type MediaView, type MenuItemView, type MenuOptions, type RenderedBlock, type SearchOptions, type SiteTheme, type ThemeData, type ThemeHelpers, type ThemePresets, highlightCode, formatBytes } from '@cossackframework/cms';
+import { archiveTemplate, assembleSiteTheme, blockStyleAttributes, entryTemplate, withContentFields, MAP_EMBED_URL, SHARE_NETWORKS, type BreadcrumbView, type PluginHead, type SiteBasics, type ThemeContext, type ShareNetwork, type SiteView, placeholderStyle, presetStyle, resolvePresets, siteThemeProblems, type ArchiveView, type EntryView, type LanguageLink, type LanguageSwitcherOptions, type MediaView, type MenuItemView, type MenuOptions, type RenderedBlock, type SearchOptions, type SiteTheme, type ThemeData, type ThemeHelpers, type ThemePresets, highlightCode, formatBytes } from '@cossackframework/cms';
 
-export { archiveTemplate, entryTemplate };
+export { archiveTemplate, entryTemplate, withContentFields };
 export type { ArchiveView, EntryView, MediaView, Paging, RenderedBlock, SiteView } from '@cossackframework/cms';
 
 /** Prose styles for rendered bodies. */
@@ -237,9 +237,21 @@ export function pluginHeads(state: Pick<ThemeRenderState, 'plugins'>, site: Site
         const plugin = plugins.find(entry => entry.name === name);
         const head = (plugin?.ui as { head?: unknown } | null | undefined)?.head;
         if (typeof head !== 'function') continue;
-        try { heads.push((head as PluginHead)(site, helpers, { asset: path => plugin!.assets[path] ?? '' })); } catch { /* a broken hook adds nothing */ }
+        try { heads.push((head as PluginHead)({ site, helpers, plugin: { asset: path => plugin!.assets[path] ?? '' } })); } catch { /* a broken hook adds nothing */ }
     }
     return heads;
+}
+
+/** What a page's templates know of the site, from the render state; blanks before setup. */
+export function siteBasics(state: Pick<ThemeRenderState, 'site' | 'menus' | 'languages'>): SiteBasics {
+    const site = state.site;
+    return { title: site?.title ?? '', tagline: site?.tagline ?? '', logo: site?.logo ?? null, locale: site?.locale ?? 'en', homeUrl: site?.homeUrl ?? '/', searchUrl: site?.searchUrl ?? '/search',
+        url: site?.url ?? '', breadcrumbs: site?.breadcrumbs ?? [], menus: state.menus ?? {}, languages: state.languages ?? [] };
+}
+
+/** The context a page's templates receive: the site as far as the page knows it, and the helpers. */
+export function themeContext(theme: SiteTheme, state: ThemeRenderState, isActive: (path: string, exact: boolean) => boolean): ThemeContext {
+    return { site: siteBasics(state), helpers: themeHelpers(theme, state, isActive) };
 }
 
 /** The helpers every template receives. `isActive` is the component's own: an exact path, or a prefix. */
@@ -253,8 +265,8 @@ export function themeHelpers(theme: SiteTheme, state: ThemeRenderState, isActive
         data: { layout: state.data?.layout ?? {}, page: state.data?.page ?? {} },
         asset: path => assets[path] ?? '',
         icon: (name, options = {}) => siteIcon(name, options),
-        breadcrumbs: (site, options = {}) => breadcrumbTrail(site.breadcrumbs, options),
-        logo: (site, options = {}) => site.logo ? html`<img src=${site.logo} alt=${site.title} class=${`cms-site-logo object-contain ${options.class ?? 'h-10 w-auto'}`}>` : null,
+        breadcrumbs: (options = {}) => breadcrumbTrail(state.site?.breadcrumbs, options),
+        logo: (options = {}) => state.site?.logo ? html`<img src=${state.site.logo} alt=${state.site.title} class=${`cms-site-logo object-contain ${options.class ?? 'h-10 w-auto'}`}>` : null,
         languages: options => languageSwitcher(state.languages ?? [], options),
         menu: (source, options = {}) => menuNav(typeof source === 'string' ? state.menus?.[source] ?? [] : source,
             { ...(typeof source === 'string' ? { label: locationLabel(source) } : {}), ...options, ...(typeof options.mobile === 'string' ? { mobile: state.menus?.[options.mobile] ?? [] } : {}) }, helpers),
@@ -271,6 +283,7 @@ export function themeHelpers(theme: SiteTheme, state: ThemeRenderState, isActive
         layout: (blocks, options = {}) => html`<div class=${`cms-layout${options.class ? ` ${options.class}` : ''}`}>${blocks.map(block => layoutItem(block, helpers))}</div>`,
         content: parts => html`${parts.map(part => part.kind === 'html' ? html`<div class=${PROSE}>${unsafeHTML(part.html)}</div>` : render(part.block))}`,
     };
+    let basics: SiteBasics | undefined;
     // In edit mode a block carries its ID; a field's rich text is one document, edited as a whole in the field's panel.
     const marked = (block: RenderedBlock) => block.field
         ? html`<div data-cms-edit="body" data-field=${block.field} style="display: contents">${render(block)}</div>`
@@ -278,18 +291,24 @@ export function themeHelpers(theme: SiteTheme, state: ThemeRenderState, isActive
     const render = (block: RenderedBlock) => {
         // Data blocks hold values for themes and the API; nothing shows for them.
         if (block.dataOnly) return null;
-        const rendered = theme.blocks?.[block.type]?.(block, helpers) ?? coreBlock(block, helpers, state);
+        const renderer = theme.blocks?.[block.type];
+        const rendered = (renderer ? renderer({ block, site: basics ??= siteBasics(state), helpers }) : null) ?? coreBlock(block, helpers, state);
         // A styled block gets one wrapper: classes per property and the presets' variables inline.
         // A column's wrapper takes its grid placement, as cms/blocks.css places `.cms-column-box`.
         // A group's wrapper carries its alignment too, so a narrow group's background is as narrow as the group.
         // A video plays behind the content, muted and looping, with the background image as its poster; the overlay paints over both (cms/blocks.css).
+        // An image that covers the block is an <img> behind it: a variant for the screen's width, loaded as it nears the screen, or at once when it is the page's first image.
         const attributes = blockStyleAttributes(block);
         const column = block.type === 'core/column';
         const video = attributes?.video;
+        const backdrop = attributes?.image;
         const poster = typeof block.style?.image === 'string' ? block.media[block.style.image]?.url : undefined;
         const styled = attributes ? html`<div class=${column ? `${attributes.className} cms-column-box` : attributes.className} id=${ifDefined(attributes.id || undefined)} data-nosnippet=${ifDefined(attributes.nosnippet ? '' : undefined)}
             data-align=${ifDefined(block.type === 'core/group' ? alignOf(block) : undefined)}
-            style=${ifDefined([attributes.style, column ? `--cms-span: ${columnSpan(block)}` : ''].filter(Boolean).join('; ') || undefined)}>${video
+            style=${ifDefined([attributes.style, column ? `--cms-span: ${columnSpan(block)}` : ''].filter(Boolean).join('; ') || undefined)}>${backdrop
+                ? html`<img class="cms-bg-image" src=${backdrop.media.url} srcset=${backdrop.media.srcset} sizes=${block.type === 'core/group' && alignOf(block) === 'full' ? '100vw' : '(min-width: 1280px) 1280px, 100vw'} alt="" aria-hidden="true"
+                    width=${backdrop.media.width ?? ''} height=${backdrop.media.height ?? ''} loading=${backdrop.media.priority ? 'eager' : 'lazy'} fetchpriority=${ifDefined(backdrop.media.priority ? 'high' : undefined)} decoding="async"
+                    style=${`object-position: ${backdrop.position}`}>` : null}${video
                 ? html`<video class="cms-bg-video" src=${video.url} poster=${ifDefined(poster)} autoplay muted loop playsinline disablepictureinpicture preload="auto" aria-hidden="true" tabindex="-1"></video>` : null}${rendered}</div>` : rendered;
         // A hidden block stays in the HTML; the stylesheet drops it at those container widths.
         const hide = block.layout?.hide ?? [];
@@ -414,6 +433,26 @@ export function dividerColor(value: string): string {
 function enhanceCarousel(element: Element | undefined): void {
     if (!element || typeof window === 'undefined') return;
     void import('./carousel.client').then(module => module.enhanceCarousel(element as HTMLElement)).catch(() => undefined);
+}
+
+/** The lightbox's browser part: a click on an image or a video poster opens it large over the page. The links open the files without it. */
+function enhanceLightbox(element: Element | undefined): void {
+    if (!element || typeof window === 'undefined') return;
+    void import('./lightbox.client').then(module => module.enhanceLightbox(element as HTMLElement)).catch(() => undefined);
+}
+
+/** The before-and-after block's browser part: the handle follows the pointer and the keyboard, thumbnails pick the pair. */
+function enhanceCompare(element: Element | undefined): void {
+    if (!element || typeof window === 'undefined') return;
+    void import('./compare.client').then(module => module.enhanceCompare(element as HTMLElement)).catch(() => undefined);
+}
+
+/** A `ref` for an element no script touches. */
+function unenhanced(): void { /* nothing to add */ }
+
+/** A heading's text, the words between *asterisks* in the accent color (`cms-accent`). */
+export function accented(text: string): (string | TemplateResult)[] {
+    return text.split(/\*([^*\n]+)\*/).map((part, index) => index % 2 ? html`<span class="cms-accent">${part}</span>` : part).filter(part => part !== '');
 }
 
 /** The tabs' browser part: the buttons switch panels, the arrow keys move between them. Every panel shows without it. */
@@ -565,9 +604,11 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers, state?: P
         case 'core/paragraph': return block.content?.text ? helpers.content(block.content.text) : html`<div class=${PROSE}>${unsafeHTML(block.html.text ?? '')}</div>`;
         case 'core/heading': {
             const level = text('level') || 'h2';
-            return level === 'h3' ? html`<h3 class="mt-6 text-xl font-semibold">${text('text')}</h3>`
-                : level === 'h4' ? html`<h4 class="mt-4 text-lg font-semibold">${text('text')}</h4>`
-                : html`<h2 class="mt-8 text-2xl font-semibold">${text('text')}</h2>`;
+            const words = accented(text('text'));
+            return level === 'h3' ? html`<h3 class="mt-6 text-xl font-semibold">${words}</h3>`
+                : level === 'h4' ? html`<h4 class="mt-4 text-lg font-semibold">${words}</h4>`
+                : level === 'h1' ? html`<h1 class="mt-8 text-4xl font-bold tracking-tight">${words}</h1>`
+                : html`<h2 class="mt-8 text-2xl font-semibold">${words}</h2>`;
         }
         case 'core/image': {
             const media = block.media[text('image')];
@@ -580,8 +621,18 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers, state?: P
             const columns = Math.min(Math.max(Number(block.data.columns) || 3, 1), 6);
             // Logos: whole images at one height, grey until hovered, as a wall of clients or partners.
             if (text('layout') === 'logos') return html`<div class="cms-logos my-6" style=${`--cms-logo-columns: ${columns}`}>${ids.map(id => block.media[id] ? html`<div class="cms-logo">${image(block.media[id], 'cms-logo-image', `${Math.round(100 / columns)}vw`)}</div>` : null)}</div>`;
-            return html`<div class="my-6 grid gap-3" style=${`grid-template-columns: repeat(${columns}, minmax(0, 1fr))`}>
-                ${ids.map(id => image(block.media[id], 'aspect-square w-full rounded-md object-cover', `(min-width: 768px) ${Math.round(768 / columns)}px, ${Math.round(100 / columns)}vw`))}</div>`;
+            // A lightbox makes each image a link to the file, which the script opens large; the link works without it.
+            const lightbox = block.data.lightbox === true;
+            const sizes = `(min-width: 768px) ${Math.round(768 / columns)}px, ${Math.round(100 / columns)}vw`;
+            const tile = (id: string, className: string) => {
+                const media = block.media[id];
+                if (!media) return null;
+                return lightbox ? html`<a href=${media.url} class="cms-gallery-link" data-cms-lightbox="image" data-caption=${ifDefined(media.caption || undefined)}>${image(media, className, sizes)}</a>` : image(media, className, sizes);
+            };
+            // Masonry: whole images in columns, each at its own height.
+            if (text('layout') === 'masonry') return html`<div class="cms-masonry my-6" style=${`--cms-masonry-columns: ${columns}`} ref=${lightbox ? enhanceLightbox : unenhanced}>${ids.map(id => tile(id, 'cms-masonry-image'))}</div>`;
+            return html`<div class="my-6 grid gap-3" style=${`grid-template-columns: repeat(${columns}, minmax(0, 1fr))`} ref=${lightbox ? enhanceLightbox : unenhanced}>
+                ${ids.map(id => tile(id, 'aspect-square w-full rounded-md object-cover'))}</div>`;
         }
         case 'core/quote': return html`<blockquote class="my-6 border-l-4 border-primary pl-4">
             <p class="text-lg italic">${text('text')}</p>${text('citation') ? html`<cite class="mt-2 block text-sm not-italic text-muted-foreground">— ${text('citation')}</cite>` : null}</blockquote>`;
@@ -612,8 +663,16 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers, state?: P
             return html`<p class="cms-file my-4"><a href=${media.url} ?download=${block.data.download !== false} class="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-medium no-underline hover:bg-muted">
                 <span aria-hidden="true">⬇</span><span>${label}</span>${block.data.showSize !== false ? html`<span class="text-xs text-muted-foreground">${kind} · ${formatBytes(media.size)}</span>` : null}</a></p>`;
         }
-        case 'core/button': return html`<div class="cms-button my-6"><a href=${safeLink(text('url'))}
-            class=${`inline-flex items-center rounded-md px-5 py-2.5 text-sm font-medium no-underline ${text('style') === 'outline' ? 'border border-border text-foreground hover:bg-muted' : 'bg-primary text-primary-foreground hover:opacity-90'}`}>${text('label')}</a></div>`;
+        case 'core/button': {
+            const style = text('style');
+            const large = text('size') === 'large';
+            const glyph = siteIcon(text('icon'), { class: large ? 'size-5' : 'size-4' });
+            // A text link has no box; the others are buttons of one shape.
+            const look = style === 'link' ? `${large ? 'text-base' : 'text-sm'} text-primary hover:underline`
+                : `${large ? 'px-7 py-3.5 text-base' : 'px-5 py-2.5 text-sm'} ${style === 'outline' ? 'border border-border text-foreground hover:bg-muted'
+                    : style === 'light' ? 'bg-white text-neutral-900 hover:bg-neutral-100' : 'bg-primary text-primary-foreground hover:opacity-90'}`;
+            return html`<div class="cms-button my-6" data-style=${style || 'primary'} data-size=${large ? 'large' : 'medium'}><a href=${safeLink(text('url'))} class=${`inline-flex items-center rounded-md font-medium no-underline ${look}${glyph ? ' gap-2' : ''}`}>${text('label')}${glyph}</a></div>`;
+        }
         case 'core/embed': {
             const embed = embedUrl(text('url'));
             if (!embed) return null;
@@ -623,11 +682,20 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers, state?: P
                 ${text('caption') ? html`<figcaption class="mt-2 text-center text-sm text-muted-foreground">${text('caption')}</figcaption>` : null}</figure>`;
         }
         case 'core/video': {
-            const media = block.media[text('video')];
+            // A file of the library, or one on another server by its address.
+            const file = block.media[text('video')];
+            const address = /^https:\/\/\S+$/.test(text('url')) ? text('url') : '';
+            const media = file ?? (address ? { url: address, width: null, height: null, caption: '' } : undefined);
             if (!media) return null;
             const poster = block.media[text('poster')];
             const captions = block.media[text('captions')];
             const autoplay = block.data.autoplay === true;
+            // In a lightbox the page shows the poster with a play button; the link plays the file without the script.
+            if (block.data.lightbox === true) return html`<figure class="cms-video-lightbox my-6" ref=${enhanceLightbox}>
+                <a href=${media.url} class="cms-video-poster" data-cms-lightbox="video" aria-label=${text('caption') || media.caption || __('Play the video')}>
+                    ${poster ? image(poster, 'cms-video-poster-image') : html`<span class="cms-video-poster-image"></span>`}
+                    <span class="cms-video-play" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg></span></a>
+                ${text('caption') || media.caption ? html`<figcaption class="mt-2 text-center text-sm text-muted-foreground">${text('caption') || media.caption}</figcaption>` : null}</figure>`;
             return html`<figure class="my-6"><video src=${media.url} class="w-full rounded-lg bg-black" poster=${ifDefined(poster?.url)} preload=${preloadOf(text('preload'))}
                     ?controls=${block.data.controls !== false} ?autoplay=${autoplay} ?loop=${block.data.loop === true} ?muted=${autoplay || block.data.muted === true} ?playsinline=${autoplay}
                     width=${ifDefined(media.width ?? undefined)} height=${ifDefined(media.height ?? undefined)}>
@@ -656,10 +724,14 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers, state?: P
             const url = text('url');
             const title = text('title');
             const picture = media ? image(media, 'h-full w-full object-cover') : null;
-            const framed = picture ? html`<div class="cms-card-media">${url && !text('linkLabel') ? html`<a href=${safeLink(url)}>${picture}</a>` : picture}</div>` : null;
-            // An icon stands in for the image: the icon box and the feature of page builders.
-            const glyph = !media && text('icon') ? siteIcon(text('icon'), { class: 'size-8' }) : null;
-            return html`<div class="cms-card" data-layout=${media ? text('layout') || 'top' : 'none'} data-style=${text('style') === 'plain' ? 'plain' : 'boxed'}>
+            // Behind the text, the image is the card's ground: the title's link covers the whole tile (cms/blocks.css).
+            const overlay = !!media && text('layout') === 'overlay';
+            const framed = picture ? html`<div class="cms-card-media">${url && !text('linkLabel') && !overlay ? html`<a href=${safeLink(url)}>${picture}</a>` : picture}</div>` : null;
+            // An icon stands in for the image: the icon box and the feature of page builders. Over an image it is a badge.
+            const glyph = (!media || overlay) && text('icon') ? siteIcon(text('icon'), { class: 'size-8' }) : null;
+            // Without an image, the position is the icon's: beside the text, it makes a contact line or a feature row.
+            const beside = !media && glyph && (text('layout') === 'left' || text('layout') === 'right') ? text('layout') : undefined;
+            return html`<div class="cms-card" data-layout=${media ? text('layout') || 'top' : 'none'} data-icon=${ifDefined(beside)} data-style=${text('style') === 'plain' ? 'plain' : 'boxed'}>
                 ${framed}
                 <div class="cms-card-body">
                     ${glyph ? html`<div class="cms-card-icon">${glyph}</div>` : null}
@@ -676,29 +748,37 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers, state?: P
             const count = slides.length || ids.length;
             if (!count) return null;
             const captions = block.data.captions !== false;
+            const perView = Math.min(Math.max(Math.round(Number(block.data.perView) || 1), 1), 4);
+            // Thumbnails stand in for the dots of an image carousel.
+            const thumbnails = block.data.thumbnails === true && ids.length > 1;
             const items = slides.length
                 ? slides.map((slide, index) => html`<div class="cms-carousel-slide cms-carousel-blockslide" id=${`${block._id}-slide-${index + 1}`} aria-roledescription="slide" aria-label=${`${index + 1} / ${count}`}>${helpers.block(slide)}</div>`)
                 : ids.map((id, index) => html`<figure class="cms-carousel-slide" id=${`${block._id}-slide-${index + 1}`} aria-roledescription="slide" aria-label=${`${index + 1} / ${count}`}>
                     ${image(block.media[id], 'cms-carousel-image', '(min-width: 1024px) 1024px, 100vw')}
                     ${captions && block.media[id]?.caption ? html`<figcaption class="cms-carousel-caption">${block.media[id]!.caption}</figcaption>` : null}
                 </figure>`);
-            return html`<div class="cms-carousel my-6" data-aspect=${text('aspect') || 'video'} data-autoplay=${block.data.autoplay === true ? 'true' : 'false'} data-interval=${String(Math.min(Math.max(Number(block.data.interval) || 5, 2), 30))}
+            return html`<div class="cms-carousel my-6" data-aspect=${text('aspect') || 'video'} data-per-view=${ifDefined(perView > 1 ? String(perView) : undefined)} style=${ifDefined(perView > 1 ? `--cms-per-view: ${perView}` : undefined)} data-autoplay=${block.data.autoplay === true ? 'true' : 'false'} data-interval=${String(Math.min(Math.max(Number(block.data.interval) || 5, 2), 30))}
                 role="region" aria-roledescription="carousel" aria-label=${slides.length ? __('Slides') : __('Image carousel')} ref=${enhanceCarousel}>
                 <div class="cms-carousel-track" tabindex="0">${items}</div>
                 ${count > 1 ? html`<button type="button" class="cms-carousel-arrow cms-carousel-prev" data-direction="-1" aria-label=${__('Previous')}>‹</button>
                     <button type="button" class="cms-carousel-arrow cms-carousel-next" data-direction="1" aria-label=${__('Next')}>›</button>
-                    <div class="cms-carousel-dots" role="tablist">${Array.from({ length: count }, (_, index) => html`<button type="button" role="tab" aria-label=${`${__('Slide')} ${index + 1}`} aria-selected=${index === 0 ? 'true' : 'false'} data-index=${String(index)}></button>`)}</div>` : null}
+                    ${thumbnails
+                        ? html`<div class="cms-carousel-thumbs" role="tablist">${ids.map((id, index) => html`<button type="button" role="tab" class="cms-carousel-thumb" aria-label=${`${__('Slide')} ${index + 1}`} aria-selected=${index === 0 ? 'true' : 'false'} data-index=${String(index)}>${image({ ...block.media[id]!, priority: false, placeholder: null }, '', '10rem')}</button>`)}</div>`
+                        : html`<div class="cms-carousel-dots" role="tablist">${Array.from({ length: count }, (_, index) => html`<button type="button" role="tab" aria-label=${`${__('Slide')} ${index + 1}`} aria-selected=${index === 0 ? 'true' : 'false'} data-index=${String(index)}></button>`)}</div>`}` : null}
             </div>`;
         }
         case 'core/slide': return html`<div class="cms-slide" data-valign=${text('valign') || 'center'}>${children.map(child => helpers.block(child))}</div>`;
         case 'core/answer': return html`<aside class="cms-answer my-6 rounded-lg border border-border bg-muted/40 p-4" aria-label=${text('label') || __('Quick answer')}>
             ${text('label') ? html`<p class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">${text('label')}</p>` : null}
             <div class=${`${PROSE} text-lg [&_p]:my-2`}>${block.content?.text ? helpers.content(block.content.text) : unsafeHTML(block.html.text ?? '')}</div></aside>`;
-        case 'core/faq': return html`<section class="cms-faq my-8 divide-y divide-border border-y border-border">${children.map(child => helpers.block(child))}</section>`;
-        case 'core/faq-item': return html`<details class="cms-faq-item group py-3" open>
+        case 'core/faq': return html`<section class="cms-faq my-8 divide-y divide-border border-y border-border">${children.map(child => helpers.block(block.data.open === false ? { ...child, data: { ...child.data, open: false } } : child))}</section>`;
+        case 'core/faq-item': return html`<details class="cms-faq-item group py-3" ?open=${block.data.open !== false}>
             <summary class="cursor-pointer list-none text-lg font-semibold"><h3 class="inline">${text('question')}</h3></summary>
             <div class=${`${PROSE} mt-2 [&_p]:my-2`}>${unsafeHTML(block.html.answer ?? '')}</div></details>`;
-        case 'core/steps': return html`<ol class="cms-steps my-8 space-y-6 border-l-2 border-border pl-6">${children.map((child, index) => html`<li class="relative" data-step=${String(index + 1)}>
+        // Side by side, each step is a column under its number; they stack on phones (cms/blocks.css).
+        case 'core/steps': if (text('layout') === 'row') return html`<ol class="cms-steps cms-steps-row my-8" style=${`--cms-step-count: ${Math.min(Math.max(children.length, 1), 6)}`}>${children.map((child, index) => html`<li data-step=${String(index + 1)}>
+            <span class="cms-step-number" aria-hidden="true">${index + 1}</span>${helpers.block(child)}</li>`)}</ol>`;
+        else return html`<ol class="cms-steps my-8 space-y-6 border-l-2 border-border pl-6">${children.map((child, index) => html`<li class="relative" data-step=${String(index + 1)}>
             <span class="absolute -left-[2.1rem] flex size-7 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground" aria-hidden="true">${index + 1}</span>${helpers.block(child)}</li>`)}</ol>`;
         case 'core/step': return html`<div class="cms-step"><h3 class="text-lg font-semibold">${text('title')}</h3>${block.html.text ? html`<div class=${`${PROSE} [&_p]:my-2`}>${unsafeHTML(block.html.text)}</div>` : null}</div>`;
         case 'core/claim': {
@@ -708,6 +788,32 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers, state?: P
                 <figcaption class="mt-2 text-sm text-muted-foreground">${__('Source')}: <cite class="not-italic">${source}</cite>${text('date') ? html`, ${text('date')}` : null}</figcaption></figure>`;
         }
         case 'core/definition': return html`<dl class="cms-definition my-6 rounded-lg border border-border p-4"><dt class="text-lg font-semibold">${text('term')}</dt><dd class=${`${PROSE} mt-1 [&_p]:my-1`}>${unsafeHTML(block.html.definition ?? '')}</dd></dl>`;
+        case 'core/compare': {
+            // Each pair is a child, drawn with the block's shape, labels and starting point; thumbnails pick among several.
+            const pairs = children.filter(child => child.type === 'core/compare-item' && child.media[String(child.data.before ?? '')] && child.media[String(child.data.after ?? '')]);
+            if (!pairs.length) return null;
+            const start = Math.min(Math.max(Math.round(Number(block.data.start ?? 50)), 0), 100);
+            const shared = { beforeLabel: block.data.beforeLabel ?? __('Before'), afterLabel: block.data.afterLabel ?? __('After'), start: Number.isFinite(start) ? start : 50 };
+            return html`<div class="cms-compare my-6" data-aspect=${text('aspect') || 'video'} ref=${enhanceCompare}>
+                ${pairs.map((pair, index) => html`<div class="cms-compare-pair" data-active=${ifDefined(index === 0 ? '' : undefined)}>${helpers.block({ ...pair, data: { ...pair.data, ...shared } })}</div>`)}
+                ${pairs.length > 1 ? html`<div class="cms-compare-thumbs" role="tablist" aria-label=${__('Pairs')}>${pairs.map((pair, index) => html`<button type="button" role="tab" class="cms-compare-thumb" aria-label=${String(pair.data.caption || `${index + 1} / ${pairs.length}`)} aria-selected=${index === 0 ? 'true' : 'false'} data-index=${String(index)}>${image({ ...pair.media[String(pair.data.before)]!, priority: false, placeholder: null }, '', '10rem')}</button>`)}</div>` : null}
+            </div>`;
+        }
+        case 'core/compare-item': {
+            const before = block.media[text('before')];
+            const after = block.media[text('after')];
+            if (!before || !after) return null;
+            const start = Math.min(Math.max(Number(block.data.start ?? 50) || 0, 0), 100);
+            // The image after lies under the image before, which is clipped at the handle. The range input is the control: it takes the pointer and the keyboard.
+            return html`<figure class="cms-compare-figure"><div class="cms-compare-stage" style=${`--cms-compare: ${start}%`}>
+                ${image(after, 'cms-compare-image', '(min-width: 1024px) 1024px, 100vw')}
+                ${image({ ...before, placeholder: null }, 'cms-compare-image cms-compare-before', '(min-width: 1024px) 1024px, 100vw')}
+                ${text('beforeLabel') ? html`<span class="cms-compare-label" data-side="before">${text('beforeLabel')}</span>` : null}
+                ${text('afterLabel') ? html`<span class="cms-compare-label" data-side="after">${text('afterLabel')}</span>` : null}
+                <span class="cms-compare-handle" aria-hidden="true"><span class="cms-compare-knob"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l-7 7 7 7M15 5l7 7-7 7"></path></svg></span></span>
+                <input type="range" class="cms-compare-range" min="0" max="100" value=${String(start)} aria-label=${__('How much of the image before shows')}>
+            </div>${text('caption') ? html`<figcaption class="mt-2 text-center text-sm text-muted-foreground">${text('caption')}</figcaption>` : null}</figure>`;
+        }
         case 'core/latest-entries': return latestEntries(block);
         case 'core/languages': return helpers.languages({ style: text('style'), layout: text('layout') });
         case 'core/navigation': return helpers.menu(text('location') || 'primary', { style: text('style'), motion: text('motion'), mobile: text('mobile') || undefined, collapse: text('collapse') });
@@ -884,7 +990,7 @@ export function unavailable(): TemplateResult {
     </section>`;
 }
 
-const list = (view: ArchiveView) => html`<section>
+const list = ({ view }: { view: ArchiveView }) => html`<section>
     <h1>${view.title}</h1>
     ${view.entries.length ? html`<ul>${view.entries.map(entry => html`<li><a href=${entry.url ?? '#'}>${entry.title}</a> ${entry.date}</li>`)}</ul>` : html`<p>${__('Nothing here yet.')}</p>`}
     ${view.paging.page < view.paging.pages ? html`<a href=${`${view.paging.base}?page=${view.paging.page + 1}`}>${__('Older')}</a>` : null}
@@ -892,12 +998,12 @@ const list = (view: ArchiveView) => html`<section>
 
 /** Plain templates for a site without a usable theme. Activate a theme under Appearance. */
 export const fallbackTheme: SiteTheme = {
-    layout: (site, content, helpers) => html`<div class="mx-auto max-w-3xl px-6 py-8 text-foreground">
+    layout: ({ site, content, helpers }) => html`<div class="mx-auto max-w-3xl px-6 py-8 text-foreground">
         <header><a href=${site.homeUrl}><strong>${site.title}</strong></a> ${site.tagline}${helpers.menu('primary', { style: 'list', label: __('Site') })}
             ${site.languages.length > 1 ? html`<nav aria-label=${__('Language')}>${site.languages.map(language => html`<a href=${language.url} hreflang=${language.code}>${language.label}</a> `)}</nav>` : null}</header>
         <main>${content}</main>
     </div>`,
-    entry: (entry: EntryView, helpers) => html`<article><h1>${entry.title}</h1><p>${entry.date}</p>${helpers.block(entry.content)}
+    entry: ({ entry, helpers }) => html`<article><h1>${entry.title}</h1><p>${entry.date}</p>${helpers.block(entry.content)}
         ${entry.comments ? html`<section id="comments"><h2>${__('Comments')}</h2>${entry.comments.items.map(item => html`<div id=${`comment-${item.id}`}><strong>${item.author}</strong> ${item.date}${unsafeHTML(item.html)}</div>`)}
             ${entry.comments.form && !entry.comments.form.requireSignIn ? html`<form method="post" action=${entry.comments.form.action}><input type="hidden" name="collection" value=${entry.comments.form.collection}>
                 <input type="hidden" name="entry" value=${entry.comments.form.entry}><textarea name="content" required aria-label=${__('Comment')}></textarea>

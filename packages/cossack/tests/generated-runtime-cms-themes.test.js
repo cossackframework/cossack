@@ -83,6 +83,8 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
       expect(blank).not.toMatch(/<header|<footer/);
       const ungranted = await visitor.page('/wide-page');
       expect(ungranted).toMatch(/data-template="?entry-wide/);
+      // A page's template gets the site in its context, not only the layout.
+      expect(ungranted).toMatch(/data-site="?Folio Site/);
       expect(ungranted).toMatch(/<ul data-latest><\/ul>/);
 
       // The theme ships its collection: hidden until the plugin is enabled, then like posts.
@@ -171,14 +173,14 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
       expect(layoutHtml).toMatch(/data-hide="?sm"?/);
       expect(layoutHtml.indexOf('Left heading')).toBeLessThan(layoutHtml.indexOf('Right column'));
       // Styles: one wrapper per styled block with its classes and the palette's variables; the root carries the palette.
-      expect(layoutHtml).toMatch(/class="?cms-block cms-bg-secondary cms-p-large cms-padded cms-column-box"? id="?aside"? style="?background-color: ?var\(--cms-color-secondary\); ?padding: ?var\(--cms-space-large\); ?--cms-span: ?4/);
+      expect(layoutHtml).toMatch(/class="?cms-block cms-box cms-bg-secondary cms-p-large cms-padded cms-column-box"? id="?aside"? style="?background-color: ?var\(--cms-color-secondary\); ?--cms-pad: ?var\(--cms-space-large\); ?--cms-span: ?4/);
       // The constrained layout: the columns in a content-width item, the band in a full-width one with its gradient, overlay and height; its paragraph in an item of its own.
       expect(layoutHtml).toMatch(/class="?cms-layout"?><div class="?cms-item"? data-align="?content"?><div class="?cms-columns/);
-      expect(layoutHtml).toMatch(/<div class="?cms-item"? data-align="?full"?><div class="cms-block cms-p-large cms-padded cms-gradient-dusk cms-has-overlay" data-align="?full"? style="padding: ?var\(--cms-space-large\); ?background-image: ?var\(--cms-gradient-dusk\); ?--cms-overlay: ?color-mix\(in srgb, ?#000000 20%, ?transparent\)"><div class="?cms-group"? data-align="?full"? data-direction="?column"? data-justify="?start"? data-height="?short"? data-valign="?center"?><div class="?cms-item"? data-align="?content"?>/);
+      expect(layoutHtml).toMatch(/<div class="?cms-item"? data-align="?full"?><div class="cms-block cms-box cms-p-large cms-padded cms-gradient-dusk cms-has-overlay" data-align="?full"? style="--cms-pad: ?var\(--cms-space-large\); ?background-image: ?var\(--cms-gradient-dusk\); ?--cms-overlay: ?color-mix\(in srgb, ?#000000 20%, ?transparent\)"><div class="?cms-group"? data-align="?full"? data-direction="?column"? data-justify="?start"? data-height="?short"? data-valign="?center"?><div class="?cms-item"? data-align="?content"?>/);
       expect(layoutHtml).toMatch(/--cms-gradient-dusk: ?linear-gradient\(135deg/);
       // The theme's root sets the measures; the header is a padded full-width row.
       expect(layoutHtml).toMatch(/--cms-content: ?48rem; ?--cms-wide: ?72rem; ?--cms-gutter: ?1\.5rem/);
-      expect(layoutHtml).toMatch(/<header class="?relative border-b border-border"?><div class="?cms-layout"?><div class="?cms-item"? data-align="?full"?><div class="cms-block cms-p-medium cms-padded" data-align="?full"?/);
+      expect(layoutHtml).toMatch(/<header class="?relative border-b border-border"?><div class="?cms-layout"?><div class="?cms-item"? data-align="?full"?><div class="cms-block cms-box cms-p-medium cms-padded" data-align="?full"?/);
       expect(layoutHtml).toMatch(/class="?cms-block cms-text-primary cms-align-center lead"? style="?color: ?var\(--cms-color-primary\); ?text-align: ?center/);
       expect(layoutHtml).toMatch(/--cms-color-primary: ?#2563eb/);
       expect(layoutHtml).toMatch(/--cms-space-large: ?3rem/);
@@ -357,8 +359,8 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
       const sectionsHtml = after.slice(after.indexOf('data-sections'));
       expect(sectionsHtml.indexOf('Second section')).toBeLessThan(sectionsHtml.indexOf('cms-group'));
       expect(sectionsHtml.indexOf('cms-group')).toBeLessThan(sectionsHtml.indexOf('First section, edited on the site'));
-      expect(sectionsHtml).toMatch(/cms-block cms-bg-custom-1/);
-      expect(sectionsHtml).toMatch(/cms-block cms-gradient-sunrise/);
+      expect(sectionsHtml).toMatch(/cms-block cms-box cms-bg-custom-1/);
+      expect(sectionsHtml).toMatch(/cms-block cms-box cms-gradient-sunrise/);
       lacks(after, 'data-cms-edit');
       const editorPage = await web.page(`/dashboard/content/projects/${rocket}`);
       expect(editorPage).toMatch(/#2 · [^<]*<span class="?text-foreground"?>Ada<\/span>/);

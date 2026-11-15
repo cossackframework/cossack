@@ -11,7 +11,7 @@ const theme = { layout: () => null, entry: () => null, archive: () => null } as 
 const helpers = themeHelpers(theme, { name: null, options: {} }, () => false);
 const block = (type: string, data: Record<string, unknown>, extra: Partial<RenderedBlock> = {}): RenderedBlock => ({ _id: data._id as string ?? type.replace('core/', ''), type, data, html: {}, media: {}, ...extra });
 const paragraph = (id: string, text: string): RenderedBlock => ({ _id: id, type: 'core/paragraph', data: { text }, html: { text: `<p>${text}</p>` }, media: {} });
-const portrait: MediaView = { url: '/media/a1/ada.jpg', alt: 'Ada', width: 400, height: 400, contentType: 'image/jpeg', caption: '', srcset: '', wideSrcset: '', placeholder: null, sizes: '' };
+const portrait: MediaView = { url: '/media/a1/ada.jpg', alt: 'Ada', width: 400, height: 400, contentType: 'image/jpeg', caption: '', srcset: '', placeholder: null, sizes: '' };
 const render = async (input: RenderedBlock) => (await renderToString(helpers.block(input))).replace(/\s*\n\s*/g, '');
 
 describe('section blocks', () => {
@@ -115,5 +115,100 @@ describe('section blocks', () => {
         expect(embed).toContain('src="https://www.openstreetmap.org/export/embed.html?bbox=1,2,3,4" title="Map"');
         expect(await render(block('core/map', { url: 'https://evil.example/maps/embed?x' }))).toBe('');
         expect(await render(block('core/map', {}))).toBe('');
+    });
+
+    it('accents the words of a heading between asterisks, at any level down from h1', async () => {
+        expect(await render(block('core/heading', { text: 'Elevate your *visuals*', level: 'h1' }))).toBe('<h1 class="mt-8 text-4xl font-bold tracking-tight">Elevate your <span class="cms-accent">visuals</span></h1>');
+        expect(await render(block('core/heading', { text: 'Plain *', level: 'h3' }))).toBe('<h3 class="mt-6 text-xl font-semibold">Plain *</h3>');
+    });
+
+    it('renders a button as a box, a light box or a text link, with an icon after its label', async () => {
+        expect(await render(block('core/button', { label: 'Go', url: '/go' }))).toBe('<div class="cms-button my-6" data-style="primary" data-size="medium"><a href="/go" class="inline-flex items-center rounded-md font-medium no-underline px-5 py-2.5 text-sm bg-primary text-primary-foreground hover:opacity-90">Go</a></div>');
+        const call = await render(block('core/button', { label: 'Call us', url: 'tel:+84963210594', style: 'light', size: 'large' }));
+        expect(call).toContain('<a href="tel:+84963210594" class="inline-flex items-center rounded-md font-medium no-underline px-7 py-3.5 text-base bg-white text-neutral-900 hover:bg-neutral-100">Call us</a>');
+        const link = await render(block('core/button', { label: 'More', url: '#photo-editing', style: 'link', icon: 'arrow-right' }));
+        expect(link).toContain('<a href="#photo-editing" class="inline-flex items-center rounded-md font-medium no-underline text-sm text-primary hover:underline gap-2">More<svg');
+        expect(await render(block('core/button', { label: 'X', url: 'javascript:alert(1)' }))).toContain('href="#"');
+    });
+
+    it('renders a card with its image behind the text as one tile that is the link', async () => {
+        const html = await render(block('core/card', { title: 'Photo editing', image: 'a1', icon: 'gallery', layout: 'overlay', url: '/services#photo-editing', text: 'Enhancement' }, { html: { text: '<p>Enhancement</p>' }, media: { a1: portrait } }));
+        expect(html).toContain('<div class="cms-card" data-layout="overlay" data-style="boxed"><div class="cms-card-media"><img src="/media/a1/ada.jpg"');
+        expect(html).toContain('<div class="cms-card-icon"><svg');
+        expect(html.match(/<a href="\/services#photo-editing"/g)).toHaveLength(1);
+        // Without an image, left or right places the icon beside the text.
+        expect(await render(block('core/card', { title: 'Phone', icon: 'phone', layout: 'left', style: 'plain' }))).toContain('<div class="cms-card" data-layout="none" data-icon="left" data-style="plain">');
+        // Without an image there is nothing to lay the text over.
+        expect(await render(block('core/card', { title: 'No image', layout: 'overlay' }))).toContain('data-layout="none"');
+    });
+
+    it('renders a masonry gallery whose images open in the lightbox, and plain tiles without one', async () => {
+        const media = { a1: portrait, a2: { ...portrait, url: '/media/a2/kitchen.jpg', alt: 'Kitchen', caption: 'The kitchen' } };
+        const masonry = await render(block('core/gallery', { images: ['a1', 'a2', 'gone'], columns: 3, layout: 'masonry', lightbox: true }, { media }));
+        expect(masonry).toContain('<div class="cms-masonry my-6" style="--cms-masonry-columns: 3"><a href="/media/a1/ada.jpg" class="cms-gallery-link" data-cms-lightbox="image"><img src="/media/a1/ada.jpg"');
+        expect(masonry).toContain('<a href="/media/a2/kitchen.jpg" class="cms-gallery-link" data-cms-lightbox="image" data-caption="The kitchen">');
+        expect(masonry.match(/cms-masonry-image/g)).toHaveLength(2);
+        const tiles = await render(block('core/gallery', { images: ['a1'], columns: 2 }, { media }));
+        expect(tiles).not.toContain('data-cms-lightbox');
+        expect(tiles).toContain('class="aspect-square w-full rounded-md object-cover"');
+    });
+
+    it('plays a video from another server, in place or in the lightbox behind its poster', async () => {
+        const inPlace = await render(block('core/video', { url: 'https://cdn.example/tour.mp4' }));
+        expect(inPlace).toContain('<figure class="my-6"><video src="https://cdn.example/tour.mp4" class="w-full rounded-lg bg-black"');
+        const boxed = await render(block('core/video', { url: 'https://cdn.example/tour.mp4', poster: 'a1', lightbox: true, caption: 'The tour' }, { media: { a1: portrait } }));
+        expect(boxed).toContain('<figure class="cms-video-lightbox my-6"><a href="https://cdn.example/tour.mp4" class="cms-video-poster" data-cms-lightbox="video" aria-label="The tour"><img src="/media/a1/ada.jpg"');
+        expect(boxed).toContain('<span class="cms-video-play" aria-hidden="true">');
+        expect(boxed).not.toContain('<video');
+        // Neither a file nor an https address: nothing to play.
+        expect(await render(block('core/video', { url: 'http://cdn.example/tour.mp4' }))).toBe('');
+        expect(await render(block('core/video', {}))).toBe('');
+    });
+
+    it('renders a carousel with several slides at once and thumbnails in place of the dots', async () => {
+        const media = { a1: portrait, a2: { ...portrait, url: '/media/a2/b.jpg' }, a3: { ...portrait, url: '/media/a3/c.jpg' } };
+        const html = await render(block('core/carousel', { _id: 'car', images: ['a1', 'a2', 'a3'], aspect: 'photo', perView: 3, thumbnails: true }, { media }));
+        expect(html).toContain('<div class="cms-carousel my-6" data-aspect="photo" data-per-view="3" style="--cms-per-view: 3" data-autoplay="false"');
+        expect(html).toContain('<div class="cms-carousel-thumbs" role="tablist"><button type="button" role="tab" class="cms-carousel-thumb" aria-label="Slide 1" aria-selected="true" data-index="0"><img src="/media/a1/ada.jpg"');
+        expect(html.match(/class="cms-carousel-thumb"/g)).toHaveLength(3);
+        expect(html).not.toContain('cms-carousel-dots');
+        const plain = await render(block('core/carousel', { _id: 'car', images: ['a1', 'a2'] }, { media }));
+        expect(plain).toContain('<div class="cms-carousel my-6" data-aspect="video" data-autoplay="false"');
+        expect(plain).toContain('cms-carousel-dots');
+    });
+
+    it('renders steps side by side under their numbers', async () => {
+        const html = await render({ ...block('core/steps', { _id: 'steps', layout: 'row' }), children: [
+            block('core/step', { _id: 's1', title: 'Book' }, { html: { text: '<p>Send your files.</p>' } }),
+            block('core/step', { _id: 's2', title: 'Relax' }),
+        ] });
+        expect(html).toContain('<ol class="cms-steps cms-steps-row my-8" style="--cms-step-count: 2"><li data-step="1"><span class="cms-step-number" aria-hidden="true">1</span><div class="cms-step"><h3 class="text-lg font-semibold">Book</h3>');
+        expect(html).toContain('<li data-step="2"><span class="cms-step-number" aria-hidden="true">2</span>');
+        expect(await render({ ...block('core/steps', { _id: 'list' }), children: [block('core/step', { _id: 's1', title: 'Book' })] })).toContain('<ol class="cms-steps my-8 space-y-6 border-l-2 border-border pl-6">');
+    });
+
+    it('renders before and after pairs under one handle, with thumbnails when there are several', async () => {
+        const media = { b1: { ...portrait, url: '/media/b1/empty.jpg', alt: 'Empty room' }, a1: { ...portrait, url: '/media/a1/staged.jpg', alt: 'Staged room' } };
+        const pair = (id: string, caption = '') => block('core/compare-item', { _id: id, before: 'b1', after: 'a1', caption }, { media });
+        const one = await render({ ...block('core/compare', { _id: 'cmp', aspect: 'wide', beforeLabel: 'Before', afterLabel: 'After', start: 30 }), children: [pair('p1', 'Living room')] });
+        expect(one).toContain('<div class="cms-compare my-6" data-aspect="wide"><div class="cms-compare-pair" data-active=""><figure class="cms-compare-figure"><div class="cms-compare-stage" style="--cms-compare: 30%"><img src="/media/a1/staged.jpg"');
+        expect(one).toContain('class="cms-compare-image cms-compare-before"');
+        expect(one).toContain('<span class="cms-compare-label" data-side="before">Before</span><span class="cms-compare-label" data-side="after">After</span>');
+        expect(one).toContain('<input type="range" class="cms-compare-range" min="0" max="100" value="30" aria-label="How much of the image before shows">');
+        expect(one).toContain('<figcaption class="mt-2 text-center text-sm text-muted-foreground">Living room</figcaption>');
+        expect(one).not.toContain('cms-compare-thumbs');
+        const two = await render({ ...block('core/compare', { _id: 'cmp', beforeLabel: '', afterLabel: '' }), children: [pair('p1'), pair('p2'), block('core/compare-item', { _id: 'p3', before: 'gone', after: 'a1' }, { media })] });
+        expect(two.match(/class="cms-compare-pair"/g)).toHaveLength(2);
+        expect(two.match(/data-active=""/g)).toHaveLength(1);
+        expect(two.match(/class="cms-compare-thumb"/g)).toHaveLength(2);
+        expect(two).not.toContain('cms-compare-label');
+        expect(two).toContain('style="--cms-compare: 50%"');
+        expect(await render(block('core/compare', { _id: 'none' }))).toBe('');
+    });
+
+    it('folds the answers of a FAQ when asked, and shows them otherwise', async () => {
+        const item = block('core/faq-item', { _id: 'q1', question: 'Do you offer a trial?', answer: 'Yes.' }, { html: { answer: '<p>Yes.</p>' } });
+        expect(await render({ ...block('core/faq', { _id: 'faq' }), children: [item] })).toContain('<details class="cms-faq-item group py-3" open><summary');
+        expect(await render({ ...block('core/faq', { _id: 'faq', open: false }), children: [item] })).toContain('<details class="cms-faq-item group py-3"><summary');
     });
 });

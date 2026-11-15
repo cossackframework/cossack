@@ -8,7 +8,7 @@
 import type { Context } from 'hono';
 import {
     BLOCK_ID, checkNoteRange, CmsError, CONTENT_STATUSES, findBlock, hasPermission, indexedRowField, isNetworkAdmin, MAIN_SITE, MENU_LIMITS, menuItemId, noteThreads, PERMISSIONS, recordSchema, recordTitle, richTextBlocks,
-    ANONYMOUS, type SnippetPart,
+    ANONYMOUS, mediaKind, mediaUrl, type MediaKind, type SnippetPart,
     type Block, type FieldFilter, type MenuItem, type MenuShape, type Note, type NoteThread, type Principal, type RecordShape, type RichTextDoc, redirectProblems, type Redirect, type RedirectStatus, type FieldDeclaration, WEBHOOK_EVENTS, COMMENT_STATUSES, type Webhook, type CommentShape, type CommentStatus } from '@cossackframework/cms';
 import { networkSite, type ApiToken, type CmsHost, type NetworkSite, type SiteRecord } from '@cossackframework/cms/server';
 import { createApiToken, listApiTokens, manageableHere, NETWORK_ACCOUNT_LOCKED, revokeApiToken, type PublicUser } from '../auth';
@@ -16,7 +16,7 @@ import { canAssignRoles, canGrantRoles, canManageUser } from '../services/rbac';
 import { changeUserPassword, createUser, deleteUser, getUser, listUsers, syncUserRoles, updateUser, type UserDetail, type UserSummary } from '../services/users';
 import { apiEntries, apiPatterns, withheldFields, type ApiEntry } from './content-api';
 import { entryLock } from './site';
-import { findMedia, routeResource } from './content';
+import { routeResource } from './content';
 import { siteUrl, type CmsBindings } from './index';
 import { mailOrigin } from './seo';
 import type { CachePurgeEvent } from '@cossackframework/cms';
@@ -885,14 +885,90 @@ export async function termDelete(c: Context, taxonomy: string, id: string): Prom
 
 // --- Media ------------------------------------------------------------------------
 
-/** Library files: `q` matches titles and names, `kind` (image, video, audio, document, archive) narrows them. */
-export async function mediaList(c: Context, query: Query) {
+export interface MediaView { id: string; url: string; name: string; kind: string; title: string; alt: string; caption: string; description: string; contentType: string; size: number; width: number | null; height: number | null }
+
+const mediaView = (file: { id: string; name: string; title: string; alt: string; caption: string; description: string; contentType: string; size: number; width: number | null; height: number | null }): MediaView => ({
+    id: file.id, url: mediaUrl(file), name: file.name, kind: mediaKind(file.contentType), title: file.title, alt: file.alt, caption: file.caption, description: file.description,
+    contentType: file.contentType, size: file.size, width: file.width, height: file.height,
+});
+
+function mediaAllowed(c: Context): Principal {
     const principal = c.get('principal');
     if (![PERMISSIONS.upload, PERMISSIONS.manageMedia, PERMISSIONS.manageUsers].some(permission => hasPermission(principal, permission))) {
         throw new CmsError(principal.kind === 'user' ? 'CMS_FORBIDDEN' : 'CMS_UNAUTHENTICATED', 'Not allowed to see the media library.');
     }
+    return principal;
+}
+
+/** Library files, newest first: `q` matches titles and names, `kind` (image, video, audio, document, archive) narrows them, `page` and `perPage` (40, at most 100) walk the library. */
+export async function mediaList(c: Context, query: Query): Promise<{ items: MediaView[]; page: number; pages: number; total: number }> {
+    mediaAllowed(c);
+    const files = c.get('cms').files;
+    const perPage = integer(query.perPage, 40, 1, 100);
+    const page = integer(query.page, 1, 1, 10_000);
+    if (!files) return { items: [], page: 1, pages: 1, total: 0 };
     const kind = query.kind ?? '';
-    return { items: await findMedia(c.get('cms'), (query.q ?? '').slice(0, 100), ['image', 'video', 'audio', 'document', 'archive'].includes(kind) ? kind : '') };
+    const found = await files.list({ search: (query.q ?? '').slice(0, 100), limit: perPage, offset: (page - 1) * perPage, ...(['image', 'video', 'audio', 'document', 'archive'].includes(kind) ? { kind: kind as MediaKind } : {}) });
+    return { items: found.items.map(mediaView), page, pages: Math.max(1, Math.ceil(found.total / perPage)), total: found.total };
+}
+
+/** Change a file's title, alternative text, caption or description; the owner or a media manager may. */
+export async function mediaUpdate(c: Context, id: string, input: Body): Promise<{ item: MediaView }> {
+    const principal = signedIn(c);
+    const files = c.get('cms').files;
+    if (!files || !KEY.test(id)) throw new CmsError('CMS_NOT_FOUND', 'No such file.');
+    const patch: { title?: string; alt?: string; caption?: string; description?: string } = {};
+    const fields: { [field: string]: string } = {};
+    for (const name of ['title', 'alt', 'caption', 'description'] as const) {
+        if (input[name] === undefined) continue;
+        if (typeof input[name] !== 'string') fields[name] = 'must be text.';
+        else patch[name] = input[name];
+    }
+    if (Object.keys(fields).length) throw new CmsError('CMS_VALIDATION', 'The file\'s details are text.', { fields });
+    return { item: mediaView(await files.update(id, patch, { principal })) };
+}
+
+// --- Plugins ----------------------------------------------------------------------
+
+export interface PluginView { name: string; version: string; description: string; active: boolean; themeOnly: boolean; unrestricted: boolean; reason: string; missing: string[]; requests: string[] }
+
+function pluginsAllowed(c: Context): Principal & { kind: 'user' } {
+    const principal = signedIn(c);
+    if (!hasPermission(principal, PERMISSIONS.managePlugins)) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to manage plugins.');
+    return principal;
+}
+
+/** The installed plugins with what each asks for and whether it is active. */
+export async function pluginsList(c: Context): Promise<{ items: PluginView[] }> {
+    pluginsAllowed(c);
+    const status = await c.get('cms').status();
+    return { items: status.plugins.filter(plugin => plugin.network !== 'hidden').map(plugin => ({
+        name: plugin.name, version: plugin.version, description: plugin.description, active: plugin.active, themeOnly: plugin.themeOnly, unrestricted: plugin.unrestricted,
+        reason: plugin.reason ?? '', missing: [...plugin.missing], requests: [...plugin.requests],
+    })) };
+}
+
+/**
+ * Grant a plugin everything its manifest asks for, as the Plugins screen does. Unrestricted
+ * access is never granted from here: it takes its own confirmation in the dashboard.
+ */
+export async function pluginGrant(c: Context, name: string): Promise<{ item: PluginView }> {
+    const principal = pluginsAllowed(c);
+    await c.get('cms').grantPlugin(name, principal);
+    return { item: await pluginRead(c, name) };
+}
+
+/** Disable a plugin: its grants are removed and its code stops running. */
+export async function pluginRevoke(c: Context, name: string): Promise<{ item: PluginView }> {
+    const principal = pluginsAllowed(c);
+    await c.get('cms').revokePlugin(name, principal);
+    return { item: await pluginRead(c, name) };
+}
+
+async function pluginRead(c: Context, name: string): Promise<PluginView> {
+    const item = (await pluginsList(c)).items.find(plugin => plugin.name === name);
+    if (!item) throw new CmsError('CMS_NOT_FOUND', `Unknown plugin ${name}.`);
+    return item;
 }
 
 // --- Network sites ---------------------------------------------------------------
@@ -1037,6 +1113,25 @@ async function wantedLocations(cms: CmsHost, value: unknown): Promise<{ location
     const known = await menuLocationNames(cms);
     for (const location of list as string[]) if (!known.includes(location)) throw new CmsError('CMS_VALIDATION', `${location} is not a menu location of a theme; the locations are ${known.join(', ') || 'none'}.`, { fields: { locations: `${location} is not a location.` } });
     return { locations: list as string[], known };
+}
+
+export interface ThemeSummaryView { name: string; label: string; description: string; version: string; active: boolean; /** Why the theme cannot be used; empty when it can. */ problems: string[] }
+
+/** The themes the site may use, the active one marked. */
+export async function themesList(c: Context): Promise<{ items: ThemeSummaryView[] }> {
+    allowed(c, PERMISSIONS.manageAppearance, APPEARANCE);
+    const cms = c.get('cms');
+    const [themes, active] = await Promise.all([cms.availableThemes(), cms.activeTheme()]);
+    return { items: themes.map(theme => ({ name: theme.name, label: theme.label, description: theme.description ?? '', version: theme.version, active: theme.name === active, problems: [...theme.problems] })) };
+}
+
+/** Make a theme the site's: its templates draw the site, and its patterns and field groups are stored. */
+export async function themeActivate(c: Context, name: string): Promise<{ item: ThemeSummaryView }> {
+    const principal = allowed(c, PERMISSIONS.manageAppearance, APPEARANCE);
+    await c.get('cms').activateTheme(name, principal);
+    const item = (await themesList(c)).items.find(theme => theme.name === name);
+    if (!item) throw new CmsError('CMS_NOT_FOUND', `Unknown theme ${name}.`);
+    return { item };
 }
 
 /** The themes' menu locations (the active theme's first) with the menu at each. */

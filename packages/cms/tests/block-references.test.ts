@@ -79,7 +79,7 @@ describe('block references', () => {
     });
 
     it('limits nesting to the block depth', () => {
-        const deep = '{{ block core/group }}'.repeat(6) + 'x' + '{{ /block }}'.repeat(6);
+        const deep = '{{ block core/group }}'.repeat(10) + 'x' + '{{ /block }}'.repeat(10);
         expect(blocks(deep).problems.some(problem => /nest at most/.test(problem))).toBe(true);
     });
 

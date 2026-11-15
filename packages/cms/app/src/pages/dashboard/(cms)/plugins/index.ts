@@ -158,11 +158,11 @@ export default class PluginsPage extends Cossack {
                             : component(Badge, { variant: plugin.active ? 'success' : 'secondary' }, plugin.active ? __('Active') : __('Inactive'))}
                             ${plugin.unrestricted ? html`<div class="mt-1">${component(Badge, { variant: 'destructive' }, __('Unrestricted'))}</div>` : null}
                             ${plugin.runtime === 'isolated' && !plugin.themeOnly ? html`<div class="mt-1" data-testid=${`plugin-isolated-${plugin.name}`} title=${__('Its server code runs in a Worker of its own and reaches only what it is granted.')}>${component(Badge, { variant: 'outline' }, __('Isolated'))}</div>` : null}</td>
-                        <td class="px-3 py-3"><div class="flex flex-wrap justify-end gap-2">
+                        <td class="px-3 py-3"><div class="flex flex-wrap items-center justify-end gap-3">
                             ${plugin.settings ? html`<a href=${settingsSectionHref(`plugin:${plugin.name}`)} class="text-sm text-primary hover:underline">${__('Settings')}</a>` : null}
                             ${plugin.networkActive ? null : plugin.themeOnly ? html`<a href="/dashboard/appearance" class="text-sm text-primary hover:underline">${__('Manage in Appearance')} →</a>` : html`
                                 ${plugin.missing.length && !plugin.unrestricted ? component(Button, { type: 'submit', size: 'sm', name: '_row', value: `grant:${plugin.name}` }, __('Grant and enable')) : null}
-                                ${plugin.active ? component(Button, { type: 'submit', size: 'sm', variant: 'destructive', name: '_row', value: `disable:${plugin.name}` }, __('Disable')) : null}`}
+                                ${plugin.active ? html`<button type="submit" name="_row" value=${`disable:${plugin.name}`} class="cursor-pointer border-none bg-transparent p-0 text-sm text-destructive hover:underline">${__('Disable')}</button>` : null}`}
                         </div></td>
                     </tr>`)}</tbody></table>
                     ${rows.length ? null : html`<p role="status" class="px-4 py-10 text-center text-sm text-muted-foreground">${__('No plugins match.')}</p>`}</div>`))}

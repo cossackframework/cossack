@@ -22,8 +22,8 @@ blocks have a Width field: content width, wide, or full width; see
 | Category | Blocks |
 | --- | --- |
 | Text | *Rich text* (a word-processor body, with tables), *Paragraph* (Markdown, with [block references](/docs/cms/block-references.md)), *Heading*, *Quote*, *List*, *Table* (rows of `|`-separated cells, a header row, a caption), *Code* (highlighted on the server for the common languages, no script), *Icon list* (items with an icon, text and a link, in one to three columns), *Notice* (a tip, a success, a warning or an error, with its icon), *Table of contents* (links to the entry's headings, which the server anchors; down to a level, numbered if you like), *Quick answer*, *Questions and answers* (an accordion with optional FAQPage data), *Steps*, *Claim with source*, *Definition*. |
-| Media | *Image*, *Gallery* (square tiles, or a wall of logos at one height), *Carousel* (images, or *Slides* of blocks over a background from the slide's Style tab: the hero slider), *Video* (a file from the library), *Audio*, *File* (a library file as a download link with its type and size). |
-| Design | *Group* (a stack or a row; full width with a height and a background makes a hero or a band), *Columns* and *Column*, *Grid*, *Tabs* and *Tab*, *Accordion* and *Section* (any blocks inside; "open one at a time" shares a `name` between the sections), *Card* (an image or a site icon with a title, text and a link; boxed or plain: the icon box, image box, feature and team member of page builders), *Button*, *Divider*, *Spacer*, *Pattern* (a synced pattern). |
+| Media | *Image*, *Gallery* (square tiles, a masonry of whole images, or a wall of logos at one height; its images can open in a lightbox), *Carousel* (images, or *Slides* of blocks over a background from the slide's Style tab: the hero slider; several slides at once, thumbnails in place of the dots), *Before and after* (pairs of images of one scene under a handle that slides between them; several pairs get thumbnails), *Video* (a file from the library or an `https` address, in place or in a lightbox behind its poster), *Audio*, *File* (a library file as a download link with its type and size). |
+| Design | *Group* (a stack or a row; full width with a height and a background makes a hero or a band), *Columns* and *Column*, *Grid*, *Tabs* and *Tab*, *Accordion* and *Section* (any blocks inside; "open one at a time" shares a `name` between the sections), *Card* (an image or a site icon with a title, text and a link; boxed or plain: the icon box, image box, feature and team member of page builders; the image can lie behind the text as one linked tile, and without an image the icon can sit beside the text), *Button* (primary, outline, light for dark bands, or a text link; two sizes; an icon after its label; its address may be a page, `mailto:`, `tel:` or `#section`), *Divider*, *Spacer*, *Pattern* (a synced pattern). |
 | Widgets | *Latest entries* (a collection's newest, by term or author, so many, skipping some, sticky first, leaving out the entry being shown), *Form* (one of the site's forms), *Testimonial* (quote, name, role, photo, stars), *Stat* (a number that counts up as it scrolls into view, in the digits it was written with), *Pricing plan* (one plan; plans sit side by side in Columns), *Social links* (profile URLs drawn as the networks' icons), *Share buttons* (the page on Facebook, X, LinkedIn, WhatsApp, Telegram, Reddit, Pinterest, Bluesky or Threads, by email, or its address copied), *Countdown* (days, hours, minutes and seconds to a moment, then what you say), *Breadcrumbs* (the way to the page: home, the section, the parents), *Site logo*, *Navigation*, *Search*, *Language switcher*. |
 | Embeds | *Embed* (a page address on YouTube, Vimeo, X, Instagram, TikTok, Spotify, SoundCloud, CodePen, Figma or Loom becomes the provider's player or card, loaded from their servers in a sandboxed frame; no request is made to the provider when the page renders), *Map* (an address Google Maps looks up, or an embed URL from Google Maps or OpenStreetMap; the map loads from their servers), *Custom HTML*. |
 | Data | *Custom fields*: values stored with the entry for themes and the API; nothing shows. |
@@ -34,9 +34,23 @@ vertical alignment and a background holds the heading, text and button of a hero
 action; *Columns* or a *Grid* of *Cards*, *Pricing plans* or *Testimonials* make the rows.
 Save a composition as a pattern to reuse it.
 
+A *Heading* is an H1 to H4, and the words between `*asterisks*` take the accent color
+(`cms-accent`): `Elevate your *visuals*`. A page whose blocks carry its H1, in a hero, needs a
+theme whose entry template adds no title of its own. *Steps* run down the page or side by side
+under their numbers; *Questions and answers* show every answer, or fold them until opened.
+Containers (Group, Columns, Column, Grid, Slide) align the text of what they hold from their
+Style tab, and nest up to eight levels, so a band may hold columns that hold tabs that hold a list.
+
+A padding preset on a **full-width group** is its height: it pads top and bottom, and the sides
+keep the page's gutter, so a band's content lines up with the rest of the page on every screen.
+Elsewhere the preset pads all four sides.
+
 Tabs and the accordion need no script: without one, every tab panel shows under its title and
 the accordion is native `<details>`. A page's script adds the tab switching, the arrow keys
-and opening the tab a `#panel` link points at, and counts a stat up.
+and opening the tab a `#panel` link points at, and counts a stat up. The lightbox, the handle
+of *Before and after* and the carousel's thumbnails are scripts too: without them a gallery's
+images and a video's poster are links to the files, every pair shows split where it starts,
+and the carousel scrolls and swipes.
 
 ## Icons
 
@@ -135,7 +149,7 @@ What the host does for the block:
 - **Behaviour.** The component hydrates on the site like any Cossack component: a `@Client()`
   method, a `ref` or `onMount()` adds what a script must do. Keep the page useful without it.
 - **Styles.** Tailwind classes in `ui.ts` are built with the application; a plugin links a
-  stylesheet of its own through a `head` export of `ui.ts` (`(site, helpers, plugin) => HeadValue`,
+  stylesheet of its own through a `head` export of `ui.ts` (`({ site, helpers, plugin }) => HeadValue`,
   with `plugin.asset('assets/blocks.css')` for its URL), a theme through `templates/head.ts`;
   `layout.className` reaches every block's wrapper.
 - **Variations.** `variations` on a declaration offers preset shapes of the block in the

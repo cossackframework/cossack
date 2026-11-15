@@ -132,7 +132,7 @@ describe('cms recipe', () => {
     const files = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'] }));
     const config = text(files, 'vite.config.ts');
     const list = config.slice(config.indexOf('@cossack:client-dependencies'), config.indexOf('],', config.indexOf('@cossack:client-dependencies')));
-    for (const name of ['@cossackframework/cms', '@cossackframework/framework/plugins', '@cossackframework/solar-icons/users-group-rounded/line', '@tiptap/core', '@tiptap/starter-kit'])
+    for (const name of ['@cossackframework/cms', '@cossackframework/framework/plugins', '@cossackframework/solar-icons/users-group-rounded/line', '@tiptap/core', '@tiptap/starter-kit', 'hono/cookie'])
       expect(list).toContain(`'${name}'`);
     expect(list).not.toContain('@cossackframework/cms/server');
     const source = (content) => ({ content: Buffer.from(content) });

@@ -62,9 +62,33 @@ const dependencyVersions = scaffoldPackage.scaffold?.dependencyVersions ?? {};
  * Packages rendered source imports in the browser. Vite cannot see page imports before a
  * page loads, so the generated config lists them for the first dependency bundle.
  */
+// `hono/<module>` subpaths (`hono/cookie` in pages and layouts) are listed: found on the first page, Vite bundles them late and reloads the browser once.
 // `@tiptap/pm/<module>` subpaths are listed too: found one page at a time, Vite would bundle a second
 // ProseMirror beside TipTap's, and the editor fails until the browser reloads with the new bundle.
-const CLIENT_DEPENDENCY = /^(?:@cossackframework\/solar-icons\/.+|@tiptap\/[^/]+(?:\/[^/]+)?|prosemirror-collab|@simplewebauthn\/browser|@cossackframework\/(?:ui(?:\/blocks)?|auth|cms|framework\/plugins|core\/transport-routes))$/;
+const CLIENT_DEPENDENCY = /^(?:@cossackframework\/solar-icons\/.+|hono\/[^/]+|@tiptap\/[^/]+(?:\/[^/]+)?|prosemirror-collab|@simplewebauthn\/browser|@cossackframework\/(?:ui(?:\/blocks)?|auth|cms|framework\/plugins|core\/transport-routes))$/;
+
+/**
+ * The README for this recipe: the template marks the parts that are about one runtime, one
+ * database or the CMS (`<!-- @cossack:name -->` to `<!-- /@cossack:name -->`), and only the
+ * ones the project has are kept.
+ */
+export function readmeFor(template, recipe) {
+  const database = recipe.resolvedFeatures.includes('database') && recipe.adapter === 'cloudflare' ? recipe.config.database : '';
+  const kept = {
+    cloudflare: recipe.adapter === 'cloudflare',
+    node: recipe.adapter === 'node',
+    cms: recipe.resolvedFeatures.includes('cms'),
+    d1: database === 'd1',
+    hyperdrive: database.startsWith('hyperdrive-'),
+    'cloudflare-database': database === 'd1' || database.startsWith('hyperdrive-'),
+  };
+  let result = template;
+  // Inner parts first, so a kept part can hold others.
+  for (let pass = 0; pass < 3; pass++) {
+    result = result.replace(/<!-- @cossack:([a-z0-9-]+) -->\n((?:(?!<!-- @cossack:)[\s\S])*?)<!-- \/@cossack:\1 -->\n/g, (_, name, body) => kept[name] ? body : '');
+  }
+  return `${result.replace(/\n{3,}/g, '\n\n').trimEnd()}\n`;
+}
 
 /** Fill the client dependency list of vite.config.ts from the rendered source files. */
 export function withClientDependencies(viteConfig, files) {
@@ -2053,6 +2077,8 @@ export async function renderRecipe(recipe, options = {}) {
   }
   const vite = files.get('vite.config.ts');
   if (vite) files.set('vite.config.ts', { ...vite, content: text(withClientDependencies(vite.content.toString('utf8'), files)) });
+  const readme = files.get('README.md');
+  if (readme) files.set('README.md', { ...readme, content: text(readmeFor(readme.content.toString('utf8'), recipe)) });
   return files;
 }
 

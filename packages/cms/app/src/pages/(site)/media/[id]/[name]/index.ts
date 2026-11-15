@@ -14,8 +14,12 @@ const HEADERS = {
  *
  * Answers carry the site's cache tag, so a deleted or changed file leaves a purging cache with
  * the site's next purge (every media change queues one). An original is kept an hour, not for
- * good: a file deleted by mistake stops answering from browsers within the hour.
+ * good: a file deleted by mistake stops answering from browsers within the hour. A variant asked
+ * for at the file's current version (`v`, which every edit changes, as the site's srcsets write
+ * it) never answers differently at that URL, so browsers keep it a year.
  */
+const VARIANT_KEPT = 'public, max-age=31536000, immutable';
+const KEPT = 'public, max-age=3600';
 @Page({ transport: 'http' })
 export default class MediaFile extends Cossack {
     async get() {
@@ -29,9 +33,12 @@ export default class MediaFile extends Cossack {
             const variant = await files.variant(id, {
                 width, ...(Number.isSafeInteger(height) && height > 0 ? { height } : {}), accept: this.c.req.header('accept') ?? '', signal: this.c.req.raw.signal,
             });
-            if (variant) return new Response(variant.body, {
-                headers: { ...HEADERS, 'content-type': variant.contentType, 'content-length': String(variant.size), 'cache-control': 'public, max-age=3600', 'cache-tag': tag, vary: 'Accept' },
-            });
+            if (variant) {
+                const current = this.c.req.query('v') === String(variant.file.updatedAt);
+                return new Response(variant.body, {
+                    headers: { ...HEADERS, 'content-type': variant.contentType, 'content-length': String(variant.size), 'cache-control': current ? VARIANT_KEPT : KEPT, 'cache-tag': tag, vary: 'Accept' },
+                });
+            }
             // Files that are not resized, such as SVG and GIF, answer as uploaded.
         }
         const opened = files ? await files.open(id, { signal: this.c.req.raw.signal }) : null;
@@ -43,7 +50,7 @@ export default class MediaFile extends Cossack {
                 ...HEADERS,
                 'content-type': file.contentType === 'text/plain' ? 'text/plain; charset=utf-8' : file.contentType,
                 'content-length': String(file.size),
-                'cache-control': 'public, max-age=3600',
+                'cache-control': KEPT,
                 'cache-tag': tag,
                 'content-disposition': `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(file.name)}`,
             },

@@ -116,7 +116,7 @@ export const slots = { 'dashboard.overview': [SupportWidget] };
 export const blocks = { contact: SupportContact };
 
 /** Tags for the head of every site page while the plugin is active. */
-export const head: PluginHead = (site, helpers, plugin) => ({ meta: [{ tag: 'meta', attributes: { name: 'support-desk', content: plugin.asset('assets/none.css') || 'on' } }] });
+export const head: PluginHead = ({ plugin }) => ({ meta: [{ tag: 'meta', attributes: { name: 'support-desk', content: plugin.asset('assets/none.css') || 'on' } }] });
 `,
 };
 

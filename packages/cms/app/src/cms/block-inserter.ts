@@ -98,11 +98,11 @@ export class BlockInserter extends Cossack {
                 @input=${(event: Event) => { this.search = (event.target as HTMLInputElement).value; }}>
             <div class="max-h-80 space-y-3 overflow-y-auto">
                 ${recent.length ? html`<section aria-label=${__('Recent')} data-recent-blocks>
-                    <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">${__('Recent')}</h3>
+                    <div role="heading" aria-level="3" class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">${__('Recent')}</div>
                     <ul class="grid grid-cols-3 gap-1">${recent.map(block => this.button(block))}</ul>
                 </section>` : null}
                 ${groups.length ? groups.map(group => html`<section aria-label=${__(group.label)}>
-                    <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">${__(group.label)}</h3>
+                    <div role="heading" aria-level="3" class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">${__(group.label)}</div>
                     <ul class="grid grid-cols-3 gap-1">${group.blocks.map(block => this.button(block))}</ul>
                 </section>`) : html`<p class="py-4 text-center text-sm text-muted-foreground">${__('No blocks match.')}</p>`}
             </div>

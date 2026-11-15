@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { ANONYMOUS, contentModule, createCMS, field, manifestProblems, type CmsHost, type PluginRegistrationLike, type Principal, type ThemeLoaders } from '../src/server/index';
+import { ANONYMOUS, contentModule, createCMS, field, manifestProblems, type CmsHost, type PluginRegistrationLike, type Principal, type ThemeLoaders, type EntryLoaderContext, type LayoutLoaderContext } from '../src/server/index';
 import { romedbService, live } from './helpers';
 
 const admin: Principal = { kind: 'user', id: 'admin-1', roles: ['admin'], permissions: ['*'] };
@@ -8,27 +8,27 @@ const templates = { layout: { default: noop }, entry: { default: noop }, archive
 
 /** A portfolio theme: reads posts through a granted read, and misbehaves on purpose for the other keys. */
 const folioLoaders: ThemeLoaders = {
-    layout: site => ({ title: (site as { title: string }).title }),
-    'entry-posts': async (entry, { cms, principal }) => {
+    layout: context => ({ title: (context as LayoutLoaderContext).site.title }),
+    'entry-posts': async ({ entry, cms, principal }: EntryLoaderContext) => {
         const list = await cms.resource('cms/posts').list({ where: { status: 'published' }, limit: 5 }, { principal });
-        return { related: list.records.filter(record => record.id !== (entry as { id: string }).id).map(record => record.title) };
+        return { related: list.records.filter(record => record.id !== entry.id).map(record => record.title) };
     },
     entry: () => { throw new Error('broken'); },
-    archive: (_, { signal }) => new Promise(resolve => signal.addEventListener('abort', () => resolve({ late: true }))),
+    archive: ({ signal }) => new Promise(resolve => signal.addEventListener('abort', () => resolve({ late: true }))),
     home: () => ({ big: 'x'.repeat(200) }),
     search: () => ['not', 'an', 'object'],
 };
 
 const plainLoaders: ThemeLoaders = {
     layout: () => ({ ok: true }),
-    entry: async (_, { cms, principal }) => ({ posts: (await cms.resource('cms/posts').list({}, { principal })).records }),
+    entry: async ({ cms, principal }) => ({ posts: (await cms.resource('cms/posts').list({}, { principal })).records }),
 };
 
 /** A theme that ships the collection it is designed for, and reads it in a loader. */
 const portfolioLoaders: ThemeLoaders = {
-    'entry-projects': async (entry, { cms, principal }) => {
+    'entry-projects': async ({ entry, cms, principal }: EntryLoaderContext) => {
         const list = await cms.resource('cms/projects').list({ where: { status: 'published' }, limit: 10 }, { principal });
-        return { related: list.records.filter(record => record.id !== (entry as { id: string }).id).map(record => ({ title: record.title, client: record.client })) };
+        return { related: list.records.filter(record => record.id !== entry.id).map(record => ({ title: record.title, client: record.client })) };
     },
 };
 const projects = { name: 'projects', label: 'Projects', singular: 'Project', path: 'projects', icon: 'case', fields: { client: field.string({ label: 'Client' }), cover: field.media({ label: 'Cover' }) } };
@@ -80,27 +80,27 @@ describe.skipIf(!live)('themes: loaders', () => {
         const site = { title: 'Site' } as never;
         expect(cms.themes().find(theme => theme.name === 'folio')?.problems).toEqual([]);
         expect((await cms.status()).plugins.find(plugin => plugin.name === 'folio')).toMatchObject({ themeOnly: false, active: false });
-        expect(await cms.themeData('folio', ['layout'], site, { principal: ANONYMOUS })).toEqual({});
+        expect(await cms.themeData('folio', ['layout'], { site }, { principal: ANONYMOUS })).toEqual({});
         await cms.grantPlugin('folio', admin);
-        expect(await cms.themeData('folio', ['layout'], site, { principal: ANONYMOUS })).toEqual({ title: 'Site' });
+        expect(await cms.themeData('folio', ['layout'], { site }, { principal: ANONYMOUS })).toEqual({ title: 'Site' });
     });
 
     it('runs the first candidate it has a loader for, with the granted read as the visitor', async () => {
         const [first] = (await cms.resource('cms/posts').list({ where: { title: 'First' } }, { principal: admin })).records;
         const entry = { id: first!.id, collection: 'posts', locale: 'en' } as never;
-        expect(await cms.themeData('folio', ['entry-wide', 'entry-posts', 'entry'], entry, { principal: ANONYMOUS })).toEqual({ related: ['Second'] });
+        expect(await cms.themeData('folio', ['entry-wide', 'entry-posts', 'entry'], { entry }, { principal: ANONYMOUS })).toEqual({ related: ['Second'] });
         // No loader among the candidates.
-        expect(await cms.themeData('folio', ['not-found'], entry, { principal: ANONYMOUS })).toEqual({});
-        expect(await cms.themeData(null, ['entry'], entry, { principal: ANONYMOUS })).toEqual({});
+        expect(await cms.themeData('folio', ['not-found'], { entry }, { principal: ANONYMOUS })).toEqual({});
+        expect(await cms.themeData(null, ['entry'], { entry }, { principal: ANONYMOUS })).toEqual({});
     });
 
     it('renders without data when a loader fails, runs out of time or returns too much', async () => {
         const view = { kind: 'archive' } as never;
         warn.mockClear();
-        expect(await cms.themeData('folio', ['entry'], view, { principal: ANONYMOUS })).toEqual({});
-        expect(await cms.themeData('folio', ['archive'], view, { principal: ANONYMOUS })).toEqual({});
-        expect(await cms.themeData('folio', ['home'], view, { principal: ANONYMOUS })).toEqual({});
-        expect(await cms.themeData('folio', ['search'], view, { principal: ANONYMOUS })).toEqual({});
+        expect(await cms.themeData('folio', ['entry'], { view }, { principal: ANONYMOUS })).toEqual({});
+        expect(await cms.themeData('folio', ['archive'], { view }, { principal: ANONYMOUS })).toEqual({});
+        expect(await cms.themeData('folio', ['home'], { view }, { principal: ANONYMOUS })).toEqual({});
+        expect(await cms.themeData('folio', ['search'], { view }, { principal: ANONYMOUS })).toEqual({});
         expect(warn.mock.calls.map(call => String(call[0]))).toEqual([
             expect.stringMatching(/folio\.entry failed: broken/), expect.stringMatching(/folio\.archive failed: timed out/),
             expect.stringMatching(/folio\.home failed: it returned \d+ characters/), expect.stringMatching(/folio\.search failed: it must return an object/),
@@ -109,8 +109,8 @@ describe.skipIf(!live)('themes: loaders', () => {
 
     it('keeps a theme without grants to reads it may make', async () => {
         warn.mockClear();
-        expect(await cms.themeData('plain', ['layout'], { title: 'Site' } as never, { principal: ANONYMOUS })).toEqual({ ok: true });
-        expect(await cms.themeData('plain', ['entry'], {} as never, { principal: ANONYMOUS })).toEqual({});
+        expect(await cms.themeData('plain', ['layout'], { site: { title: 'Site' } } as never, { principal: ANONYMOUS })).toEqual({ ok: true });
+        expect(await cms.themeData('plain', ['entry'], { entry: {} } as never, { principal: ANONYMOUS })).toEqual({});
         expect(String(warn.mock.calls[0]?.[0])).toMatch(/plain\.entry failed: Plugin plain has no grant for cms\/posts/);
     });
 
@@ -129,7 +129,7 @@ describe.skipIf(!live)('themes: loaders', () => {
         expect((await cms.entryUrls(cms.collection('projects'), [rocket])).get(rocket.id)).toBe('/projects/rocket');
         expect(await cms.archiveUrl(cms.collection('projects'))).toBe('/projects');
         // The theme reads its own collection without a grant of its own.
-        expect(await cms.themeData('portfolio', ['entry-projects', 'entry'], { id: rocket.id } as never, { principal: ANONYMOUS })).toEqual({ related: [{ title: 'Skates', client: 'Road Runner' }] });
+        expect(await cms.themeData('portfolio', ['entry-projects', 'entry'], { entry: { id: rocket.id } } as never, { principal: ANONYMOUS })).toEqual({ related: [{ title: 'Skates', client: 'Road Runner' }] });
         await cms.revokePlugin('portfolio', admin);
         expect(cms.collections().map(collection => collection.name)).not.toContain('projects');
         await expect(cms.resource('cms/projects').get(rocket.id, { principal: admin })).rejects.toMatchObject({ code: 'CMS_UNAVAILABLE' });
@@ -176,8 +176,8 @@ describe.skipIf(!live)('themes: loaders', () => {
         expect(themes.get('grandchild')!.problems).toEqual(['Its parent theme folio-dark extends another theme; themes extend one level.']);
         expect(cms.themeLoaders('folio-dark').sort()).toEqual(['archive', 'entry', 'entry-posts', 'home', 'layout', 'search']);
         // The child's loader wins for its key; the parent's runs for the others, with the parent's grant.
-        expect(await cms.themeData('folio-dark', ['entry-posts', 'entry'], {} as never, { principal: ANONYMOUS })).toEqual({ child: true });
-        expect(await cms.themeData('folio-dark', ['layout'], { title: 'Site' } as never, { principal: ANONYMOUS })).toEqual({ title: 'Site' });
+        expect(await cms.themeData('folio-dark', ['entry-posts', 'entry'], { entry: {} } as never, { principal: ANONYMOUS })).toEqual({ child: true });
+        expect(await cms.themeData('folio-dark', ['layout'], { site: { title: 'Site' } } as never, { principal: ANONYMOUS })).toEqual({ title: 'Site' });
         await cms.activateTheme('folio-dark', admin);
         expect(await cms.entryTemplates()).toEqual(['entry-dark']);
         await expect(cms.activateTheme('orphan', admin)).rejects.toMatchObject({ code: 'CMS_VALIDATION' });

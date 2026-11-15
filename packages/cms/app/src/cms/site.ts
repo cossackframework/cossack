@@ -5,7 +5,7 @@
  */
 import {
     ENTRY_VIEW_REFUSED_BLOCKS, siteEntryView, validateBlocks, type EntryViewParts,
-    ANONYMOUS, ARTICLE_TYPES, authorUrl, entryAuthors, blockDocuments, SHARE_BRAND_URLS, blockIsData, blocksPlain, editedSize, fieldGroupDeclarations, hasBlockReference, parseBlockText, PATTERN_REFERENCE, resolveBindings, resolveBlockBindings, siteBindingScope, textBlocks, usesUserBinding, type BindingScopes, type ParsedText, flattenBlocks, escapeHtml, formatSiteDate, formInputs, formSettings, imageSrcset, imageUrl, imageWidths, IMAGE_WIDTHS, isCmsError, languageFlag, languageName, mediaUrl, notificationRules, recordTitle, resolvePresets, richTextBlocks, richTextParts, richTextPlain, systemPrincipal, templateCandidates, transformable, urlList,
+    ANONYMOUS, ARTICLE_TYPES, withContentFields, authorUrl, entryAuthors, blockDocuments, SHARE_BRAND_URLS, blockIsData, blocksPlain, editedSize, fieldGroupDeclarations, hasBlockReference, parseBlockText, PATTERN_REFERENCE, resolveBindings, resolveBlockBindings, siteBindingScope, textBlocks, usesUserBinding, type BindingScopes, type ParsedText, flattenBlocks, escapeHtml, formatSiteDate, formInputs, formSettings, imageSrcset, imageUrl, imageWidths, IMAGE_WIDTHS, isCmsError, languageFlag, languageName, mediaUrl, notificationRules, recordTitle, resolvePresets, richTextBlocks, richTextParts, richTextPlain, systemPrincipal, templateCandidates, transformable, urlList,
     type AuthorView, type Block,
     type Principal, type TemplatePage, type ThemeData, type ThemePresets,
     type ArchiveView, type BodyPart, type BrandIcon, type CollectionDefinition, type CommentShape, type CommentView, type CommentsView, type EntryReference, type EntryView, type FieldDeclaration, type FieldFilter,
@@ -97,7 +97,9 @@ export async function activePresets(cms: CmsHost): Promise<Required<ThemePresets
  * candidates the theme has a loader for (`layout` for the layout). Empty when there is none.
  */
 export function themeData(cms: CmsHost, theme: ThemeState, page: TemplatePage | 'layout', view: SiteView | EntryView | ArchiveView, principal: Principal, locale?: string): Promise<ThemeData> {
-    return cms.themeData(theme.name, page === 'layout' ? ['layout'] : templateCandidates(page), view, { principal, options: theme.options, ...(locale ? { locale } : {}) });
+    // The loader gets the key its template does: the layout's site, the page's entry or its list.
+    const input = page === 'layout' ? { site: view as SiteView } : page.kind === 'entry' ? { entry: view as EntryView } : { view: view as ArchiveView };
+    return cms.themeData(theme.name, page === 'layout' ? ['layout'] : templateCandidates(page), input, { principal, options: theme.options, ...(locale ? { locale } : {}) });
 }
 
 /** The URL prefix of a language: empty for the default one. */
@@ -205,11 +207,13 @@ export async function siteMenus(cms: CmsHost, theme: ThemeState, options: { loca
     const locations = declared.length ? declared : ['primary'];
     const menus: Record<string, readonly MenuItemView[]> = {};
     const scopes = bindingScopes(settings, { user: options.user ?? null });
-    for (const location of locations) {
+    // The locations are finished side by side: each may read its panels and their media.
+    const views = await Promise.all(locations.map(async location => {
         const menu = await cms.menus.forLocation(location, languages.multilingual ? locale : undefined).catch(() => null);
-        if (menu) menus[location] = await menuViews(cms, menu, { scopes, locale, forms: options.forms, usage: options.usage, patternDrafts: options.patternDrafts });
-        else if (location === 'primary') menus[location] = await pageMenu(cms, languages, locale);
-    }
+        if (menu) return menuViews(cms, menu, { scopes, locale, forms: options.forms, usage: options.usage, patternDrafts: options.patternDrafts });
+        return location === 'primary' ? pageMenu(cms, languages, locale) : null;
+    }));
+    locations.forEach((location, index) => { if (views[index]) menus[location] = views[index]!; });
     return menus;
 }
 
@@ -438,18 +442,21 @@ export function mediaView(file: CmsFile | undefined, imageOptions: ImageOptions)
     const url = variants && file.edits?.crop && size ? imageUrl(source, { width: Math.min(size.width, widths[widths.length - 1]!) }) : mediaUrl(file);
     return {
         url, alt: file.alt, width: size?.width ?? file.width, height: size?.height ?? file.height, contentType: file.contentType, name: file.name, size: file.size, caption: file.caption,
-        srcset: variants ? imageSrcset(source, { widths }) : '', wideSrcset: variants ? imageSrcset(source, { aspect: 16 / 9, widths }) : '',
+        srcset: variants ? imageSrcset(source, { widths }) : '',
         placeholder: imageOptions.placeholder ? file.placeholder : null, sizes: imageOptions.sizes, focus: file.edits?.focus ?? null,
     };
 }
 
-/** Mark the first image of an entry to load at once: the featured image, or else the first Image block of its content. */
+/** Mark the first image of an entry to load at once: the featured image, or else the first image of its content, an Image block or the image behind a container. */
 function markFirstImage(image: MediaView | null, content: readonly RenderedBlock[]): MediaView | null {
     if (image) return { ...image, priority: true };
     let done = false;
     walkBlocks(content, block => {
-        if (done || block.type !== 'core/image' || !block.media.image) return;
-        (block.media as Record<string, MediaView>).image = { ...block.media.image, priority: true };
+        if (done) return;
+        const behind = typeof block.style?.image === 'string' ? block.style.image : '';
+        const key = behind && block.media[behind]?.contentType.startsWith('image/') ? behind : block.type === 'core/image' && block.media.image ? 'image' : '';
+        if (!key) return;
+        (block.media as Record<string, MediaView>)[key] = { ...block.media[key]!, priority: true };
         done = true;
     });
     return image;
@@ -869,12 +876,15 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
             if (view !== undefined) typed[name] = view;
         }
         // Each content field is rendered once, for `content` and for `fields`; the headings get anchors and a table of contents its list.
-        const content = options.full && !locked ? withHeadingAnchors(contentFields.flatMap(([name]) => (typed[name] as readonly RenderedBlock[] | null | undefined) ?? [])) : [];
+        const parts = options.full && !locked ? contentFields.map(([name]) => [name, ((typed[name] as readonly RenderedBlock[] | null | undefined) ?? []).length] as const).filter(([, count]) => count > 0) : [];
+        const content = withHeadingAnchors(parts.flatMap(([name]) => typed[name] as readonly RenderedBlock[]));
+        // `fields` reads these from `content` (`withContentFields`), so the page's state carries the blocks once.
+        for (const [name] of parts) delete typed[name];
         const details = options.full ? fields.filter(([name, declaration]) => !NOT_DETAILS.has(name) && !declaration.taxonomy && !declaration.media
             && !['text', 'blocks', 'richtext', 'json', 'reference', 'vector', 'bigint'].includes(declaration.kind) && typed[name] !== null && typed[name] !== undefined && typed[name] !== '' && !(Array.isArray(typed[name]) && !(typed[name] as unknown[]).length))
             .map(([name, declaration]) => ({ label: declaration.label ?? name, value: displayValue(declaration.kind, typed[name], settings) })) : [];
         const featured = imageField ? mediaView(files.get(String(record[imageField[0]] ?? '')), resizes) : null;
-        views.push({
+        views.push(withContentFields({
             id: record.id, title: recordTitle(record, 'title'), url: urls.get(record.id) ?? null, collection: collection.name, kind: collection.singular,
             date: typeof record.publishedAt === 'number' ? formatSiteDate(record.publishedAt, settings) : '',
             updated: collection.publishable === false ? '' : formatSiteDate(record.updatedAt, settings),
@@ -884,6 +894,7 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
             excerpt: locked ? '' : excerptField && record.excerpt ? String(record.excerpt) : typeof record.summary === 'string' && record.summary ? excerptOf(record.summary, 40) : excerptOf(contentPlain(record), 40),
             summary: locked || typeof record.summary !== 'string' ? '' : record.summary,
             content,
+            contentFields: parts,
             image: options.full && settings['media.eagerFirstImage'] && records.length === 1 ? markFirstImage(featured, content) : featured,
             terms: taxonomyFields.map(([name, declaration]) => ({
                 label: cms.taxonomies.declaration(declaration.taxonomy!).label,
@@ -895,7 +906,7 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
             locale,
             comments: options.full && collection.comments && !locked && cms.discussions(settings) ? await commentsView(cms, collection, record, urls.get(record.id) ?? '/', settings, options) : null,
             locked: lock,
-        });
+        }));
         if (options.full && !locked) {
             // Active plugins change the title and excerpt, and add blocks around the content, through `cms.site.entry-view`.
             const parts = await entryViewParts(cms, collection, record, views.at(-1)!, Boolean(options.user));
@@ -1069,12 +1080,11 @@ async function resolveIn(cms: CmsHost, languages: SiteLanguages, locale: string,
     }
     // Collections at the site root share one namespace: nested ones (pages) first, then the others by name.
     const roots = cms.collections().filter(collection => collection.path === '').sort((a, b) => Number(!a.hierarchical) - Number(!b.hierarchical) || a.name.localeCompare(b.name));
-    for (const root of roots) {
-        if (!root.hierarchical && rest.length > (root.permalink === 'category' ? 2 : 1)) continue;
-        const found = await bySlug(cms, root, rest.at(-1)!, languages, locale);
-        if (found) return canonical(cms, root, found, segments);
-    }
-    return { kind: 'none', locale };
+    // Each is asked at once; the first in that order with the slug answers.
+    const candidates = roots.filter(root => root.hierarchical || rest.length <= (root.permalink === 'category' ? 2 : 1));
+    const found = await Promise.all(candidates.map(root => bySlug(cms, root, rest.at(-1)!, languages, locale)));
+    const index = found.findIndex(record => record !== null);
+    return index < 0 ? { kind: 'none', locale } : canonical(cms, candidates[index]!, found[index]!, segments);
 }
 
 /** The redirect for a path without content, if any; its use is counted in the background. */

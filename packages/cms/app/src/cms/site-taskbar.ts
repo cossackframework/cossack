@@ -8,7 +8,7 @@ import { settingsSectionHref } from './settings-search';
 import type { User } from '@cossackframework/core';
 import { ANONYMOUS, evaluateRule, hasPermission, PERMISSIONS, type Principal } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
-import { siteLogo, siteName } from '../brand';
+import { siteHasLogo, siteLogo, siteName } from '../brand';
 import { navigation } from '../dashboard/access';
 import { icon } from './icons';
 import type { Resolved } from './site';
@@ -35,7 +35,7 @@ export async function siteTaskbar(c: Context, user: User | undefined): Promise<T
         const page = c.get('cms.taskbar');
         const plugins = (await cms.slotLinks('site.taskbar', principal).catch(() => [])).map(link => ({ label: link.label, href: link.href }));
         return {
-            site: { title: await siteName(), logo: await siteLogo() },
+            site: { title: await siteName(), logo: await siteLogo(), logoOnly: await siteHasLogo() },
             start,
             context: pageContext(cms, principal, c.get('cms.site'), page, c.req.path),
             create,

@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { contentModule, createCMS, saveBytes, type CmsHost, type Principal } from '../src/server/index';
-import { live, romedbService } from './helpers';
+import { live, romedbService, smallRequests } from './helpers';
 
 describe.skipIf(!live)('shared drafts', () => {
     const service = romedbService();
@@ -8,7 +8,7 @@ describe.skipIf(!live)('shared drafts', () => {
     let cms: CmsHost;
 
     beforeAll(async () => {
-        cms = createCMS({ db: service.database(), modules: [contentModule], now: () => clock });
+        cms = createCMS({ db: smallRequests(service.database()), modules: [contentModule], now: () => clock });
         expect((await cms.migrate()).failed).toBeUndefined();
         await cms.ready({ force: true });
     }, 30_000);

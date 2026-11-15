@@ -3,7 +3,7 @@ import { html } from '@cossackframework/renderer';
 import { isCmsError, type EntryView, type RecordShape, type RenderedBlock, type ThemeData } from '@cossackframework/cms';
 import { entryInput } from '../../../../../cms/content';
 import { entryViews, formPreviewBlock, siteView, themeData, themeState, type ThemeState } from '../../../../../cms/site';
-import { entryTemplate, siteContent, siteTheme, themeHelpers } from '../../../../../cms/site-view';
+import { entryTemplate, withContentFields, siteContent, siteTheme, themeContext, themeHelpers } from '../../../../../cms/site-view';
 import { contentMenus, siteInfo, type SiteInfo } from '../../../../../cms/site';
 import type { MenuItemView } from '@cossackframework/cms';
 
@@ -108,8 +108,8 @@ export default class PreviewPage extends Cossack {
             <p class="text-muted-foreground">${__('The link expired, or you cannot edit this entry.')}</p>
         </section>`;
         const theme = siteTheme(this.theme);
-        const helpers = themeHelpers(theme, { ...this.theme, data: { page: this.data }, menus: this.menus, site: this.site ?? undefined }, (path, exact) => this.isActive(path, exact));
+        const context = themeContext(theme, { ...this.theme, data: { page: this.data }, menus: this.menus, site: this.site ?? undefined }, (path, exact) => this.isActive(path, exact));
         return html`${this.banner()}
-            ${siteContent(entryTemplate(theme, this.entry.collection, this.entry.template)(this.entry, helpers), this.theme)}`;
+            ${siteContent(entryTemplate(theme, this.entry.collection, this.entry.template)({ ...context, entry: withContentFields(this.entry) }), this.theme)}`;
     }
 }

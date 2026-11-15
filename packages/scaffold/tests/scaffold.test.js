@@ -764,9 +764,21 @@ describe('composition', () => {
     expect(compactReadme).toContain('requires both `database_name` and `database_id` for a remote binding');
     expect(compactReadme).toContain('pnpm exec wrangler d1 list');
     expect(compactReadme).not.toContain('replace the placeholder `database_id`');
-    expect(compactReadme).toContain('replace the all-zero `id` in');
-    expect(compactReadme).toContain('only needs the opaque configuration ID');
-    expect(compactReadme).toContain('Do not put the connection string or credentials in source-controlled files.');
+    // The README holds what this project has: no Hyperdrive, CMS or marker text in a D1 project.
+    expect(compactReadme).not.toContain('Hyperdrive');
+    expect(compactReadme).not.toContain('## CMS');
+    expect(compactReadme).not.toContain('@cossack:');
+    const hyperdrive = (await renderRecipe(resolveRecipe({ adapter: 'cloudflare', preset: 'minimal', features: ['database'], database: 'hyperdrive-postgres' }))).get('README.md').content.toString().replace(/\s+/g, ' ');
+    expect(hyperdrive).toContain('replace the all-zero `id` in');
+    expect(hyperdrive).toContain('only needs the opaque configuration ID');
+    expect(hyperdrive).toContain('Do not put the connection string or credentials in source-controlled files.');
+    expect(hyperdrive).not.toContain('wrangler d1 create');
+    const cms = (await renderRecipe(resolveRecipe({ adapter: 'cloudflare', preset: 'minimal', features: ['cms'] }))).get('README.md').content.toString();
+    expect(cms).toContain('## CMS');
+    expect(cms).toContain('`/auth/setup`');
+    expect(cms).not.toContain('D1');
+    const node = (await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: [] }))).get('README.md').content.toString();
+    expect(node).not.toMatch(/Cloudflare|D1|CMS/);
 
   });
 

@@ -60,15 +60,15 @@ export {
     type RichTextDoc, type RichTextNode, type RichTextMark, type EmbeddedBlock, type ContentPart, type RichTextRenderOptions, type RichTextMediaInfo,
 } from './richtext';
 export {
-    themeProblems, siteThemeProblems, assembleSiteTheme, layerSiteThemes, entryTemplate, archiveTemplate, entryTemplateChoices, templateCandidates, pickTemplate, SPECIFIC_TEMPLATE,
+    themeProblems, siteThemeProblems, assembleSiteTheme, layerSiteThemes, entryTemplate, withContentFields, archiveTemplate, entryTemplateChoices, templateCandidates, pickTemplate, SPECIFIC_TEMPLATE,
     PRESET_KINDS, DEFAULT_PRESETS, GRADIENT_VALUE, LANGUAGE_SWITCHER_STYLES, presetProblems, layerPresets, resolvePresets, presetOverridesProblem, presetStyle, blockStyleAttributes, backgroundImageUrl, customCssProblem,
     type Preset, type PresetKind, type ThemePresets, type PresetOverrides, type BlockStyleAttributes,
-    type ThemeManifest, type ThemeAreaManifest, themeArea, type SiteTheme, type ThemeSource, type EntryTemplate, type ArchiveTemplate, type TemplatePage, type ThemeData, type FieldView, type EntryReference, type ThemeHelpers, type SiteView, type EntryView, type ArchiveView, type AuthorView, type RenderedBlock, type RepeaterView, type ItemsView, type BodyPart, type MediaView, type TermLink, type Paging,
+    type ThemeManifest, type ThemeAreaManifest, themeArea, type SiteTheme, type ThemeSource, type EntryTemplate, type ArchiveTemplate, type BlockRenderer, type SiteBasics, type ThemeContext, type LayoutContext, type HeadContext, type EntryContext, type ArchiveContext, type LockedContext, type MembersContext, type BlockContext, type TemplatePage, type ThemeData, type FieldView, type EntryReference, type ThemeHelpers, type SiteView, type EntryView, type ArchiveView, type AuthorView, type RenderedBlock, type RepeaterView, type ItemsView, type BodyPart, type MediaView, type TermLink, type Paging,
     type EntryAuthor, type CommentView, type CommentsView, type CommentFormView, type LanguageLink, type LanguageSwitcherOptions, type MenuOptions, type MenuStyle, type MenuMotion, type SearchOptions, type LanguageSwitcherStyle, type FormView, type InputView,
 } from './theme';
 export type { BrandIcon, BreadcrumbView, HeadingView } from './theme';
 export { SHARE_NETWORKS, SHARE_BRAND_URLS, type ShareNetwork, type BlockVariation } from './blocks';
-export type { PluginHead } from './theme';
+export type { PluginHead, PluginHeadContext } from './theme';
 export { ICON_NAME, SITE_ICON_NAMES, DASHBOARD_ICON_NAMES, HOT_ICON_NAMES, ICON_NAME_SET, ICON_CATEGORIES, ICON_SET_VERSION, ICON_STYLES, ICON_STYLE_LABELS, DEFAULT_ICON_STYLE, ICON_SPRITE_GROUPS, ICON_SPRITE_VERSION, isIconStyle, isIconName, iconCategoryOf, iconSpriteNames, iconSpriteGroup, iconSpriteUrl, iconHref, type IconCategory, type IconStyleName } from './icons';
 export { MAP_EMBED_URL } from './blocks';
 export { diffWords, compareRecords, comparableValue, type DiffPart, type FieldChange } from './diff';
@@ -85,7 +85,7 @@ export { recordSchema, fieldSchema, type JsonSchema } from './schema-json';
 export { REDIRECT_STATUSES, REDIRECT_PATH, redirectPath, redirectProblems, type Redirect, type RedirectInput, type RedirectStatus } from './redirects';
 export { WEBHOOK_EVENTS, webhookUrlProblem, type Webhook, type WebhookDelivery, type WebhookEvent, type WebhookInput, type WebhookPayload } from './webhooks';
 export { COMMENT_STATUSES, checkComment, type CommentShape, type CommentRow, type CommentStatus } from './comments';
-export { IMAGE_WIDTHS, PLACEHOLDER_SCRIPT, TRANSFORMABLE_TYPES, blurredPlaceholder, imageWidths, placeholderStyle, imageEditsProblems, editedSize, variantWidth, variantRect, transformable, imageUrl, imageSrcset, type ImageEdits, type ImageRect, type ImageSource } from './images';
+export { IMAGE_WIDTHS, PLACEHOLDER_SCRIPT, TRANSFORMABLE_TYPES, blurredPlaceholder, wideSrcset, imageWidths, placeholderStyle, imageEditsProblems, editedSize, variantWidth, variantRect, transformable, imageUrl, imageSrcset, type ImageEdits, type ImageRect, type ImageSource } from './images';
 export { COLLAB_COLORS, PRESENCE_TIMEOUT, participantColor, livePeers, expiredPeers, groupPeers, checkPresence, PendingKeys, scalarKey, patchKey, richTextPath, parseRichTextPath, stableJson, treeOps, applyTreeOp, treeHash, StepLog, type PeerPresence, type PeerState, type Participant, type TreeOp, type TreeOpsOptions } from './collab';
 export { NOTE_STATUSES, NOTE_LIMITS, formatNoteTarget, parseNoteTarget, noteBlock, noteField, checkNoteBody, checkNoteRange, checkNoteQuote, checkNoteAction, mentionsIn, noteParts, notePlainText, noteMail, mentionToken, noteThreads, findQuote, type Note, type NoteAction, type NoteRange, type NoteStatus, type NoteTarget, type NoteThread } from './notes';
 

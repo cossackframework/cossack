@@ -108,7 +108,7 @@ describe('plugin policy', () => {
   });
 
   it('treats the collections a plugin ships as its own', () => {
-    const source = `export const loaders = { entry: (_: unknown, { cms, principal }: any) => cms.resource('cms/projects').list({}, { principal }) };`;
+    const source = `export const loaders = { entry: ({ cms, principal }: any) => cms.resource('cms/projects').list({}, { principal }) };`;
     expect(codes(source)).toEqual(['COSSACK_PLUGIN_PERMISSION']);
     expect(codes(source, { collections: [{ name: 'projects', label: 'Projects', singular: 'Project', fields: {} }] })).toEqual([]);
   });

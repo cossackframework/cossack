@@ -5,7 +5,7 @@ const { taskbar } = await import('../src/cms/taskbar');
 const { renderToString } = await import('@cossackframework/renderer/server');
 
 const view = (overrides: Partial<Parameters<typeof taskbar>[0]> = {}) => ({
-    site: { title: 'Blog', logo: '/logo.svg' }, start: [{ label: 'Dashboard', href: '/dashboard' }],
+    site: { title: 'Blog', logo: '/logo.svg', logoOnly: false }, start: [{ label: 'Dashboard', href: '/dashboard' }],
     context: { status: 'draft', edit: '/hello?edit', links: [{ label: 'Edit', href: '/dashboard/content/posts/1' }] },
     create: [], plugins: [], seo: null,
     user: { name: 'Ann Lee', email: 'ann@example.com', avatar: null, links: [] },
@@ -14,6 +14,13 @@ const view = (overrides: Partial<Parameters<typeof taskbar>[0]> = {}) => ({
 const render = async (input = view()) => (await renderToString(taskbar(input, { logout: () => undefined }))).replace(/\s*\n\s*/g, '');
 
 describe('site taskbar', () => {
+    it('shows the site\'s own logo without the title beside it', async () => {
+        expect(await render()).toContain('<span class="max-w-40 truncate">Blog</span>');
+        const own = await render(view({ site: { title: 'Blog', logo: '/media/logo.svg', logoOnly: true } }));
+        expect(own).toMatch(/<img src="\/media\/logo\.svg" alt="Blog"/);
+        expect(own).not.toContain('<span class="max-w-40 truncate">Blog</span>');
+    });
+
     it('shows the status as underlined text in its color, not a badge', async () => {
         const markup = await render();
         expect(markup).toMatch(/<span data-taskbar-status="draft" class="[^"]*underline[^"]*decoration-muted-foreground\/60[^"]*">Draft<\/span>/);

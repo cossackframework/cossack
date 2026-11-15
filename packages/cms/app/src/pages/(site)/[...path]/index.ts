@@ -6,7 +6,7 @@ import { component, html } from '@cossackframework/renderer';
 import { hasPermission, isCmsError, isSameOriginPost, PERMISSIONS, type ArchiveView, type EntryView, type LanguageLink, type Note, type RecordShape, type ThemeData } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
 import { archive, authorArchive, authorView, bindableEntry, bindingScopes, commentResult, entryLock, entryViews, homeView, isMembersOnly, isProtected, languageLinks, localePrefix, pageNumber, redirectFor, requestLock, resolvePath, searchBase, searchEntries, termArchive, themeData, themeState, unlockCookie, unlockToken, resolvedOptions, type Resolved, type ThemeState, notFoundPage } from '../../../cms/site';
-import { archiveTemplate, entryTemplate, siteContent, siteTheme, tagDocument, themeHelpers, unavailable } from '../../../cms/site-view';
+import { archiveTemplate, entryTemplate, withContentFields, siteContent, siteTheme, tagDocument, themeContext, unavailable } from '../../../cms/site-view';
 import { authorSeo, entrySeo, homeSeo, listSeo } from '../../../cms/seo';
 import { emptySeo, seoHead, type SeoView } from '../../../cms/seo-head';
 import type { SiteDraft, SiteEditable } from '../../../cms/site-editor';
@@ -296,12 +296,12 @@ export default class SitePath extends Cossack {
     }
 
     /** What a members-only entry shows a visitor who is not signed in: the theme's prompt, or a plain one. */
-    private membersPrompt(theme: ReturnType<typeof siteTheme>, helpers: ReturnType<typeof themeHelpers>) {
+    private membersPrompt(theme: ReturnType<typeof siteTheme>, context: ReturnType<typeof themeContext>) {
         const entry = this.entry!;
         const back = encodeURIComponent(this.c.req.path);
         const signedIn = this.c.get('principal').kind === 'user';
         const view = { entry, signedIn, signIn: `/auth/login?redirect=${back}`, register: this.registration && !signedIn ? `/auth/register?redirect=${back}` : null };
-        return theme.members?.(view, helpers) ?? html`<article class="space-y-6" data-members-only>
+        return theme.members?.({ ...context, view }) ?? html`<article class="space-y-6" data-members-only>
             <header><h1 class="text-4xl font-bold tracking-tight text-foreground">${entry.title}</h1></header>
             <div class="max-w-sm space-y-3">
                 ${signedIn ? html`<p class="text-sm text-muted-foreground">${__('This content is for members with another kind of account than yours.')}</p>` : html`
@@ -315,10 +315,10 @@ export default class SitePath extends Cossack {
     }
 
     /** The password form of a protected entry: the theme's, or a plain one. */
-    private passwordForm(theme: ReturnType<typeof siteTheme>, helpers: ReturnType<typeof themeHelpers>) {
+    private passwordForm(theme: ReturnType<typeof siteTheme>, context: ReturnType<typeof themeContext>) {
         const entry = this.entry!;
         const view = { entry, action: this.c.req.path, error: this.wrongPassword };
-        return theme.password?.(view, helpers) ?? html`<article class="space-y-6" data-protected>
+        return theme.password?.({ ...context, view }) ?? html`<article class="space-y-6" data-protected>
             <header><h1 class="text-4xl font-bold tracking-tight text-foreground">${entry.title}</h1></header>
             <form id="password" method="post" action=${view.action} class="max-w-sm space-y-3">
                 <p class="text-sm text-muted-foreground">${__('This content is password protected. To view it, enter the password below.')}</p>
@@ -582,17 +582,17 @@ export default class SitePath extends Cossack {
     render() {
         if (this.kind === 'unavailable') return unavailable();
         const theme = siteTheme(this.theme);
-        const helpers = themeHelpers(theme, { ...this.theme, data: { page: this.data }, editing: Boolean(this.draft), languages: this.languages, menus: this.menus, site: this.site ?? undefined }, (path, exact) => this.isActive(path, exact));
-        if (this.kind === 'entry' && this.entry && this.locked) return siteContent(this.locked === 'members' ? this.membersPrompt(theme, helpers) : this.passwordForm(theme, helpers), this.theme);
+        const context = themeContext(theme, { ...this.theme, data: { page: this.data }, editing: Boolean(this.draft), languages: this.languages, menus: this.menus, site: this.site ?? undefined }, (path, exact) => this.isActive(path, exact));
+        if (this.kind === 'entry' && this.entry && this.locked) return siteContent(this.locked === 'members' ? this.membersPrompt(theme, context) : this.passwordForm(theme, context), this.theme);
         if (this.kind === 'entry' && this.entry) {
             // In edit mode the content's blocks carry their document: the entry's own, or a pattern's, locked when the user may not change it.
             const entry = this.draft ? { ...this.entry, content: tagDocument(this.entry.content, 'entry', false, new Map(this.draft.documents.filter(document => document.kind === 'pattern').map(document => [document.name, !document.editable]))) } : this.entry;
-            const page = siteContent(entryTemplate(theme, entry.collection, entry.template)(entry, helpers), this.theme);
+            const page = siteContent(entryTemplate(theme, entry.collection, entry.template)({ ...context, entry: withContentFields(entry) }), this.theme);
             // The editor sits outside the content root, which contains fixed elements; the taskbar is the layout's.
             return this.draft ? html`${page}${this.editor()}` : page;
         }
         if (this.kind === 'home' || this.kind === 'list') {
-            const page = siteContent(archiveTemplate(theme, this.view)(this.view, helpers), this.theme);
+            const page = siteContent(archiveTemplate(theme, this.view)({ ...context, view: this.view }), this.theme);
             return this.draft ? html`${page}${this.editor()}` : page;
         }
         if (this.kind === 'gone') return html`<section class="space-y-3 py-16 text-center">
@@ -600,7 +600,7 @@ export default class SitePath extends Cossack {
             <p class="text-muted-foreground">${__('This page was removed and is not coming back.')}</p>
             <a href="/" class="text-primary hover:underline">${__('Go to the home page')}</a>
         </section>`;
-        return theme.notFound?.(helpers) ?? html`<section class="space-y-3 py-16 text-center">
+        return theme.notFound?.(context) ?? html`<section class="space-y-3 py-16 text-center">
             <h1 class="text-3xl font-bold text-foreground">${__('Page not found')}</h1>
             <p class="text-muted-foreground">${__('The page you are looking for does not exist.')}</p>
             <a href="/" class="text-primary hover:underline">${__('Go to the home page')}</a>

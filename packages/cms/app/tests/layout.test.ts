@@ -11,8 +11,8 @@ const theme = { layout: () => null, entry: () => null, archive: () => null } as 
 const helpers = themeHelpers(theme, { name: null, options: {} }, () => false);
 const paragraph = (id: string, text: string): RenderedBlock => ({ _id: id, type: 'core/paragraph', data: { text }, html: { text: `<p>${text}</p>` }, media: {} });
 const group = (id: string, data: Record<string, unknown>, children: RenderedBlock[], extra: Partial<RenderedBlock> = {}): RenderedBlock => ({ _id: id, type: 'core/group', data, html: {}, media: {}, children, ...extra });
-const picture: MediaView = { url: '/media/f1/sea.jpg', alt: '', width: 2000, height: 1200, contentType: 'image/jpeg', caption: '', srcset: '/media/f1/sea.jpg?w=640 640w, /media/f1/sea.jpg?w=1920 1920w', wideSrcset: '', placeholder: null, sizes: '', focus: { x: 0.5, y: 0.2 } };
-const clip: MediaView = { url: '/media/v1/loop.mp4', alt: '', width: null, height: null, contentType: 'video/mp4', caption: '', srcset: '', wideSrcset: '', placeholder: null, sizes: '' };
+const picture: MediaView = { url: '/media/f1/sea.jpg', alt: '', width: 2000, height: 1200, contentType: 'image/jpeg', caption: '', srcset: '/media/f1/sea.jpg?w=640 640w, /media/f1/sea.jpg?w=1920 1920w', placeholder: null, sizes: '', focus: { x: 0.5, y: 0.2 } };
+const clip: MediaView = { url: '/media/v1/loop.mp4', alt: '', width: null, height: null, contentType: 'video/mp4', caption: '', srcset: '', placeholder: null, sizes: '' };
 const compact = (html: string) => html.replace(/\s*\n\s*/g, '');
 
 describe('the constrained layout', () => {
@@ -44,14 +44,20 @@ describe('the constrained layout', () => {
 
     it('gives a group its height and vertical alignment, and its styled wrapper its width', async () => {
         const hero = compact(await renderToString(helpers.block(group('h', { align: 'center', height: 'tall', valign: 'center' }, [], { style: { background: 'brand' } }))!));
-        expect(hero).toContain('<div class="cms-block cms-bg-brand" data-align="center" style="background-color: var(--cms-color-brand)"><div class="cms-group" data-align="center" data-direction="column" data-justify="start" data-height="tall" data-valign="center">');
+        expect(hero).toContain('<div class="cms-block cms-box cms-bg-brand" data-align="center" style="background-color: var(--cms-color-brand)"><div class="cms-group" data-align="center" data-direction="column" data-justify="start" data-height="tall" data-valign="center">');
         const plain = compact(await renderToString(helpers.block(group('p', { height: 'auto', valign: 'top' }, []))!));
         expect(plain).toContain('<div class="cms-group" data-align="content" data-direction="column" data-justify="start"></div>');
     });
 
     it('places a background video behind a group, with the image as its poster', async () => {
         const band = compact(await renderToString(helpers.block(group('b', { align: 'full' }, [paragraph('p', 'Over it')], { style: { image: 'f1', video: 'v1', overlay: '#000', overlayOpacity: 60 }, media: { f1: picture, v1: clip } }))!));
-        expect(band).toContain('<div class="cms-block cms-has-image cms-has-overlay cms-has-video" data-align="full" style="background-size: cover; background-position: 50% 20%; background-repeat: no-repeat; background-image: url(&quot;/media/f1/sea.jpg?w=1920&quot;); --cms-overlay: color-mix(in srgb, #000 60%, transparent)">');
+        // The image covers the band: an <img> under the video, sized for the screen and loaded as it nears it.
+        expect(band).toContain('<div class="cms-block cms-box cms-has-image cms-has-image-element cms-has-overlay cms-has-video" data-align="full" style="--cms-overlay: color-mix(in srgb, #000 60%, transparent)">');
+        expect(band).toMatch(/<img class="cms-bg-image" src="\/media\/f1\/sea\.jpg" srcset="[^"]*w=1920 1920w[^"]*" sizes="100vw" alt="" aria-hidden="true"width="2000" height="1200" loading="lazy" decoding="async"style="object-position: 50% 20%"><video class="cms-bg-video"/);
+        // A tiled image stays a layer of the wrapper's background.
+        const tiled = compact(await renderToString(helpers.block(group('t', {}, [], { style: { image: 'f1', imageRepeat: true }, media: { f1: picture } }))!));
+        expect(tiled).toContain('background-image: url(&quot;/media/f1/sea.jpg?w=1920&quot;)');
+        expect(tiled).not.toContain('cms-bg-image');
         expect(band).toContain('<video class="cms-bg-video" src="/media/v1/loop.mp4" poster="/media/f1/sea.jpg" autoplay muted loop playsinline disablepictureinpicture preload="auto" aria-hidden="true" tabindex="-1"></video><div class="cms-group"');
         // A video the media did not resolve renders no element.
         const silent = compact(await renderToString(helpers.block(group('s', {}, [], { style: { video: 'gone', background: 'brand' } }))!));

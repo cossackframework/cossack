@@ -396,13 +396,16 @@ export interface RouterContext {
 
 /**
  * Compute the `<link rel="modulepreload">` hrefs for a page: the page chunk,
- * its transitive imports, and the entry-client's transitive imports (excluding
- * entry-client itself, which is already discovered via the `<script>` tag).
+ * the chunks of the layouts it renders in, their transitive imports, and the
+ * entry-client's transitive imports (excluding entry-client itself, which is
+ * already discovered via the `<script>` tag). Without the layouts, a layout's
+ * chunk and its imports were found only once the page's code ran: a second
+ * round of requests before the page could hydrate.
  *
  * Shared by the SSR router and the SSG renderer so their output matches.
  * Returns `[]` in dev (Vite serves modules directly) and for empty page paths.
  */
-export function getModulePreloads(mfest: Record<string, any>, pagePath: string): string[] {
+export function getModulePreloads(mfest: Record<string, any>, pagePath: string, layoutPaths: readonly string[] = []): string[] {
   if (!pagePath) return [];
   if (import.meta.env && import.meta.env.DEV) return [];
 
@@ -423,6 +426,7 @@ export function getModulePreloads(mfest: Record<string, any>, pagePath: string):
   };
 
   collect(normalizedPath);
+  for (const layoutPath of layoutPaths) collect(layoutPath.replace(/^\//, ''));
 
   const entryClient = mfest['src/client/entry-client.ts'];
   if (entryClient?.imports) {

@@ -10,8 +10,8 @@ describe('page blocks of the second wave', () => {
             expect(blockProblems(types.get(name)!), name).toEqual([]);
         }
         expect(types.get('core/carousel')!.children).toEqual({ allowed: ['core/slide'], max: 12 });
-        expect(types.get('core/slide')!.supports).toEqual({ background: true });
-        expect(types.get('core/gallery')!.fields.layout).toMatchObject({ kind: 'enum', values: ['grid', 'logos'] });
+        expect(types.get('core/slide')!.supports).toEqual({ background: true, typography: ['align'] });
+        expect(types.get('core/gallery')!.fields.layout).toMatchObject({ kind: 'enum', values: ['grid', 'masonry', 'logos'] });
         expect(types.get('core/share')!.fields.networks).toMatchObject({ kind: 'enum', multiple: true, values: [...SHARE_NETWORKS] });
     });
 

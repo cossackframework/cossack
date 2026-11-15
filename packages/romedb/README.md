@@ -39,6 +39,9 @@ Rules:
   text `sql`; values, results and `ClientError` are RomeDB's own. `RecordId` is RomeDB's
   `Record`, renamed so it does not hide TypeScript's `Record` type. Print one as
   `` `${id.table}:${id.key}` ``.
+- `maxRequestBytes()` and `maxResultBytes()` are the database's own limits, as it reports
+  them: 8 MiB of each on a local RomeDB 0.2.23 or later, 1 MiB requests on Cloud, and 64 KiB
+  requests with 256 KiB of results from an engine that reports none. Cut batches by them.
 - The engine must be RomeDB 0.2.21 or later; `preflight()` refuses older or missing releases,
   and `exportFile()` runs it first, so a copy is never asked of an engine that cannot leave
   tables out.

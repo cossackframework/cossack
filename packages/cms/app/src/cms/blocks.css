@@ -26,7 +26,9 @@
 .cms-measure { max-width: min(var(--cms-content, 48rem), 100% - 2 * var(--cms-gutter, 1.5rem)); margin-inline: auto; }
 .cms-measure-wide { max-width: min(var(--cms-wide, 72rem), 100% - 2 * var(--cms-gutter, 1.5rem)); margin-inline: auto; }
 .cms-measure .cms-measure, .cms-measure .cms-measure-wide { max-width: none; }
-.cms-padded { --cms-gutter: 0px; }
+.cms-padded { padding: var(--cms-pad); --cms-gutter: 0px; }
+/* A band across the page: its padding is its height. Its sides keep the page's gutter, so what it holds lines up with the rest of the page on every screen. */
+.cms-padded[data-align="full"] { padding-inline: 0; --cms-gutter: inherit; }
 
 .cms-group, .cms-columns, .cms-grid { --cms-gap: 1.5rem; display: grid; gap: var(--cms-gap); }
 [data-gap="none"] { --cms-gap: 0; }
@@ -62,7 +64,8 @@
  * the grid item. Stacking is a custom property the columns block sets and its columns inherit,
  * so edit markers and wrappers between them change nothing, and nested columns keep their own.
  */
-.cms-columns { grid-template-columns: repeat(12, minmax(0, 1fr)); --cms-stack-sm: initial; --cms-stack-md: initial; }
+/* Twelve tracks have eleven gaps: the gap between tracks never takes more than a twelfth of the width each, or a large gap would be wider than a phone. */
+.cms-columns { grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: min(var(--cms-gap), 100% / 12); --cms-stack-sm: initial; --cms-stack-md: initial; }
 .cms-columns[data-stack="mobile"] { --cms-stack-sm: 12; }
 .cms-columns[data-stack="tablet"] { --cms-stack-sm: 12; --cms-stack-md: 12; }
 .cms-column, .cms-column-box { grid-column: span var(--cms-span, 12); min-width: 0; }
@@ -73,16 +76,20 @@
 .cms-column[data-valign="bottom"] { justify-content: flex-end; }
 .cms-column > :first-child { margin-top: 0; }
 
-/* A styled block's wrapper: `blockStyleAttributes` sets its colors, spacing, size and alignment inline through the presets' variables. */
+/* A styled block's wrapper: `blockStyleAttributes` sets its colors, spacing, size and alignment inline through the presets' variables. Inside a box (padding or a background) the first and last blocks drop their outer margins; a wrapper that only names or colors a block keeps them. */
 .cms-block { min-width: 0; }
-.cms-block > :first-child { margin-top: 0; }
-.cms-block > :last-child { margin-bottom: 0; }
+.cms-box > :first-child { margin-top: 0; }
+.cms-box > :last-child { margin-bottom: 0; }
 /*
  * The advanced background of a container. The wrapper's own background is the image under a
  * gradient; a video sits over it, the overlay (`--cms-overlay`) over both, and the content on
- * top: the wrapper is a stacking context, so the negative layers stay inside it.
+ * top: the wrapper is a stacking context, so the negative layers stay inside it. An image that
+ * covers the block is an `<img>` under the video instead (`.cms-bg-image`), so the browser
+ * picks a size for the screen and loads it like any other image.
  */
-.cms-block.cms-has-overlay, .cms-block.cms-has-video { position: relative; isolation: isolate; }
+.cms-block.cms-has-overlay, .cms-block.cms-has-video, .cms-block.cms-has-image-element { position: relative; isolation: isolate; }
+.cms-bg-image { position: absolute; inset: 0; z-index: -3; width: 100%; height: 100%; max-width: none; object-fit: cover; pointer-events: none; }
+.cms-block > .cms-bg-image + * { margin-top: 0; }
 .cms-has-overlay::before { content: ''; position: absolute; inset: 0; z-index: -1; background: var(--cms-overlay); pointer-events: none; }
 .cms-bg-video { position: absolute; inset: 0; z-index: -2; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
 .cms-block > .cms-bg-video + * { margin-top: 0; }
@@ -134,6 +141,12 @@ html[data-cms-device="phone"] .cms-content { max-width: 24rem; margin-inline: au
   .cms-form [data-cms-when][data-hidden] { display: none !important; }
 }
 .cms-form-trap { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+/* The fields in rows, `--cms-form-gap` apart: each input takes its row, a half or a third shares it while each keeps about 14rem or 11rem, and the submit button keeps its own width. */
+.cms-form-fields { --cms-form-gap: 1rem; display: flex; flex-wrap: wrap; gap: var(--cms-form-gap); }
+.cms-form-fields > * { flex: 1 0 100%; min-width: 0; }
+.cms-form-fields > [data-width="half"] { flex-basis: calc((100% - var(--cms-form-gap)) / 2); min-width: min(100%, 14rem); }
+.cms-form-fields > [data-width="third"] { flex-basis: calc((100% - 2 * var(--cms-form-gap)) / 3); min-width: min(100%, 11rem); }
+.cms-form-fields > [data-cms-form-submit] { flex: 0 0 auto; }
 
 /*
  * Dividers (core/divider): a line of a thickness and length, a palette color or a CSS color,
@@ -244,7 +257,8 @@ a.cms-nav-sublink:hover { background: var(--muted); }
 .cms-mega { left: 50%; translate: -50% 0; width: max-content; min-width: 20rem; max-width: min(64rem, calc(100vw - 2rem)); padding-top: 0.5rem; text-align: left; }
 .cms-mega-box { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2rem; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--popover); color: var(--popover-foreground); padding: 1.5rem; box-shadow: 0 16px 40px -16px rgb(0 0 0 / 0.4); }
 .cms-mega[data-panel] .cms-mega-box { grid-template-columns: minmax(0, 1fr) minmax(14rem, 18rem); }
-.cms-mega[data-panel] .cms-mega-columns:empty + .cms-mega-panel { grid-column: 1 / -1; }
+/* A panel without link columns beside it takes the whole box. */
+.cms-mega-panel:only-child { grid-column: 1 / -1; }
 .cms-mega-columns { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(11rem, 14rem); gap: 1.5rem; }
 .cms-mega-heading { margin: 0 0 0.5rem; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted-foreground); }
 .cms-mega-links { display: grid; gap: 0.125rem; }
@@ -360,6 +374,14 @@ a.cms-nav-sublink:hover { background: var(--muted); }
 .cms-accordion-item[open] .cms-accordion-caret { rotate: 225deg; }
 .cms-accordion-body { padding-bottom: 1rem; }
 .cms-accordion-body > :first-child { margin-top: 0; }
+/* Accordion sections and FAQ answers slide open and shut where the browser can animate to a natural height; elsewhere they open at once. */
+@media (prefers-reduced-motion: no-preference) {
+  @supports (interpolate-size: allow-keywords) {
+    :is(.cms-accordion-item, .cms-faq-item) { interpolate-size: allow-keywords; }
+    :is(.cms-accordion-item, .cms-faq-item)::details-content { block-size: 0; overflow: hidden; transition: block-size 0.3s ease, content-visibility 0.3s allow-discrete; }
+    :is(.cms-accordion-item, .cms-faq-item)[open]::details-content { block-size: auto; }
+  }
+}
 
 /* Cards (core/card) with an icon, or without a box. */
 .cms-card[data-style="plain"] { border: 0; border-radius: 0; background: none; }
@@ -577,3 +599,110 @@ html:lang(ar), html:lang(he), html:lang(fa), html:lang(ur), html:lang(ps), html:
     .mdx-content :is(th, td) { border: 1px solid var(--border); padding: 0.375rem 0.75rem; text-align: left; vertical-align: top; }
     .mdx-content th { background: var(--muted); font-weight: 600; }
 }
+
+/* The accent of a heading: the words between *asterisks*. */
+.cms-accent { color: var(--primary); }
+
+/* Buttons in a row or a centered block keep their own width. */
+.cms-align-center .cms-button { text-align: center; }
+.cms-align-right .cms-button { text-align: right; }
+
+/* Card with its image behind the text (core/card, layout overlay): the tile is the link, the text sits at the bottom over a shade. */
+.cms-card[data-layout="overlay"] { position: relative; isolation: isolate; align-content: end; min-height: 20rem; border: 0; color: white; }
+.cms-card[data-layout="overlay"] .cms-card-media { position: absolute; inset: 0; z-index: -1; }
+.cms-card[data-layout="overlay"] .cms-card-media img { height: 100%; transition: scale 0.5s ease; }
+.cms-card[data-layout="overlay"] .cms-card-media::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to top, rgb(0 0 0 / 0.8), rgb(0 0 0 / 0.35) 55%, rgb(0 0 0 / 0.1)); }
+.cms-card[data-layout="overlay"]:hover .cms-card-media img { scale: 1.08; }
+.cms-card[data-layout="overlay"] .cms-card-body { padding: 1.5rem; }
+.cms-card[data-layout="overlay"] :is(h3, h3 a, .cms-prose, .cms-prose p, .cms-card-body a) { color: inherit; }
+.cms-card[data-layout="overlay"] h3 a::after { content: ''; position: absolute; inset: 0; }
+.cms-card[data-layout="overlay"] .cms-card-icon { display: inline-flex; align-items: center; justify-content: center; width: 3rem; height: 3rem; margin-bottom: 1rem; border-radius: 0.75rem; background: var(--primary); color: var(--primary-foreground, white); }
+.cms-card[data-layout="overlay"] .cms-card-icon .cms-icon { width: 1.5rem; height: 1.5rem; }
+@media (prefers-reduced-motion: reduce) { .cms-card[data-layout="overlay"] .cms-card-media img { transition: none; } }
+
+/* Masonry gallery (core/gallery, layout masonry): whole images in columns; fewer columns on narrow content. */
+.cms-masonry { columns: var(--cms-masonry-columns, 3); column-gap: 1rem; }
+.cms-masonry > * { display: block; break-inside: avoid; margin-bottom: 1rem; }
+.cms-masonry-image { display: block; width: 100%; height: auto; border-radius: 0.75rem; }
+.cms-gallery-link { display: block; overflow: hidden; border-radius: 0.75rem; cursor: zoom-in; }
+.cms-gallery-link img { transition: scale 0.5s ease; }
+.cms-gallery-link:hover img { scale: 1.06; }
+@container (width < 1024px) { .cms-masonry { columns: min(var(--cms-masonry-columns, 3), 2); } }
+@container (width < 640px) { .cms-masonry { columns: 1; } }
+@media (prefers-reduced-motion: reduce) { .cms-gallery-link img { transition: none; } }
+
+/* The lightbox (cms/lightbox.client.ts): one dialog over the page for a gallery's image or a video. */
+.cms-lightbox { position: fixed; inset: 0; width: 100vw; max-width: none; height: 100vh; height: 100dvh; max-height: none; margin: 0; padding: 0; border: 0; background: rgb(0 0 0 / 0.92); color: white; }
+.cms-lightbox[open] { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: minmax(0, 1fr) auto; align-items: center; }
+.cms-lightbox::backdrop { background: rgb(0 0 0 / 0.6); }
+.cms-lightbox-stage { grid-column: 2; display: flex; align-items: center; justify-content: center; height: 100%; min-height: 0; padding: 3.5rem 0 1rem; }
+.cms-lightbox-media { max-width: 100%; max-height: 100%; border-radius: 0.5rem; object-fit: contain; background: black; }
+video.cms-lightbox-media { width: min(100%, 160vh); aspect-ratio: 16 / 9; }
+.cms-lightbox-caption { grid-column: 1 / -1; margin: 0; padding: 0 1rem 1rem; text-align: center; font-size: 0.875rem; color: rgb(255 255 255 / 0.8); }
+.cms-lightbox :is(.cms-lightbox-close, .cms-lightbox-arrow) { display: inline-flex; align-items: center; justify-content: center; width: 3rem; height: 3rem; margin: 0 0.75rem; padding: 0; border: 0; border-radius: 9999px; background: rgb(255 255 255 / 0.12); color: white; cursor: pointer; }
+.cms-lightbox :is(.cms-lightbox-close, .cms-lightbox-arrow):hover { background: rgb(255 255 255 / 0.24); }
+.cms-lightbox :is(.cms-lightbox-close, .cms-lightbox-arrow) svg { width: 1.5rem; height: 1.5rem; }
+.cms-lightbox-close { position: absolute; top: 1rem; right: 0.25rem; z-index: 1; }
+.cms-lightbox-prev { grid-column: 1; }
+.cms-lightbox-next { grid-column: 3; }
+.cms-lightbox [hidden] { display: none; }
+
+/* A video that plays in the lightbox (core/video): its poster under a play button. */
+.cms-video-poster { position: relative; display: block; overflow: hidden; border-radius: 0.75rem; background: black; aspect-ratio: 16 / 9; }
+.cms-video-poster-image { display: block; width: 100%; height: 100%; object-fit: cover; transition: scale 0.5s ease; }
+.cms-video-poster::after { content: ''; position: absolute; inset: 0; background: rgb(0 0 0 / 0.3); transition: background 0.3s ease; }
+.cms-video-poster:hover::after { background: rgb(0 0 0 / 0.4); }
+.cms-video-poster:hover .cms-video-poster-image { scale: 1.06; }
+.cms-video-play { position: absolute; top: 50%; left: 50%; z-index: 1; display: flex; align-items: center; justify-content: center; width: 4.5rem; height: 4.5rem; translate: -50% -50%; border-radius: 9999px; background: rgb(255 255 255 / 0.92); color: var(--primary); box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3); transition: scale 0.3s ease; }
+.cms-video-play svg { width: 2rem; height: 2rem; margin-left: 0.2rem; }
+.cms-video-poster:hover .cms-video-play { scale: 1.1; }
+@media (prefers-reduced-motion: reduce) { .cms-video-poster-image, .cms-video-play { transition: none; } }
+
+/* Carousel: a 4:3 shape, several slides at once (fewer on narrow content), and thumbnails in place of the dots. */
+.cms-carousel[data-aspect="photo"] :is(.cms-carousel-image, .cms-carousel-blockslide) { aspect-ratio: 4 / 3; }
+.cms-carousel[data-per-view] .cms-carousel-track { gap: 1.5rem; background: none; border-radius: 0; }
+.cms-carousel[data-per-view] .cms-carousel-slide { flex-basis: calc((100% - (var(--cms-per-view) - 1) * 1.5rem) / var(--cms-per-view)); overflow: hidden; border-radius: 0.75rem; }
+@container (width < 1024px) { .cms-carousel[data-per-view] .cms-carousel-slide { flex-basis: calc((100% - 1.5rem) / 2); } }
+@container (width < 640px) { .cms-carousel[data-per-view] .cms-carousel-slide { flex-basis: 100%; } }
+.cms-carousel-thumbs, .cms-compare-thumbs { display: flex; gap: 0.75rem; margin-top: 0.75rem; padding-bottom: 0.25rem; overflow-x: auto; scrollbar-width: thin; }
+.cms-carousel-thumbs { display: none; }
+.cms-carousel[data-enhanced] .cms-carousel-thumbs { display: flex; }
+:is(.cms-carousel-thumb, .cms-compare-thumb) { flex: 0 0 auto; width: 8rem; padding: 0; overflow: hidden; border: 2px solid transparent; border-radius: 0.5rem; background: none; opacity: 0.65; cursor: pointer; transition: opacity 0.2s ease, border-color 0.2s ease; }
+:is(.cms-carousel-thumb, .cms-compare-thumb) img { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: cover; }
+:is(.cms-carousel-thumb, .cms-compare-thumb):hover { opacity: 1; }
+:is(.cms-carousel-thumb, .cms-compare-thumb)[aria-selected="true"] { border-color: var(--primary); opacity: 1; }
+
+/* Steps side by side (core/steps, layout row): each under its number, stacked on narrow content. */
+.cms-steps-row { display: grid; grid-template-columns: repeat(var(--cms-step-count, 4), minmax(0, 1fr)); gap: 2rem; padding: 0; list-style: none; text-align: center; }
+.cms-steps-row .cms-step-number { display: flex; align-items: center; justify-content: center; width: 4rem; height: 4rem; margin: 0 auto 1rem; border-radius: 9999px; background: color-mix(in oklab, var(--primary) 14%, transparent); color: var(--primary); font-size: 1.5rem; font-weight: 700; }
+@container (width < 1024px) { .cms-steps-row { grid-template-columns: repeat(min(var(--cms-step-count, 4), 2), minmax(0, 1fr)); } }
+@container (width < 640px) { .cms-steps-row { grid-template-columns: minmax(0, 1fr); } }
+
+/* Before and after (core/compare): the image before, clipped at the handle, over the image after. The range input is the control. */
+.cms-compare-figure { margin: 0; }
+.cms-compare-stage { position: relative; overflow: hidden; border-radius: 0.75rem; background: var(--muted); aspect-ratio: 16 / 9; user-select: none; touch-action: pan-y; }
+.cms-compare[data-aspect="wide"] .cms-compare-stage { aspect-ratio: 16 / 10; }
+.cms-compare[data-aspect="photo"] .cms-compare-stage { aspect-ratio: 4 / 3; }
+.cms-compare[data-aspect="square"] .cms-compare-stage { aspect-ratio: 1; }
+.cms-compare-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.cms-compare-before { clip-path: inset(0 calc(100% - var(--cms-compare, 50%)) 0 0); }
+.cms-compare-label { position: absolute; top: 1rem; padding: 0.25rem 0.75rem; border-radius: 9999px; background: rgb(0 0 0 / 0.6); color: white; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; pointer-events: none; }
+.cms-compare-label[data-side="before"] { left: 1rem; }
+.cms-compare-label[data-side="after"] { right: 1rem; background: color-mix(in oklab, var(--primary) 90%, transparent); color: var(--primary-foreground, white); }
+.cms-compare-handle { position: absolute; top: 0; bottom: 0; left: var(--cms-compare, 50%); width: 2px; translate: -1px 0; background: rgb(255 255 255 / 0.9); box-shadow: 0 0 6px rgb(0 0 0 / 0.4); pointer-events: none; }
+.cms-compare-knob { position: absolute; top: 50%; left: 50%; display: flex; align-items: center; justify-content: center; width: 2.75rem; height: 2.75rem; translate: -50% -50%; border-radius: 9999px; background: white; color: var(--primary); box-shadow: 0 4px 10px rgb(0 0 0 / 0.3); }
+.cms-compare-knob svg { width: 1.25rem; height: 1.25rem; }
+.cms-compare-range { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: ew-resize; }
+.cms-compare-range:focus-visible + *, .cms-compare-stage:has(.cms-compare-range:focus-visible) { outline: 2px solid var(--ring); outline-offset: 2px; }
+.cms-compare-pair + .cms-compare-pair { margin-top: 1rem; }
+.cms-compare[data-enhanced] .cms-compare-pair:not([data-active]) { display: none; }
+@media (scripting: enabled) { .cms-compare-pair:not([data-active]) { display: none; } }
+@media (scripting: none) { .cms-compare-thumbs { display: none; } }
+
+/* Card with its icon beside the text (core/card without an image, position left or right). */
+.cms-card[data-icon] .cms-card-body { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 1rem; align-items: start; }
+.cms-card[data-icon] .cms-card-icon { grid-row: 1 / span 4; margin-bottom: 0; }
+.cms-card[data-icon] .cms-card-body > :not(.cms-card-icon) { grid-column: 2; }
+.cms-card[data-icon="right"] .cms-card-body { grid-template-columns: minmax(0, 1fr) auto; }
+.cms-card[data-icon="right"] .cms-card-icon { grid-column: 2; }
+.cms-card[data-icon="right"] .cms-card-body > :not(.cms-card-icon) { grid-column: 1; }

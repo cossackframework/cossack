@@ -189,7 +189,7 @@ export function notesRail(props: NotesRailProps): TemplateResult | null {
         @keydown=${(event: KeyboardEvent) => { if (event.key === 'Escape') { event.stopPropagation(); props.onClose(); } }}>
         <div class="flex h-full flex-col">
             <header class="flex items-center gap-3 border-b border-border px-5 py-4">
-                <h2 class="text-base font-semibold text-foreground">${__('Notes')}</h2>
+                <div role="heading" aria-level="2" class="text-base font-semibold text-foreground">${__('Notes')}</div>
                 <div role="tablist" class="flex items-center gap-1">${tab('open', __('Open'), open.length)}${tab('resolved', __('Resolved'), resolved.length)}</div>
                 <span class="flex-1"></span>
                 <button type="button" class="inline-flex size-8 shrink-0 items-center justify-center rounded-md border-none bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer" aria-label=${__('Close')} @click=${() => props.onClose()}>✕</button>

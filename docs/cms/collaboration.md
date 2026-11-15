@@ -62,9 +62,10 @@ the rich text versions and the editors present. An instance that restarts, or a 
 empties and reopens, starts from that draft when it is newer than the saved entry. The row is
 capped at what an entry can hold and still be saved (`saveBytes`): a save carries the fields as
 the RomeDB client types them (rich text and blocks weigh about three times their JSON), and
-the JSON again in the search text, the revision and the event. That is about 9–14 KB of values
-on a local RomeDB service (64 KiB requests), depending on how much formatting the text has, and
-about 16 times that on RomeDB Cloud (1 MiB requests). A draft past that stays in memory alone,
+the JSON again in the search text, the revision and the event. That is about 150–220 KB of values
+on RomeDB Cloud (1 MiB requests), depending on how much formatting the text has, and eight
+times that on a local RomeDB 0.2.23 or later (8 MiB requests); an older local engine takes
+64 KiB requests, about 9–14 KB of values. A draft past that stays in memory alone,
 the editor warns, and a save of that size is refused as too large.
 
 The per-user autosave still serves new entries, which have no room yet. For saved entries the

@@ -115,7 +115,9 @@ cossack cms <command> [args] [--url …] [--site …] [--json]
 | `settings get [group]`, `settings set <group> --set field=value`, `settings export [--out file]`, `settings import --data @file` | Settings by group, or as the document Settings → Export writes. |
 | `cache purge [--tag <tag>] [--path <url>]` | Purge the caches in front of the site: every page, or the tags and URLs given (see [Cache](/docs/cms/cache.md)). |
 | `taxonomies list`, `terms list\|get\|create\|update\|delete <taxonomy>` | Terms, with `--name`, `--slug`, `--parent`, `--description`. |
-| `media list [--q --kind image]`, `media upload <file…>` | The media library. |
+| `media list [--q --kind image --page --per-page]`, `media upload <file…>`, `media update <id> --alt … [--title --caption --description]` | The media library, newest first, 40 a page (at most 100); a file's alternative text and other details. |
+| `themes list`, `themes activate <name>` | The themes the site may use; make one the site's (its patterns and field groups are stored). |
+| `plugins list`, `plugins grant <name>`, `plugins revoke <name>` | The installed plugins and what each asks for (the plugins permission); grant one everything its manifest requests, or disable it. Unrestricted access is granted in the dashboard alone. |
 | `menus list\|get\|create\|update\|delete` | Navigation menus (the appearance permission): `menus create "Main" --location primary --data '{"items":[…]}'`; `update <id>` takes `--name`, `--data` (the whole items tree) and `--location` (the complete list). |
 | `locations list`, `locations set <location> <menuId>`, `locations clear <location>` | The themes' menu locations and the menu shown at each. |
 | `areas list\|get <name>`, `areas set <name> --data '{"blocks":[…]}'`, `areas reset <name> --yes` | The themes' widget areas (header, footer, sidebars): their blocks, replaced whole, or forgotten so the theme's defaults show again. |
@@ -180,7 +182,7 @@ The server's instructions tell the model what the site has. Its tools mirror the
 `set_entry_status`, `list_revisions`, `get_revision`, `restore_revision`, `list_notes`,
 `add_note`, `update_note`, `delete_note`, `list_users`, `get_user`, `create_user`,
 `update_user`, `delete_user`, `list_roles`, `get_settings`, `update_settings`, `purge_cache`,
-`list_taxonomies`, `list_terms`, `create_term`, `update_term`, `delete_term`, `list_media`,
+`list_taxonomies`, `list_terms`, `create_term`, `update_term`, `delete_term`, `list_media`, `update_media`, `list_themes`, `activate_theme`,
 `list_menus`, `get_menu`, `create_menu`, `update_menu`, `delete_menu`, `list_menu_locations`,
 `assign_menu_location`, `list_widget_areas`, `get_widget_area`, `update_widget_area`,
 `reset_widget_area`, `list_sites`, `get_network_site`, `create_site` and `set_site_status`. Each carries its input
@@ -220,7 +222,10 @@ application password. A CMS refusal answers `{ error, code, fields? }` with its 
 | `GET /settings`, `PUT /settings`, `GET\|PATCH /settings/<group>` | The settings document and its groups. |
 | `POST /cache/purge` `{ tags?, urls? }` | Purge the caches in front of the site (the settings permission): every page, or the tags and URLs given; answers each purger's result. |
 | `GET\|POST /terms/<taxonomy>`, `GET\|PATCH\|DELETE /terms/<taxonomy>/<id>` | Terms. |
-| `GET /media?q=&kind=`, `POST /media` (multipart `file`) | The media library: `q` matches titles and names, `kind` is image, video, audio, document or archive. |
+| `GET /media?q=&kind=&page=&perPage=`, `POST /media` (multipart `file`), `PATCH /media/<id>` `{ title?, alt?, caption?, description? }` | The media library, newest first: `q` matches titles and names, `kind` is image, video, audio, document or archive; each file carries its `name`, `url`, `alt` and size, with `page`, `pages` and `total`. `PATCH` changes a file's details, for its owner or a media manager. |
+| `GET /appearance/themes`, `POST /appearance/themes/<name>/activate` | The themes the site may use, the active one marked; make one the site's. |
+| `GET /plugins`, `POST /plugins/<name>/grant`, `POST /plugins/<name>/revoke` | The installed plugins with what each asks for and still lacks, for the plugins permission; grant or disable one. A plugin asking for unrestricted access is refused here (409): the dashboard confirms that grant. |
+| `POST /import/<collection>` (a JSON list of entries) | Create entries, or update those whose `id` or slug exists: `{ created, updated, failed }`. A script fills a new site with it. |
 | `GET\|POST /appearance/menus`, `GET\|PATCH\|DELETE /appearance/menus/<id>` | Menus, for the appearance permission: `{ name, items, locations }`, `rev` on a change. `GET /menus/<location>` is the resolved menu visitors see. |
 | `GET /appearance/locations`, `PATCH /appearance/locations/<location>` `{ menu }` | The themes' menu locations and the menu at each (`menu` null for none). |
 | `GET /appearance/areas`, `GET\|PUT\|DELETE /appearance/areas/<name>` | Widget areas: `PUT` `{ blocks, rev }` replaces the blocks (`rev` 0 while the theme's defaults show), `DELETE` forgets them. |

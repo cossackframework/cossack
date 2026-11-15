@@ -91,7 +91,9 @@ export default defineConfig(({ mode, command }) => ({
         // Client maps remain opt-in; Desktop keeps its existing build defaults.
         sourcemap: mode !== 'desktop',
         // Asset URLs the server renders, such as a theme's stylesheet, name the files the
-        // client build emits, so both builds name assets alike.
+        // client build emits, so both builds name assets alike, and make stylesheets for the
+        // same browsers: otherwise each build hashes its own copy and the page loads both.
+        cssTarget: 'esnext',
         rolldownOptions: { output: { assetFileNames: 'assets/[name].[hash][extname]' } },
       },
       resolve: mode === 'desktop' && command === 'build'

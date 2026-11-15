@@ -52,7 +52,7 @@ describe.skipIf(!live)('collections built in the dashboard', () => {
         expect(entry).toMatchObject({ slug: 'rocket-skates', price: 19.5, publishedAt: expect.any(Number) });
         expect(entry.content).toEqual([
             { _id: 'intro', type: 'core/heading', data: { text: 'Fast', level: 'h2' } },
-            { _id: 'buy', type: 'core/button', data: { label: 'Buy', url: '/shop/rocket-skates', style: 'primary' } },
+            { _id: 'buy', type: 'core/button', data: { label: 'Buy', url: '/shop/rocket-skates', style: 'primary', size: 'medium' } },
         ]);
         await expect(entries.create({ title: 'Bad', price: 1, content: [{ _id: 'x', type: 'core/image', data: {} }] }, { principal: editor }))
             .rejects.toMatchObject({ fields: { content: expect.stringContaining('not an available block') } });

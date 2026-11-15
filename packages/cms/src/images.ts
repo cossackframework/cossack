@@ -104,6 +104,19 @@ export function imageSrcset(image: ImageSource, options: { aspect?: number; widt
     return [...new Set(widths.map(width => variantWidth(width, listed)))].map(width => `${imageUrl(image, { width, ...(options.aspect ? { height: Math.round(width / options.aspect) } : {}) })} ${Math.min(width, size.width)}w`).join(', ');
 }
 
+/**
+ * A `srcset` with every variant cut to `aspect` (16 / 9 by default) around the focal point, for
+ * cards and headers: the same variants with a height each. Empty for an empty `srcset`.
+ */
+export function wideSrcset(srcset: string, aspect = 16 / 9): string {
+    return srcset.split(',').map(candidate => candidate.trim()).filter(Boolean).map(candidate => {
+        const [url = '', size = ''] = candidate.split(/\s+/);
+        const width = Number(/[?&]w=(\d+)/.exec(url)?.[1]);
+        if (!width) return candidate;
+        return `${url.replace(/([?&]w=\d+)/, `$1&h=${Math.max(1, Math.round(width / aspect))}`)} ${size}`.trim();
+    }).join(', ');
+}
+
 /** The widths of Settings → Files, sorted and without repeats; `IMAGE_WIDTHS` when the text names none. */
 export function imageWidths(text: string | undefined): readonly number[] {
     const widths = [...new Set((text ?? '').split(',').map(part => Number(part.trim())).filter(width => Number.isSafeInteger(width) && width >= 16 && width <= 8192))].sort((a, b) => a - b).slice(0, 12);
@@ -118,7 +131,8 @@ export function blurredPlaceholder(placeholder: string, width: number | null, he
     const w = width && width > 0 ? width : 16;
     const h = height && height > 0 ? height : 9;
     const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 ${w} ${h}'><filter id='b' color-interpolation-filters='sRGB'><feGaussianBlur stdDeviation='${Math.max(w, h) / 40}'/><feComponentTransfer><feFuncA type='discrete' tableValues='1 1'/></feComponentTransfer></filter><image width='100%' height='100%' preserveAspectRatio='none' filter='url(#b)' href='${placeholder}'/></svg>`;
-    return `url("data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}")`;
+    // Only what an unquoted `url()` and an HTML attribute cannot hold is escaped: the page carries one of these per image.
+    return `url(data:image/svg+xml,${svg.replace(/[%#<>'"()\\\s]/g, character => `%${character.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}`)})`;
 }
 
 /** The inline style that shows a placeholder blurred behind an image while it loads; empty without one. */

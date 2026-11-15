@@ -1,9 +1,9 @@
 /** A collection or term archive. Copy to archive-<collection>.ts, term.ts or term-<taxonomy>.ts for a narrower one. */
 import { html, type TemplateResult } from '@cossackframework/renderer';
-import type { ArchiveView } from '@cossackframework/cms';
+import type { ArchiveContext } from '@cossackframework/cms';
 import { list } from '../parts/list';
 
-export default function archive(view: ArchiveView): TemplateResult {
+export default function archive({ view }: ArchiveContext): TemplateResult {
     return html`<div class="cms-measure space-y-10">
         <header class="space-y-2 border-b border-border pb-6">
             <h1 class="text-3xl font-bold text-foreground">${view.title}</h1>

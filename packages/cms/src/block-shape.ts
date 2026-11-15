@@ -16,7 +16,7 @@ export function blockIdProblem(id: string, taken?: ReadonlySet<string>): string 
 }
 
 /** How many blocks a field holds across its tree, and how deep they nest. */
-export const BLOCK_LIMITS = Object.freeze({ count: 200, depth: 4 });
+export const BLOCK_LIMITS = Object.freeze({ count: 200, depth: 8 });
 /** Container widths blocks respond to: `sm` below 640px, `md` below 1024px, `lg` from there. */
 export const BREAKPOINTS = Object.freeze(['sm', 'md', 'lg'] as const);
 export type Breakpoint = (typeof BREAKPOINTS)[number];

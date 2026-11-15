@@ -25,26 +25,26 @@ const files = {
       },
     }],
   }, null, 2),
-  'server.ts': `import type { ThemeLoaders } from '@cossackframework/cms/server';
+  'server.ts': `import type { EntryLoaderContext, ThemeLoaders } from '@cossackframework/cms/server';
 
 /** Other published projects, for the related list under a project. */
 export const loaders: ThemeLoaders = {
-    'entry-projects': async (entry, { cms, principal }) => {
+    'entry-projects': async ({ entry, cms, principal }: EntryLoaderContext) => {
         const list = await cms.resource('cms/projects').list({ where: { status: 'published' }, order: { field: 'title', direction: 'asc' }, limit: 10 }, { principal });
-        return { related: list.records.filter(record => record.id !== (entry as { id: string }).id).map(record => ({ title: String(record.title), url: '/projects/' + String(record.slug) })) };
+        return { related: list.records.filter(record => record.id !== entry.id).map(record => ({ title: String(record.title), url: '/projects/' + String(record.slug) })) };
     },
     /** Posts are not the theme's own: reading them needs the grant its manifest requests. */
-    'entry-wide': async (_entry, { cms, principal }) => {
+    'entry-wide': async ({ cms, principal }) => {
         const list = await cms.resource('cms/posts').list({ where: { status: 'published' }, limit: 3 }, { principal });
         return { latest: list.records.map(record => String(record.title)) };
     },
 };
 `,
   'templates/entry-projects.ts': `import { html, type TemplateResult } from '@cossackframework/renderer';
-import type { EntryView, ThemeHelpers } from '@cossackframework/cms';
+import type { EntryContext } from '@cossackframework/cms';
 
 /** The content is one list: the sections, then the overview as a rich text block, in field order. */
-export default function project(entry: EntryView, helpers: ThemeHelpers): TemplateResult {
+export default function project({ entry, helpers }: EntryContext): TemplateResult {
     const related = (helpers.data.page.related as { title: string; url: string }[] | undefined) ?? [];
     return html\`<article class="portfolio-project" data-template="entry-projects">
         <p data-strapline>\${String(helpers.options.strapline ?? '')}</p>
@@ -57,18 +57,18 @@ export default function project(entry: EntryView, helpers: ThemeHelpers): Templa
 }
 `,
   'templates/entry-wide.ts': `import { html, type TemplateResult } from '@cossackframework/renderer';
-import type { EntryView, ThemeHelpers } from '@cossackframework/cms';
+import type { EntryContext } from '@cossackframework/cms';
 
-export default function wide(entry: EntryView, helpers: ThemeHelpers): TemplateResult {
+export default function wide({ entry, helpers, site }: EntryContext): TemplateResult {
     const latest = (helpers.data.page.latest as string[] | undefined) ?? [];
-    return html\`<article data-template="entry-wide"><h1>\${entry.title}</h1>\${helpers.block(entry.content)}
+    return html\`<article data-template="entry-wide" data-site=\${site.title}><h1>\${entry.title}</h1>\${helpers.block(entry.content)}
         <ul data-latest>\${latest.map(title => html\`<li>\${title}</li>\`)}</ul></article>\`;
 }
 `,
   'templates/head.ts': `import type { HeadValue } from '@cossackframework/core';
-import type { SiteView, ThemeHelpers } from '@cossackframework/cms';
+import type { HeadContext } from '@cossackframework/cms';
 
-export default function head(_site: SiteView, helpers: ThemeHelpers): HeadValue {
+export default function head({ helpers }: HeadContext): HeadValue {
     return {
         links: [{ tag: 'link', attributes: { rel: 'stylesheet', href: helpers.asset('assets/portfolio.css') } }],
         meta: [{ tag: 'meta', attributes: { name: 'theme-color', content: '#123456' } }],

@@ -4,12 +4,12 @@
  * block's text, or a data block), never as a list of every field; `entry.fields` has them all.
  */
 import { html, type TemplateResult } from '@cossackframework/renderer';
-import type { EntryView, ThemeHelpers } from '@cossackframework/cms';
+import type { EntryContext } from '@cossackframework/cms';
 import { comments } from '../parts/comments';
 import { image } from '../parts/media';
 
 // The title, meta and image keep the content measure; the blocks are the page's constrained layout, so a full-width group spans the page.
-export default function entry(entry: EntryView, helpers: ThemeHelpers): TemplateResult {
+export default function entry({ entry, helpers }: EntryContext): TemplateResult {
     return html`<article class="space-y-6">
         <header class="cms-measure space-y-3">
             <h1 class="text-4xl font-bold tracking-tight text-foreground">${entry.title}</h1>

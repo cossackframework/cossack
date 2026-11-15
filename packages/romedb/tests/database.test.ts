@@ -76,6 +76,16 @@ describe('RomeDB binding', () => {
         expect(files).toEqual([`POST ${CLOUD}/file-exports?empty=cms_cache,cms_sessions`, `GET ${CLOUD}/file-exports/${JOB}`, `GET ${CLOUD}/file-exports/${JOB}/file`]);
     });
 
+    it('takes the request size from what the database reports', async () => {
+        const reporting = (limits: object) => (async (input: RequestInfo | URL) => String(input) === LOCAL ? json({ ...details(REQUIRED_ENGINE_VERSION), limits }) : json({})) as typeof globalThis.fetch;
+        const silent = createRomeDB({ url: LOCAL, token: 't', pending: new MemoryPendingWriteStore(), fetch: reporting({}) });
+        expect(await silent.maxRequestBytes()).toBe(65_536);
+        const raised = createRomeDB({ url: LOCAL, token: 't', pending: new MemoryPendingWriteStore(), fetch: reporting({ maxRequestBytes: 8_388_608 }) });
+        expect(await raised.maxRequestBytes()).toBe(8_388_608);
+        const cloud = createRomeDB({ url: 'https://cloud.romedb.com/v1/organizations/00000000-0000-4000-8000-000000000001/databases/00000000-0000-4000-8000-000000000002', token: 't', pending: new MemoryPendingWriteStore(), fetch: reporting({}) });
+        expect(await cloud.maxRequestBytes()).toBe(1_048_576);
+    });
+
     it('sends explicit work limits by default', async () => {
         const bodies: { [key: string]: unknown }[] = [];
         const fake = service({ onQuery: (body) => { bodies.push(body); return json({ requestId: body.requestId, sequence: 11, results: [{ columns: [], rows: [], affected: '1' }] }); } });

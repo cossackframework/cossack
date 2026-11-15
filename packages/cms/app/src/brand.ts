@@ -15,10 +15,18 @@ export async function siteLogo(): Promise<string> {
     catch { return '/logo.svg'; }
 }
 
+/** Whether Settings → General has a logo: it then stands for the site alone, without the name beside it. */
+export async function siteHasLogo(): Promise<boolean> {
+    try { return Boolean(await currentCms().settings.get('general.logo')); }
+    catch { return false; }
+}
+
 /** Who the sign-in pages sign in to. */
 export interface SignInBrand {
     name: string;
     logo: string;
+    /** The site set its own logo: the pages show it without the name. */
+    logoOnly: boolean;
     /** Where "Back to Home" goes. */
     home: string;
     /** The network whose account signs the visitor in to another site; empty otherwise. */
@@ -33,7 +41,7 @@ export interface SignInBrand {
  * accounts and link the network's sign-in for network accounts.
  */
 export async function signInBrand(): Promise<SignInBrand> {
-    const own = async (networkSignIn: SignInBrand['networkSignIn'] = null) => ({ name: await siteName(), logo: await siteLogo(), home: '/', network: '', networkSignIn });
+    const own = async (networkSignIn: SignInBrand['networkSignIn'] = null) => ({ name: await siteName(), logo: await siteLogo(), logoOnly: await siteHasLogo(), home: '/', network: '', networkSignIn });
     const c = getRequestContext();
     if (!c) return own();
     try {
@@ -51,6 +59,7 @@ export async function signInBrand(): Promise<SignInBrand> {
             name: await settings.get('general.siteTitle') || site.name || home,
             // A site's media is served on its own host.
             logo: logo ? new URL(logo, home).toString() : '/logo.svg',
+            logoOnly: Boolean(logo),
             home,
             network: (await network.settings()).name || await siteName(),
             networkSignIn: null,

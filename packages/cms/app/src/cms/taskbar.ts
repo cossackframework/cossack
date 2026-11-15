@@ -36,7 +36,8 @@ export interface TaskbarLink { label: string; href: string; icon?: IconEntry }
 
 /** The taskbar's view, built on the server for the signed-in user and the page they are on. */
 export interface TaskbarView {
-    site: { title: string; logo: string };
+    /** `logoOnly`: the site set its own logo, which shows without the title. */
+    site: { title: string; logo: string; logoOnly: boolean };
     /** The start menu: Dashboard, then the user's navigation modules. */
     start: TaskbarLink[];
     /** The current page's tools: the entry's status, the in-place editor's address, and links. */
@@ -74,8 +75,10 @@ export function taskbar(view: TaskbarView, handlers: { logout(): void; error?: s
         <span data-taskbar-start class="inline-flex shrink-0">${component(DropdownMenu, {
             id: 'cms-taskbar-start', side: 'top', align: 'start', title: __('Dashboard'),
             trigger: html`<span class=${`${ITEM} font-medium text-foreground`}>
-                <img src=${view.site.logo} alt="" width="20" height="20" loading="eager" class="h-5 w-auto max-w-20 shrink-0 object-contain">
-                <span class="max-w-40 truncate">${view.site.title}</span></span>`,
+                ${view.site.logoOnly
+                    ? html`<img src=${view.site.logo} alt=${view.site.title} width="24" height="24" loading="eager" class="h-6 w-auto max-w-28 shrink-0 object-contain">`
+                    : html`<img src=${view.site.logo} alt="" width="20" height="20" loading="eager" class="h-5 w-auto max-w-20 shrink-0 object-contain">
+                <span class="max-w-40 truncate">${view.site.title}</span>`}</span>`,
         }, html`${view.start.map(menuLink)}`)}</span>
         <div class=${`contents ${EDITING}`}>
             ${SEPARATOR}

@@ -84,7 +84,7 @@ Content is checked when it is saved. An unknown block, a type that does not allo
 a missing required field or a wrong attribute is a validation error on its field. At render,
 a reference that is still wrong renders nothing.
 
-References nest up to the block depth limit, which is 4 levels, and one text holds at most
+References nest up to the block depth limit, which is 8 levels, and one text holds at most
 200 of them. A `{{ pattern }}` expands one level: patterns inside it are left out.
 
 The site parses each text with references once per isolate and keeps the result. Text

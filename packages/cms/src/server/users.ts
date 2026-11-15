@@ -174,25 +174,27 @@ export class CmsUsers {
         const wanted = [...new Set(ids.filter(id => ID.test(id)))].slice(0, USERS_PER_READ);
         if (!wanted.length) return new Map();
         const list = inList('u', wanted);
-        // Profiles hold their meta (bio, links): many users may come in smaller reads.
-        const userRows = await readByIds(this.#db, wanted, slice => {
-            const part = inList('u', slice);
-            return { rql: `SELECT id, email, name, avatar, status, created_at, last_sign_in_at, meta, slug FROM cms_users WHERE id IN ${part.rql}`, params: part.params };
-        });
-        const result = await this.#db.read([
-            // Which roles each user has, narrowly: the roles' permissions are read once below, not once per user.
-            // network_admin comes from the account alone (resolve): a site role row of that name, as a crafted import could add, grants nothing.
-            { rql: `SELECT user_id, role_id FROM cms_user_roles WHERE user_id IN ${list.rql} AND role_id <> $networkAdmin ORDER BY role_id`, params: { ...list.params, $networkAdmin: NETWORK_ADMIN } },
-            // On an added site, accounts in its own database are site accounts.
-            ...(this.#siteAccounts ? [{ rql: `SELECT id FROM cms_accounts WHERE id IN ${list.rql}`, params: list.params }] : []),
+        // Profiles hold their meta (bio, links) and roles their permission lists: many may come in smaller reads.
+        // The users, which roles they hold, and those roles are read side by side, not one after another.
+        const [userRows, result, roleRows] = await Promise.all([
+            readByIds(this.#db, wanted, slice => {
+                const part = inList('u', slice);
+                return { rql: `SELECT id, email, name, avatar, status, created_at, last_sign_in_at, meta, slug FROM cms_users WHERE id IN ${part.rql}`, params: part.params };
+            }),
+            this.#db.read([
+                // network_admin comes from the account alone (resolve): a site role row of that name, as a crafted import could add, grants nothing.
+                { rql: `SELECT user_id, role_id FROM cms_user_roles WHERE user_id IN ${list.rql} AND role_id <> $networkAdmin ORDER BY role_id`, params: { ...list.params, $networkAdmin: NETWORK_ADMIN } },
+                // On an added site, accounts in its own database are site accounts.
+                ...(this.#siteAccounts ? [{ rql: `SELECT id FROM cms_accounts WHERE id IN ${list.rql}`, params: list.params }] : []),
+            ]),
+            // Each role's permissions come once, not once per user who holds it.
+            readPaged(this.#db, (size, at) => ({
+                rql: `SELECT id, name, permissions FROM cms_roles WHERE id IN (SELECT role_id FROM cms_user_roles WHERE user_id IN ${list.rql} AND role_id <> $networkAdmin) ORDER BY id LIMIT $limit OFFSET $offset`,
+                params: { ...list.params, $networkAdmin: NETWORK_ADMIN, $limit: size, $offset: at },
+            }), 1000, 0),
         ]);
         const local = new Set((result.results[1]?.rows ?? []).map(row => row[0] as string));
         const pairs = result.results[0]!.rows.map(([user, role]) => [user as string, role as string] as const);
-        const roleIds = [...new Set(pairs.map(([, role]) => role))];
-        const roleRows = roleIds.length ? await readByIds(this.#db, roleIds, slice => {
-            const part = inList('r', slice);
-            return { rql: `SELECT id, name, permissions FROM cms_roles WHERE id IN ${part.rql}`, params: part.params };
-        }, { afterSequence: result.sequence }) : [];
         const byId = new Map(roleRows.map(([id, name, permissions]) => [id as string, Object.freeze({ id: id as string, name: name as string, permissions: Object.freeze(JSON.parse(permissions as string) as string[]) })]));
         const roles = new Map<string, CmsUser['assignments'][number][]>();
         for (const [user, role] of pairs) {

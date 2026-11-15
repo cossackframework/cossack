@@ -9,7 +9,7 @@ import { blockIdOf, styleValues, withStyle, type BlockTab, type StyleValues } fr
 import { renderMarkdown, type CmsHost } from '@cossackframework/cms/server';
 import { openMatches } from '../../../../../../cms/site';
 import { mentionableUsers } from '../../../../../../cms/site-editing';
-import { applyEntryJson, editorView, entryJson, entryValues, fieldErrors, mediaPreviews, parentOptions, patternBlocks, routeResource, saveEntry, termOptions, type MediaPreview, type SaveIntent } from '../../../../../../cms/content';
+import { applyEntryJson, editorView, entryJson, entryValues, fieldErrors, listUpTo, mediaPreviews, parentOptions, patternBlocks, routeResource, saveEntry, termOptions, type MediaPreview, type SaveIntent } from '../../../../../../cms/content';
 import { blockDefaults, contentField, controlValue, editorBlocks, editorInput, entryUrl, suggestedSlug, type EditorBlock, type EditorField, type EditorValues, type EditorView, type TermOption } from '../../../../../../cms/editor';
 import { collabEditors, RichTextField, richTextEditors, type RichTextFieldProps } from '../../../../../../cms/rich-text-field';
 import type { Caret, NoteMark } from '../../../../../../cms/rich-text.client';
@@ -209,9 +209,9 @@ export default class EntryEditor extends Cossack {
             this.previews = await mediaPreviews(cms, this.values, view);
             if (view.hierarchical) this.parents = await parentOptions(cms, resource.id, record?.id ?? null, principal);
             for (const field of view.fields.filter(entry => entry.kind === 'reference' && entry.target !== resource.id)) {
-                const page = await cms.resource(field.target).list({ limit: 200, order: { field: 'updatedAt', direction: 'desc' } }, { principal }).catch(() => ({ records: [] }));
+                const records = await listUpTo(cms, field.target, { order: { field: 'updatedAt', direction: 'desc' } }, principal, 200).catch(() => []);
                 const target = cms.resourceById(field.target);
-                this.references = { ...this.references, [field.name]: page.records.map(entry => ({ id: entry.id, title: recordTitle(entry, target.titleField) })) };
+                this.references = { ...this.references, [field.name]: records.map(entry => ({ id: entry.id, title: recordTitle(entry, target.titleField) })) };
             }
             const collection = resource.owner === 'cms' ? cms.collection(resource.name) : null;
             // Off under Settings → Discussion: the entry's switch hides with the comments.
@@ -1641,8 +1641,7 @@ export default class EntryEditor extends Cossack {
                         : file && mediaKind(file.contentType) === 'video' ? html`<video src=${file.url} class="aspect-video w-full bg-black" controls preload="metadata"></video>`
                         : file && mediaKind(file.contentType) === 'audio' ? html`<div class="space-y-1 p-3"><p class="truncate text-xs text-muted-foreground">${file.title || file.alt}</p><audio src=${file.url} class="w-full" controls preload="metadata"></audio></div>`
                         : html`<p class="p-3 text-xs text-muted-foreground">${file?.title ?? id}</p>`}
-                    <button type="button" class="absolute right-1 top-1 rounded bg-background/90 px-2 py-0.5 text-xs text-destructive border border-border cursor-pointer"
-                        @click=${() => remove(id)} aria-label=${`${__('Remove')} ${file?.title ?? ''}`}>${__('Remove')}</button>
+                    <div class="absolute right-1 top-1 rounded bg-background">${iconButton(['media', target.field, target.block, target.key, id, 'remove'].filter(Boolean).join('-').replace(/[^\w-]+/g, '-'), 'trash-bin-trash', __('Remove'), () => remove(id), { danger: true, class: 'shadow-sm' })}</div>
                 </figure>`;
             })}</div>` : null}
             ${component(Button, { type: 'button', variant: 'outline', size: 'sm', '@click': () => this.openPicker(target) },

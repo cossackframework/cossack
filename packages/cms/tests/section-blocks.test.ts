@@ -77,4 +77,26 @@ describe('section blocks', () => {
         // A path is what the renderer draws; every icon has one.
         expect(brandIcon('https://github.com/acme')?.path).toMatch(/^M[\d.]/);
     });
+
+    it('declares the blocks of a portfolio: accents, links, tiles, masonry, thumbnails, row steps and before-and-after', () => {
+        for (const name of ['core/heading', 'core/button', 'core/card', 'core/gallery', 'core/carousel', 'core/video', 'core/steps', 'core/compare', 'core/compare-item']) expect(blockProblems(types.get(name)!), name).toEqual([]);
+        expect(types.get('core/compare')!.children).toEqual({ allowed: ['core/compare-item'], max: 24 });
+        expect(types.get('core/compare-item')!.parent).toEqual(['core/compare']);
+        const page: Block[] = [
+            { _id: 'h', type: 'core/heading', data: { text: 'Elevate your *visuals*', level: 'h1' } },
+            { _id: 'b1', type: 'core/button', data: { label: 'Call', url: 'tel:+84963210594', style: 'light', size: 'large' } },
+            { _id: 'b2', type: 'core/button', data: { label: 'Photo editing', url: '#photo-editing', style: 'link', icon: 'arrow-right' } },
+            { _id: 'c', type: 'core/card', data: { title: 'Floor plans', layout: 'overlay', url: '/services#floor-plans' } },
+            { _id: 'g', type: 'core/gallery', data: { images: [], layout: 'masonry', lightbox: true } },
+            { _id: 'car', type: 'core/carousel', data: { images: [], aspect: 'photo', thumbnails: true, perView: 3 } },
+            { _id: 'v', type: 'core/video', data: { url: 'https://cdn.example/tour.mp4', lightbox: true } },
+            { _id: 's', type: 'core/steps', data: { layout: 'row' }, children: [{ _id: 's1', type: 'core/step', data: { title: 'Book' } }] },
+            { _id: 'cmp', type: 'core/compare', data: { aspect: 'wide', start: 40 }, children: [{ _id: 'p1', type: 'core/compare-item', data: { before: 'file-1', after: 'file-2' } }] },
+        ];
+        expect(validateBlocks(page, types).errors).toEqual({});
+        expect(validateBlocks([{ _id: 'b', type: 'core/button', data: { label: 'X', url: 'javascript:alert(1)' } }], types).errors).toEqual({ 'b.url': 'has an invalid format.' });
+        expect(validateBlocks([{ _id: 'v', type: 'core/video', data: { url: 'http://cdn.example/tour.mp4' } }], types).errors).toEqual({ 'v.url': 'has an invalid format.' });
+        expect(validateBlocks([{ _id: 'cmp', type: 'core/compare', data: { start: 140 } }], types).errors).not.toEqual({});
+        expect(validateBlocks([{ _id: 'p', type: 'core/compare-item', data: { before: 'file-1' } }], types).errors).not.toEqual({});
+    });
 });

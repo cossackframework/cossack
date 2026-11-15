@@ -301,7 +301,10 @@ export interface PluginCms {
     resource(id: string): PluginResource;
 }
 
-/** What a theme loader receives besides the view. Reads go through the plugin's grants as the visitor. */
+/**
+ * What every theme loader receives, as one object it destructures:
+ * `({ entry, cms, principal }) => ...`. Reads go through the plugin's grants as the visitor.
+ */
 export interface ThemeLoaderContext {
     /** The theme plugin's repositories: its own resources and its granted ones. */
     readonly cms: PluginCms;
@@ -317,12 +320,27 @@ export interface ThemeLoaderContext {
     readonly template: string;
 }
 
+/** The `layout` loader's context: the site, as the layout template gets it. */
+export interface LayoutLoaderContext extends ThemeLoaderContext {
+    readonly site: SiteView;
+}
+/** An entry loader's context (`entry`, `entry-<collection>`, a chosen `entry-*`). */
+export interface EntryLoaderContext extends ThemeLoaderContext {
+    readonly entry: EntryView;
+}
+/** A list loader's context (`archive`, `home`, `search`, `term`, `author`, `not-found`). */
+export interface ArchiveLoaderContext extends ThemeLoaderContext {
+    readonly view: ArchiveView;
+}
+/** What a loader reads: the layout's site, the page's entry or the page's list. */
+export type ThemeLoaderInput = { readonly site: SiteView } | { readonly entry: EntryView } | { readonly view: ArchiveView };
+
 /**
- * A theme loader, exported from the theme's `server.ts` as `loaders[<template>]`. `layout`
- * receives the `SiteView`; entry loaders the `EntryView`; list loaders the `ArchiveView`. It
+ * A theme loader, exported from the theme's `server.ts` as `loaders[<template>]`, with the key
+ * its template gets: `layout` the `site`, entry loaders the `entry`, list loaders the `view`. It
  * returns plain JSON, which templates read as `helpers.data`.
  */
-export type ThemeLoader = { bivarianceHack(view: SiteView | EntryView | ArchiveView, context: ThemeLoaderContext): unknown }['bivarianceHack'];
+export type ThemeLoader = { bivarianceHack(context: LayoutLoaderContext | EntryLoaderContext | ArchiveLoaderContext): unknown }['bivarianceHack'];
 export type ThemeLoaders = { readonly [template: string]: ThemeLoader };
 
 export type PluginResource = Pick<ResourceRepository, 'get' | 'list' | 'count' | 'search' | 'create' | 'update' | 'delete'>;
@@ -785,6 +803,9 @@ export class CmsHost {
     ready(options: { force?: boolean } = {}): Promise<void> {
         const now = this.#now();
         if (options.force || !this.#definitions || now - this.#definitions.at > this.#activationTtl) {
+            // What the next steps read anyway starts now, beside the definitions: each is one round trip to the database, and they need not wait for each other.
+            void this.#state().catch(() => undefined);
+            void this.settings.all().catch(() => undefined);
             const state = this.#loadDefinitions().then(() => options.force ? undefined : this.#upgrade()).then(() => this.#refreshPlugins());
             this.#definitions = { at: now, state };
             state.catch(() => { this.#definitions = undefined; });
@@ -1257,7 +1278,7 @@ export class CmsHost {
      * the visitor principal and a time limit. Returns its plain JSON, or `{}` when the theme has
      * no such loader, is not active, fails, runs out of time or returns too much.
      */
-    async themeData(name: string | null, candidates: readonly string[], view: SiteView | EntryView | ArchiveView,
+    async themeData(name: string | null, candidates: readonly string[], input: ThemeLoaderInput,
         context: { principal: Principal; options?: { readonly [name: string]: unknown }; locale?: string }): Promise<ThemeData> {
         // A child's loader wins over its parent's for the same key; each runs with its own plugin's grants.
         const chain = this.#themeChain(name);
@@ -1276,10 +1297,11 @@ export class CmsHost {
             timer = setTimeout(() => { controller.abort(); reject(new Error(`timed out after ${this.#loaderTimeout} ms`)); }, this.#loaderTimeout);
         });
         try {
-            const result = await Promise.race([Promise.resolve().then(() => loaders![template]!(view, {
-                cms: this.pluginCms(plugin.manifest.name), principal: context.principal, signal: controller.signal,
-                options: context.options ?? {}, locale: context.locale ?? ('locale' in view && typeof view.locale === 'string' ? view.locale : 'en'), template,
-            })), timeout]);
+            const own = 'site' in input ? input.site.locale : 'entry' in input ? input.entry.locale : undefined;
+            const result = await Promise.race([Promise.resolve().then(() => loaders![template]!({
+                ...input, cms: this.pluginCms(plugin.manifest.name), principal: context.principal, signal: controller.signal,
+                options: context.options ?? {}, locale: context.locale ?? own ?? 'en', template,
+            } as LayoutLoaderContext | EntryLoaderContext | ArchiveLoaderContext)), timeout]);
             if (result === undefined || result === null) return {};
             if (typeof result !== 'object' || Array.isArray(result)) throw new Error('it must return an object.');
             const json = JSON.stringify(result);
@@ -1506,7 +1528,13 @@ export class CmsHost {
         // Category permalinks: the slug of each entry's first term, read in one request.
         const taxonomy = collection.permalink === 'category' ? collection.taxonomies?.[0] : undefined;
         const terms = taxonomy ? await this.taxonomies.getMany([...new Set(records.map(record => this.#firstTerm(record, taxonomy)).filter((id): id is string => !!id))]) : new Map<string, TermShape>();
+        // The page Settings → Reading shows on the front is the home page: its address is the site's (its language's), never its slug's.
+        const front = collection.name === 'pages' ? await this.#frontPage(records, languages, context) : null;
         for (const record of records) {
+            if (front && (record.id === front.id || (front.group && translationGroupOf(record) === front.group))) {
+                urls.set(record.id, this.localePrefix(record.locale, languages) || '/');
+                continue;
+            }
             const slugs: string[] = [];
             let current: RecordShape | undefined = record;
             for (let depth = 0; current && depth < 9; depth++) {
@@ -1522,6 +1550,17 @@ export class CmsHost {
             urls.set(record.id, url ? `${this.localePrefix(record.locale, languages)}${url}` : null);
         }
         return urls;
+    }
+
+    /** The front page's ID and, on a site with several languages, its translation group; null while the front shows the latest posts. */
+    async #frontPage(records: readonly RecordShape[], languages: SiteLanguages, context: OperationContext): Promise<{ id: string; group: string } | null> {
+        const settings = await this.settings.all().catch(() => null);
+        const id = settings && settings['reading.showOnFront'] === 'page' ? String(settings['reading.pageOnFront'] ?? '') : '';
+        if (!id) return null;
+        if (!languages.multilingual) return { id, group: '' };
+        // Its translations are the other languages' home pages. Read it only when it is not among the records.
+        const page = records.find(record => record.id === id) ?? await this.resource('cms/pages').get(id, context).catch(() => null);
+        return { id, group: page ? translationGroupOf(page) : '' };
     }
 
     /** The first term of a record's taxonomy field, which category permalinks use. */
@@ -2076,10 +2115,16 @@ export class CmsHost {
     async #loadDefinitions(): Promise<void> {
         let collections: readonly (readonly unknown[])[] = [];
         let taxonomies: readonly (readonly unknown[])[] = [];
+        this.fieldGroups.reset();
+        const groups = this.fieldGroups.all();
+        // Awaited below; when the definitions fail first, its own failure is not left unhandled.
+        groups.catch(() => undefined);
         try {
-            // Definitions are JSON of many fields: forty large collections may come in smaller reads.
-            collections = await readPaged(this.db, (size, at) => ({ rql: 'SELECT name, definition FROM cms_collections ORDER BY name LIMIT $limit OFFSET $offset', params: { $limit: size, $offset: at } }), 200, 0);
-            taxonomies = await readPaged(this.db, (size, at) => ({ rql: 'SELECT name, definition FROM cms_taxonomies ORDER BY name LIMIT $limit OFFSET $offset', params: { $limit: size, $offset: at } }), 200, 0);
+            // Definitions are JSON of many fields: forty large collections may come in smaller reads. Collections, taxonomies and field groups are read side by side.
+            [collections, taxonomies] = await Promise.all([
+                readPaged(this.db, (size, at) => ({ rql: 'SELECT name, definition FROM cms_collections ORDER BY name LIMIT $limit OFFSET $offset', params: { $limit: size, $offset: at } }), 200, 0),
+                readPaged(this.db, (size, at) => ({ rql: 'SELECT name, definition FROM cms_taxonomies ORDER BY name LIMIT $limit OFFSET $offset', params: { $limit: size, $offset: at } }), 200, 0),
+            ]);
         } catch (error) {
             // Before setup the tables do not exist; built-ins apply.
             if (!(error instanceof ClientError) || !/cms_collections|cms_taxonomies|no such table|not found/i.test(error.message)) throw error;
@@ -2087,8 +2132,7 @@ export class CmsHost {
         const parse = <T>(rows: readonly (readonly unknown[])[]) => new Map(rows.flatMap(([name, definition]) => {
             try { return [[name as string, JSON.parse(definition as string) as T] as const]; } catch { return []; }
         }));
-        this.fieldGroups.reset();
-        this.#groups = await this.fieldGroups.all();
+        this.#groups = await groups;
         this.#apply(parse<CollectionDefinition>(collections), parse<TaxonomyDeclaration>(taxonomies));
     }
 

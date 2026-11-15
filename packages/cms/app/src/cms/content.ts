@@ -2,7 +2,7 @@
  * Server helpers for the dashboard's content screens: which resource a route names, the
  * editor's view of it, and saving entries. Pages call these from their server methods.
  */
-import { blockCategory, blockMedia, entryAuthors, blockSupports, bulkActions, cloneBlocks, editorBoxes, escapeHtml, fieldGroupDeclarations, type FieldGroupTarget, CmsError, CORE_FIELDS, hasPermission, entryActions, entryColumns, flattenBlocks, isCmsError, mediaUrl, principalId, recordTitle, resolveEditorLayout, richTextHtml, richTextMedia, type Block, type BlockDeclaration, type CollectionDefinition, type EntryAction, type EntryColumn, type MediaKind, type Principal, type RecordShape, type Resource, type RichTextDoc, type WriteActor } from '@cossackframework/cms';
+import { blockCategory, blockMedia, entryAuthors, blockSupports, bulkActions, cloneBlocks, editorBoxes, escapeHtml, fieldGroupDeclarations, type FieldGroupTarget, CmsError, CORE_FIELDS, hasPermission, entryActions, entryColumns, flattenBlocks, isCmsError, mediaUrl, principalId, recordTitle, resolveEditorLayout, richTextHtml, richTextMedia, type Block, type BlockDeclaration, type CollectionDefinition, type EntryAction, type EntryColumn, type ListOptions, type MediaKind, type Principal, type RecordShape, type Resource, type RichTextDoc, type WriteActor } from '@cossackframework/cms';
 import { lockedCopy, renderMarkdown, type CmsHost } from '@cossackframework/cms/server';
 import { activePresets, entryLock } from './site';
 import { controlValue, editorBlocks, editorField, editorFields, editorInput, type BlockOption, type EditorBlock, type EditorField, type EditorGroup, type EditorTaxonomy, type EditorValues, type EditorView, type SourceChoice, type SourceChoices, type TermOption } from './editor';
@@ -473,6 +473,17 @@ export async function importEntries(cms: CmsHost, route: string, items: readonly
         }
     }
     return report;
+}
+
+/** Up to `most` entries of a list, read in pages of 100 (the most one list call returns), for a picker's options. */
+export async function listUpTo(cms: CmsHost, resourceId: string, options: Omit<ListOptions, 'limit' | 'offset'>, principal: Principal, most: number): Promise<RecordShape[]> {
+    const records: RecordShape[] = [];
+    for (let offset = 0; records.length < most; offset += 100) {
+        const page = await cms.resource(resourceId).list({ ...options, limit: Math.min(100, most - records.length), offset }, { principal });
+        records.push(...page.records);
+        if (!page.more || !page.records.length) break;
+    }
+    return records;
 }
 
 /** Every entry the principal may read, in the API's shape, in pages of 100, for an export. */

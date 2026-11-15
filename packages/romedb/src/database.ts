@@ -127,10 +127,10 @@ export class EngineVersionError extends Error {
 
 /** Statements one request carries, locally and on Cloud. */
 export const MAX_STATEMENTS = 32;
-/** Request JSON a local service accepts; Cloud accepts `CLOUD_REQUEST_BYTES`. */
+/** Request JSON an engine that reports no limits accepts; Cloud accepts `CLOUD_REQUEST_BYTES`. `maxRequestBytes()` gives a database's own. */
 export const LOCAL_REQUEST_BYTES = 65_536;
 export const CLOUD_REQUEST_BYTES = 1_048_576;
-/** Result JSON one request may return in all, locally and on Cloud. */
+/** Result JSON one request may return in all from an engine that reports no limits. `maxResultBytes()` gives a database's own. */
 export const RESULT_BYTES = 262_144;
 /** Rows one statement may return. */
 export const MAX_ROWS = 1_000;
@@ -206,14 +206,17 @@ export class RomeDB {
         this.#now = options.now ?? Date.now;
     }
 
-    /** The most request JSON this database accepts: 1 MiB on Cloud, 64 KiB on a local service. */
+    /**
+     * The most request JSON this database accepts, as it reports it: 8 MiB on a local service
+     * or a file since RomeDB 0.2.23, 1 MiB on Cloud. An engine that reports none takes 64 KiB.
+     */
     async maxRequestBytes(): Promise<number> {
-        return cloud(await this.#connection()) ? CLOUD_REQUEST_BYTES : LOCAL_REQUEST_BYTES;
+        return (await this.#connection()).limits.maxRequestBytes;
     }
 
-    /** The most result JSON one request may return, all statements together: 256 KiB, locally and on Cloud. */
+    /** The most result JSON one request may return, all statements together, as the database reports it: 8 MiB since RomeDB 0.2.23, 256 KiB from an engine that reports none. */
     async maxResultBytes(): Promise<number> {
-        return RESULT_BYTES;
+        return (await this.#connection()).limits.maxResultBytes;
     }
 
     /** Highest publication sequence this binding has confirmed. */

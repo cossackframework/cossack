@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { MediaView, RenderedBlock, SiteTheme, SiteView } from '@cossackframework/cms';
+import type { MediaView, RenderedBlock, SiteTheme } from '@cossackframework/cms';
 
 // The site view reads the app's plugins for theme overrides; none here.
 vi.mock('virtual:cossack-plugins', () => ({ default: [] }));
@@ -13,7 +13,7 @@ const site = { title: 'Acme', tagline: '', logo: null, homeUrl: '/', searchUrl: 
 const helpers = themeHelpers(theme, { name: null, options: {}, site }, () => false);
 const block = (type: string, data: Record<string, unknown>, extra: Partial<RenderedBlock> = {}): RenderedBlock => ({ _id: data._id as string ?? type.replace('core/', ''), type, data, html: {}, media: {}, ...extra });
 const heading = (id: string, text: string): RenderedBlock => ({ _id: id, type: 'core/heading', data: { text, level: 'h2' }, html: {}, media: {} });
-const logo: MediaView = { url: '/media/l1/acme.png', alt: 'Acme', width: 400, height: 120, contentType: 'image/png', caption: '', srcset: '', wideSrcset: '', placeholder: null, sizes: '' };
+const logo: MediaView = { url: '/media/l1/acme.png', alt: 'Acme', width: 400, height: 120, contentType: 'image/png', caption: '', srcset: '', placeholder: null, sizes: '' };
 const render = async (input: RenderedBlock) => (await renderToString(helpers.block(input))).replace(/\s*\n\s*/g, '');
 
 afterEach(() => vi.useRealTimers());
@@ -25,7 +25,7 @@ describe('page blocks of the second wave', () => {
             { ...block('core/slide', { _id: 's2' }), children: [heading('h2', 'Again')] },
         ] });
         expect(html).toContain('aria-roledescription="carousel" aria-label="Slides"');
-        expect(html).toContain('<div class="cms-carousel-slide cms-carousel-blockslide" id="hero-slide-1" aria-roledescription="slide" aria-label="1 / 2"><div class="cms-block cms-gradient-dusk" style="background-image: var(--cms-gradient-dusk)"><div class="cms-slide" data-valign="bottom"><h2');
+        expect(html).toContain('<div class="cms-carousel-slide cms-carousel-blockslide" id="hero-slide-1" aria-roledescription="slide" aria-label="1 / 2"><div class="cms-block cms-box cms-gradient-dusk" style="background-image: var(--cms-gradient-dusk)"><div class="cms-slide" data-valign="bottom"><h2');
         expect(html).toContain('<div class="cms-slide" data-valign="center"><h2');
         expect(html.match(/role="tab"/g)).toHaveLength(2);
         expect(html).toContain('aria-label="Slide 1"');
@@ -94,7 +94,7 @@ describe('page blocks of the second wave', () => {
         const html = await render(block('core/breadcrumbs', { separator: 'slash' }));
         expect(html).toBe('<nav class="cms-breadcrumbs" aria-label="Breadcrumb" data-separator="slash"><ol class="cms-breadcrumbs-list"><li class="cms-breadcrumb"><a href="/">Home</a></li><li class="cms-breadcrumb"><a href="/blog">Blog</a></li><li class="cms-breadcrumb"><span aria-current="page">Hello world</span></li></ol></nav>');
         expect(await render(block('core/breadcrumbs', { home: false }))).toContain('<ol class="cms-breadcrumbs-list"><li class="cms-breadcrumb"><a href="/blog">Blog</a></li>');
-        expect((await renderToString(helpers.breadcrumbs(site as unknown as SiteView, { class: 'mb-4', separator: 'arrow' })!)).replace(/\s*\n\s*/g, '')).toContain('<nav class="cms-breadcrumbs mb-4" aria-label="Breadcrumb" data-separator="arrow">');
+        expect((await renderToString(helpers.breadcrumbs({ class: 'mb-4', separator: 'arrow' })!)).replace(/\s*\n\s*/g, '')).toContain('<nav class="cms-breadcrumbs mb-4" aria-label="Breadcrumb" data-separator="arrow">');
         // The home page has a trail of one, so nothing shows.
         expect(breadcrumbTrail([{ label: 'Home', url: null }])).toBeNull();
         expect(breadcrumbTrail(undefined)).toBeNull();

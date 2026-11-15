@@ -7,7 +7,7 @@ import { dashboardFind, dashboardNotices, dashboardSearch, dashboardStatus, navi
 import { shellIcons } from '../../dashboard/icons';
 import { dashboardHead } from '../../dashboard/head';
 import { notice } from '@cossackframework/ui/blocks';
-import { siteLogo, siteName } from '../../brand';
+import { siteHasLogo, siteLogo, siteName } from '../../brand';
 import type { DashboardModule, DashboardNotice, DashboardStatus } from '../../dashboard/types';
 import { logout } from '../../auth';
 import { requireDashboardUser } from '../../middlewares/auth';
@@ -36,6 +36,8 @@ import { themeStore } from '@/stores.client';
 export default class DashboardLayout extends Cossack {
     appName = server$(() => siteName(), { initial: 'Cossack' });
     appLogo = server$(() => siteLogo(), { initial: '/logo.svg' });
+    /** The site set its own logo: it shows without the name beside it. */
+    appLogoOnly = server$(() => siteHasLogo(), { initial: false });
     /** What waits for the user, with counts, for the taskbar. */
     statuses: DashboardStatus[] = server$(() => dashboardStatus(this.c), { initial: [] });
     /** Messages above every screen, such as the ones CMS plugins return; fresh on every navigation, like the statuses. */
@@ -212,8 +214,10 @@ export default class DashboardLayout extends Cossack {
                     title: this.appName,
                     // The brand opens the site itself, as WordPress's admin bar does; Dashboard is the first navigation item.
                     brand: html`<a href="/" class="flex items-center gap-2 no-underline group-[.is-collapsed]:hidden" aria-label=${__('View site')} title=${__('View site')}>
-                        ${Image({ src: this.appLogo, alt: '', width: 24, height: 24, loading: 'eager', class: 'h-6 w-auto max-w-24 shrink-0 object-contain' })}
-                        <span class="text-sm font-semibold text-foreground truncate">${this.appName}</span>
+                        ${this.appLogoOnly
+                            ? Image({ src: this.appLogo, alt: this.appName, width: 32, height: 32, loading: 'eager', class: 'h-8 w-auto max-w-40 shrink-0 object-contain' })
+                            : html`${Image({ src: this.appLogo, alt: '', width: 24, height: 24, loading: 'eager', class: 'h-6 w-auto max-w-24 shrink-0 object-contain' })}
+                        <span class="text-sm font-semibold text-foreground truncate">${this.appName}</span>`}
                     </a>
                     <a href="/" class="hidden group-[.is-collapsed]:flex items-center justify-center" aria-label=${__('View site')} title=${__('View site')}>
                         ${Image({ src: this.appLogo, alt: '', width: 24, height: 24, loading: 'eager', class: 'size-6 object-contain' })}
@@ -296,8 +300,10 @@ export default class DashboardLayout extends Cossack {
                     </main>
                     <footer data-dashboard-taskbar aria-label=${__('Dashboard taskbar')} class="sticky bottom-0 z-30 hidden h-10 items-center gap-1 border-t border-border bg-background/95 px-3 text-xs text-muted-foreground backdrop-blur md:flex">
                         <a href="/" class="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-foreground no-underline hover:bg-muted" title=${__('View site')}>
-                            ${Image({ src: this.appLogo, alt: '', width: 16, height: 16, loading: 'eager', class: 'h-4 w-auto max-w-16 shrink-0 object-contain' })}
-                            <span class="max-w-40 truncate">${this.appName}</span>
+                            ${this.appLogoOnly
+                                ? Image({ src: this.appLogo, alt: this.appName, width: 24, height: 24, loading: 'eager', class: 'h-6 w-auto max-w-28 shrink-0 object-contain' })
+                                : html`${Image({ src: this.appLogo, alt: '', width: 16, height: 16, loading: 'eager', class: 'h-4 w-auto max-w-16 shrink-0 object-contain' })}
+                            <span class="max-w-40 truncate">${this.appName}</span>`}
                         </a>
                         <span aria-hidden="true" class="mx-1 h-4 w-px bg-border"></span>
                         ${this.statuses.map((item) => html`<a href=${item.href} data-status=${item.id} class=${`inline-flex h-7 items-center gap-1.5 rounded-md px-2 no-underline hover:bg-muted hover:text-foreground ${statusTone(item.tone)}`}>

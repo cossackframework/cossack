@@ -88,16 +88,21 @@ grant with empty loader data.
 Each file in `templates/` default-exports one function. The file name is the template's
 name.
 
-| File | Signature | Used for |
+Every template gets one argument, a context object, and destructures the parts it uses:
+`({ entry, helpers }) => ...`. Every context has `site` and `helpers`; each kind of template
+adds its own key. A template never names a value it does not use, and a value added later
+is a new key, so existing templates keep working.
+
+| File | Context | Used for |
 | --- | --- | --- |
-| `layout.ts` | `(site: SiteView, content, helpers) => TemplateResult` | The frame around every page. Required. |
-| `entry.ts` | `(entry: EntryView, helpers) => TemplateResult` | One entry. Required. |
-| `archive.ts` | `(view: ArchiveView, helpers) => TemplateResult` | A list: a collection's archive, a term, and the front page and search when those are absent. Required. |
-| `home.ts`, `search.ts` | `(view: ArchiveView, helpers)` | The front page's latest posts; search results. |
-| `not-found.ts` | `(helpers) => TemplateResult` | 404. |
-| `password.ts` | `(view: LockedView, helpers)` | The form asking for a protected entry's password; the host draws a plain one otherwise. |
-| `members.ts` | `(view: MembersView, helpers)` | What a members-only entry shows visitors who are not signed in; the host draws a plain sign-in prompt otherwise. |
-| `head.ts` | `(site: SiteView, helpers) => HeadValue` | Tags for the document head. The page's own title and meta win. |
+| `layout.ts` | `LayoutContext`: `{ site, content, helpers }` | The frame around every page. Required. |
+| `entry.ts` | `EntryContext`: `{ entry, site, helpers }` | One entry. Required. |
+| `archive.ts` | `ArchiveContext`: `{ view, site, helpers }` | A list: a collection's archive, a term, and the front page and search when those are absent. Required. |
+| `home.ts`, `search.ts` | `ArchiveContext` | The front page's latest posts; search results. |
+| `not-found.ts` | `ThemeContext`: `{ site, helpers }` | 404. |
+| `password.ts` | `LockedContext`: `{ view, site, helpers }` | The form asking for a protected entry's password; the host draws a plain one otherwise. |
+| `members.ts` | `MembersContext`: `{ view, site, helpers }` | What a members-only entry shows visitors who are not signed in; the host draws a plain sign-in prompt otherwise. |
+| `head.ts` | `HeadContext`: `{ site, helpers }`, returns `HeadValue` | Tags for the document head. The page's own title and meta win. |
 | `entry-<collection>.ts`, `archive-<collection>.ts`, `term.ts`, `term-<taxonomy>.ts` | as above | Narrower templates. Any other `entry-*` name is a template editors can choose per entry. |
 
 The site picks the most specific template it has for each page:
@@ -112,9 +117,9 @@ A small entry template:
 
 ```ts
 import { html, type TemplateResult } from '@cossackframework/renderer';
-import type { EntryView, ThemeHelpers } from '@cossackframework/cms';
+import type { EntryContext } from '@cossackframework/cms';
 
-export default function entry(entry: EntryView, helpers: ThemeHelpers): TemplateResult {
+export default function entry({ entry, helpers }: EntryContext): TemplateResult {
   return html`<article>
     <h1>${entry.title}</h1>
     ${entry.date ? html`<p>${entry.date}${entry.authors.length ? html` · ${entry.authors.map(author => author.name).join(', ')}` : null}</p>` : null}
@@ -128,7 +133,9 @@ export default function entry(entry: EntryView, helpers: ThemeHelpers): Template
 the `content` feature first of all, and its rich text and Markdown fields, each of those
 one `core/richtext` block (one per item of a multiple field), in the collection's field order. A theme that lays a
 collection's fields out itself takes them from `entry.fields` instead, where a blocks,
-rich text or Markdown field is a `RenderedBlock[]` of its own:
+rich text or Markdown field is a `RenderedBlock[]` of its own. Those are read from
+`entry.content` (`entry.contentFields` says which part each gave), so the page carries the
+blocks once; a loop over `entry.fields` does not list them:
 
 ```ts
 ${helpers.block((entry.fields.sections as readonly RenderedBlock[] | null) ?? [])}
@@ -146,12 +153,12 @@ that export over the files, slot by slot.
 
 | View | What it carries |
 | --- | --- |
-| `SiteView` | `title`, `tagline`, `blog` (the posts page URL), `menus` by location (`MenuItemView` items: `label`, `url`, null for a heading, `kind`, `newTab`, `description`, `className`, `attributes`, `fields`, the typed values of the field groups attached to menu items, `panel`, a mega menu's pattern rendered as blocks, and `children`), `locale`, `languages` (the page in each language), `searchUrl`, `homeUrl`, `areas` (rendered blocks by widget area), `template`, the entry's template name so a layout can leave out its frame, as the default theme does for `entry-blank`, `url`, the page's own absolute URL, and `breadcrumbs` (`BreadcrumbView` steps: `label`, `url`, null for the page itself), the way to the page. |
+| `SiteView` | The layout's and the head's `site`. Page templates and block renderers get `SiteBasics`: the same without `blog`, `areas` and `template`, since a page does not carry the widget areas. `title`, `tagline`, `blog` (the posts page URL), `menus` by location (`MenuItemView` items: `label`, `url`, null for a heading, `kind`, `newTab`, `description`, `className`, `attributes`, `fields`, the typed values of the field groups attached to menu items, `panel`, a mega menu's pattern rendered as blocks, and `children`), `locale`, `languages` (the page in each language), `searchUrl`, `homeUrl`, `areas` (rendered blocks by widget area), `template`, the entry's template name so a layout can leave out its frame, as the default theme does for `entry-blank`, `url`, the page's own absolute URL, and `breadcrumbs` (`BreadcrumbView` steps: `label`, `url`, null for the page itself), the way to the page. |
 | `EntryView` | `id`, `title`, `url`, `collection`, `kind` (the singular label), `date`, `authors` (each `name`, `url` of their author page or null, `avatar`; the main author first; empty outside article collections), `excerpt`, `content` (`RenderedBlock[]`), `image` (`MediaView`), `terms` by taxonomy, `fields` (every field by name as a typed `FieldView`: a scalar, a `MediaView`, an `EntryReference`, `TermLink[]`, `RenderedBlock[]` for blocks, rich text and Markdown, or, for a multiple field, the list of its kind's views), `details` (scalar fields as labelled text), `template`, `locale`, `comments` (`CommentsView`, or null) and `locked`: `'password'` for a protected entry the visitor has not unlocked, `'members'` for a members-only entry and a reader who is not signed in or has none of its member roles, else null. In lists, `content` is empty. A locked entry withholds its excerpt, content and fields. |
 | `ArchiveView` | `kind` (`home`, `archive`, `term`, `search`), `collection`, `taxonomy`, `title`, `description`, `entries`, `paging` (`page`, `pages`, `base`), `query` and, for search, `loose`: nothing had every word, so the entries have some of them. Search knows no total: `paging.pages` is one past the current page while more follow, and `base` carries `?q=`, so other pages add `&page=N`. Search entries carry `snippet`, the text around the matched words as plain parts (`{ text, match }`); the default theme wraps matches in `<mark>`. |
 | `LockedView` | `entry`, `action` (where the password form posts) and `error` after a wrong password. |
 | `MembersView` | `entry`, `signedIn` (true for a signed-in reader without one of the entry's member roles: signing in again does not help), `signIn` (the sign-in page, returning to the entry) and `register` (the registration page, or null when the site takes none or the reader is signed in). |
-| `MediaView` | `url`, `alt`, `width`, `height`, `contentType`, `caption`, `srcset` and `wideSrcset` (16:9 variants around the focal point, in the widths of Settings → Files), `sizes` (Settings → Files), `placeholder` (a tiny `data:` URL, or null when Settings → Files turns placeholders off or the image has transparency; `placeholderStyle()` blurs it behind the image, and the site's head script drops it once the image has loaded) and `priority` (the entry's first image: load it with `loading="eager" fetchpriority="high"`). |
+| `MediaView` | `url`, `alt`, `width`, `height`, `contentType`, `caption`, `srcset` (variants in the widths of Settings → Files; `wideSrcset(media.srcset)` from `@cossackframework/cms` gives them in a 16:9 shape around the focal point), `sizes` (Settings → Files), `placeholder` (a tiny `data:` URL, or null when Settings → Files turns placeholders off or the image has transparency; `placeholderStyle()` blurs it behind the image, and the site's head script drops it once the image has loaded) and `priority` (the entry's first image: load it with `loading="eager" fetchpriority="high"`). |
 | `RenderedBlock` | `id`, `type`, `data`, `html` (Markdown fields rendered), `media` by file ID, `content` (rich text fields as `BodyPart[]`), `children`, `layout`, `style`, and `field` on a block that stands for one of the entry's rich text or Markdown fields. |
 
 ## Helpers
@@ -165,7 +172,7 @@ Every template receives `helpers`:
 | `data.layout`, `data.page` | What the theme's loaders returned for the layout and for the page. Empty when there is no loader, or it failed. |
 | `asset(path)` | The URL of a file in the theme's `assets/`, such as `helpers.asset('assets/theme.css')`. Empty when the theme has none. |
 | `icon(name, { class, label })` | Any Solar icon by name, in the style Settings → Appearance picks: an SVG colored by `currentColor`, sized by `class` (default `size-5`), decorative unless `label` names it; null for a name outside the catalog. The artwork comes from a cached sprite, not the HTML. See [Icons](/docs/cms/blocks.md#icons). |
-| `breadcrumbs(site, { class, separator, home })` | The page's breadcrumbs (`site.breadcrumbs`) as a `nav`: links, then the page itself; null on the home page. `separator` is `chevron` (the default), `slash` or `arrow`; `home: false` leaves Home out. The `core/breadcrumbs` block renders the same. |
+| `breadcrumbs({ class, separator, home })` | The page's breadcrumbs (`site.breadcrumbs`) as a `nav`: links, then the page itself; null on the home page. `separator` is `chevron` (the default), `slash` or `arrow`; `home: false` leaves Home out. The `core/breadcrumbs` block renders the same. |
 | `search({ placeholder, style, class, suggest })` | A search form posting to the site's search page in the page's language: a box, or with `style: 'icon'` a button that opens one. While someone types, up to five entries of that language show under the box, from `/api/cms/search`; `suggest: false` turns that off. The `core/search` block renders the same, with a *Suggestions* switch. |
 | `block(blocks)` | Renders a block, or a list of blocks, through the theme's own renderer, a plugin's component or the core one. |
 | `layout(blocks, { class })` | Renders a list of blocks as the page's constrained layout: each block in an item at the content measure, or the width its Width field asks for, so a full-width group makes a band across the page. For a template's blocks root and for areas that span the page. See [Widths and full-width sections](#widths-and-full-width-sections). |
@@ -173,12 +180,13 @@ Every template receives `helpers`:
 | `isActive(url)` | Whether a URL is the current page or one of its ancestors, for menu styling. |
 | `menu(source, { style, mobile, collapse, motion, label, class })` | A location's menu (`site.menus[location]`), or items given directly, as a `nav`: `dropdowns` (the default) is a header menu with dropdowns, mega panels under items with a panel or heading children, and below the `collapse` width (`md` or `lg`) a hamburger drawer showing the `mobile` location's menu, or this one; `inline` one row for footers; `list` a tree for sidebars. `motion` picks how they open (`rise`, `fade`, `scale`, `none`). Null for an empty menu. The `core/navigation` block renders the same, so editors place a menu in widget areas and content. See [Menus](/docs/cms/menus.md#in-themes). |
 | `languages({ style, layout, class })` | The page in the site's other languages (`site.languages`) as a `nav` of links, named by `names` (the default), `flags`, `flags-names` or `codes`, in a row (`inline`) or a column (`list`); null on a site with one language. The default theme's *Language switcher* option puts it in the header, the footer, both or nowhere, and *Show languages as* picks the style. The `core/languages` block renders the same, so editors place a switcher in widget areas and content. See [Languages](/docs/cms/languages.md#language-switcher). |
-| `logo(site, { class })` | The site's logo from Settings → General as an image with the site title as its alternative text; null when none is set. `site.logo` holds its URL. See [Settings](/docs/cms/settings.md#site-icon-app-icon-and-logo). |
+| `logo({ class })` | The site's logo from Settings → General as an image with the site title as its alternative text; null when none is set. `site.logo` holds its URL. See [Settings](/docs/cms/settings.md#site-icon-app-icon-and-logo). |
 
 Render content through `helpers.block`. Besides the core renderers and plugin blocks, that
 is what makes an entry editable on the public page for signed-in editors: the helper marks
 each block in edit mode, and a theme never learns about editing. A theme can replace core block renderers with a `blocks` map in its
-`ui.ts` `theme` export, keyed by block type.
+`ui.ts` `theme` export, keyed by block type. Each renderer gets a `BlockContext`,
+`{ block, site, helpers }`, and returns a template or null.
 
 ## Areas with defaults
 
@@ -261,8 +269,14 @@ so text stays readable. The image sits at the focal point set in the library. St
 slugs, media IDs and flags, never CSS: `blockStyleAttributes` renders the layers from the
 block's resolved media (`style.image`, `style.video` count as the block's media), the overlay as
 the `--cms-overlay` variable a `::before` layer paints, and the video as a `<video
-class="cms-bg-video">` the renderer places first in the wrapper. A theme restyles the
-`cms-has-image`, `cms-has-overlay`, `cms-has-video` and `cms-gradient-<slug>` classes. Videos
+class="cms-bg-video">` the renderer places first in the wrapper. An image that fills the block
+(the default), alone, is an `<img class="cms-bg-image">` behind the blocks, not a CSS
+background: the browser picks a variant for the screen's width, finds it while it reads the
+HTML, and loads it only as the block nears the screen. The first image of an entry's content,
+the one behind a hero among them, loads at once with a high priority (Settings → Files). A
+tiled, fitted or fixed image, or one under a gradient, stays a CSS background of the wrapper.
+A theme restyles the `cms-has-image`, `cms-has-image-element`, `cms-has-overlay`,
+`cms-has-video` and `cms-gradient-<slug>` classes. Videos
 and fixed backgrounds cost bandwidth and battery; the controls say so, and the site decides.
 
 ## Stylesheets and the head
@@ -271,10 +285,10 @@ Ship stylesheets and fonts under `assets/` and link them from `templates/head.ts
 
 ```ts
 import type { HeadValue } from '@cossackframework/core';
-import type { SiteView, ThemeHelpers } from '@cossackframework/cms';
+import type { HeadContext } from '@cossackframework/cms';
 
-export default function head(site: SiteView, helpers: ThemeHelpers): HeadValue {
-  return { link: [{ rel: 'stylesheet', href: helpers.asset('assets/theme.css') }] };
+export default function head({ helpers }: HeadContext): HeadValue {
+  return { links: [{ tag: 'link', attributes: { rel: 'stylesheet', href: helpers.asset('assets/theme.css') } }] };
 }
 ```
 
@@ -306,12 +320,10 @@ related projects on a project page, the theme's `server.ts` exports `loaders`, k
 templates:
 
 ```ts
-import type { EntryView } from '@cossackframework/cms';
-import type { ThemeLoaders } from '@cossackframework/cms/server';
+import type { EntryLoaderContext, ThemeLoaders } from '@cossackframework/cms/server';
 
 export const loaders: ThemeLoaders = {
-  async 'entry-projects'(view, { cms, principal, signal }) {
-    const entry = view as EntryView;
+  async 'entry-projects'({ entry, cms, principal }: EntryLoaderContext) {
     const projects = cms.resource('cms/projects');
     const page = await projects.list({ where: { status: 'published', id: { ne: entry.id } }, limit: 3 }, { principal });
     return { related: page.records.map(record => ({ id: record.id, title: record.title })) };
@@ -320,10 +332,13 @@ export const loaders: ThemeLoaders = {
 ```
 
 - The site runs `layout` plus the one loader the template hierarchy picks for the page,
-  never every matching key. `layout` receives the `SiteView`, entry loaders the
-  `EntryView`, list loaders the `ArchiveView`.
-- The context carries the plugin's `cms` repositories, the visitor `principal` to pass to
-  every read, a `signal`, the theme `options`, the `locale` and the `template` key.
+  never every matching key.
+- A loader gets one context object, like a template, under the same key its template
+  uses: `site` for `layout` (`LayoutLoaderContext`), `entry` for entry loaders
+  (`EntryLoaderContext`), `view` for list loaders and `not-found` (`ArchiveLoaderContext`).
+- Every loader context also carries the plugin's `cms` repositories, the visitor
+  `principal` to pass to every read, a `signal`, the theme `options`, the `locale` and the
+  `template` key.
 - Reads go through the plugin's grants as the visitor. A theme reading a collection it
   does not ship requests it in `permissions.resources` and needs the grant under Plugins;
   before the grant, templates render with `helpers.data` empty.

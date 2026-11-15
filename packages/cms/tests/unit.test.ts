@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
     commandInput, declarationHash, defineResource, evaluateRule, field, formInput, formValue, isPluginPoint, manifestProblems, permissionMatches, providedPoints,
     requestedGrants, resolveResource, resourceProblems, storageCheck, storageName, storageType, userPrincipal, validateValue, fieldProblems, recordSchema,
-    htmlBlocks, htmlBlocksChanged, imageWidths, placeholderStyle, variantWidth, IMAGE_WIDTHS,
+    htmlBlocks, htmlBlocksChanged, imageWidths, placeholderStyle, wideSrcset, variantWidth, IMAGE_WIDTHS,
 } from '../src/index';
 import { planSchema, type Catalog } from '../src/server/schema';
 import { HOST_STEPS } from '../src/server/host-schema';
@@ -115,7 +115,9 @@ describe('image settings', () => {
         expect(variantWidth(5000, [400, 800])).toBe(800);
         expect(placeholderStyle(null, 10, 10)).toBe('');
         const style = placeholderStyle('data:image/webp;base64,AAAA', 1600, 900);
-        expect(style).toMatch(/^background-image:url\("data:image\/svg\+xml;charset=utf-8,.*"\);background-size:cover/);
+        expect(style).toMatch(/^background-image:url\(data:image\/svg\+xml,[^\s"'()<>]*\);background-size:cover/);
+        expect(wideSrcset('/media/f1/sea.jpg?w=640&v=7 640w, /media/f1/sea.jpg?w=1280&v=7 1000w')).toBe('/media/f1/sea.jpg?w=640&h=360&v=7 640w, /media/f1/sea.jpg?w=1280&h=720&v=7 1000w');
+        expect(wideSrcset('')).toBe('');
         expect(decodeURIComponent(style)).toContain(`viewBox='0 0 1600 900'`);
         expect(decodeURIComponent(style)).toContain(`href='data:image/webp;base64,AAAA'`);
     });

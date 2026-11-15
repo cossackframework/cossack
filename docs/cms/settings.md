@@ -314,14 +314,14 @@ General has three images, each chosen from the media library:
 `seo.logo` stays separate. Search engines want a square image in structured data, while a
 header logo is usually wide.
 
-Themes get the logo as `site.logo` (a URL or null). They render it with `helpers.logo(site)`,
+Themes get the logo as `site.logo` (a URL or null). They render it with `helpers.logo()`,
 which returns an image with the site title as its alternative text, or null when no logo is
 set:
 
 ```ts
-export default function layout(site: SiteView, content: TemplateResult, helpers: ThemeHelpers) {
+export default function layout({ site, content, helpers }: LayoutContext) {
   return html`<header>
-    <a href=${site.homeUrl}>${helpers.logo(site, { class: 'h-10 w-auto' }) ?? site.title}</a>
+    <a href=${site.homeUrl}>${helpers.logo({ class: 'h-10 w-auto' }) ?? site.title}</a>
   </header>${content}`;
 }
 ```

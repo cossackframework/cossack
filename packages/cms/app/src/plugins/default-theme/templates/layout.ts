@@ -14,10 +14,10 @@
  * rename it in `plugin.json` and activate it under Appearance → Themes.
  */
 import { html, type TemplateResult } from '@cossackframework/renderer';
-import { presetStyle, type SiteView, type ThemeHelpers } from '@cossackframework/cms';
+import { presetStyle, type LayoutContext } from '@cossackframework/cms';
 import { accentStyle, measureStyle, typographyCss } from '../parts/options';
 
-export default function layout(site: SiteView, content: TemplateResult, helpers: ThemeHelpers): TemplateResult {
+export default function layout({ site, content, helpers }: LayoutContext): TemplateResult {
     // The presets' variables and the measures sit on the root, so widget areas outside the content root resolve them too.
     const rootStyle = `${accentStyle(helpers)} ${presetStyle(helpers.presets)} ${measureStyle(helpers)}`;
     // A blank canvas: the page's content alone, with the theme's colors and type but no header or footer.

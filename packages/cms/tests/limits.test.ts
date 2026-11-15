@@ -6,7 +6,7 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { MAX_STATEMENTS, statementBytes, type BatchResult, type RomeDB, type Statement } from '@cossackframework/romedb';
 import { contentModule, createCMS, field, readCatalog, saveBytes, type CmsHost, type Principal } from '../src/server/index';
-import { live, romedbService } from './helpers';
+import { live, romedbService, smallRequests } from './helpers';
 
 interface Recorded { readonly kind: 'read' | 'write'; readonly statements: number; readonly requestBytes: number; readonly resultBytes: number }
 
@@ -59,7 +59,8 @@ describe.skipIf(!live)('RomeDB limits', () => {
     let resultLimit = 0;
 
     beforeAll(async () => {
-        const recorded = recording(service.database());
+        // Small requests, as on an engine that reports no limits: the caps and the batching are reached with little data.
+        const recorded = recording(smallRequests(service.database()));
         log = recorded.log;
         cms = createCMS({ db: recorded.db, modules: [contentModule], now: () => clock });
         expect((await cms.migrate()).failed).toBeUndefined();
