@@ -5,7 +5,7 @@ import { isCmsError, NETWORK_ADMIN } from '@cossackframework/cms';
 import { linkButton, notice, pageHeader, shortDate } from '../../../../../cms/ui';
 import { requireNetworkAdmin } from '../../../../../cms/guards';
 import { network, siteNames } from '../../../../../cms/network-ui';
-import { listFilters, listFooter, listTable, rowActions } from '../../../../../dashboard/list-table';
+import { listFilters, listFooter, listTable, rowActions } from '@/dashboard/list-table';
 
 const PAGE_SIZE = 20;
 

@@ -4,10 +4,11 @@ import { cloudflarePurger, cmsReconcilers, CmsNetwork, createCMS, MAIN_SITE, pre
 import { aiProvider, type AiBindings } from './ai';
 import type { IconStyleName, Principal } from '@cossackframework/cms';
 import { plugins } from '@cossackframework/framework/plugins';
-import { modules, resources } from './resources';
-import { databaseConnection, siteDatabase, siteDirectory, webhookFetch, type DatabaseBindings } from './database';
-import { pendingWrites, type PendingBindings } from './pending';
-import { imageTransformer, mediaStorage, type MediaBindings } from './media';
+// The project's own: its resources, modules and the options it sets.
+import { modules, options as projectOptions, resources } from '@/cms.config';
+import { databaseConnection, siteDatabase, siteDirectory, webhookFetch, type DatabaseBindings } from '@/cms/database';
+import { pendingWrites, type PendingBindings } from '@/cms/pending';
+import { imageTransformer, mediaStorage, type MediaBindings } from '@/cms/media';
 import { announceNoteEvent } from './notes-announce';
 
 export interface CmsBindings extends DatabaseBindings, PendingBindings, MediaBindings, AiBindings {
@@ -83,7 +84,10 @@ export function networkFor(env: CmsBindings): CmsNetwork {
             ...(multisite ? { open: site => createRomeDB({ ...siteDatabase(env, site.database)!, pending: pendingWrites(env, site.database), reconcilers: cmsReconcilers() }) } : {}),
             ...(directory ? { directory } : {}),
             hostUrl: host => siteUrl(env, { host })!,
-            host: (site, siteDb) => createCMS({
+            host: (site, siteDb) => {
+              // What the project sets in src/cms.config.ts goes over the defaults below.
+              const project = typeof projectOptions === 'function' ? projectOptions(env as Record<string, unknown>, site) : projectOptions;
+              return createCMS({
                 db: siteDb, network: db, site: site.id, modules, resources, plugins,
                 // A site whose APP_URL is this machine is in development: its webhooks may stay local. No APP_URL is no exception.
                 localWebhooks: localAddress(env.APP_URL),
@@ -96,7 +100,7 @@ export function networkFor(env: CmsBindings): CmsNetwork {
                 sessionsEnded: ended => network.endSessions(ended),
                 // A note's webhooks and emails, from the outbox job its write queued.
                 announceNote: announceNoteEvent,
-                purgers: purgers(env, site),
+                purgers: [...purgers(env, site), ...(project.purgers ?? [])],
                 ...(ai ? { ai } : {}),
                 ...(payments ? { payments } : {}),
                 // Bindings a plugin's manifest names in permissions.secrets; strings only, read when asked.
@@ -104,7 +108,9 @@ export function networkFor(env: CmsBindings): CmsNetwork {
                 // Every binding, for a plugin granted unrestricted access.
                 env: env as Record<string, unknown>,
                 runner: pluginRunner,
-            }),
+                ...(({ purgers: _purgers, ...rest }) => rest)(project),
+              });
+            },
         });
         current = { key, network };
     }

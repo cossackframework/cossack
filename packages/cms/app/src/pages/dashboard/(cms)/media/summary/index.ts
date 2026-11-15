@@ -5,7 +5,7 @@ import { formatBytes, PERMISSIONS, type MediaKind } from '@cossackframework/cms'
 import type { FileSummary } from '@cossackframework/cms/server';
 import { requireAny } from '../../../../../cms/guards';
 import { notice, pageHeader } from '../../../../../cms/ui';
-import { timeAgo } from '../../../../../dashboard/time-ago';
+import { timeAgo } from '@/dashboard/time-ago';
 
 /** The summary is kept a day: counting a large library takes a while, and the totals move slowly. */
 const DAY = 24 * 60 * 60_000;

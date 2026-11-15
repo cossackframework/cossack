@@ -2,8 +2,8 @@ import { Client, Cossack, Page, Server, State, type HeadValue } from '@cossackfr
 import { AlertDialog, Badge } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { evaluateRule, hasPermission, isCmsError, PERMISSIONS } from '@cossackframework/cms';
-import { bulkBar, type BulkChoice } from '../../../../dashboard/bulk';
-import { listTable, rowActions } from '../../../../dashboard/list-table';
+import { bulkBar, type BulkChoice } from '@/dashboard/bulk';
+import { listTable, rowActions } from '@/dashboard/list-table';
 import { requireAny } from '../../../../cms/guards';
 import { linkButton, notice, pageHeader } from '../../../../cms/ui';
 

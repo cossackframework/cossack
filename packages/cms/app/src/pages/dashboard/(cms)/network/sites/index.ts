@@ -7,7 +7,7 @@ import { linkButton, notice, pageHeader, shortDate } from '../../../../../cms/ui
 import { requireNetworkAdmin } from '../../../../../cms/guards';
 import { network, siteIconUrl, siteLinks } from '../../../../../cms/network-ui';
 import { siteIcon, siteStatus } from '../../../../../cms/network-view';
-import { listFilters, listFooter, listTable, rowActions } from '../../../../../dashboard/list-table';
+import { listFilters, listFooter, listTable, rowActions } from '@/dashboard/list-table';
 
 const PAGE_SIZE = 20;
 const STATUSES = ['active', 'archived', 'deleted', 'creating'] as const;

@@ -5,8 +5,8 @@ import { icon } from '../cms/icons';
 import { currentCms, networkFor, siteUrl, type CmsBindings } from '../cms/index';
 import { recoveryCode } from '../cms/recovery';
 import { openMatches } from '../cms/site';
-import { dashboardModules } from './registry';
-import type { DashboardModule, DashboardModuleLink, DashboardStatus } from './types';
+import { dashboardModules } from '@/dashboard/registry';
+import type { DashboardModule, DashboardModuleLink, DashboardStatus } from '@/dashboard/types';
 
 /**
  * The same data within one request, asked for once: the layout, the command palette and the

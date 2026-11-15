@@ -44,6 +44,39 @@ export async function cmsAppFiles() {
 
 export function cmsRecipeFiles({ adapter }) {
   return {
+    // The project's own file: written once, then merged on upgrades like any owned file.
+    'src/cms.config.ts': `import { contentModule, formsModule, type ResourceDeclaration } from '@cossackframework/cms';
+import type { CmsProjectConfig } from '@cossackframework/cms/server';
+
+/**
+ * Code-declared resources, stored in strict RomeDB collections, such as an \`app/leads\`
+ * resource with \`defineResource\`. Change a declaration, then apply the plan from
+ * /dashboard/tools/schema. Content types made in the dashboard are collections instead:
+ * Collections in the dashboard defines them and their fields.
+ */
+export const resources: ResourceDeclaration[] = [];
+
+/** Built-in modules: posts, pages, categories, tags and the core blocks; forms and their input blocks. Plugins add their own. */
+export const modules = [contentModule, formsModule];
+
+/**
+ * Options for each site's CMS. An unset option keeps its default. Give an object, or a
+ * function of the environment bindings and the site: \`(env, site) => ({ ... })\`.
+ */
+export const options: CmsProjectConfig = {
+    // First path segments an entry's address cannot take, added to the CMS's own and to this project's routes.
+    // reservedPaths: ['pricing'],
+    // Blocks and settings groups declared in code. Plugins declare theirs in their manifest.
+    // blocks: [],
+    // settings: [],
+    // Providers. The defaults read STRIPE_SECRET_KEY, the AI binding, CLOUDFLARE_API_TOKEN and EMAIL.
+    // payments: undefined,
+    // ai: undefined,
+    // purgers: [],
+    // mail: undefined,
+    // mailFrom: 'no-reply@example.com',
+};
+`,
     'src/cms/database.ts': adapter === 'cloudflare'
       ? `import { organizationDatabases, type DatabaseDirectory, type RomeDBOptions } from '@cossackframework/romedb';
 

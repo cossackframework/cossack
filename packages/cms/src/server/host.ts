@@ -2833,6 +2833,18 @@ function artwork(plugin: HostedPlugin): { logo: string | null; cover: string | n
     return { logo: pick(plugin.manifest.logo, 'logo'), cover: pick(plugin.manifest.cover, 'cover') };
 }
 
+/**
+ * What a project may set for each site's CMS host, in `src/cms.config.ts`. An unset option
+ * keeps the default the CMS application gives it. `reservedPaths` and `purgers` are added to
+ * the defaults; every other option replaces its default.
+ */
+export type CmsProjectOptions = Partial<Pick<CmsOptions,
+    'reservedPaths' | 'blocks' | 'settings' | 'taxonomies' | 'payments' | 'ai' | 'purgers' | 'mail' | 'mailFrom' | 'files'>>;
+
+/** The options as a value, or computed from the environment bindings and the site. */
+export type CmsProjectConfig = CmsProjectOptions |
+    ((env: Readonly<Record<string, unknown>>, site: { readonly id: string; readonly host?: string | null }) => CmsProjectOptions);
+
 export function createCMS(options: CmsOptions): CmsHost {
     return new CmsHost(options);
 }

@@ -58,7 +58,46 @@
       "types": "./src/vite.d.ts",
       "default": "./src/vite.js"
     },
+    "./app/*": "./app/src/*.ts",
+    "./app/cms/blocks.css": "./app/src/cms/blocks.css",
     "./package.json": "./package.json"
+  },
+  "cossack": {
+    "root": "app/src",
+    "alias": "cms",
+    "pages": [
+      "pages/dashboard/(cms)/",
+      "pages/dashboard/index.ts",
+      "pages/(site)/",
+      "pages/auth/setup/",
+      "pages/auth/verify/",
+      "pages/auth/magic/",
+      "pages/api/cms/",
+      "pages/api/auth/"
+    ],
+    "plugins": [
+      "plugins/default-theme/"
+    ],
+    "config": [
+      "config/cms.ts"
+    ],
+    "host": [
+      "cms.config.ts",
+      "cms/database.ts",
+      "cms/media.ts",
+      "cms/pending.ts",
+      "auth-bot-check.ts",
+      "dashboard/agent-icons.ts",
+      "dashboard/bulk.ts",
+      "dashboard/list-table.ts",
+      "dashboard/page.ts",
+      "dashboard/registry.ts",
+      "dashboard/session-list.ts",
+      "dashboard/tabs.ts",
+      "dashboard/time-ago.ts",
+      "dashboard/types.ts"
+    ],
+    "hostTemplate": "0.9.0"
   },
   "peerDependenciesMeta": {
     "vite": {
