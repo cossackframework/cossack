@@ -1,7 +1,7 @@
-# Upgrades that merge, ejected overrides, and moving projects to the served CMS
+# Upgrades: one command that merges, and ejected overrides
 
-Status: planned 2026-11-15. Part 3 of 3, after `specs/package-routes.md` and
-`specs/cms-served-app.md`. Steps 1 to 4 do not depend on them and can be built first.
+Status: planned 2026-11-15. Part 3 of 4, after `specs/package-routes.md` and
+`specs/cms-served-app.md`; `specs/cms-updates.md` follows. Steps 1 to 4 do not depend on them and can be built first.
 
 ## Why
 
@@ -9,8 +9,10 @@ Status: planned 2026-11-15. Part 3 of 3, after `specs/package-routes.md` and
 An edited file is skipped for good, or overwritten with `--force-file`, losing the
 edits. Once the CMS is served from its package, what stays in a project is glue,
 the template shell (layouts, `list-table`, entry files) and overrides. Those still
-need upgrades that keep local edits. Existing projects also have to move from the
-copied CMS to the served one without losing what they changed.
+need upgrades that keep local edits.
+
+The goal is one command. `cossack upgrade` updates the packages, installs, and
+merges the project's owned files. A user never looks for files to copy.
 
 ## What is true today (2026-11-15)
 
@@ -30,11 +32,6 @@ copied CMS to the served one without losing what they changed.
 - **Plugins** have their own manifest, `.cossack/plugins.json`, with `package`, `version`, `source`, `files` with hashes, `inApp` and `unrestricted` (`scaffold/src/plugins.js` 158-169, 329). `planPlugin` (176-202) uses the same two-way rules. `applyAtomically` (334-372) already keeps the upstream hash as the baseline for preserved edits (351-360). Upgrades re-resolve `source.spec` or `--source` (227-236).
 - **UI eject** is the precedent for copying package code into a project: `cossack add ui <component>` (`commands/add.js` 31-35, 62-76; `templates/ui.js` 18-78). It rewrites imports to public exports, refuses an existing file without `--force`, and records nothing.
 - **Name clash:** `cossack cms ...` is the remote management API namespace (`commands/cms.js` 52-63, `cms/catalog.js:250`). A local verb cannot live there.
-- **The gif84 manifest is stale.**
-  - Header: templateVersion `0.9.0`, cloudflare, 324 files, 239 of them `cms`.
-  - 44 files differ from their recorded hash, but 31 of those are byte-identical to the current workspace `packages/cms/app` sources. They were synced by hand, not edited.
-  - Its `@cossackframework/*` packages are symlinks into the monorepo. The project is a git repository with no commits.
-
 ## Decisions
 
 ### Merge bases are stored, not rebuilt
@@ -45,18 +42,33 @@ copied CMS to the served one without losing what they changed.
   - Blobs no manifest references are deleted on every manifest write.
   - The store is committed: a fresh clone must be able to merge. The scaffold's `.gitignore` leaves it in. The scaffold also writes a `.gitattributes`, which it has none of today, with `.cossack/base/** -diff linguist-generated`.
   - Rebuilding a base from a release was rejected. Linked and unpublished packages cannot be rendered by version, it needs the network, and the global `templateVersion` already drifts (see the bug above).
-- **Reading a schema-3 manifest.**
-  - Render the recorded `templateVersion` once with `loadUpgradeScaffold`.
-  - Use a file's rendered text as its base only when its hash equals the recorded hash.
-  - Otherwise the file has no base and is handled as today: preserved, and reported as `noBase`.
-  - The first schema-4 write records bases from then on. `--force` keeps restoring missing files.
+- **Schema-3 manifests have no bases.** Old releases are not rendered to rebuild
+  them. A file whose hash equals the recorded hash is `canUpdate` as today, and it
+  gets a base when it is written. An edited file is `noBase`: kept and reported,
+  and replaced only with `--force-file`. This is an alpha break, by decision.
 - **`dependencyBaseline`** keeps its own key-level merge. `package.json` and the other `EXCLUDE_FROM_SYNC` files are unchanged by this spec.
+
+### One command
+
+- **`cossack upgrade` does everything by default:** it moves the
+  `@cossackframework/*` dependencies to the target release (`--tag`, default
+  `latest`), installs, then updates and merges owned files, ejected files and
+  installed plugins. `--apply-template` is removed.
+- **`--dry-run`** prints the same plan and writes nothing.
+- **Nothing a user edited is lost without a flag.** Clean merges are written.
+  Conflicting files are left as they are and listed with the next command to run.
+  The command exits 0 with conflicts listed, and `--json` carries them, so a
+  pipeline can open a pull request (`specs/cms-updates.md`).
+- **`pnpm up` alone still works** for a release that changes only served code. If
+  the release needs newer project files, the build stops with
+  `COSSACK_PACKAGE_HOST_OUTDATED` and names `cossack upgrade`
+  (`specs/package-routes.md`). The docs teach `cossack upgrade` only.
 
 ### Classification and flags
 
 Each owned file has *ours* (the file on disk), *base* (the stored blob) and *theirs* (the target render).
 
-| Case | Class | With `--apply-template` |
+| Case | Class | What `cossack upgrade` does |
 | --- | --- | --- |
 | ours missing | `missing` | restored only with `--force` |
 | theirs gone upstream, ours == base | `canDelete` | deleted |
@@ -127,58 +139,32 @@ Each owned file has *ours* (the file on disk), *base* (the stored blob) and *the
   base: `src/pages/(site)/search/index.ts overrides @cossackframework/cms 0.10.0;
   the package changed it since 0.9.0: run cossack upgrade`. It never fails the build.
 
-### Moving a project from the copied CMS to the served one
+### Projects with a copied CMS are not migrated
 
-This runs as part of `cossack upgrade` when the target recipe has `served` paths
-that the manifest owns. `--dry-run` shows all of it first. The rules are below.
+There is no migration from the copied CMS to the served one. This is an alpha
+break, by decision: gif84 is the only such project, and it is a test project.
 
-- **Served files.** For each owned path that is now served:
-  - Delete it and drop its entry if *ours* equals the recorded hash, the installed
-    package's file, or the old release's render. The package-file case covers
-    stale manifests like gif84's.
-  - Otherwise keep it as an ejected override, with its imports rewritten as above
-    and recorded as ejected:
-    - `base` is the old release's render when that render matches the recorded
-      hash;
-    - otherwise it has no base and is reported for review with
-      `cossack eject --diff`.
-  - A served module that is not routable (for example `src/cms/site.ts`) and was
-    changed is a conflict with reason `module-not-overridable`. The migration
-    stops before writing anything and lists the files. The project moves the
-    change into a plugin or `cms.config.ts`, then reruns, or reruns with
-    `--force-file <path>` to drop the edit.
-- **Facade paths** (today's `replaces`, for example `src/auth.ts`, `src/brand.ts`):
-  - if unchanged by the same three tests, they become the facade;
-  - if changed, the result is the same `module-not-overridable` conflict, because
-    served code would not use the copy.
-- **`src/cms/resources.ts`:**
-  - unchanged: the default `src/cms.config.ts` is written;
-  - changed: its exports move into `src/cms.config.ts`, and the plan lists the file
-    for review.
-- **The default theme:**
-  - unchanged: deleted, since it is now served;
-  - changed: kept whole as an ejected plugin, and the plan recommends a child theme.
-- **Project files that import deleted files.** Any project file under `src/` whose
-  relative import resolves to a deleted served file is rewritten to the package
-  specifier. This covers the project's own plugins and files added under `src/cms/`.
-- **Glue and template files** (the entry and Vite patches, `style.css`, the
-  middleware registry) change through the normal classification and merge.
-- **The manifest** moves to schema 4, with bases for every file it writes.
+- `cossack upgrade` refuses a project whose manifest owns `src/cms/index.ts`, with
+  `COSSACK_UPGRADE_CMS_COPIED` and a link to the docs.
+- The way forward is a new project: `cossack create --features cms`, then copy the
+  project's plugins, `content/`, seed scripts and settings into it.
+- gif84 is rebuilt this way. It is the acceptance test that a real site needs only
+  plugins, `cms.config.ts` and content.
 
 ## Order
 
 1. `mergeText` with fixture tests: clean, conflict, CRLF, binary refusal, size limit.
 2. Manifest schema 4: the base store, `writeManifest`, `refreshManifest` per-file
-   bases (fixing the re-basing bug), unreferenced-blob cleanup, schema-3 reading.
-3. Upgrade: the classification table, `--conflicts=markers`, the marker guard, plan
+   bases (fixing the re-basing bug), unreferenced-blob cleanup, schema 3 without bases.
+3. Upgrade: apply by default and `--dry-run`, the classification table, `--conflicts=markers`, the marker guard, plan
    JSON fields, `expected` set; the same merge in `buildPlan` for add and remove.
 4. Plugins: bases in `.cossack/plugins.json`, merges in `cossack plugins upgrade`.
 5. `cossack eject` (with `--restore` and `--diff`), the import rewrite, the `ejected`
    record, upgrade merges of ejected files, the framework's stale-override report.
    Needs `specs/package-routes.md`.
-6. The served-CMS migration. Needs `specs/cms-served-app.md` steps 1-3. Verify on a
-   copy of gif84 (expect: every served file deleted as package-equal, glue and
-   facades written, its plugins untouched), then on gif84 itself after committing it.
+6. Rebuild gif84 on the served CMS as a new project. Needs
+   `specs/cms-served-app.md` steps 1-3. Expect `src/` to hold only glue, facades,
+   `cms.config.ts` and its two plugins, and the Lighthouse score to stay at 97.
 7. Docs: `docs/upgrading.md` (new, covered below) and `docs/cossack-cli.md` (`upgrade`,
    `eject`, `plugins upgrade`).
 
@@ -203,40 +189,30 @@ Version control and updates for any Cossack project, the CMS's included:
   version means restoring the backup together with the older code.
 - **Workflow:**
   1. Make a branch.
-  2. Run `cossack upgrade --dry-run`.
-  3. Run `cossack upgrade --apply-template`.
-  4. Resolve conflicts: `--conflicts=markers`, or by hand.
-  5. Run the tests and check the overrides report.
-  6. Deploy.
+  2. Run `cossack upgrade` (`--dry-run` first to preview).
+  3. Resolve conflicts, if it lists any: `--conflicts=markers`, or by hand.
+  4. Run the tests and check the overrides report.
+  5. Deploy.
+
+  The dashboard's Update button runs the same steps in the project's pipeline
+  (`specs/cms-updates.md`).
 
 ## Tests
 
 - `scaffold/tests/merge.test.js`: `mergeText` cases.
 - `cossack/tests/upgrade.test.js`: each class in the table; a clean merge; a
   conflict with and without markers; a second upgrade after a merge (no re-merge);
-  schema 3 with and without a matching old render; the marker guard; unreferenced
-  blobs removed.
-- `cossack/tests/upgrade-release.test.js`: base reconstruction from a real old
-  release; base release unavailable.
+  a schema-3 manifest (edited file is `noBase`); a copied-CMS project is refused;
+  the marker guard; unreferenced blobs removed; the default run applies, and
+  `--dry-run` writes nothing.
 - `scaffold/tests/plugins.test.js`: a plugin upgrade merges a local edit.
 - `cossack/tests/eject.test.js` (new):
   - eject a page, a layout and the default theme; typecheck and build;
   - upgrade against a changed package page: clean, then a conflict;
   - `--restore`; module paths refused; the route form `/search`.
-- `cossack/tests/served-migration.test.js` (new): a fixture project at today's
-  layout with
-  - unchanged files,
-  - stale hashes equal to the package,
-  - an edited page,
-  - an edited served module,
-  - an edited `resources.ts`,
-  - an edited default theme,
-  - a project file importing `../cms/site`.
-
-  Expect the rules above, and that the project builds after migrating.
-
 ## Not in this change
 
 - Semantic merges (TypeScript AST). Line diff3 only.
+- Migrating a project that holds a copied CMS.
 - Automatic conflict resolution by an agent. The plan carries what one needs.
 - Merges of `package.json`-like files beyond today's key-level merge.

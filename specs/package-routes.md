@@ -1,8 +1,9 @@
 # Package routes: pages and plugins served from an installed package
 
-Status: planned 2026-11-15. Part 1 of 3: this spec (framework), then
+Status: planned 2026-11-15. Part 1 of 4: this spec (framework), then
 `specs/cms-served-app.md` (the CMS moves its app code here) and
-`specs/upgrade-merges.md` (three-way merges, ejecting). Build in that order.
+`specs/upgrade-merges.md` (three-way merges, ejecting) and `specs/cms-updates.md`
+(the Update button). Build in that order.
 
 ## Why
 
