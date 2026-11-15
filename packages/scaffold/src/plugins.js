@@ -12,6 +12,8 @@ import path from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
 import { spawn } from 'node:child_process';
+import { mergeText } from './merge.js';
+import { putBase, readBase, pruneBases } from './base-store.js';
 
 export const PLUGIN_PACKAGE_FIELD = 'cossack';
 export const PLUGIN_MANIFEST_DEFAULT = 'cossack-plugin.json';
@@ -171,7 +173,8 @@ export async function readPluginState(projectDir) {
 /**
  * Plan writes and deletes for one plugin against its recorded hashes:
  * unchanged local files follow upstream; a locally edited file that upstream also
- * changed is a conflict; a locally edited file that upstream did not change is kept.
+ * changed is merged over its stored base, and is a conflict when the merge is not clean
+ * or it has no base; a locally edited file that upstream did not change is kept.
  */
 export async function planPlugin(projectDir, rendered, previousFiles = {}, force = false) {
   const writes = [], deletes = [], conflicts = [], preserved = [];
@@ -187,7 +190,13 @@ export async function planPlugin(projectDir, rendered, previousFiles = {}, force
       preserved.push({ path: rel, capability: entry.capability, reason: existing === null ? 'locally-deleted' : 'locally-modified' });
       continue;
     }
-    if (((existing !== null && baseline === undefined) || (modified && upstreamChanged)) && !force) { conflicts.push(rel); continue; }
+    if (((existing !== null && baseline === undefined) || (modified && upstreamChanged)) && !force) {
+      const base = modified && existing !== null ? await readBase(projectDir, previousFiles[rel]?.base) : null;
+      const merged = base ? mergeText(base, await fs.readFile(path.join(projectDir, rel)), entry.content) : null;
+      if (merged?.status !== 'clean') { conflicts.push(rel); continue; }
+      writes.push({ path: rel, capability: entry.capability, overwrite: true, merged: true, content: Buffer.from(merged.text) });
+      continue;
+    }
     writes.push({ path: rel, capability: entry.capability, overwrite: existing !== null });
   }
   for (const [rel, entry] of Object.entries(previousFiles)) {
@@ -340,7 +349,7 @@ async function applyAtomically(root, rendered, plan, nextState, previousFiles = 
     for (const change of plan.writes) {
       const absolute = path.join(root, change.path);
       await fs.mkdir(path.dirname(absolute), { recursive: true });
-      await fs.writeFile(absolute, rendered.get(change.path).content);
+      await fs.writeFile(absolute, change.content ?? rendered.get(change.path).content);
     }
     if (dependencies.length) {
       const pkg = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
@@ -356,11 +365,15 @@ async function applyAtomically(root, rendered, plan, nextState, previousFiles = 
       plugin.files = {};
       for (const [rel, entry] of rendered) {
         const baseline = previousFiles[rel]?.hash;
-        plugin.files[rel] = { capability: entry.capability, hash: preserved.has(rel) && baseline ? baseline : hash(entry.content) };
+        // `hash` names the upstream text the file descends from, and `base` its stored copy for merges.
+        plugin.files[rel] = preserved.has(rel) && baseline
+          ? { capability: entry.capability, hash: baseline, ...(previousFiles[rel].base ? { base: previousFiles[rel].base } : {}) }
+          : { capability: entry.capability, hash: hash(entry.content), base: await putBase(root, entry.content) };
       }
     }
     await fs.mkdir(path.join(root, '.cossack'), { recursive: true });
     await writeAtomic(path.join(root, PLUGINS_STATE), JSON.stringify(sortState(nextState), null, 2) + '\n');
+    await pruneBases(root);
   } catch (error) {
     for (const [rel, content] of snapshots) {
       const absolute = path.join(root, rel);

@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   addPlugin, listPlugins, pnpmInvocation, readPluginDirectory, readPluginState, readPluginTarball, removePlugin, satisfies, upgradePlugin, validatePluginManifest,
 } from '../src/plugins.js';
+import { readBase } from '../src/base-store.js';
 
 const temporary = [];
 afterEach(async () => { await Promise.all(temporary.splice(0).map(dir => fs.rm(dir, { recursive: true, force: true }))); });
@@ -111,6 +112,31 @@ describe('plugin recipes', () => {
     const forced = await upgradePlugin(app, 'support-desk', { source: third, force: true });
     expect(forced.status).toBe('upgraded');
     expect(await read(app, 'src/plugins/support-desk/lib/b.ts')).toBe('b3\n');
+  });
+
+  it('merges a local edit with an upstream change to another part of the file', async () => {
+    const app = await project();
+    const lines = n => Array.from({ length: n }, (_, index) => `line ${index + 1}`).join('\n') + '\n';
+    await addPlugin(app, await pluginPackage('1.0.0', { 'plugin/lib/a.ts': lines(6) }));
+    const file = path.join(app, 'src/plugins/support-desk/lib/a.ts');
+    const first = (await readPluginState(app)).plugins['support-desk'].files['src/plugins/support-desk/lib/a.ts'];
+    expect(first.base).toBe(first.hash);
+    expect((await readBase(app, first.base)).toString()).toBe(lines(6));
+
+    await fs.writeFile(file, lines(6) + 'local line\n');
+    const upstream = lines(6).replace('line 1\n', 'line one\n');
+    const upgraded = await upgradePlugin(app, 'support-desk', { source: await pluginPackage('1.1.0', { 'plugin/lib/a.ts': upstream }) });
+    expect(upgraded.changes.writes).toContainEqual(expect.objectContaining({ path: 'src/plugins/support-desk/lib/a.ts', merged: true }));
+    expect(await fs.readFile(file, 'utf8')).toBe(upstream + 'local line\n');
+    // The merged file descends from the new upstream text; the old base is gone from the store.
+    const second = (await readPluginState(app)).plugins['support-desk'].files['src/plugins/support-desk/lib/a.ts'];
+    expect((await readBase(app, second.base)).toString()).toBe(upstream);
+    expect(await readBase(app, first.base)).toBeNull();
+
+    // A change to the same line is still a conflict, and nothing is written.
+    const clash = await upgradePlugin(app, 'support-desk', { source: await pluginPackage('1.2.0', { 'plugin/lib/a.ts': upstream + 'upstream line\n' }) }).catch(error => error);
+    expect(clash.conflicts).toEqual(['src/plugins/support-desk/lib/a.ts']);
+    expect(await fs.readFile(file, 'utf8')).toBe(upstream + 'local line\n');
   });
 
   it('refuses to take over an unrendered directory or a name rendered from another package', async () => {
