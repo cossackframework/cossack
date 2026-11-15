@@ -88,21 +88,16 @@ it('renders a packed plugin and serves its pages, translations, configuration an
     await server.close();
   }
 
-  // Upgrade: an edited file that upstream also changes is a conflict and nothing is written.
+  // Upgrade: an edit to a line that upstream left alone is merged with upstream's changes to the file.
   const pageFile = path.join(root, 'src/plugins/support-desk/pages/support/index.ts');
   const original = await fs.readFile(pageFile, 'utf8');
   await fs.writeFile(pageFile, original.replace('Open ticket', 'Open a ticket'));
-  const conflict = await cossack(root, ['plugins', 'upgrade', 'support-desk', '--source', v2.tarball, '--json']).catch(error => error);
-  const envelope = JSON.parse(conflict.stdout);
-  expect(envelope).toMatchObject({ ok: false, data: { conflicts: ['src/plugins/support-desk/pages/support/index.ts'] } });
-  expect(envelope.diagnostics[0].code).toBe('COSSACK_PLUGIN_CONFLICT');
-  expect(await fs.readFile(pageFile, 'utf8')).toContain('Open a ticket');
-  expect(await fs.readFile(path.join(root, 'src/plugins/support-desk/middlewares.ts'), 'utf8')).toContain("'1.0.0'");
-
-  await fs.writeFile(pageFile, original);
   const upgraded = JSON.parse((await cossack(root, ['plugins', 'upgrade', 'support-desk', '--source', v2.tarball, '--json'])).stdout);
   expect(upgraded.data).toMatchObject({ status: 'upgraded', from: '1.0.0', version: '1.1.0' });
-  expect(await fs.readFile(pageFile, 'utf8')).toContain('v1.1.0');
+  const merged = await fs.readFile(pageFile, 'utf8');
+  expect(merged).toContain('Open a ticket');
+  expect(merged).toContain('v1.1.0');
+  expect(await fs.readFile(path.join(root, 'src/plugins/support-desk/middlewares.ts'), 'utf8')).toContain("'1.1.0'");
   await vite(root, []);
   await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
   const next = await productionServer(root);
@@ -112,7 +107,9 @@ it('renders a packed plugin and serves its pages, translations, configuration an
     expect(await response.text()).toContain('support-desk@1.1.0');
   } finally { await next.close(); }
 
-  const removed = JSON.parse((await cossack(root, ['plugins', 'remove', 'support-desk', '--json'])).stdout);
+  // The page still holds the local edit, so removing the plugin asks for --force.
+  await expect(cossack(root, ['plugins', 'remove', 'support-desk', '--json'])).rejects.toThrow();
+  const removed = JSON.parse((await cossack(root, ['plugins', 'remove', 'support-desk', '--force', '--json'])).stdout);
   expect(removed.data.status).toBe('removed');
   await expect(fs.access(path.join(root, 'src/plugins/support-desk'))).rejects.toThrow();
 }, 240_000);
