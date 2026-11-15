@@ -28,8 +28,11 @@ describe('the example plugin', () => {
         expect(files.filter(file => file.startsWith(`${FOLDER}/`))).toEqual([]);
         const attribute = execFileSync('git', ['check-attr', 'export-ignore', '--', `${FOLDER}/server.ts`], { cwd: PACKAGE, encoding: 'utf8' });
         expect(attribute.trim()).toMatch(/: export-ignore: set$/);
-        const recipe = JSON.parse(readFileSync(new URL('../app/cossack-recipe.json', import.meta.url), 'utf8')) as { files: string[] };
-        expect(recipe.files.filter(entry => `src/plugins/example/`.startsWith(entry) || entry.startsWith('src/plugins/example'))).toEqual([]);
+        const recipe = JSON.parse(readFileSync(new URL('../app/cossack-recipe.json', import.meta.url), 'utf8')) as { served: string[] };
+        expect(recipe.served.filter(entry => `src/plugins/example/`.startsWith(entry) || entry.startsWith('src/plugins/example'))).toEqual([]);
+        // A project mounts only the plugins the package names, so a workspace link does not serve it either.
+        const mounted = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { cossack: { plugins: string[] } };
+        expect(mounted.cossack.plugins).toEqual(['plugins/default-theme/']);
     });
 });
 

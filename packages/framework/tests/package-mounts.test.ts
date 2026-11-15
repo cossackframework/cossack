@@ -211,6 +211,23 @@ describe('mounted packages', () => {
     expect(types).toContain('"kit-theme::look": FactoryResult<typeof import("@acme/kit/app/plugins/kit-theme/config/look").default>;');
   });
 
+  it('resolves a served module imported by package name to the served file', () => {
+    const { root, kit } = project();
+    write(kit, { 'package.json': JSON.stringify({ name: '@acme/kit', version: '1.4.0', exports: { './app/*': './app/src/*.ts' }, cossack: field }), 'app/src/kit/styles.css': '' });
+    const plugin = cossackPages();
+    (plugin.configResolved as Function).call({}, { root, publicDir: false, base: '/' });
+    const resolve = (id: string) => (plugin.resolveId as Function).call({}, id);
+    expect(resolve('@acme/kit/app/config/kit')).toBe(join(kit, 'app/src/config/kit.ts'));
+    expect(resolve('@acme/kit/app/kit/styles.css')).toBe(join(kit, 'app/src/kit/styles.css'));
+    expect(resolve('@acme/kit/app/config/kit?url')).toBe(join(kit, 'app/src/config/kit.ts') + '?url');
+    // The package's other entries, and other packages, resolve as usual.
+    expect(resolve('@acme/kit')).toBeUndefined();
+    expect(resolve('@acme/kit/app/missing')).toBeUndefined();
+    expect(resolve('@acme/kit/app/../package')).toBeUndefined();
+    expect(resolve('hono')).toBeUndefined();
+    expect(resolve('./local')).toBeUndefined();
+  });
+
   it('runs package middleware after the application list', () => {
     const { root } = project({ 'src/bootstrap/middlewares.ts': 'export default [];' });
     const plugin = cossackMiddlewares();

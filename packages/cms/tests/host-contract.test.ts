@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
  */
 const packageRoot = path.resolve(import.meta.dirname, '..');
 const app = path.join(packageRoot, 'app');
-const recipe = JSON.parse(readFileSync(path.join(app, 'cossack-recipe.json'), 'utf8')) as { files: string[]; replaces: string[]; rendered: string[] };
+const recipe = JSON.parse(readFileSync(path.join(app, 'cossack-recipe.json'), 'utf8')) as { served: string[]; facades: string[]; rendered: string[] };
 const manifest = JSON.parse(readFileSync(path.join(packageRoot, 'package.json'), 'utf8')) as {
     exports: Record<string, unknown>;
     cossack: { root: string; pages: string[]; plugins: string[]; config: string[]; host: string[] };
@@ -20,7 +20,7 @@ const walk = (directory: string): string[] => readdirSync(directory, { withFileT
 
 /** Served files, as paths from the app folder. */
 const served = new Set<string>();
-for (const entry of [...recipe.files, ...recipe.replaces]) {
+for (const entry of [...recipe.served, ...recipe.facades]) {
     const absolute = path.join(app, entry);
     for (const file of entry.endsWith('/') ? walk(absolute) : [absolute]) {
         const relative = path.relative(app, file).split(path.sep).join('/');
@@ -72,7 +72,7 @@ describe('the host contract of the served CMS app', () => {
     });
 
     it('serves exactly the recipe\'s routable paths, plugins and configuration', () => {
-        const under = (prefix: string) => [...recipe.files, ...recipe.replaces].filter(entry => entry.startsWith(prefix)).map(entry => entry.slice('src/'.length)).sort();
+        const under = (prefix: string) => recipe.served.filter(entry => entry.startsWith(prefix)).map(entry => entry.slice('src/'.length)).sort();
         expect([...manifest.cossack.pages].sort()).toEqual(under('src/pages/'));
         expect([...manifest.cossack.plugins].sort()).toEqual(under('src/plugins/'));
         expect([...manifest.cossack.config].sort()).toEqual(under('src/config/'));
@@ -86,9 +86,9 @@ describe('the host contract of the served CMS app', () => {
         expect(manifest.exports['./app/*']).toBe('./app/src/*.ts');
     });
 
-    it('gives the replaced shell modules no default export: a project re-exports each with export *', () => {
+    it('gives the re-exported shell modules no default export: a project re-exports each with export *', () => {
         // `export * from '@cossackframework/cms/app/auth'` does not carry a default export.
-        const withDefault = recipe.replaces.filter(file => !file.startsWith('src/pages/'))
+        const withDefault = recipe.facades
             .filter(file => /^export default\b|^export \{[^}]*\bdefault\b/m.test(readFileSync(path.join(app, file), 'utf8')));
         expect(withDefault).toEqual([]);
     });

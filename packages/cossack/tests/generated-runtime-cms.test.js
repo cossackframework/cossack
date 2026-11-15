@@ -245,8 +245,8 @@ async function exercise(origin, routeIds, diagnostics) {
   lacks(await browserless(origin, routeIds, diagnostics).page('/'), 'data-cms-taskbar');
   expect(await web.page('/')).toMatch(/href="?\/\?edit/);
   contains(await web.page('/?edit'), 'data-site-editing');
-  // Without a menu, the primary location lists the top-level pages.
-  contains(front, 'href="/home"');
+  // Without a menu, the primary location lists the top-level pages. The front page's address is the site root.
+  contains(front, '<a href="/" class=cms-nav-link aria-current=page>Home</a>');
   expect((await fetch(origin + '/missing-page')).status).toBe(404);
   expect((await fetch(origin + '/api/missing')).status).toBe(404);
 
@@ -319,7 +319,7 @@ async function exercise(origin, routeIds, diagnostics) {
   contains(menuSite, 'href="/sales"');
   const menuApi = await (await fetch(origin + '/api/cms/menus/primary')).json();
   expect(menuApi.items.map(item => [item.label, item.url, item.children.map(child => child.url)])).toEqual([
-    ['Home', '/home', ['/home/team']], ['News', '/category/news', []], ['Docs', 'https://example.com/docs', []], ['Products', '/products', [null]],
+    ['Home', '/', ['/home/team']], ['News', '/category/news', []], ['Docs', 'https://example.com/docs', []], ['Products', '/products', [null]],
   ]);
   expect(menuApi.items[3]).toMatchObject({ kind: 'link', description: 'Everything we make', fields: {}, children: [{ kind: 'heading', url: null, children: [{ url: '/sales', description: 'Close deals faster' }] }] });
   expect(menuApi.items[3].panel.map(block => block.type)).toEqual(['core/card']);

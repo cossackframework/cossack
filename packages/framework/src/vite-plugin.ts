@@ -17,7 +17,7 @@ import { readFileSync, readdirSync, writeFileSync, existsSync, mkdirSync } from 
 import { resolve, dirname, relative } from 'path';
 import { discoverGetHandlers, generateRoutes, ROUTES_MODULE_ID, ROUTES_SOURCE_PATH } from './route-codegen.js';
 import { PLUGINS_MODULE_ID, overrideReport, pageDirectories, pluginEntries, pluginLocations, pluginRegistryModule, readRenderedPlugins, scanPageSources } from './plugin-sources.js';
-import { hostContractProblems, moduleMap, mountedPackages, projectPath, servedFile, servedPrebundle, type MapEntry } from './package-mounts.js';
+import { hostContractProblems, moduleMap, mountedPackages, projectPath, servedFile, servedPrebundle, servedSpecifierFile, type MapEntry } from './package-mounts.js';
 import { isolationReport, PLUGIN_LOADER_BINDING, pluginIsolation, PluginIsolationError, type PluginIsolationOptions } from './plugin-isolation.js';
 export { scanPagesDir } from './route-codegen.js';
 import { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
@@ -407,6 +407,8 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
       }
       if (id === REALTIME_COMPONENTS_MODULE_ID) return resolvedRealtimeComponentsModuleId;
       if (id === PLUGINS_MODULE_ID) return resolvedPluginsModuleId;
+      // A served file imported by its package name is the file itself, not a dependency to pre-bundle.
+      if (id.charCodeAt(0) !== 46 && id.charCodeAt(0) !== 47 && id.charCodeAt(0) !== 0) return servedSpecifierFile(projectRoot, id) ?? undefined;
     },
     load(id) {
       if (id === '\0' + TRACE_BRIDGE_MODULE) {

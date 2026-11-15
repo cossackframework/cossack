@@ -64,6 +64,26 @@ export function servedSpecifier(mounted: MountedPackage, path: string): string |
   return `${mounted.name}/${mounted.exported.subpath}${path.slice(0, path.length - mounted.exported.suffix.length)}`;
 }
 
+/**
+ * The served file an import specifier names (`@cossackframework/cms/app/auth`), or null.
+ * The dev server would otherwise pre-bundle such an import as a dependency: a second copy of
+ * the module beside the one the page registry loads, and one the security transform never saw.
+ */
+export function servedSpecifierFile(projectRoot: string, specifier: string): string | null {
+  for (const mounted of mountedPackages(projectRoot)) {
+    if (!mounted.exported) continue;
+    const prefix = `${mounted.name}/${mounted.exported.subpath}`;
+    if (!specifier.startsWith(prefix)) continue;
+    const [path, query = ''] = specifier.slice(prefix.length).split(/(?=[?#])/, 2) as [string, string?];
+    if (!safe(path)) return null;
+    for (const candidate of [path + mounted.exported.suffix, path]) {
+      const file = join(mounted.root, candidate);
+      if (existsSync(file) && statSync(file).isFile()) return file + query;
+    }
+  }
+  return null;
+}
+
 function exportedRoot(exports: unknown, root: string): MountedPackage['exported'] {
   if (!exports || typeof exports !== 'object') return undefined;
   for (const [key, value] of Object.entries(exports as Record<string, unknown>)) {
@@ -80,7 +100,8 @@ const posix = (path: string) => path.split(sep).join('/');
 const safe = (path: unknown): path is string => typeof path === 'string' && path.length > 0 && !isAbsolute(path) &&
   !path.includes('\\') && !path.split('/').some(part => part === '..' || part === '.');
 
-interface Cached { stamp: string; packages: MountedPackage[] }
+interface Cached { stamp: string; packages: MountedPackage[]; /** Each mounted package's manifest file and its stamp. */ manifests: [string, string][] }
+const stampOf = (file: string): string => { try { const stat = statSync(file); return `${stat.mtimeMs}:${stat.size}`; } catch { return ''; } };
 const cache = new Map<string, Cached>();
 
 function locate(projectRoot: string, name: string): string | null {
@@ -96,16 +117,16 @@ function locate(projectRoot: string, name: string): string | null {
 /** The packages named in the application's `package.json#cossack.packages`, in that order. */
 export function mountedPackages(projectRoot: string): MountedPackage[] {
   const manifestPath = join(projectRoot, 'package.json');
-  let stamp: string;
-  try { const stat = statSync(manifestPath); stamp = `${stat.mtimeMs}:${stat.size}`; }
-  catch { return []; }
+  const stamp = stampOf(manifestPath);
+  if (!stamp) return [];
   const cached = cache.get(projectRoot);
-  if (cached?.stamp === stamp) return cached.packages;
+  // A package update changes the package's own manifest, not the application's.
+  if (cached?.stamp === stamp && cached.manifests.every(([file, known]) => stampOf(file) === known)) return cached.packages;
   const invalid = (message: string) => new PackageMountError('COSSACK_PACKAGE_MOUNT_INVALID', message);
   let names: unknown;
   try { names = JSON.parse(readFileSync(manifestPath, 'utf8'))?.cossack?.packages; }
   catch { names = undefined; }
-  if (names === undefined) { cache.set(projectRoot, { stamp, packages: [] }); return []; }
+  if (names === undefined) { cache.set(projectRoot, { stamp, packages: [], manifests: [] }); return []; }
   if (!Array.isArray(names) || names.some(name => typeof name !== 'string')) throw invalid('package.json#cossack.packages must be a list of package names.');
   const packages: MountedPackage[] = [];
   for (const name of new Set(names as string[])) {
@@ -136,7 +157,7 @@ export function mountedPackages(projectRoot: string): MountedPackage[] {
       ...(exportedRoot(manifest.exports, field.root) ? { exported: exportedRoot(manifest.exports, field.root) } : {}),
     });
   }
-  cache.set(projectRoot, { stamp, packages });
+  cache.set(projectRoot, { stamp, packages, manifests: packages.map(mounted => { const file = join(mounted.directory, 'package.json'); return [file, stampOf(file)]; }) });
   return packages;
 }
 
@@ -249,4 +270,40 @@ export function servedPrebundle(projectRoot: string): { client: string[]; server
     for (const specifier of found.server) server.add(named(specifier));
   }
   return { client: [...client].sort(), server: [...server].sort() };
+}
+
+/**
+ * The text of a served file as a copy in the application holds it: an import that leaves the
+ * copied unit and stays inside the package becomes the package specifier
+ * (`'../../../cms/site'` → `'@cossackframework/cms/app/cms/site'`), so the copy and the package
+ * share one instance of every module. `unit` is the served path of what is copied as a whole:
+ * the file itself, or a plugin's directory (`plugins/default-theme/`), whose own files keep
+ * their relative imports. A pure function of the text and the paths: an upgrade applies it to
+ * the package's new text before it merges.
+ */
+export function rewriteServedImports(text: string, mounted: MountedPackage, path: string, unit: string = path): string {
+  const directory = path.slice(0, path.lastIndexOf('/') + 1);
+  const inUnit = (target: string) => unit.endsWith('/') ? target.startsWith(unit) : target === unit;
+  return text.replace(/((?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)')(\.{1,2}\/[^']*)(')/g, (all, before: string, specifier: string, after: string) => {
+    const [bare, query = ''] = specifier.split(/(?=[?#])/, 2) as [string, string?];
+    const parts: string[] = [];
+    for (const part of (directory + bare).split('/')) {
+      if (part === '..') { if (!parts.length) return all; parts.pop(); }
+      else if (part !== '.' && part !== '') parts.push(part);
+    }
+    const stem = parts.join('/');
+    const target = [stem, `${stem}.ts`, `${stem}/index.ts`].find(candidate => existsSync(join(mounted.root, candidate)) && statSync(join(mounted.root, candidate)).isFile());
+    if (!target || inUnit(target)) return all;
+    const named = servedSpecifier(mounted, target) ?? (mounted.exported ? `${mounted.name}/${mounted.exported.subpath}${target}` : null);
+    return named ? `${before}${named}${query}${after}` : all;
+  });
+}
+
+/** What a served path is, for overriding: only these can be replaced by an application file. */
+export function servedKind(mounted: MountedPackage, path: string): 'page' | 'config' | 'plugin' | null {
+  const plugin = mounted.plugins.find(entry => path === entry.slice(0, -1) || path.startsWith(entry));
+  if (plugin) return 'plugin';
+  if (mounted.config.includes(path)) return 'config';
+  if (mounted.pages.some(entry => entry.endsWith('/') ? path.startsWith(entry) : path === entry)) return 'page';
+  return null;
 }

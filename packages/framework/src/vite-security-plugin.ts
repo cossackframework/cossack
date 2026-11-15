@@ -295,6 +295,9 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       // OAuth exports (`oauth`, `handleOAuthUser`) — and never drifts.
       if (/(^|\/)src\/auth\.m?ts$/.test(shaped)) {
         const authProgram = parsedModule();
+        // A re-export of a mounted package's auth module (`export * from '<package>/app/auth'`) has no
+        // names of its own to stub: the module it names is stubbed by this same rule, with its real exports.
+        if (authProgram?.body.some((statement: any) => statement.type === 'ExportAllDeclaration')) return;
         return authClientStub(authProgram ? namedExportsOf(authProgram) : []);
       }
 

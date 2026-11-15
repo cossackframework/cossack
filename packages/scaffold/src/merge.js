@@ -1,4 +1,4 @@
-import { diff3Merge } from 'node-diff3';
+import { diff3Merge, diffComm } from 'node-diff3';
 
 /** Files larger than this are never merged. */
 export const MERGE_SIZE_LIMIT = 1024 * 1024;
@@ -44,4 +44,30 @@ export function mergeText(base, ours, theirs, options = {}) {
   if (conflicts && lines.at(-1) !== '' && a.at(-1) === '' && b.at(-1) === '') lines.push('');
   const text = lines.join(crlf ? '\r\n' : '\n');
   return conflicts ? { status: 'conflict', text, conflicts } : { status: 'clean', text };
+}
+
+/**
+ * A line diff of two texts as lines that begin with a space (unchanged), `-` (only in `before`)
+ * or `+` (only in `after`), with unchanged runs cut to `context` lines around each change.
+ * An empty string means no difference. Binary content gives null.
+ */
+export function diffLines(before, after, context = 3) {
+  const [a, b] = [before, after].map(decode);
+  if (a === null || b === null) return null;
+  const lines = [];
+  for (const part of diffComm(a.replace(/\r\n/g, '\n').split('\n'), b.replace(/\r\n/g, '\n').split('\n'))) {
+    if (part.common) lines.push(...part.common.map(line => ({ mark: ' ', line })));
+    else lines.push(...part.buffer1.map(line => ({ mark: '-', line })), ...part.buffer2.map(line => ({ mark: '+', line })));
+  }
+  const keep = new Set();
+  lines.forEach((entry, index) => { if (entry.mark !== ' ') for (let near = index - context; near <= index + context; near++) keep.add(near); });
+  const output = [];
+  let previous = -1;
+  lines.forEach((entry, index) => {
+    if (!keep.has(index)) return;
+    if (previous >= 0 && index > previous + 1) output.push('...');
+    output.push(entry.mark + entry.line);
+    previous = index;
+  });
+  return output.join('\n');
 }

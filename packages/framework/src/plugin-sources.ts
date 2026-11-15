@@ -10,7 +10,8 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { scanPagesDir } from './route-codegen.js';
 import { filePathToHttpRoute } from './route-ids.js';
-import { moduleMap, mountedPackages, projectPath, type MapEntry } from './package-mounts.js';
+import { createHash } from 'node:crypto';
+import { moduleMap, mountedPackages, projectPath, rewriteServedImports, type MapEntry } from './package-mounts.js';
 
 export const PLUGINS_DIRECTORY = 'src/plugins';
 /** Plugin directory names: lowercase letters, digits and single hyphens. */
@@ -195,9 +196,32 @@ export function scanPageSources(projectRoot: string, includeMarkdown = false): P
   return result;
 }
 
-/** One line per override, for the dev server and the build to print. */
+/**
+ * One line per override, for the dev server and the build to print. An override that
+ * `cossack eject` recorded (`.cossack/scaffold.json`) also says when the package changed its
+ * file since the copy was made: `pnpm up` alone does not merge that change, `cossack upgrade` does.
+ */
 export function overrideReport(projectRoot: string, overrides: readonly PackageOverride[]): string[] {
-  return overrides.map(override => `[cossack] ${override.path} overrides ${override.package}`).sort();
+  let ejected: Record<string, { package?: string; version?: string; source?: string; unit?: string; base?: string }> = {};
+  try { ejected = JSON.parse(readFileSync(join(projectRoot, '.cossack/scaffold.json'), 'utf8')).ejected ?? {}; }
+  catch { /* No manifest, or no record: the override is reported without its history. */ }
+  const mounted = mountedPackages(projectRoot);
+  return overrides.map(override => {
+    const line = `[cossack] ${override.path} overrides ${override.package}`;
+    const records = Object.entries(ejected).filter(([file, record]) => record.package === override.package && (file === override.path || file.startsWith(`${override.path}/`)));
+    const owner = mounted.find(candidate => candidate.name === override.package);
+    if (!records.length || !owner) return line;
+    const stale = records.some(([, record]) => {
+      if (!record.source || !record.base) return false;
+      try {
+        const content = readFileSync(join(owner.root, record.source));
+        const text = /\.[cm]?tsx?$/.test(record.source) ? Buffer.from(rewriteServedImports(content.toString('utf8'), owner, record.source, record.unit ?? record.source)) : content;
+        return createHash('sha256').update(text).digest('hex') !== record.base;
+      } catch { return true; }
+    });
+    const since = records[0]![1].version;
+    return stale ? `${line} ${owner.version}; the package changed it since ${since}: run cossack upgrade` : line;
+  }).sort();
 }
 
 export interface RenderedPlugin {

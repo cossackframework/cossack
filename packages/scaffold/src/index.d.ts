@@ -125,3 +125,5 @@ export declare function hasConflictMarkers(text: string): boolean;
 export declare function putBase(projectDir: string, content: string | Uint8Array): Promise<string>;
 export declare function readBase(projectDir: string, name: unknown): Promise<Buffer | null>;
 export declare function pruneBases(projectDir: string): Promise<string[]>;
+/** A line diff with ` `, `-` and `+` prefixes and `...` between distant changes; '' when equal, null for binary content. */
+export declare function diffLines(before: string | Uint8Array, after: string | Uint8Array, context?: number): string | null;

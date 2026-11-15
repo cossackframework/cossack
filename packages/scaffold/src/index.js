@@ -1,5 +1,5 @@
 import { workflowsRecipeFiles } from './workflow-recipes.js';
-import { cmsAppDir, cmsAppFiles, cmsRecipeFiles, cmsSetupCode, isCmsPath, patchCmsNodeEntry, patchCmsViteConfig, patchCmsWorkerEntry } from './cms-recipe.js';
+import { CMS_PACKAGE, cmsFacadeFiles, cmsRecipeFiles, cmsSetupCode, isCmsPath, isServedCmsPath, patchCmsNodeEntry, patchCmsViteConfig, patchCmsWorkerEntry } from './cms-recipe.js';
 import { jobsRecipeFiles, turnstileRecipeFiles, schedulesRecipeFiles, notificationsRecipeFiles } from './service-recipes.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -12,7 +12,7 @@ import { prebundleDependencies } from '@cossackframework/core/prebundle-dependen
 import { dependencyBaseline, planDependencyChanges } from './dependencies.js';
 export { dependencyBaseline, planDependencyChanges } from './dependencies.js';
 import { mergeText } from './merge.js';
-export { mergeText, hasConflictMarkers, MERGE_SIZE_LIMIT } from './merge.js';
+export { mergeText, diffLines, hasConflictMarkers, MERGE_SIZE_LIMIT } from './merge.js';
 import { putBase, readBase, pruneBases, BASE_DIRECTORY } from './base-store.js';
 export { putBase, readBase, pruneBases, BASE_DIRECTORY } from './base-store.js';
 import {
@@ -102,7 +102,6 @@ export function withClientDependencies(viteConfig, files) {
       `${marker}${server.map(name => `${indent}'${name}',`).join('\n')}`.replace(/\n$/, ''));
 }
 
-const TIPTAP_PACKAGES = ['@tiptap/core', '@tiptap/pm', '@tiptap/starter-kit', '@tiptap/extension-document', '@tiptap/extension-image', '@tiptap/extension-table', '@tiptap/extension-text-align', '@tiptap/extensions', 'prosemirror-collab'];
 function dependencyVersion(name) {
   const version = dependencyVersions[name];
   if (typeof version !== 'string' || version.length === 0) {
@@ -404,11 +403,8 @@ const DESKTOP_PATHS = new Set([
 ]);
 
 function capabilityFor(rel, recipe) {
-  if (isCmsPath(rel)) {
-    // With the examples home page, the CMS site keeps its other routes and leaves / to it.
-    if (rel === 'src/pages/(site)/index.ts' && recipe.resolvedFeatures.includes('examples')) return null;
-    return recipe.resolvedFeatures.includes('cms') ? 'cms' : null;
-  }
+  // The CMS package serves these paths: a template file there would override the package's.
+  if (recipe.resolvedFeatures.includes('cms') && isServedCmsPath(rel)) return null;
   if (rel === '.github/workflows/preview.yml') return recipe.adapter === 'cloudflare' ? 'base' : null;
   if (rel === 'src/pages/resource/index.ts') return recipe.resolvedFeatures.includes('resource') ? 'resource' : null;
   if (rel === 'src/pages/mutation/index.ts') return recipe.resolvedFeatures.includes('mutation') ? 'mutation' : null;
@@ -508,7 +504,7 @@ function middlewareRegistry(recipe) {
   const cms = recipe.resolvedFeatures.includes('cms');
   // The CMS host goes on the context before auth reads users from it.
   if (cms) {
-    imports.push("import { cmsMiddleware, cmsPrincipal } from '../cms/middleware';");
+    imports.push(`import { cmsMiddleware, cmsPrincipal } from '${CMS_PACKAGE}/app/cms/middleware';`);
     entries.push('  cmsMiddleware,');
   }
   if (recipe.resolvedFeatures.includes('auth')) {
@@ -599,8 +595,6 @@ function packageJson(recipe, projectName) {
     dependencies['@cossackframework/cms'] = `^${templateVersion}`;
     dependencies['@cossackframework/romedb'] = `^${templateVersion}`;
     dependencies['@cossackframework/auth'] = `^${templateVersion}`;
-    // The rich text editor, loaded in the browser only.
-    for (const name of TIPTAP_PACKAGES) dependencies[name] = dependencyVersion(name);
     // Node stores media in S3 when S3_BUCKET is set, otherwise in a local directory.
     if (recipe.adapter === 'node') dependencies['@aws-sdk/client-s3'] = dependencyVersion('@aws-sdk/client-s3');
     // Node resizes images with sharp; Workers use the Images binding.
@@ -608,9 +602,7 @@ function packageJson(recipe, projectName) {
     // Node opens RomeDB files in process with @romedb/node. Both stay outside the server bundle and
     // on one version: the embedded client and the URL client share @romedb/client's value classes.
     if (recipe.adapter === 'node') for (const name of ['@romedb/client', '@romedb/node']) dependencies[name] = dependencyVersion(name);
-    // Passkeys in the browser, and the authenticator app's QR code.
-    dependencies['@simplewebauthn/browser'] = dependencyVersion('@simplewebauthn/browser');
-    dependencies.uqr = dependencyVersion('uqr');
+    // The editor, passkey and QR code libraries are the CMS package's own dependencies.
   }
   if (recipe.resolvedFeatures.includes('database')) {
     dependencies['@cossackframework/database'] = `^${templateVersion}`;
@@ -733,7 +725,8 @@ function packageJson(recipe, projectName) {
     type: 'module',
     ...(recipe.resolvedFeatures.includes('desktop') ? { engines: { node: '>=22' } } : {}),
     description: 'The Borderless TypeScript Framework',
-    cossack: { runtime: recipe.adapter },
+    // The packages whose pages the application mounts (specs/package-routes.md).
+    cossack: { runtime: recipe.adapter, ...(recipe.resolvedFeatures.includes('cms') ? { packages: [CMS_PACKAGE] } : {}) },
     scripts,
     dependencies,
     devDependencies,
@@ -1726,8 +1719,11 @@ function applyStyles(content, recipe) {
   const imports = [marker];
   if (recipe.config.theme !== 'default') imports.push(`@import "@cossackframework/ui/theme/themes/${recipe.config.theme}.css";`);
   // The CMS dashboard switches palettes at runtime (Settings → Interface).
-  if (recipe.resolvedFeatures.includes('cms')) imports.push('@import "@cossackframework/ui/theme/palettes.css";', '@import "./cms/blocks.css";');
-  return content.replace(marker, imports.join('\n'));
+  if (recipe.resolvedFeatures.includes('cms')) imports.push('@import "@cossackframework/ui/theme/palettes.css";', `@import "${CMS_PACKAGE}/app/cms/blocks.css";`);
+  const styled = content.replace(marker, imports.join('\n'));
+  // Tailwind does not scan node_modules: name the served CMS files, as for the UI package.
+  const source = '@source "../node_modules/@cossackframework/ui/dist";';
+  return recipe.resolvedFeatures.includes('cms') ? styled.replace(source, `${source}\n@source "../node_modules/${CMS_PACKAGE}/app/src";`) : styled;
 }
 
 export async function renderRecipe(recipe, options = {}) {
@@ -1885,12 +1881,9 @@ export async function renderRecipe(recipe, options = {}) {
     files.set('src/pages/index.ts', { content: text(minimalPage()), capability: 'base' });
   }
   if (recipe.resolvedFeatures.includes('cms')) {
-    // The CMS application in @cossackframework/cms owns these files, among them the auth and
-    // dashboard storage modules over RomeDB that replace the database ones rendered above.
-    for (const rel of await cmsAppFiles()) {
-      const capability = capabilityFor(rel, recipe);
-      if (capability) files.set(rel, { content: await fs.readFile(path.join(cmsAppDir, rel)), capability });
-    }
+    // The CMS application is served from @cossackframework/cms. The shell imports these auth and
+    // dashboard modules by relative path, so each path stays as a re-export of the CMS's version.
+    for (const [rel, source] of Object.entries(await cmsFacadeFiles())) files.set(rel, { content: text(source), capability: 'cms' });
   }
   if (recipe.resolvedFeatures.includes('database')) {
     files.set('orm.config.ts', {
@@ -2199,6 +2192,16 @@ export async function planChanges(projectDir, recipe, manifest = undefined) {
   return buildPlan(projectDir, rendered, resolvedManifest);
 }
 
+/** `package.json#cossack`: the recipe's values win; mounted packages the project added itself are kept. */
+function mergeCossackField(current = {}, desired = {}, previous = {}) {
+  const merged = { ...current, ...desired };
+  const own = (current.packages ?? []).filter(name => !(previous.packages ?? []).includes(name));
+  const packages = [...new Set([...(desired.packages ?? []), ...own])];
+  if (packages.length) merged.packages = packages;
+  else delete merged.packages;
+  return merged;
+}
+
 function mergePackageSection(
   current = {},
   desired = {},
@@ -2249,7 +2252,7 @@ async function mergePackage(
   );
   const merged = {
     ...current,
-    cossack: { ...(current.cossack ?? {}), ...(desired.cossack ?? {}) },
+    cossack: mergeCossackField(current.cossack, desired.cossack, previous.cossack),
     scripts: mergePackageSection(
       current.scripts,
       desired.scripts,
@@ -2458,6 +2461,8 @@ export async function writeManifest(
     resolvedFeatures: recipe.resolvedFeatures,
     dashboardModules: recipe.dashboardModules,
     config: publicRecipe(recipe).config,
+    // Copies made by cossack eject are recorded here and belong to no recipe.
+    ...(previousManifest?.ejected && Object.keys(previousManifest.ejected).length ? { ejected: previousManifest.ejected } : {}),
     dependencyBaseline: rendered.get('package.json')?.dependencyBaseline ??
       (!written || written.has('package.json')
         ? dependencyBaseline(JSON.parse(packageJson(recipe, path.basename(projectDir))))

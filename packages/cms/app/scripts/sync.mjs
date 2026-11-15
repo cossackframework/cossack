@@ -1,7 +1,9 @@
 // Render the shared application shell into this folder.
 //
-// This application is the `node` + `cms` recipe. The files the cms feature owns are
-// tracked here (see cossack-recipe.json); every other file of the recipe comes from
+// This application is the `node` + `cms` recipe, with one difference: a project mounts the
+// CMS from the package (package.json#cossack.packages), and this folder is that package's
+// served source, so it holds the files themselves and mounts nothing. Those files are tracked
+// here (see cossack-recipe.json); every other file of the recipe comes from
 // packages/scaffold/template and is written by this script, so each file has one source.
 // Local state is kept: `.env` is created once, `storage/` and plugins other than
 // default-theme are never touched. Files rendered by an earlier run that the recipe no
@@ -18,8 +20,11 @@ const WORKSPACE_PACKAGES = /^(?:@cossackframework\/(?!solar-icons)[^/]+|cossack)
 const SKIPPED = new Set(['package.json', 'pnpm-workspace.yaml', '.gitignore', 'README.md', 'AGENTS.md']);
 
 const manifest = JSON.parse(await fs.readFile(path.join(root, 'cossack-recipe.json'), 'utf8'));
-/** Tracked here; the recipe reads them from this folder. Adapter-specific cms files (src/cms/media.ts, pending.ts) are rendered. */
-const tracked = rel => !manifest.rendered.includes(rel) && [...manifest.files, ...manifest.replaces].some(entry => entry.endsWith('/') ? rel.startsWith(entry) : rel === entry);
+/**
+ * Tracked here: the files the package serves. A project holds a re-export where this folder has the
+ * module itself (`facades`), so those are never rendered here. The storage glue and src/cms.config.ts are rendered.
+ */
+const tracked = rel => !manifest.rendered.includes(rel) && [...manifest.served, ...manifest.facades].some(entry => entry.endsWith('/') ? rel.startsWith(entry) : rel === entry);
 
 const recipe = resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'] });
 const rendered = await renderRecipe(recipe, { projectName: 'Cossack' });

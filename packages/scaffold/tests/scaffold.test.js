@@ -551,11 +551,12 @@ describe('composition', () => {
 
   it('imports the CMS block styles only with the cms feature', async () => {
     const plain = await renderRecipe(resolveRecipe({ preset: 'minimal', features: ['ui'] }));
-    expect(plain.get('src/style.css').content.toString()).not.toContain('./cms/blocks.css');
+    expect(plain.get('src/style.css').content.toString()).not.toContain('cms/blocks.css');
     expect(plain.has('src/cms/blocks.css')).toBe(false);
     const cms = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'] }));
-    expect(cms.get('src/style.css').content.toString()).toContain('@import "@cossackframework/ui/theme/palettes.css";\n@import "./cms/blocks.css";');
-    expect(cms.has('src/cms/blocks.css')).toBe(true);
+    expect(cms.get('src/style.css').content.toString()).toContain('@import "@cossackframework/ui/theme/palettes.css";\n@import "@cossackframework/cms/app/cms/blocks.css";');
+    // The stylesheet is the package's; the project holds no copy.
+    expect(cms.has('src/cms/blocks.css')).toBe(false);
   });
 
   it('supports credentials, OAuth, or both authentication methods', async () => {

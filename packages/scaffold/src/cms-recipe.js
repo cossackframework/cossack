@@ -1,45 +1,62 @@
 /**
  * The cms feature: the RomeDB CMS host, its dashboard screens under /dashboard, first-run
- * setup, the public site and its default theme (src/plugins/default-theme). It requires auth and
- * dashboard; the files the feature owns, including the RomeDB storage modules that replace the
- * database ones, live in the @cossackframework/cms package under `app/` and are listed in its
- * `cossack-recipe.json`. This module renders the parts that depend on the runtime adapter and
- * patches entry files.
+ * setup, the public site and its default theme. It requires auth and dashboard.
+ *
+ * The CMS application is served from the @cossackframework/cms package (specs/cms-served-app.md):
+ * the project mounts it (package.json#cossack.packages) and holds none of its files. This module
+ * renders what the project does hold: the storage glue per runtime adapter, `src/cms.config.ts`,
+ * one-line re-exports for the shell modules the CMS replaces, and the entry file patches.
+ * `cossack-recipe.json` in the package's `app/` folder lists each kind.
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 
-/** The CMS application inside @cossackframework/cms: the source of the feature's files. */
-export const cmsAppDir = path.join(path.dirname(createRequire(import.meta.url).resolve('@cossackframework/cms/package.json')), 'app');
+/** The package a CMS project mounts. */
+export const CMS_PACKAGE = '@cossackframework/cms';
+/** The CMS application inside @cossackframework/cms. */
+export const cmsAppDir = path.join(path.dirname(createRequire(import.meta.url).resolve(`${CMS_PACKAGE}/package.json`)), 'app');
 const manifest = JSON.parse(await fs.readFile(path.join(cmsAppDir, 'cossack-recipe.json'), 'utf8'));
-const cmsDirectories = manifest.files.filter(entry => entry.endsWith('/'));
-const cmsFiles = new Set(manifest.files.filter(entry => !entry.endsWith('/')));
-/** Shared auth and dashboard modules the CMS store replaces; the scaffold's versions serve other recipes. */
-const cmsReplaces = manifest.replaces;
-/** Produced by {@link cmsRecipeFiles} for the runtime adapter; a copy in the CMS application is its own. */
+const servedDirectories = manifest.served.filter(entry => entry.endsWith('/'));
+const servedFiles = new Set(manifest.served.filter(entry => !entry.endsWith('/')));
+/** Shell modules whose CMS versions are served; the project keeps a re-export at each path. */
+const cmsFacades = manifest.facades;
+/** Produced by {@link cmsRecipeFiles}. */
 const cmsRendered = new Set(manifest.rendered);
 
-/** Files only the cms capability renders. */
-export function isCmsPath(rel) {
-  return cmsFiles.has(rel) || cmsDirectories.some(directory => rel.startsWith(directory));
+/**
+ * A path the package serves. The project holds no file there: a template file at such a path
+ * would override the package's (specs/package-routes.md), so the recipe leaves it out.
+ */
+export function isServedCmsPath(rel) {
+  return !cmsRendered.has(rel) && (servedFiles.has(rel) || servedDirectories.some(directory => rel.startsWith(directory)));
 }
 
-/** The feature's files, as paths relative to the application root, read from the CMS package. */
-export async function cmsAppFiles() {
-  const files = [...cmsFiles, ...cmsReplaces];
-  for (const directory of cmsDirectories) {
-    const root = path.join(cmsAppDir, directory);
-    const walk = async (dir, prefix) => {
-      for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
-        const rel = `${prefix}${entry.name}`;
-        if (entry.isDirectory()) await walk(path.join(dir, entry.name), `${rel}/`);
-        else if (entry.isFile() && !cmsRendered.has(rel)) files.push(rel);
-      }
-    };
-    await walk(root, directory);
+/** A path the cms capability writes into the project. */
+export function isCmsPath(rel) {
+  return cmsRendered.has(rel) || cmsFacades.includes(rel);
+}
+
+/**
+ * The re-exports, by project path. Each shares the served module's one instance with the
+ * package's own code. A browser-only module (`*.client.ts`) names its exports: the server
+ * replaces such a module with a stub, and a stub cannot be made from `export *`.
+ */
+export async function cmsFacadeFiles() {
+  const files = {};
+  for (const rel of cmsFacades) {
+    const specifier = `${CMS_PACKAGE}/app/${rel.replace(/^src\//, '').replace(/\.ts$/, '')}`;
+    let body = `export * from '${specifier}';\n`;
+    if (/\.client\.ts$/.test(rel)) {
+      const source = await fs.readFile(path.join(cmsAppDir, rel), 'utf8');
+      const values = [...source.matchAll(/^export\s+(?:async\s+)?(?:function\*?|const|let|class)\s+([A-Za-z_$][\w$]*)/gm)].map(match => match[1]);
+      const types = [...source.matchAll(/^export\s+(?:type|interface)\s+([A-Za-z_$][\w$]*)/gm)].map(match => match[1]);
+      if (/^export\s*(?:\{|\*|default\b)/m.test(source)) throw new Error(`${rel}: a browser-only module the project re-exports must declare each export in place.`);
+      body = `${values.length ? `export { ${values.join(', ')} } from '${specifier}';\n` : ''}${types.length ? `export type { ${types.join(', ')} } from '${specifier}';\n` : ''}`;
+    }
+    files[rel] = `// The CMS's version of this module, served from the package. Change behaviour with a plugin or src/cms.config.ts.\n${body}`;
   }
-  return files.sort();
+  return files;
 }
 
 export function cmsRecipeFiles({ adapter }) {
@@ -320,7 +337,7 @@ export function pendingWrites(env: PendingBindings, database = 'main'): PendingW
  * isolated plugins through the Worker Loader binding with the bridge they call back.
  */
 export function patchCmsWorkerEntry(source, { schedules }) {
-  let patched = source.replace("import { template } from './root';", "import { template } from './root';\nimport { cloudflarePluginRunner, createPluginBridge, PluginTail } from '@cossackframework/cms/cloudflare';\nimport { networkFor, setPluginRunner } from './cms/index';\nimport { runNetworkMaintenance } from './cms/maintenance';\nimport { pluginRouteActive } from './cms/middleware';");
+  let patched = source.replace("import { template } from './root';", "import { template } from './root';\nimport { cloudflarePluginRunner, createPluginBridge, PluginTail } from '@cossackframework/cms/cloudflare';\nimport { networkFor, setPluginRunner } from '@cossackframework/cms/app/cms/index';\nimport { runNetworkMaintenance } from '@cossackframework/cms/app/cms/maintenance';\nimport { pluginRouteActive } from '@cossackframework/cms/app/cms/middleware';");
   patched = patched.replace('  htmlTemplate: template,\n', '  htmlTemplate: template,\n  // A rendered plugin\'s pages and handlers answer only while the plugin is active in the CMS.\n  isPluginActive: pluginRouteActive,\n');
   patched = patched.replace('export { SseDurableObject };', `export { SseDurableObject };
 // Unconfirmed RomeDB writes (ROMEDB_PENDING) survive isolate restarts here.
@@ -343,7 +360,7 @@ export { PluginTail };`);
 /** Node entry: run maintenance every minute in the server process. */
 export function patchCmsNodeEntry(source) {
   return source
-    .replace("import { template } from './root';", "import { template } from './root';\nimport { networkFor } from './cms/index';\nimport { runNetworkMaintenance } from './cms/maintenance';\nimport { pluginRouteActive } from './cms/middleware';")
+    .replace("import { template } from './root';", "import { template } from './root';\nimport { networkFor } from '@cossackframework/cms/app/cms/index';\nimport { runNetworkMaintenance } from '@cossackframework/cms/app/cms/maintenance';\nimport { pluginRouteActive } from '@cossackframework/cms/app/cms/middleware';")
     // A rendered plugin's pages and handlers answer only while the plugin is active in the CMS.
     .replace('htmlTemplate: template, runtimeAdapter: runtime })', 'htmlTemplate: template, runtimeAdapter: runtime, isPluginActive: pluginRouteActive })')
     .replace('  runtime.attach(server, fetch);', `  runtime.attach(server, fetch);
