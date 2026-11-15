@@ -19,7 +19,7 @@ const releases = (list.channels[channel] ??= []);
 const release = {
   version,
   published: value('published') ?? new Date().toISOString(),
-  notes: value('notes') ?? `https://github.com/cossackframework/cossack/releases/tag/v${version}`,
+  notes: value('notes') ?? `https://github.com/cossackframework/cossack/releases/tag/${version}`,
   security: args.includes('--security'),
   ...(value('host-template') ? { hostTemplate: value('host-template') } : {}),
   ...(value('minimum-from') ? { minimumFrom: value('minimum-from') } : {}),

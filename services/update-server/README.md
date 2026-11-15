@@ -13,7 +13,7 @@ GET /update?version=0.9.0&channel=latest
   "channel": "latest",
   "latest": "0.10.0",
   "published": "2026-12-01T00:00:00Z",
-  "notes": "https://github.com/cossackframework/cossack/releases/tag/v0.10.0",
+  "notes": "https://github.com/cossackframework/cossack/releases/tag/0.10.0",
   "security": false,
   "hostTemplate": "0.10.0",
   "minimumFrom": "0.9.0"
