@@ -540,7 +540,7 @@ export class CmsHost {
         this.hooks = options.hooks ?? createHookRegistry();
         this.#now = options.now ?? Date.now;
         this.#activationTtl = options.activationTtlMs ?? 30_000;
-        this.#reservedPaths = new Set(options.reservedPaths ?? ['api', 'auth', 'dashboard', 'feed', 'media', 'preview', 'search', 'author', 'indexnow', 'sitemaps']);
+        this.#reservedPaths = new Set(options.reservedPaths ?? DEFAULT_RESERVED_PATHS);
         this.#fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
         this.#loaderTimeout = options.themeLoaderTimeoutMs ?? 1500;
         this.#dataLimit = options.themeDataLimit ?? 65_536;
@@ -2832,6 +2832,9 @@ function artwork(plugin: HostedPlugin): { logo: string | null; cover: string | n
         ?? ['svg', 'png', 'webp', 'jpg', 'jpeg', 'gif', 'avif'].map(extension => assets[`assets/${name}.${extension}`]).find(Boolean) ?? null;
     return { logo: pick(plugin.manifest.logo, 'logo'), cover: pick(plugin.manifest.cover, 'cover') };
 }
+
+/** First path segments of the CMS's own routes: an entry served at the site root cannot take one as its slug. */
+export const DEFAULT_RESERVED_PATHS: readonly string[] = Object.freeze(['api', 'auth', 'dashboard', 'feed', 'media', 'preview', 'search', 'author', 'indexnow', 'sitemaps']);
 
 /**
  * What a project may set for each site's CMS host, in `src/cms.config.ts`. An unset option

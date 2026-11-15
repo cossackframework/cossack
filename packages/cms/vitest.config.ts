@@ -6,6 +6,7 @@ export default defineConfig({
     // The DOM environment transforms the linked framework package, whose plugin registry imports the build's virtual module.
     resolve: { alias: {
         'virtual:cossack-plugins': fileURLToPath(new URL('./tests/stubs/cossack-plugins.ts', import.meta.url)),
+        'virtual:cossack-pages': fileURLToPath(new URL('./tests/stubs/cossack-pages.ts', import.meta.url)),
         // Served app code reaches the project through '@/'; here the project is the dev app.
         '@': fileURLToPath(new URL('./app/src', import.meta.url)),
     } },

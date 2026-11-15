@@ -1,6 +1,6 @@
 import { createRomeDB } from '@cossackframework/romedb';
 import { getRequestContext } from '@cossackframework/core';
-import { cloudflarePurger, cmsReconcilers, CmsNetwork, createCMS, MAIN_SITE, prefixedStorage, stripePayments, type CachePurger, type CmsHost, type NetworkSite, type PluginRunner } from '@cossackframework/cms/server';
+import { cloudflarePurger, cmsReconcilers, CmsNetwork, createCMS, DEFAULT_RESERVED_PATHS, MAIN_SITE, prefixedStorage, stripePayments, type CachePurger, type CmsHost, type NetworkSite, type PluginRunner } from '@cossackframework/cms/server';
 import { aiProvider, type AiBindings } from './ai';
 import type { IconStyleName, Principal } from '@cossackframework/cms';
 import { plugins } from '@cossackframework/framework/plugins';
@@ -10,6 +10,8 @@ import { databaseConnection, siteDatabase, siteDirectory, webhookFetch, type Dat
 import { pendingWrites, type PendingBindings } from '@/cms/pending';
 import { imageTransformer, mediaStorage, type MediaBindings } from '@/cms/media';
 import { announceNoteEvent } from './notes-announce';
+import { reservedRouteSegments } from './reserved-paths';
+import registry from 'virtual:cossack-pages';
 
 export interface CmsBindings extends DatabaseBindings, PendingBindings, MediaBindings, AiBindings {
     /** Stripe as the payments provider: the secret key, and the webhook endpoint's signing secret. */
@@ -108,7 +110,10 @@ export function networkFor(env: CmsBindings): CmsNetwork {
                 // Every binding, for a plugin granted unrestricted access.
                 env: env as Record<string, unknown>,
                 runner: pluginRunner,
-                ...(({ purgers: _purgers, ...rest }) => rest)(project),
+                ...(({ purgers: _purgers, reservedPaths: _reserved, ...rest }) => rest)(project),
+                // An entry's slug cannot take the address of a page: the CMS's routes, every page file of the
+                // application (the project's, the CMS's and plugins'), and what the project names itself.
+                reservedPaths: [...new Set([...DEFAULT_RESERVED_PATHS, ...reservedRouteSegments(Object.keys(registry.pages)), ...(project.reservedPaths ?? [])])],
               });
             },
         });
