@@ -42,6 +42,7 @@
 import type { Plugin, PluginOption, InlineConfig } from 'vite';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { mountedPackages } from './package-mounts.js';
 
 export interface CossackSsgOptions {
   /** Set to `false` to skip SSG entirely (e.g. for non-SSG projects). */
@@ -289,7 +290,8 @@ async function loadEntry(
           // UI's transitive TypeScript icon imports in Vite's module graph;
           // Node cannot strip types inside node_modules. SSR config alone
           // does not apply to runnerImport's separate inline environment.
-          noExternal: ['@cossackframework/framework', '@cossackframework/ui', '@cossackframework/solar-icons'],
+          // A mounted package's served files are TypeScript too.
+          noExternal: ['@cossackframework/framework', '@cossackframework/ui', '@cossackframework/solar-icons', ...mountedPackages(projectRoot).map(mounted => mounted.name)],
         },
       },
     },

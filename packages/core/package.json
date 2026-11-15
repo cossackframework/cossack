@@ -66,6 +66,10 @@
       "types": "./dist/shared/static-assets.d.ts",
       "import": "./dist/shared/static-assets.js"
     },
+    "./prebundle-dependencies": {
+      "types": "./dist/shared/prebundle-dependencies.d.ts",
+      "import": "./dist/shared/prebundle-dependencies.js"
+    },
     "./transport-routes": {
       "types": "./dist/shared/transport-routes.d.ts",
       "import": "./dist/shared/transport-routes.js"

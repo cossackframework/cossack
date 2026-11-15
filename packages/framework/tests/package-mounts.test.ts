@@ -207,6 +207,31 @@ describe('mounted packages', () => {
     expect(source.indexOf('for (const key of Object.keys(packageModules)')).toBeLessThan(source.indexOf('for (const key of Object.keys(pluginModules)'));
   });
 
+  it('keeps a mounted package in the server graph and pre-bundles what its served files import', () => {
+    const { root, kit } = project();
+    write(kit, {
+      'package.json': JSON.stringify({ name: '@acme/kit', version: '1.4.0', dependencies: { '@tiptap/core': '3.0.0' }, cossack: field }),
+      'app/src/pages/(site)/edit/index.ts': "import { getCookie } from 'hono/cookie';\nimport { Editor } from '@tiptap/core';\nimport type { Node } from '@tiptap/pm/model';\nconst icon = () => import('@cossackframework/solar-icons/outline/pen');\nimport { z } from 'left-alone';\nexport default class Page {}\n",
+      'app/src/pages/(site)/edit/index.test.ts': "import '@tiptap/starter-kit';\n",
+    });
+    const config = (cossackPages().config as Function)({ root }, { command: 'serve' });
+    // What the package declares is named through the package: a strict install hides it from the application.
+    expect(config.environments.client.optimizeDeps.include).toEqual(expect.arrayContaining(['@acme/kit > @tiptap/core', '@cossackframework/solar-icons/outline/pen', 'hono/cookie']));
+    expect(config.environments.client.optimizeDeps.include.join(' ')).not.toMatch(/left-alone|starter-kit|pm\/model/);
+    // The server bundles the editor and icon subpaths up front, and keeps the framework's own packages as one copy.
+    expect(config.environments.ssr.optimizeDeps.include).toEqual(expect.arrayContaining(['@acme/kit > @tiptap/core', '@cossackframework/solar-icons/outline/pen']));
+    expect(config.environments.ssr.optimizeDeps.include).not.toContain('hono/cookie');
+    // Served files are TypeScript: Node cannot load them from node_modules, so Vite keeps them.
+    expect(config.ssr.noExternal).toContain('@acme/kit');
+    expect(config.environments.ssr.resolve.noExternal).toContain('@acme/kit');
+    expect(config.server).toBeUndefined();
+
+    // A linked package is outside the project: the dev server must be allowed to serve its files.
+    const linked = project({}, { linked: true });
+    expect((cossackPages().config as Function)({ root: linked.root }, { command: 'serve' }).server.fs.allow).toContain(linked.kit);
+    expect((cossackPages().config as Function)({ root: linked.root }, { command: 'build' }).server).toBeUndefined();
+  });
+
   it('checks the host contract: the modules a package needs, and the template they come from', () => {
     const { root } = project();
     expect(hostContractProblems(root)).toEqual([]);

@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import prompts from 'prompts';
 import { parseDocument } from 'yaml';
 import { ASSETS_RUN_WORKER_FIRST, STATIC_ASSET_DIRECTORY } from '@cossackframework/core/static-assets';
+import { prebundleDependencies } from '@cossackframework/core/prebundle-dependencies';
 import { dependencyBaseline, planDependencyChanges } from './dependencies.js';
 export { dependencyBaseline, planDependencyChanges } from './dependencies.js';
 import { mergeText } from './merge.js';
@@ -63,15 +64,6 @@ const scaffoldPackage = JSON.parse(
 const templateVersion = scaffoldPackage.version;
 const dependencyVersions = scaffoldPackage.scaffold?.dependencyVersions ?? {};
 /**
- * Packages rendered source imports in the browser. Vite cannot see page imports before a
- * page loads, so the generated config lists them for the first dependency bundle.
- */
-// `hono/<module>` subpaths (`hono/cookie` in pages and layouts) are listed: found on the first page, Vite bundles them late and reloads the browser once.
-// `@tiptap/pm/<module>` subpaths are listed too: found one page at a time, Vite would bundle a second
-// ProseMirror beside TipTap's, and the editor fails until the browser reloads with the new bundle.
-const CLIENT_DEPENDENCY = /^(?:@cossackframework\/solar-icons\/.+|hono\/[^/]+|@tiptap\/[^/]+(?:\/[^/]+)?|prosemirror-collab|@simplewebauthn\/browser|@cossackframework\/(?:ui(?:\/blocks)?|auth|cms|framework\/plugins|core\/transport-routes))$/;
-
-/**
  * The README for this recipe: the template marks the parts that are about one runtime, one
  * database or the CMS (`<!-- @cossack:name -->` to `<!-- /@cossack:name -->`), and only the
  * ones the project has are kept.
@@ -94,26 +86,21 @@ export function readmeFor(template, recipe) {
   return `${result.replace(/\n{3,}/g, '\n\n').trimEnd()}\n`;
 }
 
-/** Fill the client dependency list of vite.config.ts from the rendered source files. */
+/**
+ * Fill the dependency lists of vite.config.ts from the rendered source files. Vite cannot see
+ * page imports before a page loads, so the generated config lists them for the first bundle.
+ * The rules are shared with the framework, which adds a mounted package's imports by itself.
+ */
 export function withClientDependencies(viteConfig, files) {
-  const found = new Set();
-  for (const [rel, entry] of files) {
-    if (!rel.startsWith('src/') || !rel.endsWith('.ts')) continue;
-    const source = entry.content.toString('utf8');
-    for (const [, typeOnly, specifier] of source.matchAll(/(?:^|\n)\s*(?:import|export)(\s+type\b)?[^;'"]*?\bfrom\s*'([^']+)'/g)) if (!typeOnly && CLIENT_DEPENDENCY.test(specifier)) found.add(specifier);
-    for (const [, specifier] of source.matchAll(/\bimport\(\s*'([^']+)'\s*\)/g)) if (CLIENT_DEPENDENCY.test(specifier)) found.add(specifier);
-  }
-  const list = [...found].sort();
-  // The Worker evaluates the whole server entry at start, so the same icon subpaths and editor packages
-  // are pre-bundled there too; the framework's own packages keep their one copy and stay off that list.
-  const server = list.filter(name => SERVER_DEPENDENCY.test(name));
+  const sources = [];
+  for (const [rel, entry] of files) if (rel.startsWith('src/') && rel.endsWith('.ts')) sources.push(entry.content.toString('utf8'));
+  const { client: list, server } = prebundleDependencies(sources);
   return viteConfig
     .replace(/(\/\/ @cossack:client-dependencies\n)(\s*)include: \[\],/, (_, marker, indent) =>
       `${marker}${indent}include: [${list.length ? `\n${list.map(name => `${indent}  '${name}',`).join('\n')}\n${indent}` : ''}],`)
     .replace(/(\/\/ @cossack:server-dependencies\n)(\s*)\.\.\.\(\[\] as string\[\]\),/, (_, marker, indent) =>
       `${marker}${server.map(name => `${indent}'${name}',`).join('\n')}`.replace(/\n$/, ''));
 }
-const SERVER_DEPENDENCY = /^(?:@cossackframework\/solar-icons\/.+|@tiptap\/[^/]+(?:\/[^/]+)?|prosemirror-collab)$/;
 
 const TIPTAP_PACKAGES = ['@tiptap/core', '@tiptap/pm', '@tiptap/starter-kit', '@tiptap/extension-document', '@tiptap/extension-image', '@tiptap/extension-table', '@tiptap/extension-text-align', '@tiptap/extensions', 'prosemirror-collab'];
 function dependencyVersion(name) {

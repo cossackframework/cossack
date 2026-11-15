@@ -9,7 +9,8 @@
  * A served file at `<root>/<path>` takes the application path `/src/<path>`. A file the
  * application has at that path overrides the package's.
  */
-import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
+import { prebundleDependencies } from '@cossackframework/core/prebundle-dependencies';
 import { createRequire } from 'node:module';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
@@ -191,4 +192,32 @@ export function hostContractProblems(projectRoot: string): PackageMountError[] {
       `${mounted.name} ${mounted.version} needs project files from template ${mounted.hostTemplate}, and this project is at ${templateVersion}. Run cossack upgrade.`));
   }
   return problems;
+}
+
+const packageOf = (specifier: string) => specifier.split('/').slice(0, specifier.startsWith('@') ? 2 : 1).join('/');
+
+/**
+ * Bare imports of the served files that Vite must pre-bundle up front, for the browser and
+ * for the server. A dependency the package declares itself is named through the package
+ * (`<package> > <import>`): under a strict install the application cannot resolve it.
+ */
+export function servedPrebundle(projectRoot: string): { client: string[]; server: string[] } {
+  const client = new Set<string>(), server = new Set<string>();
+  for (const mounted of mountedPackages(projectRoot)) {
+    const sources: string[] = [];
+    const visit = (directory: string) => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        if (entry.isDirectory()) { if (entry.name !== 'node_modules' && !entry.name.startsWith('.')) visit(join(directory, entry.name)); continue; }
+        if (entry.name.endsWith('.ts') && !/\.(?:d|test|spec)\.ts$/.test(entry.name)) sources.push(readFileSync(join(directory, entry.name), 'utf8'));
+      }
+    };
+    visit(mounted.root);
+    let own: Record<string, unknown> = {};
+    try { own = JSON.parse(readFileSync(join(mounted.directory, 'package.json'), 'utf8')).dependencies ?? {}; } catch { /* Listed plainly. */ }
+    const named = (specifier: string) => packageOf(specifier) !== mounted.name && Object.hasOwn(own, packageOf(specifier)) ? `${mounted.name} > ${specifier}` : specifier;
+    const found = prebundleDependencies(sources);
+    for (const specifier of found.client) client.add(named(specifier));
+    for (const specifier of found.server) server.add(named(specifier));
+  }
+  return { client: [...client].sort(), server: [...server].sort() };
 }

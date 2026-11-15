@@ -4,7 +4,7 @@ export { cossackBuildBudgets } from './vite-build-budgets.js';
 import { checkConfigBuildRequirements } from './config-preflight.js';
 import type { ConfigRuntime } from './config-requirements.js';
 import { generateConfigTypes, discoverConfigSources } from './config-codegen.js';
-import { parseSync, type Plugin, type ViteDevServer } from 'vite';
+import { parseSync, searchForWorkspaceRoot, type Plugin, type ViteDevServer } from 'vite';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { logRuntimeFailure } from '@cossackframework/core/server-diagnostics';
@@ -17,7 +17,7 @@ import { readFileSync, readdirSync, writeFileSync, existsSync, mkdirSync } from 
 import { resolve, dirname, relative } from 'path';
 import { discoverGetHandlers, generateRoutes, ROUTES_MODULE_ID, ROUTES_SOURCE_PATH } from './route-codegen.js';
 import { PLUGINS_MODULE_ID, overrideReport, pageDirectories, pluginEntries, pluginLocations, pluginRegistryModule, readRenderedPlugins, scanPageSources } from './plugin-sources.js';
-import { hostContractProblems, moduleMap, mountedPackages, projectPath, servedFile, type MapEntry } from './package-mounts.js';
+import { hostContractProblems, moduleMap, mountedPackages, projectPath, servedFile, servedPrebundle, type MapEntry } from './package-mounts.js';
 import { isolationReport, PLUGIN_LOADER_BINDING, pluginIsolation, PluginIsolationError, type PluginIsolationOptions } from './plugin-isolation.js';
 export { scanPagesDir } from './route-codegen.js';
 import { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
@@ -257,19 +257,26 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
       // environment that bundles linked packages carries their fingerprint in its config, so
       // a changed one is bundled again under a new address (see the helper).
       const root = userConfig.root ? resolve(userConfig.root) : process.cwd();
+      // A mounted package's served files are application source: they stay in Vite's graph on the
+      // server (Node cannot strip types inside node_modules), and their imports are pre-bundled
+      // up front like the application's own, which the generated config lists for its files.
+      const mounted = mountedPackages(root);
+      const served = servedPrebundle(root);
+      include.push(...served.client.filter(name => !include.includes(name)));
+      const serverInclude = [...ssrOptimizedDependencies(), ...served.server];
+      const inlined = ['@cossackframework/framework', '@cossackframework/ui', '@cossackframework/solar-icons', ...mounted.map(entry => entry.name)];
+      // A linked package's files are outside the project, where the dev server serves nothing by default.
+      const linkedRoots = mounted.filter(entry => entry.linked).map(entry => entry.directory);
       const client = [...include, ...(userConfig.environments?.client?.optimizeDeps?.include ?? []), ...(userConfig.optimizeDeps?.include ?? [])];
-      const ssr = [...ssrOptimizedDependencies(), ...(userConfig.environments?.ssr?.optimizeDeps?.include ?? []), ...(userConfig.ssr?.optimizeDeps?.include ?? [])];
+      const ssr = [...serverInclude, ...(userConfig.environments?.ssr?.optimizeDeps?.include ?? []), ...(userConfig.ssr?.optimizeDeps?.include ?? [])];
       const clientLinked = env.command === 'serve' ? linkedDependencyFolders(root, client) : [];
       const ssrLinked = env.command === 'serve' ? linkedDependencyFolders(root, ssr) : [];
       // A running server watches them too: one rebuilt meanwhile restarts it (see configureServer).
       linkedFolders = [...new Map([...clientLinked, ...ssrLinked].map(entry => [entry.folder, entry])).values()];
       return {
+        ...(linkedRoots.length && env.command === 'serve' ? { server: { fs: { allow: [searchForWorkspaceRoot(root), ...linkedRoots] } } } : {}),
         ssr: {
-          noExternal: [
-            '@cossackframework/framework',
-            '@cossackframework/ui',
-            '@cossackframework/solar-icons',
-          ],
+          noExternal: inlined,
         },
         environments: {
           client: {
@@ -283,13 +290,9 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           },
           ssr: {
             // CommonJS reached through installed packages is pre-bundled up front; see the helper.
-            optimizeDeps: { include: ssrOptimizedDependencies(), ...linkedDependenciesConfig(ssrLinked) },
+            optimizeDeps: { include: serverInclude, ...linkedDependenciesConfig(ssrLinked) },
             resolve: {
-              noExternal: [
-                '@cossackframework/framework',
-                '@cossackframework/ui',
-                '@cossackframework/solar-icons',
-              ],
+              noExternal: inlined,
             },
           },
         },
