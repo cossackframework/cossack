@@ -6,3 +6,5 @@
 !/README.md
 !/package.json
 !/scripts/
+/scripts/*
+!/scripts/sync.mjs
