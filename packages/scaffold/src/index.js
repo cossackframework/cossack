@@ -10,6 +10,10 @@ import { parseDocument } from 'yaml';
 import { ASSETS_RUN_WORKER_FIRST, STATIC_ASSET_DIRECTORY } from '@cossackframework/core/static-assets';
 import { dependencyBaseline, planDependencyChanges } from './dependencies.js';
 export { dependencyBaseline, planDependencyChanges } from './dependencies.js';
+import { mergeText } from './merge.js';
+export { mergeText, hasConflictMarkers, MERGE_SIZE_LIMIT } from './merge.js';
+import { putBase, readBase, pruneBases, BASE_DIRECTORY } from './base-store.js';
+export { putBase, readBase, pruneBases, BASE_DIRECTORY } from './base-store.js';
 import {
   ADAPTERS,
   FEATURES,
@@ -122,6 +126,11 @@ function dependencyVersion(name) {
 const text = (value) => Buffer.from(value, 'utf8');
 const hash = (content) => createHash('sha256').update(content).digest('hex');
 const LOCAL_ENV_CAPABILITY = 'local-environment';
+/** Schema 4 records a merge base per file. Schema 3 is read as a manifest without bases. */
+export const MANIFEST_SCHEMA_VERSION = 4;
+const supportedManifest = manifest => manifest?.schemaVersion === 3 || manifest?.schemaVersion === MANIFEST_SCHEMA_VERSION;
+// These merge by key, never by line, so they keep no base text.
+const KEY_MERGED = new Set(['package.json', 'pnpm-workspace.yaml']);
 const LOCAL_ENV_PATHS = new Set(['.env', '.dev.vars']);
 const PNPM_MANAGED_BUILDS = new Set([
   'esbuild',
@@ -1876,6 +1885,9 @@ export async function renderRecipe(recipe, options = {}) {
     capability: 'base',
   });
 
+  // Stored merge bases are committed, and they are not source to review.
+  files.set('.gitattributes', { content: text('.cossack/base/** -diff linguist-generated\n'), capability: 'base' });
+
   if (!recipe.resolvedFeatures.includes('ui')) {
     files.set('src/App.ts', { content: text(minimalApp()), capability: 'base' });
     files.set('src/root.ts', { content: text(minimalRoot()), capability: 'base' });
@@ -2164,7 +2176,14 @@ async function buildPlan(projectDir, rendered, manifest, force = false) {
       continue;
     }
     if ((userOwned || (modified && recipeChanged)) && !mergeSafe && !canForce(rel)) {
-      conflicts.push(rel);
+      // Both the project and the recipe changed the file: merge them over the stored upstream text.
+      const base = modified && existingHash !== null ? await readBase(projectDir, owned[rel]?.base) : null;
+      const merged = base ? mergeText(base, await fs.readFile(absolute), entry.content) : null;
+      if (merged?.status !== 'clean') {
+        conflicts.push(rel);
+        continue;
+      }
+      writes.push({ path: rel, capability: entry.capability, overwrite: true, merged: true, content: Buffer.from(merged.text) });
       continue;
     }
     writes.push({ path: rel, capability: entry.capability, overwrite: existingHash !== null });
@@ -2403,7 +2422,7 @@ async function applyPlan(projectDir, rendered, plan) {
     const entry = rendered.get(change.path);
     const absolute = path.join(projectDir, change.path);
     await fs.mkdir(path.dirname(absolute), { recursive: true });
-    await fs.writeFile(absolute, entry.content);
+    await fs.writeFile(absolute, change.content ?? entry.content);
   }
 }
 
@@ -2421,11 +2440,17 @@ export async function writeManifest(
   for (const [rel, entry] of rendered) {
     if (entry.capability === LOCAL_ENV_CAPABILITY) continue;
     const previous = previousManifest?.files?.[rel];
+    // `base` is the upstream text the file descends from; `hash` is the file on disk.
+    const upstream = async () => KEY_MERGED.has(rel) ? {} : { base: await putBase(projectDir, entry.content) };
     if (plan && !written.has(rel)) {
       if (previous) {
+        const recorded = typeof previous === 'string' ? previous : previous.hash;
+        const unchanged = recorded === hash(entry.content) && await currentHash(path.join(projectDir, rel)) === recorded;
         files[rel] = {
           capability: entry.capability,
-          hash: typeof previous === 'string' ? previous : previous.hash,
+          hash: recorded,
+          // A preserved edit keeps the base it was made on.
+          ...(unchanged ? await upstream() : typeof previous.base === 'string' ? { base: previous.base } : {}),
         };
       }
       // A matching pre-existing file without a prior manifest entry remains
@@ -2433,10 +2458,10 @@ export async function writeManifest(
       continue;
     }
     const contentHash = await currentHash(path.join(projectDir, rel));
-    if (contentHash) files[rel] = { capability: entry.capability, hash: contentHash };
+    if (contentHash) files[rel] = { capability: entry.capability, hash: contentHash, ...await upstream() };
   }
   const manifest = {
-    schemaVersion: 3,
+    schemaVersion: MANIFEST_SCHEMA_VERSION,
     tool: '@cossackframework/scaffold',
     templateVersion,
     updatedAt: new Date().toISOString(),
@@ -2466,6 +2491,7 @@ export async function writeManifest(
     await fs.rm(temporaryPath, { force: true });
     throw error;
   }
+  await pruneBases(projectDir);
   return manifestPath;
 }
 
@@ -2656,9 +2682,9 @@ export async function createApp(projectName, options = {}) {
 
 /** Resolve recorded features through the same registry used for composition. */
 export function resolveManifestRecipe(manifest) {
-  if (!manifest || manifest.schemaVersion !== 3 || !ADAPTERS.includes(manifest.runtime ?? manifest.adapter) ||
+  if (!manifest || !supportedManifest(manifest) || !ADAPTERS.includes(manifest.runtime ?? manifest.adapter) ||
       !Array.isArray(manifest.explicitFeatures ?? manifest.resolvedFeatures)) {
-    throw new Error('A schema-v3 scaffold manifest with a runtime and feature list is required.');
+    throw new Error('A scaffold manifest with a runtime and feature list is required.');
   }
   return resolveRecipe({
     adapter: manifest.runtime ?? manifest.adapter,
@@ -2682,13 +2708,13 @@ async function inferRecipe(projectDir, manifest) {
       'the manifest with Cossack 1.0.',
     );
   }
-  if (manifest && manifest.schemaVersion !== 3) {
+  if (manifest && !supportedManifest(manifest)) {
     throw new Error(
       `Unsupported scaffold manifest schema ${manifest.schemaVersion ?? '(missing)'}. ` +
-      'Cossack 1.0 requires schema version 3.',
+      `Cossack requires schema version ${MANIFEST_SCHEMA_VERSION}.`,
     );
   }
-  if (manifest?.schemaVersion === 3) {
+  if (manifest) {
     return resolveManifestRecipe(manifest);
   }
   const pkg = JSON.parse(await fs.readFile(path.join(projectDir, 'package.json'), 'utf8'));
@@ -2851,11 +2877,19 @@ async function applyPlanAndManifestAtomically(
       directory = parent;
     }
   }
+  const baseDirectory = path.join(projectDir, BASE_DIRECTORY);
+  const baseDirectoryExisted = await access(baseDirectory);
+  const basesBefore = new Set(await fs.readdir(baseDirectory).catch(() => []));
   try {
     await applyPlan(projectDir, rendered, plan);
     return await writeManifest(projectDir, recipe, rendered, manifest, plan);
   } catch (error) {
     const failures = [];
+    // Bases stored for this plan go with it. Blobs the old manifest names are never pruned before the new one is in place.
+    for (const name of await fs.readdir(baseDirectory).catch(() => [])) {
+      if (!basesBefore.has(name)) await fs.rm(path.join(baseDirectory, name), { force: true }).catch(() => {});
+    }
+    if (!baseDirectoryExisted) await fs.rmdir(baseDirectory).catch(() => {});
     for (const [rel, content] of snapshots) {
       const absolute = path.join(projectDir, rel);
       try {
@@ -2919,13 +2953,13 @@ export async function switchAdapter(projectDir, target, options = {}) {
   const manifest = await readManifest(root);
   if (!manifest) {
     throw new Error(
-      'Adapter switching requires a schema-v3 .cossack/scaffold.json manifest.',
+      'Adapter switching requires a .cossack/scaffold.json manifest.',
     );
   }
-  if (manifest.schemaVersion !== 3) {
+  if (!supportedManifest(manifest)) {
     throw new Error(
       `Unsupported scaffold manifest schema ${manifest.schemaVersion ?? '(missing)'}. ` +
-      'Adapter switching requires schema version 3.',
+      `Adapter switching requires schema version ${MANIFEST_SCHEMA_VERSION}.`,
     );
   }
   const current = resolveRecipe({

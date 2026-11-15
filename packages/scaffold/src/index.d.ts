@@ -108,3 +108,20 @@ export declare function writeManifest(
 export declare class PromptAbortedError extends Error {
   code: 'COSSACK_PROMPT_ABORTED';
 }
+
+/** Manifest schema written by this release. Schema 3 manifests are read as manifests without bases. */
+export declare const MANIFEST_SCHEMA_VERSION: 4;
+/** Project-relative directory of stored upstream texts, named by sha256. */
+export declare const BASE_DIRECTORY: '.cossack/base';
+export declare const MERGE_SIZE_LIMIT: number;
+export type MergeResult =
+  | { status: 'clean'; text: string }
+  | { status: 'conflict'; text: string; conflicts: number }
+  | { status: 'unmergeable'; reason: 'binary' | 'too-large' };
+/** Three-way line merge: `base` is the stored upstream text, `ours` the file on disk, `theirs` the new upstream text. */
+export declare function mergeText(base: string | Uint8Array, ours: string | Uint8Array, theirs: string | Uint8Array,
+  options?: { labels?: { ours?: string; base?: string; theirs?: string } }): MergeResult;
+export declare function hasConflictMarkers(text: string): boolean;
+export declare function putBase(projectDir: string, content: string | Uint8Array): Promise<string>;
+export declare function readBase(projectDir: string, name: unknown): Promise<Buffer | null>;
+export declare function pruneBases(projectDir: string): Promise<string[]>;

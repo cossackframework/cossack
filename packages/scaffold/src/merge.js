@@ -3,11 +3,10 @@ import { diff3Merge } from 'node-diff3';
 /** Files larger than this are never merged. */
 export const MERGE_SIZE_LIMIT = 1024 * 1024;
 
-const MARKER = /^(<{7} |\|{7} |={7}$|>{7} )/m;
-
-/** True when the text holds a conflict marker line that `mergeText` writes. */
+/** True when the text holds an opening and a closing conflict marker line, as `mergeText` writes them. */
 export function hasConflictMarkers(text) {
-  return MARKER.test(String(text).replace(/\r\n/g, '\n'));
+  const normalized = String(text).replace(/\r\n/g, '\n');
+  return /^<{7} /m.test(normalized) && /^>{7} /m.test(normalized);
 }
 
 function decode(content) {

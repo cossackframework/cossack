@@ -92,7 +92,7 @@ async function upgradeCommandInner(args, ctx) {
       throw Object.assign(new Error('Cannot read the scaffold ownership manifest. Restore valid JSON before upgrading.'),
         { code: 'COSSACK_UPGRADE_MANIFEST_INVALID' });
     });
-  if (manifest && manifest.schemaVersion !== 3) throw unsupportedManifestError(manifest);
+  if (manifest && manifest.schemaVersion !== 3 && manifest.schemaVersion !== 4) throw unsupportedManifestError(manifest);
   if (manifest?.dependencyBaseline !== undefined && (!manifest.dependencyBaseline ||
     typeof manifest.dependencyBaseline !== 'object' || Array.isArray(manifest.dependencyBaseline) ||
     Object.values(manifest.dependencyBaseline).some(section => !section || typeof section !== 'object' ||
@@ -348,7 +348,7 @@ async function buildDriftReport(root, projectName, manifest, api) {
   };
 
   if (!manifest) return report;
-  if (manifest.schemaVersion !== 3) {
+  if (manifest.schemaVersion !== 3 && manifest.schemaVersion !== 4) {
     throw unsupportedManifestError(manifest);
   }
   const recipe = recipeFromManifest(manifest, api.resolveRecipe);
