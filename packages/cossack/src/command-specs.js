@@ -209,10 +209,8 @@ export const commandSpecs = {
   info: new CommandSpec({ name: 'info', globals: readonly }),
   version: new CommandSpec({ name: 'version', aliases: ['v'], globals: readonly }),
   upgrade: new CommandSpec({ name: 'upgrade', globals: mutations, positionals: ['dir'], flags: {
-    force: bool('Also restore deleted owned files; edits are preserved.', { aliases: ['f'] }),
-    yes, tag: str('Scaffold/dependency release tag or exact version (default: latest).'),
-    'force-file': str('Owned file to replace; repeat for multiple files.', { repeated: true }),
-    conflicts: choices('How to write a file whose merge conflicts (default: keep the file as it is).', ['markers']),
+    yes, tag: str('Release tag or exact version (default: latest).'),
+    conflicts: choices('How to write an ejected copy or a plugin file whose merge conflicts (default: keep the file as it is).', ['markers']),
   } }),
   eject: new CommandSpec({ name: 'eject', globals: mutations, positionals: ['package', 'path'], minPositionals: 1, flags: {
     restore: bool('Delete an ejected copy and its record; the package\'s file is served again.'),

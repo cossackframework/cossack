@@ -3,9 +3,11 @@
 Status: built 2026-11-15. Part 3 of 4, after `specs/package-routes.md` and
 `specs/cms-served-app.md`; `specs/cms-updates.md` follows. Steps 1 to 4 do not depend on them and can be built first.
 
-Update (2026-11-15): a CMS project records no files, so nothing here applies to its
-scaffold files (`specs/cms-served-app.md`, "Update 2"). This spec still describes
-projects without the CMS, and ejected copies and plugins in every project.
+Update (2026-11-15): no project records its scaffold files any more
+(`specs/cms-served-app.md`, "Update 2"; `specs/dashboard-package.md`), so the merge
+of scaffold files, its classification, `--force` and `--force-file` are removed.
+What remains of this spec: the stored texts and the merge for `cossack eject`
+copies and plugins, `--conflicts=markers`, and the refusal of a copied CMS.
 
 ## Why
 

@@ -52,7 +52,8 @@ describe('recipe resolution', () => {
     const local = await fs.readFile(path.join(root, '.dev.vars'), 'utf8');
     const example = await fs.readFile(path.join(root, '.dev.vars.example'), 'utf8');
     const ignored = await fs.readFile(path.join(root, '.gitignore'), 'utf8');
-    const manifest = await fs.readFile(path.join(root, '.cossack/scaffold.json'), 'utf8');
+    // The recipe is recorded in package.json; no secret goes with it.
+    const manifest = await fs.readFile(path.join(root, 'package.json'), 'utf8');
     const secret = local.match(/^APP_SECRET=(.+)$/m)?.[1];
     expect(secret).toMatch(/^[\w-]{43}$/);
     expect(config.vars).not.toHaveProperty('APP_SECRET');
@@ -182,17 +183,19 @@ describe('recipe resolution', () => {
     }
     expect(files.has('src/orm/factory.ts')).toBe(recipe.resolvedFeatures.includes('database'));
     expect(files.has('orm.config.ts')).toBe(recipe.resolvedFeatures.includes('database'));
-    expect(files.has('src/auth.ts')).toBe(recipe.resolvedFeatures.includes('auth'));
-    expect(files.has('src/pages/dashboard/layout.ts'))
-      .toBe(recipe.resolvedFeatures.includes('dashboard'));
+    // Sign-in and the dashboard are served from their package; the project holds its choices.
+    expect(files.has('src/auth.ts')).toBe(false);
+    expect(files.has('src/pages/dashboard/layout.ts')).toBe(false);
+    expect(files.has('src/dashboard.config.ts')).toBe(recipe.resolvedFeatures.includes('auth'));
     if (recipe.resolvedFeatures.includes('dashboard')) {
-      const layout = files.get('src/pages/dashboard/layout.ts').content.toString();
+      const served = await renderRecipe(recipe, { servedFiles: true });
+      const layout = served.get('src/pages/dashboard/layout.ts').content.toString();
       expect(layout).toContain('component(Sidebar');
       expect(layout).toContain('component(DropdownMenu');
       expect(layout).toContain('collapsible:');
       expect(layout).toContain('accountModules.map');
       expect(layout).toContain('await navigation(this.c)');
-      expect(files.has('src/dashboard/access.ts')).toBe(true);
+      expect(served.has('src/dashboard/access.ts')).toBe(true);
     }
     expect(files.has('src/pages/(public)/index.ts'))
       .toBe(recipe.resolvedFeatures.includes('examples'));
@@ -259,55 +262,27 @@ describe('recipe resolution', () => {
 });
 
 describe('composition', () => {
-  it('creates, adds, and removes application-owned Markdown support', async () => {
+  it('adds and removes Markdown pages as a recorded feature, with no file or dependency of its own', async () => {
     const root = await temporaryDirectory();
-    const project = await createApp('app', {
-      cwd: root,
-      adapter: 'cloudflare',
-      preset: 'minimal',
-      interactive: false,
-    });
+    const project = await createApp('app', { cwd: root, adapter: 'cloudflare', preset: 'minimal', interactive: false });
+    const read = async rel => fs.readFile(path.join(project.projectDir, rel), 'utf8');
+    const viteConfig = await read('vite.config.ts');
 
-    let viteConfig = await fs.readFile(
-      path.join(project.projectDir, 'vite.config.ts'),
-      'utf8',
-    );
-    let pkg = JSON.parse(await fs.readFile(
-      path.join(project.projectDir, 'package.json'),
-      'utf8',
-    ));
-    expect(viteConfig).toContain('export default cossackApp({');
-    expect(viteConfig).not.toContain('processMarkdown');
-    expect(pkg.devDependencies).not.toHaveProperty('unified');
-
-    const added = await addFeature(project.projectDir, 'markdown', {
-      interactive: false,
-    });
+    const added = await addFeature(project.projectDir, 'markdown', { interactive: false });
     expect(added.status).toBe('added');
-    await expect(fs.readFile(
-      path.join(project.projectDir, 'src/markdown-processor.ts'),
-      'utf8',
-    )).resolves.toContain('export async function processMarkdown');
-    viteConfig = await fs.readFile(path.join(project.projectDir, 'vite.config.ts'), 'utf8');
-    pkg = JSON.parse(await fs.readFile(path.join(project.projectDir, 'package.json'), 'utf8'));
-    expect(viteConfig).toContain('export default cossackApp({\n  markdownProcessor: processMarkdown,\n');
-    expect(viteConfig).toContain("from './src/markdown-processor.ts'");
-    expect(pkg.devDependencies).toHaveProperty('unified');
-    expect(pkg.devDependencies).toHaveProperty('remark-parse');
-
-    const removed = await removeFeatureFromProject(project.projectDir, 'markdown', {
-      interactive: false,
-      yes: true,
-    });
-    expect(removed.status).toBe('removed');
-    await expect(fs.access(
-      path.join(project.projectDir, 'src/markdown-processor.ts'),
-    )).rejects.toThrow();
-    viteConfig = await fs.readFile(path.join(project.projectDir, 'vite.config.ts'), 'utf8');
-    pkg = JSON.parse(await fs.readFile(path.join(project.projectDir, 'package.json'), 'utf8'));
-    expect(viteConfig).toContain('export default cossackApp({');
-    expect(viteConfig).not.toContain('processMarkdown');
+    // The preset uses the framework's processor for the feature; the framework brings its dependencies.
+    expect(added.changes.writes.map(change => change.path)).toEqual(['package.json']);
+    let pkg = JSON.parse(await read('package.json'));
+    expect(pkg.cossack.features).toEqual(['markdown']);
     expect(pkg.devDependencies).not.toHaveProperty('unified');
+    expect(await read('vite.config.ts')).toBe(viteConfig);
+    await expect(fs.access(path.join(project.projectDir, 'src/markdown-processor.ts'))).rejects.toThrow();
+
+    const removed = await removeFeatureFromProject(project.projectDir, 'markdown', { interactive: false, yes: true });
+    expect(removed.status).toBe('removed');
+    pkg = JSON.parse(await read('package.json'));
+    expect(pkg.cossack.features).toEqual([]);
+    expect(await read('vite.config.ts')).toBe(viteConfig);
   });
 
   it('adds and removes Studio with database dependency ownership', async () => {
@@ -406,111 +381,9 @@ describe('composition', () => {
       .toEqual((await readManifest(initial.projectDir)).files);
   });
 
-  it.each(DASHBOARD_MODULES)(
-    'installs only the %s dashboard navigation descriptor',
-    async (module) => {
-      const recipe = resolveRecipe({
-        adapter: 'cloudflare',
-        preset: 'minimal',
-        features: 'dashboard',
-        dashboardModules: module,
-      });
-      const files = await renderRecipe(recipe, { projectName: 'app' });
-      const registry = files.get('src/dashboard/registry.ts').content.toString();
-      expect(registry).toContain(`import ${module} from './modules/${module}';`);
-      for (const other of DASHBOARD_MODULES.filter((candidate) => candidate !== module)) {
-        expect(registry).not.toContain(`./modules/${other}`);
-      }
-      expect(files.has(`src/dashboard/modules/${module}.ts`)).toBe(true);
-      const descriptor = files.get(`src/dashboard/modules/${module}.ts`).content.toString();
-      expect(descriptor).toContain('@cossackframework/solar-icons/');
-      expect(descriptor).toContain('icon,');
-      if (module === 'users') {
-        expect(descriptor).toContain('children:');
-        expect(descriptor).toContain(`/dashboard/${module}/new`);
-      } else if (module === 'roles') {
-        // Roles is a link of the Users menu; its page offers Add role itself.
-        expect(descriptor).toContain("parent: 'users'");
-        expect(descriptor).not.toContain('children:');
-      } else {
-        expect(descriptor).toContain("placement: 'account'");
-      }
-    },
-  );
-
-  it.each([
-    ['users,sessions', ['users', 'sessions']],
-    ['settings,roles', ['settings', 'roles']],
-    ['users,sessions,settings,roles', DASHBOARD_MODULES],
-  ])('renders only selected dashboard modules for %s', async (selected, expected) => {
-    const files = await renderRecipe(resolveRecipe({
-      preset: 'minimal',
-      features: 'dashboard',
-      dashboardModules: selected,
-    }));
-    const registry = files.get('src/dashboard/registry.ts').content.toString();
-    for (const module of DASHBOARD_MODULES) {
-      expect(registry.includes(`./modules/${module}`)).toBe(expected.includes(module));
-    }
-  });
-
-  it('keeps the dashboard layout stable when modules are added', async () => {
-    const sessions = await renderRecipe(resolveRecipe({
-      preset: 'minimal',
-      features: 'dashboard',
-      dashboardModules: 'sessions',
-    }));
-    const expanded = await renderRecipe(resolveRecipe({
-      preset: 'minimal',
-      features: 'dashboard',
-      dashboardModules: 'sessions,settings',
-    }));
-    expect(sessions.get('src/pages/dashboard/layout.ts').content)
-      .toEqual(expanded.get('src/pages/dashboard/layout.ts').content);
-    expect(sessions.get('src/dashboard/registry.ts').content)
-      .not.toEqual(expanded.get('src/dashboard/registry.ts').content);
-  });
-
-  it('installs users RBAC support without exposing Roles pages', async () => {
-    const files = await renderRecipe(resolveRecipe({
-      adapter: 'cloudflare',
-      preset: 'minimal',
-      features: 'dashboard',
-      dashboardModules: 'users',
-    }), { projectName: 'app' });
-    expect(files.has('src/models/Role.ts')).toBe(true);
-    expect(files.has('src/models/OAuthAccount.ts')).toBe(true);
-    expect(files.has('src/models/CacheItem.ts')).toBe(true);
-    expect(files.has('src/pages/dashboard/users/index.ts')).toBe(true);
-    expect(files.has('src/pages/dashboard/roles/index.ts')).toBe(false);
-    expect(files.has('src/dashboard/modules/roles.ts')).toBe(false);
-  });
-
-  it('renders configured OAuth providers and UI theme', async () => {
-    const files = await renderRecipe(resolveRecipe({
-      adapter: 'cloudflare',
-      preset: 'auth',
-      oauth: 'github,google',
-      theme: 'green',
-    }));
-    expect(files.get('src/auth.ts').content.toString()).toContain('createOAuth');
-    expect(files.get('src/auth.ts').content.toString()).toContain('createOAuthForRequest');
-    expect(files.get('src/auth.ts').content.toString()).toContain('c.env.OAUTH_SECRET');
-    expect(files.get('src/auth.ts').content.toString()).toContain('GITHUB_CLIENT_ID');
-    expect(files.get('src/auth.ts').content.toString())
-      .toContain("new OAuthError('COSSACK_OAUTH_CREDENTIALS_MISSING')");
-    expect(files.get('src/auth.ts').content.toString())
-      .toContain('[Cossack OAuth]');
-    const login = files.get('src/pages/auth/login/index.ts').content.toString();
-    expect(login).toContain('/auth/google/redirect');
-    expect(login).toContain('data-oauth-provider="github"');
-    expect(login).toContain('data-oauth-provider="google"');
-    expect(login).toContain('<svg aria-hidden="true"');
-    expect(login.indexOf('<form @submit=')).toBeLessThan(
-      login.indexOf('data-oauth-provider="github"'),
-    );
-    expect(files.get('src/style.css').content.toString())
-      .toContain('@cossackframework/ui/theme/themes/green.css');
+  it('applies the chosen UI theme', async () => {
+    const files = await renderRecipe(resolveRecipe({ adapter: 'cloudflare', preset: 'auth', theme: 'green' }));
+    expect(files.get('src/style.css').content.toString()).toContain('@cossackframework/ui/theme/themes/green.css');
   });
 
   it('imports the CMS block styles only with the cms feature', async () => {
@@ -521,55 +394,6 @@ describe('composition', () => {
     expect(cms.get('src/style.css').content.toString()).toContain('@import "@cossackframework/ui/theme/palettes.css";\n@import "@cossackframework/cms/app/cms/blocks.css";');
     // The stylesheet is the package's; the project holds no copy.
     expect(cms.has('src/cms/blocks.css')).toBe(false);
-  });
-
-  it('supports credentials, OAuth, or both authentication methods', async () => {
-    const credentials = await renderRecipe(resolveRecipe({
-      preset: 'auth',
-      authMethods: 'credentials',
-    }));
-    expect(credentials.has('src/pages/auth/register/index.ts')).toBe(true);
-    expect(credentials.has('src/migrations/0005_create_oauth_accounts.ts')).toBe(true);
-    expect(credentials.has('.dev.vars')).toBe(true);
-
-    const oauth = await renderRecipe(resolveRecipe({
-      preset: 'auth',
-      authMethods: 'oauth',
-      oauth: 'github',
-    }), { authSecret: 'abcdefghijklmnopqrstuvwxyz123456' });
-    expect(oauth.has('src/pages/auth/register/index.ts')).toBe(false);
-    expect(oauth.has('src/migrations/0005_create_oauth_accounts.ts')).toBe(true);
-    const oauthLogin = oauth.get('src/pages/auth/login/index.ts').content.toString();
-    expect(oauthLogin).not.toContain('<form @submit=');
-    expect(oauthLogin).not.toContain('class="mt-6 flex items-center gap-3"');
-    expect(oauthLogin).toContain('Continue with GitHub');
-
-    const both = await renderRecipe(resolveRecipe({
-      preset: 'auth',
-      authMethods: 'credentials,oauth',
-      oauth: 'github',
-    }), { authSecret: 'abcdefghijklmnopqrstuvwxyz123456' });
-    expect(both.has('src/pages/auth/register/index.ts')).toBe(true);
-    const bothLogin = both.get('src/pages/auth/login/index.ts').content.toString();
-    expect(bothLogin).toContain('<form @submit=');
-    expect(bothLogin.indexOf('<form @submit=')).toBeLessThan(
-      bothLogin.indexOf('data-oauth-provider="github"'),
-    );
-  });
-
-  it.each(['node', 'cloudflare'])('composes the %s sessions dashboard without unselected RBAC dependencies', async adapter => {
-    const files = await renderRecipe(resolveRecipe({ adapter, preset: 'minimal', features: ['dashboard'], dashboardModules: ['sessions'] }));
-    const seeder = files.get('src/seeders/application.seeder.ts').content.toString();
-    expect(seeder).toContain('defineSeeder');
-    expect(seeder).not.toMatch(/Role|permissions|ADMIN_PASSWORD/);
-    expect(files.has('src/models/Role.ts')).toBe(false);
-    expect(files.has('src/models/UserRole.ts')).toBe(false);
-    expect(files.has('src/migrations/0008_add_session_public_id.ts')).toBe(true);
-    expect(files.get('src/migrations/index.ts').content.toString()).toContain("'./0008_add_session_public_id'");
-    const middleware = files.get('src/bootstrap/middlewares.ts').content.toString();
-    expect(middleware).toContain('auth.middleware');
-    expect(middleware).not.toContain('sessionMiddleware');
-    expect(files.get('src/middlewares/orm.ts').content.toString()).toContain('export const sessionMiddleware');
   });
 
   it('generates Node environment defaults without recording local secrets', async () => {
@@ -634,9 +458,8 @@ describe('composition', () => {
     const manifest = await readManifest(project.projectDir);
     expect(manifest.config).not.toHaveProperty('appSecret');
     expect(manifest.config).not.toHaveProperty('authSecret');
-    expect(manifest.files).not.toHaveProperty('.env');
-    expect(manifest.files).toHaveProperty('.env.example');
-    expect(manifest.files).not.toHaveProperty('src/config/oauth.ts');
+    expect(manifest.files).toBeUndefined();
+    await expect(fs.access(path.join(project.projectDir, '.cossack'))).rejects.toThrow();
   });
 
   it('uses one Node Vite development lifecycle while preserving the local overlay', async () => {
@@ -841,7 +664,8 @@ describe('composition', () => {
     await expect(fs.readFile(path.join(project.projectDir, 'AGENTS.md'), 'utf8'))
       .resolves.toContain('pnpm exec cossack docs --json');
 
-    const auth = await fs.readFile(path.join(project.projectDir, 'src/auth.ts'), 'utf8');
+    await expect(fs.access(path.join(project.projectDir, 'src/auth.ts'))).rejects.toThrow();
+    const auth = (await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'full-stack' }), { servedFiles: true })).get('src/auth.ts').content.toString();
     expect(auth).toContain('Session database is unavailable; continuing as guest.');
     expect(auth).toContain('run `pnpm migrate`');
 
@@ -918,12 +742,9 @@ describe('composition', () => {
       interactive: false,
     });
     expect(result.recipe.dashboardModules).toEqual(['sessions', 'settings']);
-    expect(result.changes.writes.map((change) => change.path)).toContain(
-      'src/dashboard/modules/settings.ts',
-    );
-    expect(result.changes.writes.map((change) => change.path)).not.toContain(
-      'src/pages/dashboard/users/index.ts',
-    );
+    // The modules are a value: the package serves every module's pages.
+    expect(result.changes.writes.map((change) => change.path).sort()).toEqual(['package.json', 'src/dashboard.config.ts']);
+    expect(await fs.readFile(path.join(project.projectDir, 'src/dashboard.config.ts'), 'utf8')).toContain("modules: ['sessions', 'settings'],");
   });
 
   it('expands a partial dashboard to all modules on a plain repeated add', async () => {
@@ -980,7 +801,6 @@ describe('composition', () => {
       preset: 'minimal',
       interactive: false,
     });
-    const before = await readManifest(project.projectDir);
     const relative = 'src/pages/index.ts';
     const page = path.join(project.projectDir, relative);
     await fs.appendFile(page, '\n// local edit\n');
@@ -995,8 +815,6 @@ describe('composition', () => {
       reason: 'locally-modified',
     });
     expect(await fs.readFile(page, 'utf8')).toContain('// local edit');
-    const after = await readManifest(project.projectDir);
-    expect(after.files[relative].hash).toBe(before.files[relative].hash);
   });
 
   it('migrates legacy pnpm build approvals and preserves explicit workspace choices', async () => {
@@ -1074,7 +892,7 @@ describe('composition', () => {
       preset: 'minimal',
       interactive: false,
     });
-    const collision = path.join(project.projectDir, 'src/pages/auth/login/index.ts');
+    const collision = path.join(project.projectDir, 'src/dashboard.config.ts');
     await fs.mkdir(path.dirname(collision), { recursive: true });
     await fs.writeFile(collision, '// user-owned\n');
     await expect(addFeature(project.projectDir, 'auth', { interactive: false }))
@@ -1091,7 +909,7 @@ describe('composition', () => {
       preset: 'minimal',
       interactive: false,
     });
-    const collision = path.join(project.projectDir, 'src/pages/auth/login/index.ts');
+    const collision = path.join(project.projectDir, 'src/dashboard.config.ts');
     await fs.mkdir(path.dirname(collision), { recursive: true });
     await fs.writeFile(collision, '// user-owned\n');
     const result = await addFeature(project.projectDir, 'auth', {
@@ -1116,7 +934,7 @@ describe('composition', () => {
       features: 'auth',
     });
     const desired = await renderRecipe(authRecipe, { projectName: 'app' });
-    const relative = 'src/pages/auth/login/index.ts';
+    const relative = 'src/dashboard.config.ts';
     const target = path.join(project.projectDir, relative);
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.writeFile(target, desired.get(relative).content);
@@ -1129,8 +947,7 @@ describe('composition', () => {
       capability: 'auth',
       reason: 'user-owned',
     });
-    expect((await readManifest(project.projectDir)).files)
-      .not.toHaveProperty(relative);
+    expect(await fs.readFile(target, 'utf8')).toBe(desired.get(relative).content.toString());
   });
 
   it('removes dependents, unused prerequisites, and scaffold package entries', async () => {
@@ -1275,7 +1092,7 @@ describe('prompt navigation and cancellation', () => {
       interactive: false,
     });
     const before = await fs.readFile(
-      path.join(project.projectDir, '.cossack/scaffold.json'),
+      path.join(project.projectDir, 'package.json'),
       'utf8',
     );
     const input = new EventEmitter();
@@ -1290,7 +1107,7 @@ describe('prompt navigation and cancellation', () => {
     expect(result.status).toBe('cancelled');
     expect(names).toEqual(['confirmed']);
     expect(await fs.readFile(
-      path.join(project.projectDir, '.cossack/scaffold.json'),
+      path.join(project.projectDir, 'package.json'),
       'utf8',
     )).toBe(before);
     await expect(fs.access(
@@ -1299,19 +1116,11 @@ describe('prompt navigation and cancellation', () => {
   });
 });
 
-it.each(['cloudflare', 'node'])('names the Markdown processor in the generated %s Vite configuration', async adapter => {
-  for (const features of [[], ['markdown']]) {
-    const files = await renderRecipe(resolveRecipe({ adapter, preset: 'minimal', features }));
-    const config = files.get('vite.config.ts').content.toString();
-    expect(config.includes('markdownProcessor: processMarkdown')).toBe(features.includes('markdown'));
-  }
-});
-
 it('derives capability requirements only from selected recipe features and targets', () => {
   const minimal = resolveRecipe({ adapter: 'node', preset: 'minimal' });
   expect(recipeCapabilityRequirements(minimal)).toEqual([]); // Default sqlite choice is inactive.
   const recipe = resolveRecipe({ adapter: 'node', preset: 'database', features: ['desktop'] });
-  const source = { file: '.cossack/scaffold.json' };
+  const source = { file: 'package.json' };
   expect(recipeCapabilityRequirements(recipe)).toEqual([{ feature: 'database/sqlite', source, requires: { filesystem: true } }]);
   expect(recipeCapabilityRequirements(recipe, 'desktop')).toEqual([
     { feature: 'database/sqlite', source, requires: { filesystem: true } },
@@ -1324,7 +1133,7 @@ it.each([['d1', 'DB'], ['hyperdrive-postgres', 'HYPERDRIVE'], ['hyperdrive-mysql
   const recipe = resolveRecipe({ adapter: 'cloudflare', preset: 'database', database });
   for (const target of ['web', 'desktop']) {
     expect(recipeCapabilityRequirements(recipe, target)).toContainEqual({
-      feature: `database/${database}`, source: { file: '.cossack/scaffold.json' }, requires: { cloudflareBindings: [binding] },
+      feature: `database/${database}`, source: { file: 'package.json' }, requires: { cloudflareBindings: [binding] },
     });
   }
   expect(recipeCapabilityRequirements(resolveRecipe({ adapter: 'cloudflare', preset: 'minimal', database }))).toEqual([]);
@@ -1338,10 +1147,10 @@ it.each(['d1', 'hyperdrive-postgres', 'hyperdrive-mysql'])('rejects native %s De
   await expect(fs.access(path.join(root, 'unsupported'))).rejects.toThrow();
   const { projectDir } = await createApp('app', { cwd: root, adapter: 'cloudflare', preset: 'minimal',
     features: ['protected-route'], database, interactive: false });
-  const manifest = await fs.readFile(path.join(projectDir, '.cossack/scaffold.json'), 'utf8');
+  const manifest = await fs.readFile(path.join(projectDir, 'package.json'), 'utf8');
   await expect(addFeature(projectDir, 'desktop', { interactive: false }))
-    .rejects.toThrow(`.cossack/scaffold.json: database/${database} requires cloudflareBindings on desktop`);
-  expect(await fs.readFile(path.join(projectDir, '.cossack/scaffold.json'), 'utf8')).toBe(manifest);
+    .rejects.toThrow(`package.json: database/${database} requires cloudflareBindings on desktop`);
+  expect(await fs.readFile(path.join(projectDir, 'package.json'), 'utf8')).toBe(manifest);
   await expect(fs.access(path.join(projectDir, 'src/desktop/index.ts'))).rejects.toThrow();
 });
 it.each(['resource', 'mutation', 'scoped-service', 'protected-route'])('composes the %s recipe predictably and preserves edited pages', async feature => {
@@ -1369,7 +1178,7 @@ it.each(['resource', 'mutation', 'scoped-service', 'protected-route'])('composes
     expect(original).toContain('this.user!.email');
     expect(await fs.readFile(path.join(projectDir, 'src/pages/protected-route/layout.ts'), 'utf8')).toContain('middlewares: [requireProtectedUser]');
     expect(await fs.readFile(path.join(projectDir, 'src/middlewares/protected-route.ts'), 'utf8')).toContain('authorizer.requireUser');
-    expect(await fs.readFile(path.join(projectDir, 'src/config/auth.ts'), 'utf8')).toContain("env('AUTH_REDIRECT_AFTER_LOGIN', '/protected-route')");
+    expect(await fs.readFile(path.join(projectDir, 'src/dashboard.config.ts'), 'utf8')).toContain("redirectAfterLogin: '/protected-route',");
     expect(await fs.readFile(path.join(projectDir, '.env'), 'utf8')).toContain('AUTH_REDIRECT_AFTER_LOGIN=/protected-route');
   }
   const pkg = JSON.parse(await fs.readFile(path.join(projectDir, 'package.json'), 'utf8'));
@@ -1389,14 +1198,15 @@ it.each(['resource', 'mutation', 'scoped-service', 'protected-route'])('composes
   await addFeature(projectDir, feature, { interactive: false });
   expect(await Promise.all(files.map(file => fs.readFile(file, 'utf8')))).toEqual(originals.map(original => original + '\n// application customization\n'));
   expect(recipeCapabilityRequirements(resolveRecipe({ adapter: 'node', preset: 'minimal', features: [feature] })))
-    .toEqual([{ feature, source: { file: '.cossack/scaffold.json' }, requires: { transports: ['http'] } },
-      ...(feature === 'protected-route' ? [{ feature: 'database/sqlite', source: { file: '.cossack/scaffold.json' }, requires: { filesystem: true } }] : [])]);
+    .toEqual([{ feature, source: { file: 'package.json' }, requires: { transports: ['http'] } },
+      ...(feature === 'protected-route' ? [{ feature: 'database/sqlite', source: { file: 'package.json' }, requires: { filesystem: true } }] : [])]);
 });
 
 it.each([
   { features: ['database'], auth: false, rbac: false },
-  { features: ['auth'], auth: true, rbac: false },
-  { features: ['dashboard'], dashboardModules: ['sessions'], auth: true, rbac: false },
+  // Roles come with ORM sign-in, whatever the dashboard shows.
+  { features: ['auth'], auth: true, rbac: true },
+  { features: ['dashboard'], dashboardModules: ['sessions'], auth: true, rbac: true },
   { features: ['dashboard'], dashboardModules: ['users'], auth: true, rbac: true },
 ])('keeps generated entity relations and registrations aligned with selected features: %j', async selection => {
   const files = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', ...selection }));

@@ -12,7 +12,7 @@ import { createAuthorizer } from '@cossackframework/auth';
 import type { MiddlewareHandler } from 'hono';
 import type { PublicUser } from '../auth';
 
-export type { RoleAssignment } from '../models/User';
+export type { RoleAssignment } from '@/models/User';
 
 export const guard = createAuthorizer<PublicUser>({
     hasRole: (user, role) => user.roles.some((r) => r.name === role),

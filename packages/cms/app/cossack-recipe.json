@@ -15,6 +15,7 @@
     "src/pages/dashboard/index.ts",
     "src/brand.ts",
     "src/auth.ts",
+    "src/auth-options.ts",
     "src/passkeys.client.ts",
     "src/services/users.ts",
     "src/services/roles.ts",
@@ -33,7 +34,8 @@
     "src/auth-input.ts",
     "src/auth-bot-check.ts",
     "src/auth-bot-token.ts",
-    "src/config/auth.ts"
+    "src/config/auth.ts",
+    "src/auth-providers.ts"
   ],
   "rendered": [
     "src/cms.config.ts"

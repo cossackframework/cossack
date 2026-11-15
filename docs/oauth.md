@@ -56,9 +56,12 @@ Browser                   Cossack app              OAuth provider
 
 ## Atomic state storage
 
-Cookie-based `createOAuth` requires an `OAuthStateStore`. The generated
-`src/auth.ts` exports `oauthStateStore`. `cossack add auth --oauth github`
-composes it automatically. Handwritten applications supply these callbacks:
+Cookie-based `createOAuth` requires an `OAuthStateStore`. With
+`cossack add auth --oauth github`, the `@cossackframework/dashboard` package serves the
+whole flow: its auth module has the state store, `/auth/<provider>/redirect` and
+`/auth/<provider>/callback` are its routes, and the sign-in page shows a button for each
+provider in `src/dashboard.config.ts` (`oauth: ['github']`). Handwritten applications supply
+these callbacks:
 
 | Callback | Contract |
 | --- | --- |

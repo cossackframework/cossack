@@ -26,11 +26,12 @@ async function project(options, mounted = []) {
   await install(root, '@cossackframework/framework', {
     'package.json': { name: '@cossackframework/framework', type: 'module', exports: {
       './vite-plugin': { types: './types.d.ts', import: './plugin.js' }, './vite-security-plugin': { import: './security.js' },
-      './vite-ssg-plugin': { import: './ssg.js' }, './package-mounts': { import: './mounts.js' } } },
+      './vite-ssg-plugin': { import: './ssg.js' }, './package-mounts': { import: './mounts.js' }, './markdown-processor': { import: './markdown.js' } } },
     'plugin.js': ['cossackPages', 'cossackLang', 'cossackMiddlewares', 'cossackConfig', 'cossackBuildBudgets', 'cossackWorkflows', 'cossackSchedules']
       .map(name => `export const ${name} = ${recorded(name)};`).join('\n'),
     'security.js': `export const cossackSecurityPlugin = ${recorded('cossackSecurityPlugin')};`,
     'ssg.js': `export const cossackSsg = ${recorded('cossackSsg')};`,
+    'markdown.js': `export const processMarkdown = Object.assign(async () => ({ html: '', frontmatter: {} }), { framework: true });`,
     'mounts.js': `export const mountedPackages = () => ${JSON.stringify(mounted)};`,
   });
   await install(root, '@cloudflare/vite-plugin', { 'package.json': { name: '@cloudflare/vite-plugin', type: 'module', exports: { '.': { import: './index.js' } } }, 'index.js': `export const cloudflare = ${recorded('cloudflare')};` });
@@ -64,7 +65,7 @@ describe('cossack/vite preset', () => {
 
   it('gives the build what the recorded features need from the runtime, for the web and for Desktop', async () => {
     const root = await project({ adapter: 'node', preset: 'database', features: ['desktop'] });
-    const source = { file: '.cossack/scaffold.json' };
+    const source = { file: 'package.json' };
     const web = await configOf(root);
     expect(names(web)).toContain('cossackNode');
     expect(names(web)).not.toContain('cloudflare');
@@ -126,6 +127,9 @@ describe('cossack/vite preset', () => {
       config: ({ mode }) => ({ build: { minify: false }, define: { MODE: JSON.stringify(mode) } }),
     });
     expect(plugin(config, 'cossackPages').options).toMatchObject({ markdownProcessor: processor, developmentTraces: true });
+    // Without its own processor, a project with Markdown pages gets the framework's; another project gets none.
+    expect(plugin(await configOf(root), 'cossackPages').options.markdownProcessor.framework).toBe(true);
+    expect(plugin(await configOf(await project({ adapter: 'node' })), 'cossackPages').options).not.toHaveProperty('markdownProcessor');
     expect(names(config)).not.toContain('cossackSsg');
     expect(names(config).at(-1)).toBe('own');
     expect(config.build.minify).toBe(false);

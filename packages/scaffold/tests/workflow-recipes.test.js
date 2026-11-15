@@ -3,9 +3,10 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createApp, addFeature, readManifest, resolveRecipe, recipeCapabilityRequirements } from '../src/index.js';
+import { recipeFiles } from './recipe-files.js';
 const temporary=[];async function directory(){const root=await fs.mkdtemp(path.join(os.tmpdir(),'cossack-workflow-recipes-'));temporary.push(root);return root;}
 afterEach(async()=>{await Promise.all(temporary.splice(0).map(root=>fs.rm(root,{recursive:true,force:true})));});
-async function snapshot(root){const manifest=await readManifest(root);return Object.fromEntries(await Promise.all(Object.keys(manifest.files).sort().map(async file=>[file,await fs.readFile(path.join(root,file),'utf8')])));}
+async function snapshot(root){return Object.fromEntries(await Promise.all((await recipeFiles(root)).map(async file=>[file,await fs.readFile(path.join(root,file),'utf8')])));}
 it('generates native Workflow setup with equivalent create/add and idempotent preserved application files',async()=>{
  const direct=await createApp('app',{cwd:await directory(),adapter:'cloudflare',preset:'minimal',features:['workflows'],interactive:false});
  const composed=await createApp('app',{cwd:await directory(),adapter:'cloudflare',preset:'minimal',interactive:false});await addFeature(composed.projectDir,'workflows',{interactive:false});

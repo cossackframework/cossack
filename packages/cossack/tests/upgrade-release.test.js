@@ -107,15 +107,9 @@ describe('release-aligned upgrade planning and application', () => {
     pkg.dependencies['user-only'] = 'file:private-value';
     delete pkg.devDependencies.typescript;
     await write('package.json', pkg);
-    await write('src/auth.ts', '// local authentication module\n');
-    const manifest = await json('.cossack/scaffold.json');
-    for (const name of ['obsolete', 'edited-obsolete']) {
-      const relative = `src/${name}.ts`;
-      await write(relative, '// old generated file\n');
-      manifest.files[relative] = { capability: 'base', hash: hash('// old generated file\n') };
-    }
-    await write('src/edited-obsolete.ts', '// user-owned implementation\n');
-    await write('.cossack/scaffold.json', manifest);
+    // The project's own files: an edited one, and one the release's template changed.
+    await write('src/models/User.ts', '// local user model\n');
+    const appSource = await read('src/App.ts');
     const before = await snapshot();
     const preview = await run(['--tag=next', '--dry-run']);
     expect(preview.ok, JSON.stringify(preview.diagnostics)).toBe(true);
@@ -123,25 +117,22 @@ describe('release-aligned upgrade planning and application', () => {
     expect(preview.data.plan.dependencies.additions).toContainEqual({ name: 'release-added', section: 'dependencies', to: '^2.0.0' });
     expect(preview.data.plan.dependencies.removals).toContainEqual(expect.objectContaining({ name: 'ws' }));
     expect(preview.data.plan.dependencies.conflicts.map(item => item.name)).toEqual(expect.arrayContaining(['hono', '@cossackframework/auth', 'typescript']));
-    expect(preview.data.plan.files.deletes).toContain('src/obsolete.ts');
-    expect(preview.data.plan.files.preserved).toEqual(expect.arrayContaining(['src/auth.ts', 'src/edited-obsolete.ts']));
+    // No project file is compared or planned.
+    expect(preview.data.plan.files.writes).toEqual([]);
+    expect(preview.data.plan.hasRecipe).toBe(true);
     expect(await snapshot()).toEqual(before);
     const applied = await run(['--tag=1.2.3']);
     expect(applied.ok, JSON.stringify(applied.diagnostics)).toBe(true);
-    expect(await read('src/App.ts')).toContain('// target release 1.2.3');
-    expect(await read('src/auth.ts')).toBe('// local authentication module\n');
-    await expect(read('src/obsolete.ts')).rejects.toThrow();
-    expect(await read('src/edited-obsolete.ts')).toBe('// user-owned implementation\n');
+    expect(await read('src/App.ts')).toBe(appSource);
+    expect(await read('src/models/User.ts')).toBe('// local user model\n');
     const changed = await json('package.json');
     expect(changed.dependencies).toMatchObject({ '@cossackframework/core': '^1.2.3', '@cossackframework/auth': '^999.0.0',
       hono: '^999.0.0', 'release-added': '^2.0.0', 'user-only': 'file:private-value' });
     expect(changed.dependencies).not.toHaveProperty('ws');
     expect(changed.devDependencies).not.toHaveProperty('typescript');
-    const owned = await json('.cossack/scaffold.json');
-    expect(owned.templateVersion).toBe('1.2.3');
-    expect(owned.dependencyBaseline.dependencies['@cossackframework/core']).toBe('^1.2.3');
-    expect(owned.dependencyBaseline.dependencies).not.toHaveProperty('user-only');
-    expect(owned.files).not.toHaveProperty('src/obsolete.ts');
+    // Nothing is recorded: the recipe stays in package.json, and only the project raises its template.
+    await expect(fs.access(path.join(app, '.cossack'))).rejects.toThrow();
+    expect(changed.cossack.template).not.toBe('1.2.3');
     const completed = await snapshot();
     const repeat = await run(['--tag=1.2.3']);
     expect(repeat.ok).toBe(true);
@@ -151,13 +142,11 @@ describe('release-aligned upgrade planning and application', () => {
     expect(await fs.readFile(path.join(root, 'installs'), 'utf8')).toBe('install\n');
   }, 20000);
 
-  it('reconstructs older schema-v3 dependency ownership using its recorded release', async () => {
-    const manifest = await json('.cossack/scaffold.json'); delete manifest.dependencyBaseline;
-    await write('.cossack/scaffold.json', manifest);
+  it('takes what the recipe owns from the release the project declares', async () => {
     const pkg = await json('package.json'); pkg.dependencies.hono = '^999.0.0'; await write('package.json', pkg);
     const result = await run(['--tag=1.2.3', '--dry-run']);
     expect(result.ok).toBe(true);
-    expect(result.data.plan.dependencies.ownershipSource).toBe('reconstructed');
+    expect(result.data.plan.dependencies.ownershipSource).toBe('recipe');
     expect(result.data.plan.dependencies.updates).toContainEqual(expect.objectContaining({ name: '@cossackframework/core', to: '^1.2.3' }));
     expect(result.data.plan.dependencies.conflicts).toContainEqual({ name: 'hono', reason: 'locally-modified', resolution: 'preserve' });
   });
@@ -176,32 +165,31 @@ describe('release-aligned upgrade planning and application', () => {
   it('records applied changes and recovery when dependency installation fails', async () => {
     const result = await run(['--tag=1.2.3'], { FIXTURE_FAIL_INSTALL: '1' });
     expect(result.ok).toBe(false);
-    expect(result.data).toMatchObject({ status: 'partial-failure', applied: { dependencies: true, manifest: true, installed: false } });
+    expect(result.data).toMatchObject({ status: 'partial-failure', applied: { dependencies: true, installed: false } });
     expect(result.diagnostics[0].code).toBe('COSSACK_UPGRADE_INSTALL_FAILED');
     expect(result.data.nextActions).toContain('pnpm install');
     expect((await json('package.json')).dependencies['@cossackframework/core']).toBe('^1.2.3');
   });
 
-  it('detects ownership manifest edits made during target package loading', async () => {
+  it('detects an edit to pnpm-workspace.yaml made during target package loading', async () => {
     const before = await read('package.json');
-    const result = await run(['--tag=1.2.3'], { FIXTURE_EDIT: path.join(app, '.cossack/scaffold.json') });
+    const result = await run(['--tag=1.2.3'], { FIXTURE_EDIT: path.join(app, 'pnpm-workspace.yaml') });
     expect(result.ok).toBe(false);
     expect(result.diagnostics[0].code).toBe('COSSACK_UPGRADE_PLAN_STALE');
     expect(await read('package.json')).toBe(before);
   });
 
-  it('rejects force-file for package.json and preserves local environment secrets', async () => {
+  it('has no option that replaces a project file', async () => {
     const before = await snapshot();
-    for (const relative of ['package.json', '.env', '../outside.ts']) {
-      const result = await run(['--tag=1.2.3', `--force-file=${relative}`]);
-      expect(result.ok).toBe(false);
-      expect(result.diagnostics[0].code).toBe('COSSACK_UPGRADE_FILE_UNKNOWN');
-    }
+    const result = await run(['--tag=1.2.3', '--force-file=src/App.ts']);
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics[0].code).toBe('COSSACK_OPTION_UNKNOWN');
     expect(await snapshot()).toEqual(before);
-  }, 65000);
+  });
 
   it('rejects malformed ownership instead of silently treating the application as unmanaged', async () => {
     const before = await read('package.json');
+    await fs.mkdir(path.join(app, '.cossack'), { recursive: true });
     await write('.cossack/scaffold.json', '{"secret":"parser-private-value"');
     const result = await run(['--tag=1.2.3']);
     expect(result.ok).toBe(false);
@@ -209,12 +197,12 @@ describe('release-aligned upgrade planning and application', () => {
     expect(await read('package.json')).toBe(before);
   });
 
-  it('rejects symbolic links in owned paths before changing the app or linked file', async () => {
-    const outside = path.join(root, 'shared.ts');
-    const original = await read('src/App.ts');
+  it('rejects a symbolic link at a file the upgrade writes, before changing the app or the linked file', async () => {
+    const outside = path.join(root, 'shared.yaml');
+    const original = await read('pnpm-workspace.yaml');
     await fs.writeFile(outside, original);
-    await fs.rm(path.join(app, 'src/App.ts'));
-    await fs.symlink(outside, path.join(app, 'src/App.ts'));
+    await fs.rm(path.join(app, 'pnpm-workspace.yaml'));
+    await fs.symlink(outside, path.join(app, 'pnpm-workspace.yaml'));
     const before = await read('package.json');
     const result = await run(['--tag=1.2.3']);
     expect(result.ok).toBe(false);
@@ -224,7 +212,6 @@ describe('release-aligned upgrade planning and application', () => {
   });
 
   it('redacts custom specifiers from an unmanaged application dependency plan', async () => {
-    await fs.rm(path.join(app, '.cossack/scaffold.json'));
     await write('package.json', { dependencies: { '@cossackframework/core': 'https://user:private-value@example.test/core.tgz' } });
     const result = await run(['--tag=1.2.3', '--dry-run']);
     expect(result.ok).toBe(true);
@@ -282,7 +269,7 @@ describe('release-aligned upgrade planning and application', () => {
       expect(result.ok).toBe(true);
       expect(result.data.plan.templateVersion).toBe('1.2.3');
       expect(result.data.plan.dependencies.updates).toContainEqual(expect.objectContaining({ name: '@cossackframework/core', to: '^1.2.3' }));
-      expect(result.data.plan.files.writes).toContainEqual({ path: 'src/App.ts', forced: false });
+      expect(result.data.plan.files.writes).toEqual([]);
       expect(requests).toContain('/release.tgz');
       expect(await snapshot()).toEqual(before);
     } finally { await new Promise(resolve => server.close(resolve)); }

@@ -6,7 +6,10 @@ export interface CossackAppOptions {
   root?: string;
   /** The runtime, when the project does not record one: `cloudflare` or `node`. */
   runtime?: 'cloudflare' | 'node';
-  /** The processor of Markdown pages, from `src/markdown-processor.ts`. */
+  /**
+   * The project's own processor of Markdown pages. Without it, a project with the `markdown`
+   * feature uses the framework's `processMarkdown` (`@cossackframework/framework/markdown-processor`).
+   */
   markdownProcessor?: CossackPagesOptions['markdownProcessor'];
   /** The Wrangler configuration file, when it is not the project's `wrangler.jsonc`. */
   configPath?: string;

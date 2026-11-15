@@ -166,7 +166,7 @@ describe('adapter, image, upgrade, and Studio machine contracts', () => {
     expect(parseEnvelope(invalid.stdout).diagnostics[0].code).toBe('COSSACK_ACTION_UNKNOWN');
   });
 
-  it('upgrade exposes preserved conflicts and rejects an unowned force-file before writes', async () => {
+  it('upgrade leaves an edited project file as it is and refuses an unknown option before writes', async () => {
     const cwd = await project();
     const appPath = path.join(cwd, 'src/App.ts');
     await fs.writeFile(appPath, '// custom application\n');
@@ -175,16 +175,14 @@ describe('adapter, image, upgrade, and Studio machine contracts', () => {
     expect(planned.code).toBe(0);
     expect(planned.stderr).toBe('');
     const plan = parseEnvelope(planned.stdout).data.plan;
-    expect(plan.files.preserved).toContain('src/App.ts');
-    // Only the project changed it: it is kept, and it is not a conflict.
-    expect(plan.files.local).toContain('src/App.ts');
-    expect(plan.files.conflicts).toEqual([]);
+    // No project file is compared: the plan has dependencies, and nothing to write here.
+    expect(plan.files.writes).toEqual([]);
     expect(plan.dependencies).toMatchObject({ updates: [], additions: [], removals: [] });
     expect(await fs.readFile(path.join(cwd, 'package.json'), 'utf8')).toBe(before);
     const invalid = await runCli(['upgrade', '--force-file=../outside.ts', '--json'], { cwd });
     expect(invalid.code).toBe(1);
     expect(invalid.stderr).toBe('');
-    expect(parseEnvelope(invalid.stdout).diagnostics[0].code).toBe('COSSACK_UPGRADE_FILE_UNKNOWN');
+    expect(parseEnvelope(invalid.stdout).diagnostics[0].code).toBe('COSSACK_OPTION_UNKNOWN');
     expect(await fs.readFile(path.join(cwd, 'package.json'), 'utf8')).toBe(before);
     const applied = await runCli(['upgrade', '--json'], { cwd });
     expect(applied.code).toBe(0);
@@ -196,10 +194,6 @@ describe('adapter, image, upgrade, and Studio machine contracts', () => {
     const cwd = await project();
     await fs.writeFile(path.join(cwd, 'package.json'), JSON.stringify({ name: 'app', type: 'module',
       dependencies: { '@cossackframework/core': '^0.8.2' }, packageManager: 'pnpm@11.19.0' }));
-    const manifestPath = path.join(cwd, '.cossack/scaffold.json');
-    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
-    manifest.dependencyBaseline.dependencies['@cossackframework/core'] = '^0.8.2';
-    await fs.writeFile(manifestPath, JSON.stringify(manifest));
     const toolDir = path.join(tmp, 'tools');
     await fs.mkdir(toolDir);
     await fs.writeFile(path.join(toolDir, 'pnpm'), '#!/usr/bin/env node\n' +
@@ -219,15 +213,8 @@ describe('adapter, image, upgrade, and Studio machine contracts', () => {
 
   it('upgrade rejects a stale plan if files change during registry resolution', async () => {
     const cwd = await project();
-    const relative = 'src/App.ts';
-    const file = path.join(cwd, relative);
-    // Make the file unchanged against its old baseline, with a template update available.
-    await fs.writeFile(file, '// previous template\n');
-    const { createHash } = await import('node:crypto');
-    const manifestFile = path.join(cwd, '.cossack/scaffold.json');
-    const manifest = JSON.parse(await fs.readFile(manifestFile, 'utf8'));
-    manifest.files[relative].hash = createHash('sha256').update('// previous template\n').digest('hex');
-    await fs.writeFile(manifestFile, JSON.stringify(manifest));
+    // A file the upgrade may write changes while the release is being resolved.
+    const file = path.join(cwd, 'pnpm-workspace.yaml');
     const packageSource = JSON.stringify({ name: 'app', type: 'module',
       dependencies: { '@cossackframework/core': '^0.8.3' } });
     await fs.writeFile(path.join(cwd, 'package.json'), packageSource);

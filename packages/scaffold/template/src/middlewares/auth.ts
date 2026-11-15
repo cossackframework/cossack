@@ -2,6 +2,7 @@ import { defineServerMiddleware } from '@cossackframework/core';
 import { isTransportPath, transportAction, transportGuardPath, transportTargetPath } from '@cossackframework/core/transport-routes';
 import { createAuthorizer } from '@cossackframework/auth';
 import { auth, secondFactorRequired, setupRequired, type PublicUser } from '../auth';
+import { authOptions } from '../auth-options';
 
 const dashboardAuthorizer = createAuthorizer({
     onUnauthorized: (c, reason) => {
@@ -62,15 +63,36 @@ export const requireDashboardUser = defineServerMiddleware(async (c, next) => {
  * Everything else (including framework endpoints like /crpc and /upload, and
  * static assets) is reachable without a session.
  *
- * NOTE: if you mount OAuth callback routes (e.g. /auth/<provider>/callback),
- * exempt them from the guest check below — a logged-in user would otherwise be
- * bounced away mid-flow.
+ * The OAuth routes (/auth/<provider>/redirect and /callback) are exempt from the
+ * guest check: a signed-in user would otherwise be bounced away mid-flow.
+ *
+ * A page of something the project turned off (src/dashboard.config.ts) answers 404:
+ * the password pages without `credentials`, a dashboard module that is not chosen,
+ * the whole dashboard when the project has none.
  */
+const PASSWORD_PAGES = /^\/auth\/(?:register|forgot-password|reset-password|two-factor)(?:\/|$)/;
+const OAUTH_ROUTE = /^\/auth\/[^/]+\/(?:redirect|callback)$/;
+/** The dashboard pages of each module. */
+const MODULE_PAGES: Record<string, RegExp> = {
+    users: /^\/dashboard\/users(?:\/|$)/,
+    roles: /^\/dashboard\/roles(?:\/|$)/,
+    sessions: /^\/dashboard\/sessions(?:\/|$)/,
+    settings: /^\/dashboard\/profile(?:\/|$)/,
+};
+
+function turnedOff(path: string): boolean {
+    if (PASSWORD_PAGES.test(path)) return !authOptions.authMethods.includes('credentials');
+    if (!path.startsWith('/dashboard')) return false;
+    if (!authOptions.dashboard) return true;
+    return Object.entries(MODULE_PAGES).some(([module, pages]) => pages.test(path) && !(authOptions.modules as readonly string[]).includes(module));
+}
+
 export const authGuard = defineServerMiddleware(async (c, next) => {
     const { path } = c.req;
     const user = c.get('user');
 
-    if (path.startsWith('/auth/') && user) {
+    if (turnedOff(path)) return c.notFound();
+    if (path.startsWith('/auth/') && user && !OAUTH_ROUTE.test(path)) {
         return c.redirect(config('auth.redirectAfterLogin'));
     }
     // A fresh site creates its first administrator on the setup page.
@@ -90,3 +112,6 @@ export const authGuard = defineServerMiddleware(async (c, next) => {
     }
     await next();
 });
+
+/** The middleware of sign-in, in order, for src/bootstrap/middlewares.ts: the session, then the guard. */
+export const authMiddlewares = [auth.middleware, authGuard];

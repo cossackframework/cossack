@@ -8,7 +8,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 async function generatedAuth() {
   const files = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'auth', oauth: 'github',
-    features: ['dashboard'], dashboardModules: ['sessions'] }));
+    features: ['dashboard'], dashboardModules: ['sessions'] }), { servedFiles: true });
   const source = files.get('src/auth.ts').content.toString();
   const { code } = transformSync(source, { loader: 'ts', format: 'cjs', target: 'es2022' });
   const Session = { find: vi.fn(), findOne: vi.fn(), delete: vi.fn(async () => ({ meta: { rowsAffected: 1 } })), insert: vi.fn() };
@@ -24,7 +24,9 @@ async function generatedAuth() {
       createCredentialVerifier, createSessionManager, hashPassword, verifyPassword },
     '@cossackframework/database': { MoreThan: (value) => value, sql },
     '@cossackframework/core': { ClientVisibleError: Error },
-    '@/lib/uuid': { uuidv7: () => 'generated-id' },
+    './lib/uuid': { uuidv7: () => 'generated-id' },
+    // The project's choices, as src/dashboard.config.ts states them for this recipe.
+    './auth-options': { authOptions: { authMethods: ['credentials', 'oauth'], oauth: ['github'], modules: ['sessions'], dashboard: true, redirectAfterLogin: '/dashboard' } },
     '@/models/User': { User },
     '@/models/Session': { Session },
     '@/models/OAuthAccount': { OAuthAccount },
@@ -82,6 +84,8 @@ function generatedFormPage(files, name, api, bot = { passes: true }) {
     if (name === '../../../auth-bot-check') return { botCheckKey: () => null, passesBotCheck: async () => bot.passes };
     if (name === '../../../auth-bot-token') return { botCheckToken: () => '', BOT_CHECK_FAILED: 'The check against bots failed. Try again.' };
     if (name === '../../../passkeys.client') return { usePasskey: vi.fn() };
+    if (name === '../../../auth-options') return { authOptions: { authMethods: ['credentials', 'oauth'], oauth: ['github'] } };
+    if (name === '../../../auth-providers') return { OAUTH_PROVIDER_ICONS: {}, OAUTH_PROVIDER_LABELS: {} };
     if (name === 'hono/cookie') return { setCookie: vi.fn(), getCookie: vi.fn(), deleteCookie: vi.fn() };
     if (name === '@cossackframework/ui' || name === '@cossackframework/renderer') return {};
     throw new Error(`Unexpected form dependency: ${name}`);

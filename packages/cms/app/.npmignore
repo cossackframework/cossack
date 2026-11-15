@@ -7,6 +7,8 @@
 !/src/
 /src/*
 !/src/auth.ts
+!/src/auth-options.ts
+!/src/auth-providers.ts
 !/src/auth-input.ts
 !/src/auth-bot-check.ts
 !/src/auth-bot-token.ts

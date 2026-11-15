@@ -1,7 +1,7 @@
 import { defineSeeder } from '@cossackframework/database';
-import { ALL_PERMISSIONS } from '../lib/permissions';
-import { uuidv7 } from '../lib/uuid';
-import { hashPassword } from '../auth';
+import { hashPassword } from '@cossackframework/auth';
+import { ALL_PERMISSIONS } from '@cossackframework/dashboard/app/lib/permissions';
+import { uuidv7 } from '@cossackframework/dashboard/app/lib/uuid';
 import { Role } from '../models/Role';
 import { User } from '../models/User';
 import { UserRole } from '../models/UserRole';

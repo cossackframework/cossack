@@ -1,11 +1,13 @@
 import { Cossack, Page, State, ClientStore, Validate, Client, Server, storeRules } from '@cossackframework/core';
 import { Field, Input, PasswordInput, Button, Alert, Turnstile } from '@cossackframework/ui';
-import { html, component, bind } from '@cossackframework/renderer';
+import { html, component, bind, unsafeHTML } from '@cossackframework/renderer';
 import { setCookie } from 'hono/cookie';
 import { authSessions, beginTwoFactor, completePasskeySignIn, createSession, loginUser, passkeySignIn, registrationOpen, requestMagicLink, twoFactorAvailable, TWO_FACTOR_COOKIE } from '../../../auth';
 import { loginInput, returnPath, type LoginInput } from '../../../auth-input';
 import { botCheckKey, passesBotCheck } from '../../../auth-bot-check';
 import { BOT_CHECK_FAILED, botCheckToken } from '../../../auth-bot-token';
+import { authOptions } from '../../../auth-options';
+import { OAUTH_PROVIDER_ICONS, OAUTH_PROVIDER_LABELS } from '../../../auth-providers';
 
 /** Sign-in failures the visitor is told about, after the password matched or before it is checked; see auth.ts. */
 const TOLD = new Set(['SignInLockedError', 'SignInPendingError', 'SignInPasskeyError']);
@@ -38,8 +40,14 @@ export default class LoginPage extends Cossack {
     @State() botKey: string | null = null;
     /** Where to go once signed in: the `redirect` query, such as a members-only entry. Checked again on use. */
     @State() returnTo = '';
+    /** The OAuth providers the project offers (src/dashboard.config.ts), each a button. */
+    @State() oauth: string[] = [];
+    /** Email and password sign-in is on; off, the page shows the providers only. */
+    @State() credentials = true;
 
     async init() {
+        this.oauth = authOptions.authMethods.includes('oauth') ? [...authOptions.oauth] : [];
+        this.credentials = authOptions.authMethods.includes('credentials');
         this.canRegister = await registrationOpen();
         this.passkeys = twoFactorAvailable;
         this.botKey = botCheckKey();
@@ -135,6 +143,16 @@ export default class LoginPage extends Cossack {
     }
 
     render() {
+        const providers = this.oauth.length ? html`<div class="mt-4 space-y-2" aria-label="OAuth sign in options">
+            ${this.oauth.map(provider => html`<a href="/auth/${provider}/redirect" data-oauth-provider=${provider} class="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium text-foreground shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
+                ${unsafeHTML(OAUTH_PROVIDER_ICONS[provider] ?? '')}
+                <span>Continue with ${OAUTH_PROVIDER_LABELS[provider] ?? provider}</span>
+            </a>`)}
+        </div>` : null;
+        if (!this.credentials) return html`
+            <h3 class="mb-6 text-xl font-semibold text-foreground">${__('Login')}</h3>
+            ${providers}
+        `;
         return html`
             <h3 class="mb-6 text-xl font-semibold text-foreground">${__('Login')}</h3>
             <form @submit="${(e: Event) => this.handleSubmit(e)}" class="space-y-4">
@@ -151,6 +169,11 @@ export default class LoginPage extends Cossack {
                 ${this.error ? component(Alert, { variant: 'destructive' }, this.error) : null}
                 ${component(Button, { type: 'submit', block: true }, __('Sign In'))}
             </form>
+            ${providers ? html`<div class="mt-6 flex items-center gap-3" aria-hidden="true">
+                <div class="h-px flex-1 bg-border"></div>
+                <span class="text-xs font-medium uppercase text-muted-foreground">or</span>
+                <div class="h-px flex-1 bg-border"></div>
+            </div>${providers}` : null}
             ${this.passkeys ? html`<div class="mt-4 space-y-4">
                 <p class="flex items-center gap-3 text-xs uppercase text-muted-foreground"><span class="h-px flex-1 bg-border"></span>${__('or')}<span class="h-px flex-1 bg-border"></span></p>
                 ${component(Button, { type: 'button', variant: 'outline', block: true, '@click': () => this.signInWithPasskey() }, __('Sign in with a passkey'))}

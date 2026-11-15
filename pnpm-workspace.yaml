@@ -2,6 +2,7 @@ packages:
   - packages/*
   - examples/*
   - packages/cms/app
+  - packages/dashboard/app
   - services/*
 
 nodeLinker: hoisted

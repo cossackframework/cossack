@@ -72,9 +72,9 @@ Built the same day, from the first open item of `NOTES.md` ("no tracked files").
     `cossack.template` when they are done. Nothing else raises `template`.
   - A CMS manifest from before (schema 4 with `files`) is read without its file
     records; the next add, remove or upgrade moves the recipe and deletes them.
-- **Projects without the CMS still record files** and get merged upgrades
-  (`specs/upgrade-merges.md`), because their sign-in pages and dashboard are still
-  files in the project. `NOTES.md` has the open design for serving that shell.
+- **Projects without the CMS** followed the same day: their sign-in pages and
+  dashboard are served from `@cossackframework/dashboard`, and no project records
+  files (`specs/dashboard-package.md`).
 - **`packages/cms/app` mounts nothing**, so `sync.mjs` adds `parts: [cossackVite]`
   to its `vite.config.ts` and leaves `src/cms/worker.ts` out of its type check.
 

@@ -2,10 +2,10 @@ import { In, sql } from '@cossackframework/database';
 import { ClientVisibleError } from '@cossackframework/core';
 import { uuidv7 } from '../lib/uuid';
 import { hashPassword, type PublicUser } from '../auth';
-import { User } from '../models/User';
-import { UserRole } from '../models/UserRole';
-import { Role } from '../models/Role';
-import type { RoleAssignment } from '../models/User';
+import { User } from '@/models/User';
+import { UserRole } from '@/models/UserRole';
+import { Role } from '@/models/Role';
+import type { RoleAssignment } from '@/models/User';
 
 export interface UserSummary {
   id: string;

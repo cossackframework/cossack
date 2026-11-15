@@ -7,6 +7,17 @@ description: "Create pages from Markdown and MDX files with frontmatter metadata
 
 Use `.md` and `.mdx` files as page components. Cossack turns files in `src/pages` into components. Add frontmatter to set metadata. Cossack renders the Markdown content as the page output.
 
+Turn Markdown pages on with `cossack add markdown` (the CMS and the examples include it). The feature adds no file and no dependency to your project: the Vite preset uses the framework's processor, `processMarkdown` from `@cossackframework/framework/markdown-processor`. It handles GitHub-flavoured Markdown, a table of contents, heading IDs, highlighted code with line highlights, and frontmatter. To change the pipeline, write your own processor and give it to the preset in `vite.config.ts`:
+
+```ts
+import { cossackApp } from 'cossack/vite';
+import { processMarkdown } from './src/markdown-processor.ts';
+
+export default cossackApp({ markdownProcessor: processMarkdown });
+```
+
+A processor takes the source text and returns `{ html, frontmatter }`. Its own packages (`unified`, remark and rehype plugins) are then your project's dependencies.
+
 ### Metadata via Frontmatter
 
 Use frontmatter to set metadata for an MDX component. Cossack adds these values to the `head()` merge.

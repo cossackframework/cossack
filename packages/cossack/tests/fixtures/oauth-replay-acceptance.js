@@ -40,7 +40,7 @@ export async function writeOAuthReplayAcceptance(root, providerOrigin) {
   await fs.writeFile(path.join(directory, 'oauth-contract.ts'), `
 import { createOAuth, defineOAuthProvider } from '@cossackframework/auth';
 import { defineApi } from '@cossackframework/framework/api';
-import { oauthStateStore, handleOAuthUser } from '../../auth';
+import { oauthStateStore, handleOAuthUser } from '@cossackframework/dashboard/app/auth';
 import { User } from '../../models/User';
 import { Session } from '../../models/Session';
 import { OAuthAccount } from '../../models/OAuthAccount';

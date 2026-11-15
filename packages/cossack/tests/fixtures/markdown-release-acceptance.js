@@ -12,7 +12,8 @@ export async function writeMarkdownReleaseAcceptance(root,{failure}={}) {
     export const processMarkdown=createMarkdownProcessor<{readingMinutes:number}>({extensions:{readingMinutes:(value):value is number=>typeof value==='number'&&Number.isFinite(value)}});
   `);
   let vite=await fs.readFile(path.join(root,'vite.config.ts'),'utf8');
-  vite=vite.replace('cossackApp({',`cossackApp({ ssg: {baseUrl:${JSON.stringify(MARKDOWN_SITE)}},`);
+  // The project's own processor (typed front matter) replaces the framework's default.
+  vite="import { processMarkdown } from './src/markdown-processor.ts';\n"+vite.replace('cossackApp({',`cossackApp({ markdownProcessor: processMarkdown, ssg: {baseUrl:${JSON.stringify(MARKDOWN_SITE)}},`);
   await write('vite.config.ts',vite);
   await write('src/lang/en.json',JSON.stringify({greeting:'English catalog sentinel',typedTitle:'English typed title'}));
   await write('src/lang/fr.json',JSON.stringify({greeting:'French catalog sentinel',typedTitle:'French typed title'}));

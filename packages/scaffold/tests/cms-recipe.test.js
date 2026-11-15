@@ -31,7 +31,7 @@ describe('cms recipe', () => {
       expect(files.has(rel), rel).toBe(false);
     expect([...files.keys()].filter(rel => rel.startsWith('src/')).sort()).toEqual([
       'src/App.ts', 'src/bootstrap/middlewares.ts', 'src/client/entry-client.ts', 'src/cms.config.ts', 'src/components/ui/index.ts', 'src/config/app.ts', 'src/config/cache.ts', 'src/config/cors.ts',
-      'src/index.ts', 'src/markdown-processor.ts', 'src/root.ts', 'src/stores.client.ts', 'src/style.css', 'src/vite-env.d.ts',
+      'src/index.ts', 'src/root.ts', 'src/stores.client.ts', 'src/style.css', 'src/vite-env.d.ts',
     ]);
     // What the cms feature writes: the project's configuration and the update workflow.
     expect([...files].filter(([, entry]) => entry.capability === 'cms').map(([rel]) => rel).sort()).toEqual(['.github/workflows/cossack-update.yml', 'src/cms.config.ts']);
@@ -64,13 +64,14 @@ describe('cms recipe', () => {
     expect(pkg.dependencies['@romedb/client']).toBe(pkg.dependencies['@romedb/node']);
     expect(text(files, '.gitignore')).toContain('storage/media/');
     // Applications with database auth keep passwords only, in their own modules.
-    const orm = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['dashboard'] }));
+    // Their shell is served from the dashboard package (dashboard-recipe.test.js); `servedFiles` shows it.
+    const orm = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['dashboard'] }), { servedFiles: true });
     expect(text(orm, 'src/auth.ts')).toContain('export const twoFactorAvailable = false;');
     expect(text(orm, 'src/passkeys.client.ts')).not.toContain('@simplewebauthn');
-    expect(JSON.parse(text(orm, 'package.json')).cossack).toEqual({ runtime: 'node' });
+    expect(JSON.parse(text(orm, 'package.json')).cossack.packages).toEqual(['@cossackframework/dashboard']);
     expect(orm.has('src/pages/dashboard/index.ts')).toBe(true);
     expect(orm.has('src/dashboard/registry.ts')).toBe(true);
-    expect(text(orm, 'src/bootstrap/middlewares.ts')).toContain('  auth.middleware,\n  authGuard,');
+    expect(text(orm, 'src/bootstrap/middlewares.ts')).toContain('  ...authMiddlewares,');
   });
 
   it('keeps the served shell for the package\'s own application', async () => {
@@ -169,7 +170,7 @@ describe('cms recipe', () => {
     const project = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'] }));
     for (const rel of held.keys()) expect(project.has(rel), rel).toBe(!isServedCmsPath(rel));
     // Without the cms feature the shared modules are the application's own.
-    const database = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['auth'] }));
+    const database = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['auth'] }), { servedFiles: true });
     expect(text(database, 'src/auth.ts')).not.toContain('@cossackframework/cms');
   });
 });

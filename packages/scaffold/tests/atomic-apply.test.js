@@ -41,15 +41,6 @@ function failWriteAfter(projectDir, skip) {
   });
 }
 
-/** Fail only the manifest write, after every plan file has been written. */
-function failManifestWrite() {
-  const original = fs.writeFile;
-  return vi.spyOn(fs, 'writeFile').mockImplementation(async (file, ...rest) => {
-    if (/[\\/]\.cossack[\\/]\.scaffold\.json\..*\.tmp$/.test(String(file))) throw Object.assign(new Error('injected manifest failure'), { code: 'EIO' });
-    return original.call(fs, file, ...rest);
-  });
-}
-
 async function minimalProject() {
   const root = await temporaryDirectory();
   return (await createApp('app', { cwd: root, adapter: 'cloudflare', preset: 'minimal', interactive: false })).projectDir;
@@ -58,32 +49,29 @@ async function minimalProject() {
 describe('plan application is atomic', () => {
   it.each([
     ['a mid-plan write', projectDir => failWriteAfter(projectDir, 2)],
-    ['the manifest write', () => failManifestWrite()],
-  ])('addFeature restores files and manifest when %s fails', async (_label, inject) => {
+  ])('addFeature restores files when %s fails', async (_label, inject) => {
     const projectDir = await minimalProject();
     const before = await snapshot(projectDir);
     inject(projectDir);
-    await expect(addFeature(projectDir, 'markdown', { interactive: false })).rejects.toThrow(/injected/);
+    await expect(addFeature(projectDir, 'jobs', { interactive: false })).rejects.toThrow(/injected/);
     vi.restoreAllMocks();
     expect(await snapshot(projectDir)).toEqual(before);
   });
 
   it.each([
     ['a mid-plan write', projectDir => failWriteAfter(projectDir, 1)],
-    ['the manifest write', () => failManifestWrite()],
-  ])('removeFeatureFromProject restores files and manifest when %s fails', async (_label, inject) => {
+  ])('removeFeatureFromProject restores files when %s fails', async (_label, inject) => {
     const projectDir = await minimalProject();
-    await addFeature(projectDir, 'markdown', { interactive: false });
+    await addFeature(projectDir, 'jobs', { interactive: false });
     const before = await snapshot(projectDir);
     inject(projectDir);
-    await expect(removeFeatureFromProject(projectDir, 'markdown', { interactive: false, yes: true })).rejects.toThrow(/injected/);
+    await expect(removeFeatureFromProject(projectDir, 'jobs', { interactive: false, yes: true })).rejects.toThrow(/injected/);
     vi.restoreAllMocks();
     expect(await snapshot(projectDir)).toEqual(before);
   });
 
   it.each([
     ['a mid-plan write', projectDir => failWriteAfter(projectDir, 5)],
-    ['the manifest write', () => failManifestWrite()],
   ])('createApp leaves no partial project when %s fails', async (_label, inject) => {
     const root = await temporaryDirectory();
     const projectDir = path.join(root, 'app');
@@ -97,7 +85,7 @@ describe('plan application is atomic', () => {
     const root = await temporaryDirectory();
     const projectDir = path.join(root, 'app');
     await fs.mkdir(projectDir);
-    failManifestWrite();
+    failWriteAfter(projectDir, 5);
     await expect(createApp('app', { cwd: root, adapter: 'cloudflare', preset: 'minimal', interactive: false })).rejects.toThrow(/injected/);
     vi.restoreAllMocks();
     expect(await fs.readdir(projectDir)).toEqual([]);

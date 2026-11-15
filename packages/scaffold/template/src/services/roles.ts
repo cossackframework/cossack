@@ -2,8 +2,8 @@ import { Like, Not, sql } from '@cossackframework/database';
 import { ClientVisibleError } from '@cossackframework/core';
 import { uuidv7 } from '../lib/uuid';
 import { PERMISSIONS, type Permission } from '../lib/permissions';
-import { Role } from '../models/Role';
-import { UserRole } from '../models/UserRole';
+import { Role } from '@/models/Role';
+import { UserRole } from '@/models/UserRole';
 
 const ADMIN_ROLE = 'admin';
 

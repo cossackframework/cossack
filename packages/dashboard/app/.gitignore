@@ -1,0 +1,8 @@
+# This application is written by `pnpm sync` from packages/scaffold/template, which is the
+# source of the shell. Only what the scaffold does not render is tracked.
+/*
+!/.gitignore
+!/.npmignore
+!/README.md
+!/package.json
+!/scripts/

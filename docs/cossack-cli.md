@@ -128,10 +128,10 @@ cossack create my-app --adapter node --preset full-stack
 cossack create my-app --adapter cloudflare --preset minimal --features desktop
 ```
 
-`cossack create` records the project's recipe for `cossack add`, `cossack remove`,
-`cossack adapter` and `cossack upgrade`: in `.cossack/scaffold.json`, with a record of
-every file it wrote. A CMS project records no files, and keeps the recipe in
-`package.json#cossack` (see [Upgrading](./upgrading.md)).
+`cossack create` records the project's recipe in `package.json#cossack` (`features`,
+`template`, and `options` that are not the defaults) for `cossack add`,
+`cossack remove`, `cossack adapter` and `cossack upgrade`. It records nothing about
+the files it wrote: they are yours (see [Upgrading](./upgrading.md)).
 
 Use `--dry-run` to inspect planned files without creating the project or its
 manifest. It does not prompt and does not test for CLI updates. Use `--json` for scripts
@@ -424,7 +424,7 @@ cossack d component UserCard
 
 ### `cossack add <feature>`
 
-Add an opinionated, working feature to the current project. Each feature adds its package dependencies and files, and wires them into the application (for example, middleware in `src/bootstrap/middlewares.ts`). Missing prerequisites are added first. The result is recorded in `.cossack/scaffold.json`, or in `package.json#cossack` for a CMS project.
+Add an opinionated, working feature to the current project. Each feature adds its package dependencies and files, and wires them into the application (for example, middleware in `src/bootstrap/middlewares.ts`). Missing prerequisites are added first. The result is recorded in `package.json#cossack`. A file you edited is merged with the feature's change; the command stops when both changed the same lines.
 
 ```bash
 cossack add <feature> [options]
@@ -543,7 +543,13 @@ cossack add database --database turso
 
 #### `cossack add auth`
 
-Adds full working session authentication: `@cossackframework/auth` plus the `database` support it depends on. Generates a `createAuth`-backed `src/auth.ts` (PBKDF2 password hashing, session create/validate/resolve, password-reset helpers), a `Session` model, a real auth guard middleware, and functional login/register/forgot-password/reset-password pages using `@Server` methods and `@Validate` form fields. Registers `auth.middleware` and `authGuard` in `src/bootstrap/middlewares.ts` and wires the Cloudflare `send_email` binding for password-reset emails.
+Adds full working session authentication: `@cossackframework/auth` plus the `database` support it depends on. The sign-in pages (login, register, forgot and reset password, two-step sign-in), the `createAuth`-backed auth module (PBKDF2 password hashing, sessions, password reset) and the guard are served from the `@cossackframework/dashboard` package, which the project mounts (`package.json#cossack.packages`). The project gets:
+
+- `src/dashboard.config.ts`: its choices (`authMethods`, `oauth`, the dashboard's `modules`), which the served code reads. A page of something that is off answers 404.
+- its schema: the `User`, `Session`, `Role`, `UserRole` and `OAuthAccount` models and their migrations.
+- `...authMiddlewares` in `src/bootstrap/middlewares.ts`, and the Cloudflare `send_email` binding for password-reset emails.
+
+To restyle or change one page, copy it into the project with `cossack eject dashboard /auth/login`.
 
 ```bash
 cossack add auth
@@ -800,46 +806,30 @@ Print the installed CLI version.
 
 ### `cossack upgrade [dir]`
 
-Update a project to a release with one command. It moves the Cossack dependencies to the release, reinstalls, and updates the files the scaffold wrote. It keeps your edits:
-
-- A file you did not change is replaced with the release's version.
-- A file that you and the release both changed is merged.
-- A file whose merge conflicts is left as it is and listed, with the next command to run.
-- A file that only you changed is kept.
+Update a project to a release with one command. It moves the Cossack dependencies to the release and reinstalls. It does not compare or change the project's own files: the packages a project mounts (the CMS, the sign-in pages and dashboard) serve what a release changes.
 
 ```bash
-cossack upgrade                       # update dependencies and files, merge your edits
+cossack upgrade                       # update dependencies, install, merge ejected copies and plugins
 cossack upgrade --dry-run             # show the plan and write nothing
-cossack upgrade --conflicts=markers   # write both versions into a conflicting file
-cossack upgrade --force               # also restore owned files you deleted
-cossack upgrade --force-file <path>   # replace one file with the release's version, even if edited
+cossack upgrade --conflicts=markers   # write both versions into a conflicting copy
 ```
 
 | Option | Description |
 | --- | --- |
 | `--tag <latest\|canary\|<version>>` | Version to upgrade to (default: `latest`). |
 | `--dry-run` | Show planned changes without writing them. |
-| `--conflicts=markers` | Write git-style conflict markers into a file whose merge conflicts. Without it the file is not changed. |
-| `--force` | Also restore deleted scaffold files. Locally modified files remain protected. |
-| `--force-file <path>` | Replace one specific file even if you modified it. You can use this option more than once. |
+| `--conflicts=markers` | Write git-style conflict markers into an ejected copy or a plugin file whose merge conflicts. Without it the file is not changed. |
 
-A CMS project records no files: `upgrade` changes its dependencies, installs, and lists the changes a release asks of the project's own files, which the build then requires (`COSSACK_PACKAGE_HOST_OUTDATED`). The rest of this section is about projects without the CMS.
+What it does, in order:
 
-The `.cossack/scaffold.json` manifest records, for every file the scaffold wrote, a SHA-256 of the file and the name of its merge base. The base is the release's text that your file descends from. It is stored in `.cossack/base/`, which you commit, so a fresh clone can merge. `upgrade` compares three texts for each file: yours, the base, and the release's. It classifies the file as:
+1. **Dependencies.** The versions the recipe owns follow the release, with additions, removals and moves between dependency sections. What the recipe owns is what the release your project declares renders for it; local pins, dependencies you deleted and packages you added stay, and the plan lists them. A project without a recipe (`package.json#cossack.features`) gets only its Cossack packages moved.
+2. **`pnpm-workspace.yaml`.** The release's keys (build approvals, overrides) go over the file; your own stay. A file with nothing to add keeps its text.
+3. **The install.**
+4. **Host modules.** A module a mounted package needs and the project lacks (`cossack.host`) is written. An existing file is never replaced.
+5. **Host steps.** When a package needs a change in one of your files, the upgrade lists it (`cossack.hostSteps`). The build then stops with `COSSACK_PACKAGE_HOST_OUTDATED` and the same list until you make the change and set `cossack.template` in `package.json` to the version the message names.
+6. **Ejected copies and plugins.** The package's new text is merged into each file copied with `cossack eject`, and each plugin that came from an npm package is rendered again from its installed version. A plugin rendered from a folder or a tarball is skipped: run `cossack plugins upgrade <name> --source <new source>` for it.
 
-| Class | Meaning | What happens |
-| --- | --- | --- |
-| `upToDate` | Yours equals the release's. | Nothing. |
-| `canUpdate` | You did not change it. | The release's version is written. |
-| `canDelete` | You did not change it, and the release removed it. | Deleted. |
-| `canMerge` | Both changed it, on different lines. | The merge is written. |
-| `conflict` | Both changed the same lines. | Kept, and listed. |
-| `local` | Only you changed it. | Kept. |
-| `modified` | You changed a file the release removed, or the file is binary or larger than 1 MiB. | Kept, and listed. |
-| `noBase` | You changed it, and the manifest has no base for it (a project created before bases were stored). | Kept, and listed. |
-| `missing` | You deleted it. | Restored only with `--force`. |
-
-To resolve a conflict, edit the file by hand, or run `cossack upgrade --conflicts=markers` and edit between the markers:
+A copy whose merge conflicts is kept as it is and listed. To resolve it, edit the file by hand, or run `cossack upgrade --conflicts=markers` and edit between the markers:
 
 ```
 <<<<<<< yours
@@ -848,43 +838,16 @@ To resolve a conflict, edit the file by hand, or run `cossack upgrade --conflict
 ...
 =======
 ...
->>>>>>> cossack <version>
+>>>>>>> <package> <version>
 ```
 
-While an owned file still contains marker lines, `cossack upgrade` stops with `COSSACK_UPGRADE_UNRESOLVED_CONFLICT`. The command exits with 0 when it lists conflicts, so a pipeline can open a pull request with the plan.
+While a copy still contains marker lines, `cossack upgrade` stops with `COSSACK_UPGRADE_UNRESOLVED_CONFLICT`. The command exits with 0 when it lists conflicts, so a pipeline can open a pull request with the plan.
 
-After the install, `upgrade` also merges the package's new text into each file copied with `cossack eject`, and renders each plugin that came from an npm package again from its installed version. A plugin rendered from a folder or a tarball is skipped: run `cossack plugins upgrade <name> --source <new source>` for it. The JSON output lists both under `applied.ejected` and `applied.plugins`.
+Use `cossack upgrade --dry-run --json` to inspect the complete plan: dependency updates, additions and removals, preserved edits, the build-setting migration, the ejected copies with what a merge does to each, whether the recipe moves into `package.json`, installation requirements and follow-up actions. `--tag` resolves the release; `templateVersion` is that exact version. Foreign releases are installed into temporary storage with pnpm and lifecycle scripts disabled, then removed. Dry runs leave all application files unchanged. pnpm can populate its package cache.
 
-Use `cossack upgrade --dry-run --json` to inspect the complete current plan.
-It includes dependency updates, additions and removals, selected file writes and
-deletions, merges (with the marked text of a conflicting merge), preserved edits,
-conflicts with their reasons, manifest changes, build-setting migration,
-installation requirements, and follow-up actions. `--tag` resolves the scaffold
-release used for both templates and recipe dependencies. `templateVersion` is
-that exact version. Foreign releases are installed into temporary storage with
-pnpm and lifecycle scripts disabled, then removed. Dry runs leave all application
-files unchanged. pnpm can populate its package cache.
+An unresolved package version or an unavailable release fails before writes. If `package.json`, `pnpm-workspace.yaml` or `.cossack/scaffold.json` changes during target resolution, the plan fails as stale. Symbolic links in those paths are rejected before effects. Custom URL and path specifiers are redacted from JSON plans. An installation failure returns `status: "partial-failure"`, the changes already applied, and a retry command. It does not report a successful upgrade. Raw package manager output stays outside the machine-readable protocol.
 
-The manifest records `dependencyBaseline` separately from the merged package.
-Unchanged owned versions follow the target recipe, including additions, removals,
-and moves between dependency sections. Local pins, intentionally deleted
-dependencies, and user-added packages remain intact. Existing manifests
-without this field reconstruct it from their recorded exact scaffold release.
-The plan labels this ownership source as `reconstructed`. An unavailable baseline
-or target release fails before project writes. Custom URL/path specifiers are
-redacted from JSON plans.
-
-Unchanged owned files that the target recipe removed are deleted. Edited
-obsolete files remain preserved conflicts. `--force-file` cannot
-replace package/runtime configuration or local secret files. Symbolic links in
-owned paths are rejected before effects.
-
-An unknown `--force-file` or an unresolved package version fails before writes.
-If an owned file, package, workspace configuration, or ownership manifest changes
-during target resolution, the plan fails as stale.
-An installation failure returns `status: "partial-failure"`, the changes already
-applied, and a retry command. It does not report a successful upgrade. Raw package
-manager output stays outside the machine-readable protocol.
+A project from an earlier release that still has file records in `.cossack/scaffold.json` loses them on its first upgrade: the recipe moves into `package.json#cossack`, and the manifest stays only for `cossack eject` copies.
 
 ---
 

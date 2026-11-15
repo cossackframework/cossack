@@ -65,7 +65,11 @@ export async function useAppDurableObject(root, className = 'AppDurableObject') 
 export const run = promisify(execFile);
 export const cossack = (root, args, options = {}) => run(process.execPath, [path.join(repository, 'packages/cossack/bin/cossack.js'), ...args],
   { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024, ...options });
+export { routeId } from './route-id.js';
 export async function typecheck(root, label) {
+  // Configuration a mounted package serves (auth, cms) is typed by .cossack/config.d.ts, which
+  // `cossack typecheck` writes before tsc.
+  await cossack(root, ['config', '--generate']).catch(() => {});
   try { return await run('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: root, timeout: 60000, maxBuffer: 1024 * 1024 }); }
   catch (error) { throw new Error(`${label}: ${error.stdout}\n${error.stderr}`); }
 }

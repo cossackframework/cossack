@@ -12,13 +12,16 @@
 
 import { getCookie } from 'hono/cookie';
 import type { Context } from 'hono';
-import { createAuth, createCredentialVerifier, createSessionManager, hashPassword, type AuthSessionRecord } from '@cossackframework/auth';
+import { createAuth, createCredentialVerifier, createOAuth, createSessionManager, hashPassword, OAuthError, type AuthSessionRecord, type OAuthKit, type OAuthStateStore, type OAuthUser, type TokenSet } from '@cossackframework/auth';
 export { hashPassword, verifyPassword } from '@cossackframework/auth';
 import { MoreThan, sql } from '@cossackframework/database';
 import { ClientVisibleError } from '@cossackframework/core';
-import { uuidv7 } from '@/lib/uuid';
+import { uuidv7 } from './lib/uuid';
+import { authOptions } from './auth-options';
+// The models are the project's: its schema, its migrations.
 import { User, type RoleAssignment } from '@/models/User';
 import { Session } from '@/models/Session';
+import { OAuthAccount } from '@/models/OAuthAccount';
 
 const SESSION_COOKIE = 'session_id';
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
@@ -538,3 +541,129 @@ export async function deleteOwnAccount(c: Context, userId: string, password: str
 
 /** Sign-in links need the CMS's mail and cache; here the request is accepted and nothing is sent. */
 export async function requestMagicLink(_email: string, _origin: string): Promise<void> {}
+
+// --- OAuth -------------------------------------------------------------------
+// The providers are the project's choice (src/dashboard.config.ts: `oauth`). Each reads
+// <PROVIDER>_CLIENT_ID and <PROVIDER>_CLIENT_SECRET; OAUTH_SECRET signs the state.
+// /auth/<provider>/redirect and /auth/<provider>/callback are the pages beside the sign-in page.
+const oauthVariables = (provider: string) => ({
+  clientId: `${provider.toUpperCase()}_CLIENT_ID`,
+  clientSecret: `${provider.toUpperCase()}_CLIENT_SECRET`,
+});
+
+/** Whether the project offers this provider. */
+export function oauthProvider(provider: string): boolean {
+  return authOptions.authMethods.includes('oauth') && (authOptions.oauth as readonly string[]).includes(provider);
+}
+
+function oauthConfigurationError(c: Context, provider: string): OAuthError | null {
+  if (!oauthProvider(provider)) return new OAuthError('COSSACK_OAUTH_PROVIDER_UNKNOWN');
+  const variables = oauthVariables(provider);
+  const missing = [variables.clientId, variables.clientSecret].filter((name) => !String(c.env[name] ?? '').trim());
+  if (missing.length) {
+    return new OAuthError('COSSACK_OAUTH_CREDENTIALS_MISSING');
+  }
+
+  if (String(c.env.OAUTH_SECRET ?? '').length < 16) {
+    return new OAuthError('COSSACK_OAUTH_SECRET_INVALID');
+  }
+  return null;
+}
+
+function oauthUnavailable(c: Context, error: OAuthError): Response {
+  console.warn('[Cossack OAuth]', error.toJSON());
+  const { message, ...diagnostic } = error.toJSON();
+  return c.json({ error: message, ...diagnostic }, error.status);
+}
+
+export const oauthStateStore: OAuthStateStore = {
+  async create(record) {
+    await Session.insert({ id: record.key, userId: null, data: null,
+      meta: { type: 'oauth_state', provider: record.provider },
+      createdAt: new Date(record.createdAt), expiresAt: new Date(record.expiresAt),
+      location: null, userAgent: null, ipAddress: null });
+  },
+  async consume(key, provider, now) {
+    // One conditional write owns callback replay. Never read then delete.
+    const result = await sql`DELETE FROM sessions WHERE id = ${key}
+      AND user_id IS NULL AND meta = ${JSON.stringify({ type: 'oauth_state', provider })}
+      AND expires_at > ${new Date(Math.max(now, Date.now()))}`;
+    return result.meta.rowsAffected === 1;
+  },
+};
+
+function createOAuthForRequest(c: Context): OAuthKit {
+  return createOAuth({
+    secret: String(c.env.OAUTH_SECRET ?? ''),
+    stateStore: oauthStateStore,
+    providers: Object.fromEntries(authOptions.oauth.map((provider) => {
+      const variables = oauthVariables(provider);
+      return [provider, {
+        clientId: String(c.env[variables.clientId] ?? ''),
+        clientSecret: String(c.env[variables.clientSecret] ?? ''),
+        redirectUrl: `/auth/${provider}/callback`,
+      }];
+    })),
+  });
+}
+
+export const oauth: OAuthKit = {
+  redirect: (provider) => async (c, next) => {
+    const error = oauthConfigurationError(c, provider);
+    if (error) return oauthUnavailable(c, error);
+    return createOAuthForRequest(c).redirect(provider)(c, next);
+  },
+  callback: (provider, options) => async (c, next) => {
+    const error = oauthConfigurationError(c, provider);
+    if (error) return oauthUnavailable(c, error);
+    return createOAuthForRequest(c).callback(provider, options)(c, next);
+  },
+};
+
+export async function handleOAuthUser(
+  provider: string,
+  oauthUser: OAuthUser,
+  _tokens: TokenSet,
+  c: Context,
+) {
+  const account = await OAuthAccount.findOne({
+    where: { provider, providerUserId: oauthUser.id },
+  });
+  let user = account
+    ? await User.findOne({ where: { id: account.userId } })
+    : null;
+  // Only an address the provider verified may identify or claim an account.
+  const verifiedEmail = oauthUser.emailVerified === true ? oauthUser.email : null;
+  if (!user && verifiedEmail) {
+    const existing = await User.findOne({ where: { email: verifiedEmail } });
+    if (existing) throw new ClientVisibleError('Sign in to your existing account before linking an OAuth provider.');
+  }
+  if (!user) {
+    const id = uuidv7();
+    await User.insert({
+      id,
+      email: verifiedEmail ?? `${provider}-${oauthUser.id}@oauth.invalid`,
+      name: oauthUser.name ?? oauthUser.nickname ?? null,
+      passwordHash: null,
+      avatar: oauthUser.avatar ?? null,
+      meta: null,
+      createdAt: new Date(),
+    });
+    user = await User.findOne({ where: { id } });
+  }
+  if (!user) throw new Error('Unable to provision OAuth user.');
+  if (!account) {
+    await OAuthAccount.insert({
+      id: uuidv7(),
+      userId: user.id,
+      provider,
+      providerUserId: oauthUser.id,
+      createdAt: new Date(),
+    });
+  }
+  if (auth.createSession) {
+    const { headers } = await auth.createSession(publicUser(user), c);
+    headers.forEach((value, key) => c.header(key, value));
+  }
+  return c.redirect(config('auth.redirectAfterLogin'));
+}

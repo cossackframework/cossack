@@ -7,7 +7,7 @@ import { CommandPalette } from '../../ui/dist/blocks/index.js';
 import { Image } from '../../core/dist/index.js';
 
 it('renders the generated dashboard with named, stable sidebar items and group destinations', async () => {
- const files=await renderRecipe(resolveRecipe({adapter:'node',preset:'full-stack'}));
+ const files=await renderRecipe(resolveRecipe({adapter:'node',preset:'full-stack'}),{servedFiles:true});
  const source=files.get('src/pages/dashboard/layout.ts').content.toString();
  const start=source.lastIndexOf('    render(): TemplateResult {');expect(start).toBeGreaterThan(0);
  // Execute the generated layout with real renderer/UI; module data, identity and

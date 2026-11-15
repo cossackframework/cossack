@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { expect } from 'vitest';
+import { routeId } from './route-id.js';
 import { expect as browserExpect } from '@playwright/test';
 
 const privateValue = 'PRIVATE_AUTH_FORM_STORAGE';
@@ -13,7 +14,7 @@ export async function writeAuthFormsAcceptance(root) {
 import type { Context } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { sql } from '@cossackframework/database';
-import { authSessions } from '../../auth';
+import { authSessions } from '@cossackframework/dashboard/app/auth';
 import { User } from '../../models/User';
 import { Session } from '../../models/Session';
 export const POST = async (c: Context) => {
@@ -55,9 +56,9 @@ export const POST = async (c: Context) => {
 
 export async function checkAuthFormsAcceptance(request, manifest, browser, browserOrigin) {
   const ids = Object.fromEntries(['login', 'register', 'forgot-password', 'reset-password'].map(name =>
-    [name, manifest.filePathToId[`/src/pages/auth/${name}/index.ts`]]));
-  ids.sessions = manifest.filePathToId['/src/pages/dashboard/sessions/index.ts'];
-  ids.layout = manifest.filePathToId['/src/pages/dashboard/layout.ts'];
+    [name, routeId(manifest, `/src/pages/auth/${name}/index.ts`)]));
+  ids.sessions = routeId(manifest, '/src/pages/dashboard/sessions/index.ts');
+  ids.layout = routeId(manifest, '/src/pages/dashboard/layout.ts');
   for (const id of Object.values(ids)) expect(id).toBeTruthy();
   const secrets = [privateValue, password];
   const fixture = async (operation, email = '', cookie = '', fault = '') => {

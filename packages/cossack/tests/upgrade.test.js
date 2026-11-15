@@ -13,7 +13,6 @@ import {
   renderRecipe,
 } from '@cossackframework/scaffold';
 import {
-  classifyFile,
   collectCossackDeps,
   detectPackageManager,
   upgradeCommand,
@@ -42,10 +41,11 @@ async function seedProject(options = {}) {
     interactive: false,
     ...options,
   });
-  // Keep upgrade dependency resolution offline and deterministic.
+  // Keep upgrade dependency resolution offline and deterministic: the recipe stays, the dependencies go.
+  const pkg = JSON.parse(await fs.readFile(path.join(result.projectDir, 'package.json'), 'utf8'));
   await fs.writeFile(
     path.join(result.projectDir, 'package.json'),
-    JSON.stringify({ name: 'app', type: 'module' }, null, 2) + '\n',
+    JSON.stringify({ name: 'app', type: 'module', cossack: pkg.cossack }, null, 2) + '\n',
   );
   return result;
 }
@@ -120,43 +120,7 @@ describe('upgrade package manager detection', () => {
   });
 });
 
-describe('classifyFile', () => {
-  const baseline = sha('baseline');
-  const modified = sha('modified');
-  const upstream = sha('upstream');
-
-  it.each([
-    [{ baseline, current: modified, newHash: upstream, excluded: true }, 'excluded'],
-    [{ baseline, current: null, newHash: upstream }, 'missing'],
-    [{ baseline, current: modified, newHash: null }, 'modified'],
-    [{ baseline, current: baseline, newHash: null }, 'canDelete'],
-    [{ baseline, current: baseline, newHash: upstream }, 'canUpdate'],
-    [{ baseline, current: modified, newHash: upstream }, 'modified'],
-    [{ baseline, current: upstream, newHash: upstream }, 'upToDate'],
-  ])('classifies %# as %s', (input, expected) => {
-    expect(classifyFile(input)).toBe(expected);
-  });
-});
-
 describe('recipe upgrades', () => {
-  it.each([false, true])('preserves excluded Wrangler configuration for explicit disconnect-flag migration (%s)', async modified => {
-    const project = await seedProject({ adapter: 'cloudflare' });
-    const relative = 'wrangler.jsonc';
-    const manifest = await readManifest(project.projectDir);
-    const config = JSON.parse(await fs.readFile(path.join(project.projectDir, relative), 'utf8'));
-    config.compatibility_flags = config.compatibility_flags.filter(flag => flag !== 'enable_request_signal');
-    const previous = JSON.stringify(config, null, 2) + '\n';
-    manifest.files[relative].hash = await write(project.projectDir, relative, previous);
-    await fs.writeFile(path.join(project.projectDir, '.cossack/scaffold.json'), JSON.stringify(manifest));
-    if (modified) await write(project.projectDir, relative, previous + '// User environment configuration\n');
-    await runUpgrade(project.projectDir, []);
-    const after = await fs.readFile(path.join(project.projectDir, relative), 'utf8');
-    if (modified) expect(after).toBe(previous + '// User environment configuration\n');
-    else expect(after).toBe(previous);
-    expect(after).not.toContain('enable_request_signal');
-    expect((await renderRecipe(project.recipe, { projectName: 'app' })).get(relative).content.toString()).toContain('enable_request_signal');
-  });
-
   it('migrates legacy pnpm build approvals before reinstalling', async () => {
     const project = await seedProject();
     const packagePath = path.join(project.projectDir, 'package.json');
@@ -165,6 +129,7 @@ describe('recipe upgrades', () => {
       JSON.stringify({
         name: 'app',
         type: 'module',
+        cossack: { runtime: 'node', features: [], template: installedVersion },
         pnpm: {
           onlyBuiltDependencies: ['esbuild', 'sharp', 'workerd', 'canvas'],
         },
@@ -186,163 +151,11 @@ describe('recipe upgrades', () => {
     expect(workspace).toContain('canvas: true');
   });
 
-  it('updates an unchanged scaffold file when its rendered recipe changes', async () => {
-    const project = await seedProject();
-    const relative = 'src/App.ts';
-    const old = '// scaffold v1\n';
-    const manifest = await readManifest(project.projectDir);
-    manifest.files[relative].hash = await write(project.projectDir, relative, old);
-    manifest.files[relative].base = await putBase(project.projectDir, old);
-    await fs.writeFile(
-      path.join(project.projectDir, '.cossack/scaffold.json'),
-      JSON.stringify(manifest, null, 2) + '\n',
-    );
-
-    await runUpgrade(project.projectDir, []);
-    const expected = (await renderRecipe(project.recipe, { projectName: 'app' }))
-      .get(relative).content.toString();
-    expect(await fs.readFile(path.join(project.projectDir, relative), 'utf8'))
-      .toBe(expected);
-  });
-
-  it('keeps the project\'s own keys in pnpm-workspace.yaml, also when the manifest recorded them', async () => {
-    const project = await seedProject();
-    const relative = 'pnpm-workspace.yaml';
-    // An earlier upgrade recorded the file as it was, with the project's override in it.
-    const own = "allowBuilds:\n  esbuild: true\n# The project's own.\noverrides:\n  left-pad: 1.3.0\n";
-    const manifest = await readManifest(project.projectDir);
-    manifest.files[relative].hash = await write(project.projectDir, relative, own);
-    await fs.writeFile(path.join(project.projectDir, '.cossack/scaffold.json'), JSON.stringify(manifest, null, 2) + '\n');
-
-    await runUpgrade(project.projectDir, []);
-    const after = await fs.readFile(path.join(project.projectDir, relative), 'utf8');
-    expect(after).toContain('left-pad: 1.3.0');
-    expect(after).toContain("# The project's own.");
-    // The template's approvals are added.
-    expect(after).toContain('workerd: true');
-  });
-
-  it('offers and records a new upstream file for an installed capability', async () => {
-    const project = await seedProject();
-    const relative = 'src/vite-env.d.ts';
-    const manifest = await readManifest(project.projectDir);
-    delete manifest.files[relative];
-    await fs.rm(path.join(project.projectDir, relative));
-    await fs.writeFile(
-      path.join(project.projectDir, '.cossack/scaffold.json'),
-      JSON.stringify(manifest, null, 2) + '\n',
-    );
-
-    await runUpgrade(project.projectDir, []);
-    expect(await fs.readFile(path.join(project.projectDir, relative), 'utf8'))
-      .toContain('vite/client');
-    expect((await readManifest(project.projectDir)).files[relative])
-      .toMatchObject({ capability: 'base' });
-  });
-
-  it('preserves a file that only the project changed, also under force', async () => {
-    const project = await seedProject();
-    const relative = 'src/App.ts';
-    await fs.writeFile(path.join(project.projectDir, relative), '// user edit\n');
-
-    await runUpgrade(project.projectDir, []);
-    expect(await fs.readFile(path.join(project.projectDir, relative), 'utf8'))
-      .toBe('// user edit\n');
-    await runUpgrade(project.projectDir, ['--force']);
-    expect(await fs.readFile(path.join(project.projectDir, relative), 'utf8'))
-      .toBe('// user edit\n');
-  });
-
-  it('force-file replaces one explicitly selected modified file', async () => {
-    const project = await seedProject();
-    const relative = 'src/App.ts';
-    await fs.writeFile(path.join(project.projectDir, relative), '// user edit\n');
-
-    await runUpgrade(project.projectDir, ['--force-file', relative]);
-    expect(await fs.readFile(path.join(project.projectDir, relative), 'utf8'))
-      .not.toBe('// user edit\n');
-  });
-
-  it('force restores a deleted scaffold-owned file', async () => {
-    const project = await seedProject();
-    const relative = 'src/App.ts';
-    await fs.rm(path.join(project.projectDir, relative));
-
-    await runUpgrade(project.projectDir, ['--force']);
-    expect(await fs.readFile(path.join(project.projectDir, relative), 'utf8'))
-      .toContain('class App');
-  });
-
-  it('upgrades capabilities added after initial creation', async () => {
-    const project = await seedProject();
-    await addFeature(project.projectDir, 'auth', { interactive: false });
-    // addFeature restores the full generated package; keep dependency lookup offline.
-    await fs.writeFile(
-      path.join(project.projectDir, 'package.json'),
-      JSON.stringify({ name: 'app', type: 'module' }, null, 2) + '\n',
-    );
-    const relative = 'src/pages/auth/login/index.ts';
-    const old = '// auth scaffold v1\n';
-    const manifest = await readManifest(project.projectDir);
-    manifest.files[relative].hash = await write(project.projectDir, relative, old);
-    manifest.files[relative].base = await putBase(project.projectDir, old);
-    await fs.writeFile(
-      path.join(project.projectDir, '.cossack/scaffold.json'),
-      JSON.stringify(manifest, null, 2) + '\n',
-    );
-
-    await runUpgrade(project.projectDir, []);
-    expect(await fs.readFile(path.join(project.projectDir, relative), 'utf8'))
-      .toContain('LoginPage');
-  });
-
-  it('renders adapter-specific files from the recorded Node recipe', async () => {
-    const project = await seedProject();
-    const relative = 'src/index.ts';
-    const old = '// node scaffold v1\n';
-    const manifest = await readManifest(project.projectDir);
-    manifest.files[relative].hash = await write(project.projectDir, relative, old);
-    manifest.files[relative].base = await putBase(project.projectDir, old);
-    await fs.writeFile(
-      path.join(project.projectDir, '.cossack/scaffold.json'),
-      JSON.stringify(manifest, null, 2) + '\n',
-    );
-
-    await runUpgrade(project.projectDir, []);
-    const updated = await fs.readFile(path.join(project.projectDir, relative), 'utf8');
-    expect(updated).not.toContain('AppDurableObject');
-    expect(updated).toContain('nodeApplication');
-  });
-
-  it('renders project metadata from the declared package name', async () => {
-    const project = await seedProject();
-    const packagePath = path.join(project.projectDir, 'package.json');
-    await fs.writeFile(
-      packagePath,
-      JSON.stringify({ name: 'renamed-app', type: 'module' }, null, 2) + '\n',
-    );
-
-    await runUpgrade(project.projectDir, []);
-
-    expect(await fs.readFile(
-      path.join(project.projectDir, '.env.example'),
-      'utf8',
-    )).toContain('APP_NAME=renamed-app');
-  });
-
-  it('does not introduce files for capabilities absent from the recipe', async () => {
-    const project = await seedProject();
-    await runUpgrade(project.projectDir, []);
-    await expect(fs.access(
-      path.join(project.projectDir, 'src/auth.ts'),
-    )).rejects.toThrow();
-  });
-
   it('rejects obsolete manifests instead of taking a legacy template path', async () => {
     const project = await seedProject();
     const manifestPath = path.join(project.projectDir, '.cossack/scaffold.json');
-    const manifest = await readManifest(project.projectDir);
-    manifest.schemaVersion = 1;
+    const manifest = { ...await readManifest(project.projectDir), schemaVersion: 1 };
+    await fs.mkdir(path.dirname(manifestPath), { recursive: true });
     await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
 
     // CLI-03: command failures resolve to exit code 1 with the coded
@@ -378,8 +191,9 @@ describe('projects from before the served CMS', () => {
   it('refuses a project that holds a copied CMS, and writes nothing', async () => {
     const project = await seedProject();
     const manifestPath = path.join(project.projectDir, '.cossack/scaffold.json');
-    const manifest = await readManifest(project.projectDir);
-    manifest.files['src/cms/index.ts'] = { capability: 'cms', hash: sha('// copied\n') };
+    // Such a project still has its manifest, with a record of every copied file.
+    const manifest = { ...await readManifest(project.projectDir), files: { 'src/cms/index.ts': { capability: 'cms', hash: sha('// copied\n') } } };
+    await fs.mkdir(path.dirname(manifestPath), { recursive: true });
     const source = JSON.stringify(manifest, null, 2) + '\n';
     await fs.writeFile(manifestPath, source);
     const [code, output] = await upgradeJson(project.projectDir, []);
@@ -390,147 +204,10 @@ describe('projects from before the served CMS', () => {
   });
 });
 
-describe('upgrades merge local edits', () => {
-  const relative = 'src/App.ts';
-  const current = async project => (await renderRecipe(project.recipe, { projectName: 'app' })).get(relative).content.toString();
-  /** The template's text with its first line changed: what an older release rendered. */
-  const olderOf = text => '// older first line\n' + text.split('\n').slice(1).join('\n');
 
-  it('merges a file that both the project and the template changed', async () => {
-    const project = await seedProject();
-    const theirs = await current(project);
-    const old = olderOf(theirs);
-    await seedOlderFile(project.projectDir, relative, old, old + '// A note the project added.\n');
-
-    const [code, output] = await upgradeJson(project.projectDir, ['--dry-run']);
-    expect(code).toBe(0);
-    expect(output.data.plan.files.merges).toEqual([{ path: relative, result: 'clean', conflicts: 0 }]);
-    expect(output.data.plan.files.writes).toContainEqual({ path: relative, forced: false, merged: true });
-    // A dry run writes nothing.
-    expect(await fs.readFile(path.join(project.projectDir, relative), 'utf8')).toBe(old + '// A note the project added.\n');
-
-    await runUpgrade(project.projectDir, []);
-    const merged = theirs + '// A note the project added.\n';
-    expect(await fs.readFile(path.join(project.projectDir, relative), 'utf8')).toBe(merged);
-    const entry = (await readManifest(project.projectDir)).files[relative];
-    expect(entry).toMatchObject({ hash: sha(merged), base: sha(theirs) });
-    expect((await readBase(project.projectDir, entry.base)).toString()).toBe(theirs);
-    // The old base has no reference left.
-    expect(await readBase(project.projectDir, sha(old))).toBeNull();
-
-    // A second upgrade sees a file that only the project changed, and does not merge again.
-    const [, again] = await upgradeJson(project.projectDir, ['--dry-run']);
-    expect(again.data.plan.files.merges).toEqual([]);
-    expect(again.data.plan.files.local).toEqual([relative]);
-    expect(again.data.plan.files.writes).toEqual([]);
-  });
-
-  it('keeps a conflicting file, lists it, and carries the marked text in the plan', async () => {
-    const project = await seedProject();
-    const theirs = await current(project);
-    const old = olderOf(theirs);
-    const ours = '// the project changed this line\n' + old.split('\n').slice(1).join('\n');
-    await seedOlderFile(project.projectDir, relative, old, ours);
-
-    const [code, output] = await upgradeJson(project.projectDir, []);
-    expect(code).toBe(0);
-    expect(await fs.readFile(path.join(project.projectDir, relative), 'utf8')).toBe(ours);
-    const { files, nextActions } = output.data.plan;
-    expect(files.conflicts).toContainEqual({ path: relative, reason: 'merge-conflict', resolution: 'preserve' });
-    expect(files.preserved).toContain(relative);
-    expect(files.merges[0]).toMatchObject({ path: relative, result: 'conflict', conflicts: 1 });
-    expect(files.merges[0].text).toContain('<<<<<<< yours\n// the project changed this line\n||||||| base\n// older first line\n=======\n');
-    expect(files.merges[0].text).toContain(`>>>>>>> cossack ${installedVersion}\n`);
-    expect(nextActions.join('\n')).toContain(`Resolve ${relative}`);
-    // The base is unchanged, so the next upgrade offers the same merge.
-    expect((await readManifest(project.projectDir)).files[relative].base).toBe(sha(old));
-  });
-
-  it('writes conflict markers on request, then refuses to run until they are resolved', async () => {
-    const project = await seedProject();
-    const theirs = await current(project);
-    const old = olderOf(theirs);
-    await seedOlderFile(project.projectDir, relative, old, '// the project changed this line\n' + old.split('\n').slice(1).join('\n'));
-
-    await runUpgrade(project.projectDir, ['--conflicts=markers']);
-    const marked = await fs.readFile(path.join(project.projectDir, relative), 'utf8');
-    expect(marked).toContain('<<<<<<< yours');
-    expect((await readManifest(project.projectDir)).files[relative].base).toBe(sha(theirs));
-
-    const [code, output] = await upgradeJson(project.projectDir, []);
-    expect(code).toBe(1);
-    expect(output.diagnostics[0]).toMatchObject({ code: 'COSSACK_UPGRADE_UNRESOLVED_CONFLICT', path: relative });
-
-    // Resolved by hand: the file is now a local edit over the new base.
-    await write(project.projectDir, relative, theirs.replace(/^.*\n/, '// resolved\n'));
-    const [resolvedCode, resolved] = await upgradeJson(project.projectDir, ['--dry-run']);
-    expect(resolvedCode).toBe(0);
-    expect(resolved.data.plan.files.local).toEqual([relative]);
-  });
-
-  it('reads a schema-3 manifest without bases: an edited file is kept and reported', async () => {
-    const project = await seedProject();
-    const manifestPath = path.join(project.projectDir, '.cossack/scaffold.json');
-    const manifest = await readManifest(project.projectDir);
-    manifest.schemaVersion = 3;
-    for (const entry of Object.values(manifest.files)) delete entry.base;
-    // One file is as an older release wrote it, one is edited.
-    manifest.files['vite.config.ts'].hash = await write(project.projectDir, 'vite.config.ts', '// older\n');
-    await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
-    await fs.rm(path.join(project.projectDir, '.cossack/base'), { recursive: true });
-    await write(project.projectDir, relative, '// user edit\n');
-
-    const [code, output] = await upgradeJson(project.projectDir, []);
-    expect(code).toBe(0);
-    expect(output.data.plan.files.noBase).toEqual([relative]);
-    expect(output.data.plan.files.conflicts).toContainEqual({ path: relative, reason: 'no-base', resolution: 'preserve' });
-    expect(await fs.readFile(path.join(project.projectDir, relative), 'utf8')).toBe('// user edit\n');
-    expect(await fs.readFile(path.join(project.projectDir, 'vite.config.ts'), 'utf8')).toContain('cossackApp');
-
-    // The first write moves the manifest to schema 4, with a base for every file equal to the template's.
-    const upgraded = await readManifest(project.projectDir);
-    expect(upgraded.schemaVersion).toBe(4);
-    expect(upgraded.files['vite.config.ts'].base).toBe(upgraded.files['vite.config.ts'].hash);
-    expect(upgraded.files['.gitignore'].base).toBe(upgraded.files['.gitignore'].hash);
-    expect(upgraded.files[relative].base).toBeUndefined();
-  });
-
-  it('keeps an edited file that the template removed', async () => {
-    const project = await seedProject();
-    const manifest = await readManifest(project.projectDir);
-    manifest.files['src/gone.ts'] = { capability: 'base', hash: sha('// old\n'), base: await putBase(project.projectDir, '// old\n') };
-    manifest.files['src/gone-too.ts'] = { capability: 'base', hash: sha('// old\n'), base: sha('// old\n') };
-    await fs.writeFile(path.join(project.projectDir, '.cossack/scaffold.json'), JSON.stringify(manifest, null, 2) + '\n');
-    await write(project.projectDir, 'src/gone.ts', '// old\n// edited\n');
-    await write(project.projectDir, 'src/gone-too.ts', '// old\n');
-
-    const [, output] = await upgradeJson(project.projectDir, []);
-    expect(output.data.plan.files.conflicts).toContainEqual({ path: 'src/gone.ts', reason: 'removed-upstream', resolution: 'preserve' });
-    expect(await fs.readFile(path.join(project.projectDir, 'src/gone.ts'), 'utf8')).toBe('// old\n// edited\n');
-    await expect(fs.access(path.join(project.projectDir, 'src/gone-too.ts'))).rejects.toMatchObject({ code: 'ENOENT' });
-    expect((await readManifest(project.projectDir)).files['src/gone-too.ts']).toBeUndefined();
-  });
-
-  it('removes a folder that the template no longer fills, and keeps one that holds the project\'s file', async () => {
-    const project = await seedProject();
-    const manifest = await readManifest(project.projectDir);
-    for (const relative of ['src/shell/kit/table.ts', 'src/shell/page.ts', 'src/mixed/gone.ts']) {
-      manifest.files[relative] = { capability: 'base', hash: sha('// old\n'), base: await putBase(project.projectDir, '// old\n') };
-      await write(project.projectDir, relative, '// old\n');
-    }
-    await fs.writeFile(path.join(project.projectDir, '.cossack/scaffold.json'), JSON.stringify(manifest, null, 2) + '\n');
-    await write(project.projectDir, 'src/mixed/mine.ts', '// the project\'s own\n');
-
-    await runUpgrade(project.projectDir, []);
-    await expect(fs.access(path.join(project.projectDir, 'src/shell'))).rejects.toMatchObject({ code: 'ENOENT' });
-    await expect(fs.access(path.join(project.projectDir, 'src/mixed/gone.ts'))).rejects.toMatchObject({ code: 'ENOENT' });
-    expect(await fs.readFile(path.join(project.projectDir, 'src/mixed/mine.ts'), 'utf8')).toBe('// the project\'s own\n');
-  });
-});
-
-// A CMS project records no file hashes: the package serves what a release changes, and the
-// project's files are its own. An upgrade changes its dependencies and never its files.
-describe('a project that records no files', () => {
+// A project records no file hashes: the packages it mounts serve what a release changes, and
+// its files are its own. An upgrade changes its dependencies and never its files.
+describe('a project\'s own files', () => {
   async function cmsProject() {
     return (await createApp('app', { cwd: temporaryParent, adapter: 'cloudflare', preset: 'minimal', features: ['cms'], interactive: false })).projectDir;
   }
@@ -556,9 +233,9 @@ describe('a project that records no files', () => {
     const [code, output] = await upgradeJson(root, []);
     expect(code).toBe(0);
     expect(output.data.status).toBe('completed');
-    expect(output.data.plan.files).toMatchObject({ deletes: [], conflicts: [], merges: [] });
+    // Nothing but pnpm-workspace.yaml is ever planned, and it only when the release adds a key.
     expect(output.data.plan.files.writes.map(file => file.path).filter(file => file !== 'pnpm-workspace.yaml')).toEqual([]);
-    expect(output.data.plan.manifest.changed).toBe(false);
+    expect(output.data.plan.recipe.moves).toBe(false);
     expect(await fs.readFile(entry, 'utf8')).toBe(edited);
     expect(await exists(path.join(root, 'vitest.config.ts'))).toBe(false);
     const workspace = await fs.readFile(path.join(root, 'pnpm-workspace.yaml'), 'utf8');
@@ -608,6 +285,6 @@ describe('a project that records no files', () => {
     expect(await exists(path.join(root, '.cossack'))).toBe(false);
     // A second run has nothing to move.
     const [, again] = await upgradeJson(root, []);
-    expect(again.data.applied.manifest).toBe(false);
+    expect(again.data.applied.recipe).toBe(false);
   });
 });

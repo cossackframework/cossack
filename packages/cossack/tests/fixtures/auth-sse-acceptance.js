@@ -37,7 +37,7 @@ export default class LiveSession extends Cossack {
 import { defineApi } from '@cossackframework/framework/api';
 import { input as schema } from '@cossackframework/core';
 import { getCookie } from 'hono/cookie';
-import { authSessions, logout, updateUserProfile } from '../../auth';
+import { authSessions, logout, updateUserProfile } from '@cossackframework/dashboard/app/auth';
 import { User } from '../../models/User';
 import { Session } from '../../models/Session';
 import { sql } from '@cossackframework/database';

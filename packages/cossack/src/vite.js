@@ -76,7 +76,9 @@ async function projectRecipe(root) {
 /**
  * The Vite configuration of this project.
  *
- * - `markdownProcessor`: the processor of Markdown pages (`src/markdown-processor.ts`).
+ * - `markdownProcessor`: the project's own processor of Markdown pages. A project with the
+ *   `markdown` feature gets the framework's (`@cossackframework/framework/markdown-processor`)
+ *   without it.
  * - `configPath`: the Wrangler configuration file, when it is not the project's wrangler.jsonc.
  *   Every plugin that reads it gets the path.
  * - `pages`, `security`, `ssg`, `cloudflare`, `budgets`, `node`: options added to those
@@ -132,6 +134,12 @@ export function cossackApp(options = {}) {
         framework.cossackBuildBudgets({ ...wrangler, ...options.budgets }));
     }
     plugins.push(cossackSecurityPlugin({ devWarning: true, ...options.security }));
+    // Markdown pages: the framework's processor (GFM, a table of contents, highlighted code,
+    // front matter), unless the project gives its own.
+    let markdownProcessor = options.markdownProcessor;
+    if (!markdownProcessor && features.has('markdown')) {
+      ({ processMarkdown: markdownProcessor } = await projectImport(root, '@cossackframework/framework/markdown-processor'));
+    }
     // What the project's features need from the runtime; the build fails when it lacks one.
     const capabilities = recipe || options.pages?.capabilities ? {
       ...(recipe ? { runtime: desktop ? 'desktop' : runtime, requirements: recipe.requirements(desktop ? 'desktop' : 'web') } : {}),
@@ -140,7 +148,7 @@ export function cossackApp(options = {}) {
     plugins.push(framework.cossackPages({
       ...partOptions('pages'),
       ...wrangler,
-      ...(options.markdownProcessor ? { markdownProcessor: options.markdownProcessor } : {}),
+      ...(markdownProcessor ? { markdownProcessor } : {}),
       ...options.pages,
       ...(capabilities ? { capabilities } : {}),
     }));

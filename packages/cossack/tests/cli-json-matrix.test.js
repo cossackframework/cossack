@@ -159,11 +159,9 @@ describe('finite command success / failure / dry-run matrix', () => {
     expect(await fs.readFile(path.join(cwd, '.env'), 'utf8')).toContain('environment-private-value');
     expect(envelope(await execute(['remove', 'ui', '--json']), 'remove').data.status).toBe('absent');
     envelope(await execute(['add', 'ui', '--json'], { cwd }), 'add');
-    const manifest = JSON.parse(await fs.readFile(path.join(cwd, '.cossack/scaffold.json'), 'utf8'));
     // A file that removing the feature deletes: an edited one stops the removal. (A file the
     // recipe rewrites, such as src/App.ts, is merged with the edit instead.)
     const ownedUI = 'src/stores.client.ts';
-    expect(manifest.files[ownedUI].capability).toBe('ui');
     await fs.appendFile(path.join(cwd, ownedUI), '\n/* local edit */\n');
     const modified = await snapshot(cwd);
     const bad = envelope(await execute(['remove', 'ui', '--json'], { cwd }), 'remove', false);

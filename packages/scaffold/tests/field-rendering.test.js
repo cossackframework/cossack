@@ -5,7 +5,7 @@ import { html, component, renderToString, bind } from '../../renderer/dist/index
 import { Field, Input, PasswordInput, Alert, Button } from '../../ui/dist/index.js';
 
 it('renders generated login labels and validation descriptions onto the actual inputs', async () => {
-  const files = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'auth' }));
+  const files = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'auth' }), { servedFiles: true });
   const source = files.get('src/pages/auth/login/index.ts').content.toString();
   const start = source.lastIndexOf('    render() {');
   expect(start).toBeGreaterThan(0);
@@ -17,7 +17,7 @@ it('renders generated login labels and validation descriptions onto the actual i
     html, component, Field, Input, PasswordInput, Alert, Button, value => value, bind,
   );
   const errors = {'form.email':'Invalid email', 'form.password':'Password is required'};
-  Object.assign(page, {form:{email:'person@example.com',password:''}, error:null,
+  Object.assign(page, {form:{email:'person@example.com',password:''}, error:null, oauth:[], credentials:true,
     getError:key=>errors[key], hasError:key=>!!errors[key], handleSubmit:()=>{}});
   const output = renderToString(page.render());
   for (const id of ['email','password']) {

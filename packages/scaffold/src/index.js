@@ -1,4 +1,5 @@
 import { workflowsRecipeFiles } from './workflow-recipes.js';
+import { DASHBOARD_PACKAGE, dashboardConfigFile, isServedDashboardPath, mountsDashboard } from './dashboard-recipe.js';
 import { CMS_PACKAGE, cmsRecipeFiles, cmsSetupCode, isCmsPath, isServedCmsPath, patchCmsNodeEntry, patchCmsWorkerEntry } from './cms-recipe.js';
 import { jobsRecipeFiles, turnstileRecipeFiles, schedulesRecipeFiles, notificationsRecipeFiles } from './service-recipes.js';
 import fs from 'node:fs/promises';
@@ -278,6 +279,8 @@ const ORM_PATHS = new Set([
 ]);
 const AUTH_PATHS = new Set([
   'src/auth-input.ts',
+  'src/auth-options.ts',
+  'src/auth-providers.ts',
   'src/auth-bot-check.ts',
   'src/auth-bot-token.ts',
   'src/auth.ts',
@@ -295,6 +298,8 @@ const AUTH_PATHS = new Set([
 /** Auth storage on the ORM; the CMS store keeps users and sessions in RomeDB instead. */
 const AUTH_ORM_PATHS = new Set([
   'src/lib/uuid.ts',
+  'src/pages/auth/[provider]/redirect.ts',
+  'src/pages/auth/[provider]/callback.ts',
   'src/migrations/0001_create_users.ts',
   'src/migrations/0002_create_sessions.ts',
   'src/migrations/0008_add_session_public_id.ts',
@@ -302,12 +307,6 @@ const AUTH_ORM_PATHS = new Set([
   'src/models/User.ts',
   'src/models/Session.ts',
   'src/models/OAuthAccount.ts',
-]);
-const CREDENTIAL_AUTH_PATHS = new Set([
-  'src/pages/auth/two-factor/index.ts',
-  'src/pages/auth/register/index.ts',
-  'src/pages/auth/forgot-password/index.ts',
-  'src/pages/auth/reset-password/index.ts',
 ]);
 const DASHBOARD_CORE_PATHS = new Set([
   'src/dashboard/access.ts',
@@ -322,11 +321,14 @@ const DASHBOARD_CORE_PATHS = new Set([
   'src/dashboard/tabs.ts',
   'src/dashboard/time-ago.ts',
   'src/dashboard/session-list.ts',
+  'src/dashboard/types.ts',
+  'src/dashboard/registry.ts',
+  'src/dashboard/modules/users.ts',
+  'src/dashboard/modules/sessions.ts',
+  'src/dashboard/modules/settings.ts',
+  'src/dashboard/modules/roles.ts',
   'src/pages/dashboard/index.ts',
   'src/pages/dashboard/layout.ts',
-]);
-const MARKDOWN_PATHS = new Set([
-  'src/markdown-processor.ts',
 ]);
 const RBAC_PATHS = new Set([
   'src/lib/permissions.ts',
@@ -406,17 +408,12 @@ function capabilityFor(rel, recipe) {
   if (DASHBOARD_CORE_PATHS.has(rel)) return recipe.resolvedFeatures.includes('dashboard') ? 'dashboard' : null;
   // The application seeder belongs to the ORM; it seeds RBAC roles only for ORM auth.
   if (rel === 'src/seeders/application.seeder.ts') return recipe.resolvedFeatures.includes('dashboard') && recipe.resolvedFeatures.includes('database') ? 'dashboard' : null;
-  if (RBAC_ORM_PATHS.has(rel)) {
-    const modules = recipe.dashboardModules;
-    return ormAuth && (modules.includes('users') || modules.includes('roles')) ? 'dashboard:rbac' : null;
-  }
-  if (MARKDOWN_PATHS.has(rel)) return recipe.resolvedFeatures.includes('markdown') ? 'markdown' : null;
-  if (RBAC_PATHS.has(rel)) {
-    const modules = recipe.dashboardModules;
-    return modules.includes('users') || modules.includes('roles') ? 'dashboard:rbac' : null;
-  }
-  for (const [module, paths] of Object.entries(MODULE_PATHS)) {
-    if (paths.includes(rel)) return recipe.dashboardModules.includes(module) ? `dashboard:${module}` : null;
+  // Roles are part of ORM sign-in: the served auth.ts reads them for every user.
+  if (RBAC_ORM_PATHS.has(rel)) return ormAuth ? 'auth' : null;
+  if (RBAC_PATHS.has(rel)) return recipe.resolvedFeatures.includes('auth') ? 'auth' : null;
+  // Every module's pages are served; src/dashboard.config.ts says which ones answer.
+  for (const paths of Object.values(MODULE_PATHS)) {
+    if (paths.includes(rel)) return recipe.resolvedFeatures.includes('dashboard') ? 'dashboard' : null;
   }
   if (EXAMPLE_PATHS.has(rel)) return recipe.resolvedFeatures.includes('examples') ? 'examples' : null;
   if (DESKTOP_PATHS.has(rel)) return recipe.resolvedFeatures.includes('desktop') ? 'desktop' : null;
@@ -490,8 +487,9 @@ function middlewareRegistry(recipe) {
     imports.push(`import { cmsMiddlewares } from '${CMS_PACKAGE}/app/cms/middlewares';`);
     entries.push('  ...cmsMiddlewares,');
   } else if (recipe.resolvedFeatures.includes('auth')) {
-    imports.push("import { auth } from '../auth';", "import { authGuard } from '../middlewares/auth';");
-    entries.push('  auth.middleware,', '  authGuard,');
+    // The session and the sign-in guard, from the package that serves the sign-in pages.
+    imports.push(`import { authMiddlewares } from '${DASHBOARD_PACKAGE}/app/middlewares/auth';`);
+    entries.push('  ...authMiddlewares,');
   }
   return `${imports.join('\n')}\n\nconst middlewares: MiddlewareHandler[] = [\n${entries.join('\n')}\n];\n\nexport default middlewares;\n`;
 }
@@ -604,6 +602,7 @@ function packageJson(recipe, projectName) {
     }
   }
   if (recipe.resolvedFeatures.includes('auth') || recipe.resolvedFeatures.includes('turnstile')) dependencies['@cossackframework/auth'] = `^${templateVersion}`;
+  if (mountsDashboard(recipe)) dependencies[DASHBOARD_PACKAGE] = `^${templateVersion}`;
   if (recipe.adapter === 'node') {
     dependencies['@cossackframework/node-adapter'] = `^${templateVersion}`;
     dependencies['@hono/node-server'] = dependencyVersion('@hono/node-server');
@@ -635,24 +634,6 @@ function packageJson(recipe, projectName) {
   }
   if (recipe.resolvedFeatures.includes('studio')) {
     devDependencies['@cossackframework/studio'] = `^${templateVersion}`;
-  }
-  if (recipe.resolvedFeatures.includes('markdown')) {
-    for (const name of [
-      '@types/mdast',
-      'rehype-raw',
-      'rehype-slug',
-      'rehype-stringify',
-      'remark-frontmatter',
-      'remark-gfm',
-      'remark-parse',
-      'remark-rehype',
-      'remark-sugar-high',
-      'remark-toc',
-      'unified',
-      'vfile-matter',
-    ]) {
-      devDependencies[name] = dependencyVersion(name);
-    }
   }
   if (recipe.adapter === 'cloudflare') {
     devDependencies['@cloudflare/vite-plugin'] =
@@ -709,7 +690,7 @@ function packageJson(recipe, projectName) {
     ...(recipe.resolvedFeatures.includes('desktop') ? { engines: { node: '>=22' } } : {}),
     description: 'The Borderless TypeScript Framework',
     // The packages whose pages the application mounts (specs/package-routes.md).
-    cossack: { runtime: recipe.adapter, ...(recipe.resolvedFeatures.includes('cms') ? { packages: [CMS_PACKAGE] } : {}), ...(recordsFiles(recipe) ? {} : recipeRecord(recipe)) },
+    cossack: { runtime: recipe.adapter, ...(recipe.resolvedFeatures.includes('cms') ? { packages: [CMS_PACKAGE] } : mountsDashboard(recipe) ? { packages: [DASHBOARD_PACKAGE] } : {}), ...recipeRecord(recipe) },
     scripts,
     dependencies,
     devDependencies,
@@ -931,10 +912,8 @@ function modelsBarrel(recipe) {
     ...(ormAuth
       ? ['User', 'Session', 'OAuthAccount']
       : []),
-    ...(ormAuth && (recipe.dashboardModules.includes('roles') ||
-        recipe.dashboardModules.includes('users'))
-      ? ['Role', 'UserRole']
-      : []),
+    // Roles are part of ORM sign-in: the served auth.ts reads them for every user.
+    ...(ormAuth ? ['Role', 'UserRole'] : []),
     'CacheItem',
   ];
   const imports = names.map((name) => `import { ${name} } from './${name}';`);
@@ -957,33 +936,15 @@ export const ${kind} = [${files.map((_, index) => `item${index}`).join(', ')}] a
 `;
 }
 
-function oauthRouteBlock(providers, appName = 'app') {
-  if (!providers.length) return '';
-  return providers.map((provider) => `${appName}.get(
-  '/auth/${provider}/redirect',
-  oauth.redirect('${provider}'),
-);
-${appName}.get(
-  '/auth/${provider}/callback',
-  oauth.callback('${provider}', {
-    onUser: (user, tokens, c) => handleOAuthUser('${provider}', user, tokens, c),
-  }),
-);`).join('\n');
-}
-
-function nodeEntry(providers = [], { sqlite = false } = {}) {
-  const oauthImport = providers.length
-    ? "import { oauth, handleOAuthUser } from './auth';\n"
-    : '';
-  const routes = oauthRouteBlock(providers, 'frameworkApp');
+function nodeEntry({ sqlite = false } = {}) {
   return `import { createApp } from '@cossackframework/framework/router';
 import { createNodeAdapter, nodeApplication } from '@cossackframework/node-adapter';
 import { App } from './App';
 import { template } from './root';
-${oauthImport}
+
 export const runtime = createNodeAdapter();
 const frameworkApp = createApp({ AppComponent: App, htmlTemplate: template, runtimeAdapter: runtime });
-${routes}
+
 // The Node server: static files, the bindings (production and the Node Vite plugin share
 // createEnv) and a clean shutdown. It starts when Node runs this module.
 export const { app, createEnv, env } = await nodeApplication({
@@ -1134,121 +1095,6 @@ Categories=<%= categories.join(';') %>;
 `;
 }
 
-function descriptor(module) {
-  const definitions = {
-    users: {
-      label: 'Users',
-      href: '/dashboard/users',
-      permission: 'admin',
-      iconImport: "import { UsersGroupRoundedIcon as iconSvg } from '@cossackframework/solar-icons/users-group-rounded/line';",
-      children: [
-        ['All users', '/dashboard/users'],
-        ['Add user', '/dashboard/users/new'],
-      ],
-    },
-    sessions: {
-      label: 'Sessions',
-      href: '/dashboard/sessions',
-      permission: 'authenticated',
-      iconImport: "import { MonitorSmartphoneIcon as iconSvg } from '@cossackframework/solar-icons/monitor-smartphone/line';",
-      placement: 'account',
-    },
-    settings: {
-      label: 'Profile settings',
-      href: '/dashboard/profile',
-      permission: 'authenticated',
-      iconImport: "import { UserCircleIcon as iconSvg } from '@cossackframework/solar-icons/user-circle/line';",
-      placement: 'account',
-    },
-    roles: {
-      label: 'Roles',
-      href: '/dashboard/roles',
-      permission: 'admin',
-      iconImport: "import { ShieldKeyholeIcon as iconSvg } from '@cossackframework/solar-icons/shield-keyhole/line';",
-      // Its link goes in the Users menu, as "Roles"; without the users module, Roles is a link of its own.
-      // The Roles page itself offers Add role.
-      parent: 'users',
-    },
-  };
-  const definition = definitions[module];
-  const children = definition.children
-    ? `\n  children: [\n${definition.children.map(([label, href]) =>
-      `    { label: '${label}', href: '${href}' },`).join('\n')}\n  ],`
-    : '';
-  const placement = definition.placement
-    ? `\n  placement: '${definition.placement}',`
-    : '';
-  const parent = definition.parent ? `\n  parent: '${definition.parent}',` : '';
-  return `import type { DashboardModule } from '../types';
-${definition.iconImport}
-
-const icon = { line: iconSvg };
-
-const descriptor: DashboardModule = {
-  id: '${module}',
-  label: '${definition.label}',
-  href: '${definition.href}',
-  icon,
-  authorization: '${definition.permission}',${placement}${parent}${children}
-};
-
-export default descriptor;
-`;
-}
-
-function dashboardRegistry(modules) {
-  const imports = modules.map((module) => `import ${module} from './modules/${module}';`);
-  return `import type { DashboardModule } from './types';
-${imports.join('\n')}
-
-export const dashboardModules: DashboardModule[] = [${modules.join(', ')}];
-`;
-}
-
-function dashboardTypes() {
-  return `import type { IconEntry } from '@cossackframework/solar-icons/types';
-
-export interface DashboardModuleLink {
-  label: string;
-  href: string;
-}
-
-export interface DashboardModule {
-  id: string;
-  label: string;
-  href: string;
-  icon: IconEntry;
-  /** Who sees the module: any signed-in user, administrators, or holders of a permission. */
-  authorization: 'authenticated' | 'admin' | { permission: string };
-  placement?: 'navigation' | 'account';
-  children?: DashboardModuleLink[];
-  /** Another module whose menu lists this one's links, after its own, when the user sees both. */
-  parent?: string;
-  /** Highlighted on every page under this path, such as \`/dashboard/settings\` for screens with their own navigation. */
-  activeFor?: string;
-}
-
-/** A status the dashboard's taskbar shows: what waits for the user, and where to go. */
-export interface DashboardStatus {
-  id: string;
-  label: string;
-  href: string;
-  /** How many, shown beside the label; omitted for a plain link. */
-  count?: number;
-  tone?: 'info' | 'warning' | 'error';
-}
-
-/** A message above every dashboard screen, such as one a CMS plugin returns. */
-export interface DashboardNotice {
-  id: string;
-  tone: 'info' | 'success' | 'warning' | 'error';
-  message: string;
-  /** A same-site path the notice links to. */
-  href?: string;
-}
-`;
-}
-
 function blankSeeder() {
   return `import { defineSeeder } from '@cossackframework/database';
 
@@ -1260,208 +1106,6 @@ export default defineSeeder({
   },
 });
 `;
-}
-
-function applyOauthToAuth(content, providers) {
-  if (!providers.length) return content;
-  const providerConfig = providers.map((provider) => {
-    const prefix = provider.toUpperCase();
-    return `    ${provider}: {
-      clientId: String(c.env.${prefix}_CLIENT_ID ?? ''),
-      clientSecret: String(c.env.${prefix}_CLIENT_SECRET ?? ''),
-      redirectUrl: \`/auth/${provider}/callback\`,
-    },`;
-  }).join('\n');
-  const providerEnvironment = providers.map((provider) => {
-    const prefix = provider.toUpperCase();
-    return `  ${provider}: {
-    clientId: '${prefix}_CLIENT_ID',
-    clientSecret: '${prefix}_CLIENT_SECRET',
-  },`;
-  }).join('\n');
-  return content
-    .replace(
-      /^(import \{)([^}]*)(\} from '@cossackframework\/auth';)/m,
-      "$1 createOAuth, OAuthError, type OAuthKit, type OAuthUser, type OAuthStateStore, type TokenSet,$2$3\nimport { OAuthAccount } from '@/models/OAuthAccount';",
-    )
-    .concat(`
-
-const oauthProviderEnvironment = {
-${providerEnvironment}
-} as const;
-
-function oauthConfigurationError(c: Context, provider: string): OAuthError | null {
-  const providerEnvironment =
-    oauthProviderEnvironment[provider as keyof typeof oauthProviderEnvironment];
-  if (!providerEnvironment) {
-    return new OAuthError('COSSACK_OAUTH_PROVIDER_UNKNOWN');
-  }
-
-  const missing = [
-    providerEnvironment.clientId,
-    providerEnvironment.clientSecret,
-  ].filter((name) => !String(c.env[name] ?? '').trim());
-  if (missing.length) {
-    return new OAuthError('COSSACK_OAUTH_CREDENTIALS_MISSING');
-  }
-
-  if (String(c.env.OAUTH_SECRET ?? '').length < 16) {
-    return new OAuthError('COSSACK_OAUTH_SECRET_INVALID');
-  }
-  return null;
-}
-
-function oauthUnavailable(c: Context, error: OAuthError): Response {
-  console.warn('[Cossack OAuth]', error.toJSON());
-  const { message, ...diagnostic } = error.toJSON();
-  return c.json({ error: message, ...diagnostic }, error.status);
-}
-
-export const oauthStateStore: OAuthStateStore = {
-  async create(record) {
-    await Session.insert({ id: record.key, userId: null, data: null,
-      meta: { type: 'oauth_state', provider: record.provider },
-      createdAt: new Date(record.createdAt), expiresAt: new Date(record.expiresAt),
-      location: null, userAgent: null, ipAddress: null });
-  },
-  async consume(key, provider, now) {
-    // One conditional write owns callback replay. Never read then delete.
-    const result = await sql\`DELETE FROM sessions WHERE id = \${key}
-      AND user_id IS NULL AND meta = \${JSON.stringify({ type: 'oauth_state', provider })}
-      AND expires_at > \${new Date(Math.max(now, Date.now()))}\`;
-    return result.meta.rowsAffected === 1;
-  },
-};
-
-function createOAuthForRequest(c: Context): OAuthKit {
-  return createOAuth({
-    secret: String(c.env.OAUTH_SECRET ?? ''),
-    stateStore: oauthStateStore,
-    providers: {
-${providerConfig}
-    },
-  });
-}
-
-export const oauth: OAuthKit = {
-  redirect: (provider) => async (c, next) => {
-    const error = oauthConfigurationError(c, provider);
-    if (error) return oauthUnavailable(c, error);
-    return createOAuthForRequest(c).redirect(provider)(c, next);
-  },
-  callback: (provider, options) => async (c, next) => {
-    const error = oauthConfigurationError(c, provider);
-    if (error) return oauthUnavailable(c, error);
-    return createOAuthForRequest(c).callback(provider, options)(c, next);
-  },
-};
-
-export async function handleOAuthUser(
-  provider: string,
-  oauthUser: OAuthUser,
-  _tokens: TokenSet,
-  c: Context,
-) {
-  const account = await OAuthAccount.findOne({
-    where: { provider, providerUserId: oauthUser.id },
-  });
-  let user = account
-    ? await User.findOne({ where: { id: account.userId } })
-    : null;
-  // Only an address the provider verified may identify or claim an account.
-  const verifiedEmail = oauthUser.emailVerified === true ? oauthUser.email : null;
-  if (!user && verifiedEmail) {
-    const existing = await User.findOne({ where: { email: verifiedEmail } });
-    if (existing) throw new ClientVisibleError('Sign in to your existing account before linking an OAuth provider.');
-  }
-  if (!user) {
-    const id = uuidv7();
-    await User.insert({
-      id,
-      email: verifiedEmail ?? \`\${provider}-\${oauthUser.id}@oauth.invalid\`,
-      name: oauthUser.name ?? oauthUser.nickname ?? null,
-      passwordHash: null,
-      avatar: oauthUser.avatar ?? null,
-      meta: null,
-      createdAt: new Date(),
-    });
-    user = await User.findOne({ where: { id } });
-  }
-  if (!user) throw new Error('Unable to provision OAuth user.');
-  if (!account) {
-    await OAuthAccount.insert({
-      id: uuidv7(),
-      userId: user.id,
-      provider,
-      providerUserId: oauthUser.id,
-      createdAt: new Date(),
-    });
-  }
-  if (auth.createSession) {
-    const { headers } = await auth.createSession(publicUser(user), c);
-    headers.forEach((value, key) => c.header(key, value));
-  }
-  return c.redirect(config('auth.redirectAfterLogin'));
-}
-`);
-}
-
-const OAUTH_PROVIDER_ICONS = {
-  github: '<svg aria-hidden="true" viewBox="0 0 24 24" class="size-4 shrink-0" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12c0 4.42 2.87 8.17 6.84 9.5.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.89 1.53 2.34 1.09 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02.8-.22 1.65-.33 2.5-.33.85 0 1.7.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.69-4.57 4.94.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48C19.14 20.16 22 16.42 22 12c0-5.52-4.48-10-10-10z"/></svg>',
-  google: '<svg aria-hidden="true" viewBox="0 0 24 24" class="size-4 shrink-0"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09A6.5 6.5 0 0 1 5.49 12c0-.73.13-1.43.35-2.09V7.07H2.18A11 11 0 0 0 1 12c0 1.78.43 3.45 1.18 4.93z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>',
-  gitlab: '<svg aria-hidden="true" viewBox="0 0 24 24" class="size-4 shrink-0" fill="#FC6D26"><path d="m23.96 13.59-1.35-4.14-2.66-8.2a.46.46 0 0 0-.87 0l-2.67 8.2H7.59l-2.67-8.2a.46.46 0 0 0-.87 0l-2.66 8.2-1.35 4.14a.91.91 0 0 0 .33 1.01L12 23.05l11.63-8.45a.91.91 0 0 0 .33-1.01z"/></svg>',
-  facebook: '<svg aria-hidden="true" viewBox="0 0 24 24" class="size-4 shrink-0" fill="#1877F2"><path d="M24 12.07C24 5.4 18.63 0 12 0S0 5.4 0 12.07C0 18.1 4.39 23.09 10.13 24v-8.44H7.08v-3.49h3.05V9.41c0-3.02 1.79-4.7 4.53-4.7 1.31 0 2.68.24 2.68.24v2.97h-1.51c-1.49 0-1.96.93-1.96 1.89v2.26h3.33l-.53 3.49h-2.8V24C19.61 23.09 24 18.1 24 12.07z"/></svg>',
-  microsoft: '<svg aria-hidden="true" viewBox="0 0 24 24" class="size-4 shrink-0"><path fill="#F25022" d="M1 1h10v10H1z"/><path fill="#7FBA00" d="M13 1h10v10H13z"/><path fill="#00A4EF" d="M1 13h10v10H1z"/><path fill="#FFB900" d="M13 13h10v10H13z"/></svg>',
-};
-
-const OAUTH_PROVIDER_LABELS = {
-  github: 'GitHub',
-  google: 'Google',
-  gitlab: 'GitLab',
-  facebook: 'Facebook',
-  microsoft: 'Microsoft',
-};
-
-function withoutRbacQueries(content) {
-  return content.replace(
-    /\/\/ Reads a user's assigned roles[\s\S]*?\n}\n\nfunction parsePermissions[\s\S]*?\n}\n\n\/\/ --- Session create/,
-    `// RBAC is installed only with the users or roles dashboard modules.
-async function loadUserRoles(_userId: string): Promise<RoleAssignment[]> {
-  return [];
-}
-
-// --- Session create`,
-  );
-}
-
-function applyOauthToLogin(content, providers, authMethods) {
-  if (!providers.length) return content;
-  const buttons = providers.map((provider) => {
-    const label = OAUTH_PROVIDER_LABELS[provider];
-    return `                <a href="/auth/${provider}/redirect" data-oauth-provider="${provider}" class="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium text-foreground shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
-                    ${OAUTH_PROVIDER_ICONS[provider]}
-                    <span>Continue with ${label}</span>
-                </a>`;
-  }).join('\n');
-  const oauthButtons = `            <div class="mt-4 space-y-2" aria-label="OAuth sign in options">
-${buttons}
-            </div>`;
-
-  if (!authMethods.includes('credentials')) {
-    return content
-      .replace(/\n            <form @submit="[\s\S]*?<\/form>/, `\n${oauthButtons}`)
-      .replace(/\n            <p class="mt-6[\s\S]*?<\/p>/, '');
-  }
-
-  const separator = `            <div class="mt-6 flex items-center gap-3" aria-hidden="true">
-                <div class="h-px flex-1 bg-border"></div>
-                <span class="text-xs font-medium uppercase text-muted-foreground">or</span>
-                <div class="h-px flex-1 bg-border"></div>
-            </div>`;
-  return content.replace(
-    '\n            </form>\n',
-    `\n            </form>\n${separator}\n${oauthButtons}\n`,
-  );
 }
 
 function generateAuthSecret() {
@@ -1489,17 +1133,10 @@ function ensureEnvironmentSecrets(recipe, existingSecrets) {
   };
 }
 
-/**
- * Whether a project records the hash and the upstream text of each scaffold file
- * (`.cossack/scaffold.json`, `.cossack/base/`), which is what lets `cossack upgrade` update
- * and merge those files. A CMS project records none: the package serves everything a release
- * changes, the project's files are its own, and an upgrade changes its dependencies. Its
- * recipe is in `package.json#cossack` (`features`, `template`, `options`).
- */
-export function recordsFiles(recipe) {
-  return !recipe.resolvedFeatures.includes('cms');
-}
-
+// A project records no hash and no stored text of its scaffold files: the packages it mounts
+// serve what a release changes, its own files are its own, and `cossack upgrade` changes its
+// dependencies. Its recipe is in `package.json#cossack` (`features`, `template`, `options`).
+// `.cossack/scaffold.json` exists only for the copies `cossack eject` made.
 const RECIPE_OPTIONS = ['database', 'authMethods', 'oauth', 'theme'];
 /** The recipe as `package.json#cossack` records it: the features, and the options that are not the defaults. */
 export function recipeRecord(recipe) {
@@ -1681,7 +1318,8 @@ function applyStyles(content, recipe) {
   const styled = content.replace(marker, imports.join('\n'));
   // Tailwind does not scan node_modules: name the served CMS files, as for the UI package.
   const source = '@source "../node_modules/@cossackframework/ui/dist";';
-  return recipe.resolvedFeatures.includes('cms') ? styled.replace(source, `${source}\n@source "../node_modules/${CMS_PACKAGE}/app/src";`) : styled;
+  const served = recipe.resolvedFeatures.includes('cms') ? CMS_PACKAGE : mountsDashboard(recipe) ? DASHBOARD_PACKAGE : null;
+  return served ? styled.replace(source, `${source}\n@source "../node_modules/${served}/app/src";`) : styled;
 }
 
 export async function renderRecipe(recipe, options = {}) {
@@ -1695,58 +1333,21 @@ export async function renderRecipe(recipe, options = {}) {
   const files = new Map();
   for (const rel of await walk(templateDir)) {
     if (rel === 'package.json') continue;
-    if (CREDENTIAL_AUTH_PATHS.has(rel) &&
-        !recipe.config.authMethods.includes('credentials')) continue;
     const capability = capabilityFor(rel, recipe);
     if (!capability) continue;
     let content = await fs.readFile(path.join(templateDir, rel));
     if (rel === 'src/style.css') content = text(applyStyles(content.toString('utf8'), recipe));
-    if (rel === 'vite.config.ts' && recipe.resolvedFeatures.includes('markdown')) {
-      content = text(content.toString('utf8')
-        .replace("import { cossackApp } from 'cossack/vite';", "import { cossackApp } from 'cossack/vite';\nimport { processMarkdown } from './src/markdown-processor.ts';")
-        .replace('export default cossackApp({\n', 'export default cossackApp({\n  markdownProcessor: processMarkdown,\n'));
-    }
     if (rel === 'src/config/database.ts') {
       content = text(content.toString('utf8').replace(
         "default: env('DB_CONNECTION', 'd1')",
         `default: env('DB_CONNECTION', '${recipe.config.database}')`,
       ));
     }
-    if (rel === 'src/config/auth.ts' && !recipe.resolvedFeatures.includes('dashboard')) {
-      content = text(content.toString('utf8').replace(
-        "env('AUTH_REDIRECT_AFTER_LOGIN', '/dashboard')",
-        `env('AUTH_REDIRECT_AFTER_LOGIN', '${recipe.resolvedFeatures.includes('protected-route') ? '/protected-route' : '/'}')`,
-      ));
-    }
-    if (rel === 'src/models/User.ts' && !recipe.dashboardModules.some(module => module === 'users' || module === 'roles')) {
-      // An entity relation must only target another registered entity. Auth
-      // without RBAC has no Role/UserRole models or corresponding migrations.
-      content = text(content.toString('utf8')
-        .replace("import { UserRole } from './UserRole';\n", '')
-        .replace(/\n  @OneToMany\(\(\) => UserRole, \(assignment\) => assignment.user\)\n  declare roleAssignments: Relation<UserRole\[\]>;\n/, '\n'));
-    }
-    if (rel === 'src/auth.ts') {
-      let authContent = content.toString('utf8');
-      if (!recipe.dashboardModules.some((module) => module === 'users' || module === 'roles')) {
-        authContent = withoutRbacQueries(authContent);
-      }
-      content = text(applyOauthToAuth(authContent, recipe.config.oauth));
-    }
-    if (rel === 'src/pages/auth/login/index.ts') {
-      content = text(applyOauthToLogin(
-        content.toString('utf8'),
-        recipe.config.oauth,
-        recipe.config.authMethods,
-      ));
-    }
     if ((recipe.adapter === 'node') &&
         ['wrangler.jsonc', 'worker-configuration.d.ts'].includes(rel)) continue;
     if (recipe.adapter !== 'node' && rel === 'scripts/dev.js') continue;
     if (recipe.adapter === 'node' && rel === 'src/index.ts') {
-      content = text(nodeEntry(
-        recipe.config.authMethods.includes('oauth') ? recipe.config.oauth : [],
-        { sqlite: recipe.resolvedFeatures.includes('database') && recipe.config.database === 'sqlite' },
-      ));
+      content = text(nodeEntry({ sqlite: recipe.resolvedFeatures.includes('database') && recipe.config.database === 'sqlite' }));
       if (recipe.resolvedFeatures.includes('cms')) content = text(patchCmsNodeEntry(content.toString('utf8')));
     }
     files.set(rel, { content, capability });
@@ -1830,10 +1431,7 @@ export async function renderRecipe(recipe, options = {}) {
             '0008_add_session_public_id.ts',
           ]
         : []),
-      ...(ormAuth && (recipe.dashboardModules.includes('roles') ||
-          recipe.dashboardModules.includes('users'))
-        ? ['0003_create_roles.ts', '0007_create_user_roles.ts']
-        : []),
+      ...(ormAuth ? ['0003_create_roles.ts', '0007_create_user_roles.ts'] : []),
       '0006_create_cache_table.ts',
     ];
     files.set('src/migrations/index.ts', {
@@ -1845,7 +1443,7 @@ export async function renderRecipe(recipe, options = {}) {
       content: text(registeredBarrel('seeds', seedFiles)),
       capability: 'database',
     });
-    if (!ormAuth || !recipe.dashboardModules.some(module => module === 'users' || module === 'roles')) {
+    if (!ormAuth || !recipe.resolvedFeatures.includes('dashboard')) {
       files.set('src/seeders/application.seeder.ts', {
         content: text(blankSeeder()),
         capability: 'database',
@@ -1857,19 +1455,6 @@ export async function renderRecipe(recipe, options = {}) {
       content: text("export * from '@cossackframework/ui';\n"),
       capability: 'ui',
     });
-  }
-  if (recipe.resolvedFeatures.includes('dashboard')) {
-    files.set('src/dashboard/types.ts', { content: text(dashboardTypes()), capability: 'dashboard' });
-    files.set('src/dashboard/registry.ts', {
-      content: text(dashboardRegistry(recipe.dashboardModules)),
-      capability: 'dashboard',
-    });
-    for (const module of recipe.dashboardModules) {
-      files.set(`src/dashboard/modules/${module}.ts`, {
-        content: text(descriptor(module)),
-        capability: `dashboard:${module}`,
-      });
-    }
   }
   if (recipe.adapter === 'cloudflare') {
     files.set('wrangler.jsonc', {
@@ -1918,21 +1503,6 @@ export async function renderRecipe(recipe, options = {}) {
       capability: 'desktop',
     });
   }
-  if (recipe.adapter === 'cloudflare' &&
-      recipe.resolvedFeatures.includes('auth') &&
-      recipe.config.authMethods.includes('oauth')) {
-    const entry = files.get('src/index.ts');
-    const source = entry.content.toString('utf8')
-      .replace(
-        "import { template } from './root';",
-        "import { template } from './root';\nimport { oauth, handleOAuthUser } from './auth';",
-      )
-      .replace(
-        '\nexport { AppDurableObject };',
-        `\n${oauthRouteBlock(recipe.config.oauth)}\n\nexport { AppDurableObject };`,
-      );
-    files.set('src/index.ts', { ...entry, content: text(source) });
-  }
   if (recipe.adapter === 'node') {
     const projectName = options.projectName ?? 'my-cossack-app';
     const values = nodeEnvironmentValues(recipe, projectName);
@@ -1976,6 +1546,12 @@ export async function renderRecipe(recipe, options = {}) {
   if (recipe.resolvedFeatures.includes('cms') && options.servedFiles !== true) {
     for (const rel of [...files.keys()]) if (isServedCmsPath(rel)) files.delete(rel);
   }
+  // Sign-in on the database ORM: the pages, the dashboard and their modules are served from
+  // @cossackframework/dashboard. The project holds its choices, and its models and migrations.
+  if (mountsDashboard(recipe)) {
+    files.set('src/dashboard.config.ts', { content: text(dashboardConfigFile(recipe)), capability: 'auth' });
+    if (options.servedFiles !== true) for (const rel of [...files.keys()]) if (isServedDashboardPath(rel)) files.delete(rel);
+  }
   const readme = files.get('README.md');
   if (readme) files.set('README.md', { ...readme, content: text(readmeFor(readme.content.toString('utf8'), recipe)) });
   return files;
@@ -1999,10 +1575,9 @@ async function readJson(file) {
 }
 
 /**
- * The project's recorded recipe. A project that records its files keeps it, with the file
- * records, in `.cossack/scaffold.json`. A project that records none (`recordsFiles: false`
- * in the result) keeps it in `package.json#cossack`; its manifest, when it has one, holds
- * only the copies `cossack eject` made.
+ * The project's recorded recipe, from `package.json#cossack`, as a manifest. The result has
+ * `recordsFiles: false`: no file is recorded. `.cossack/scaffold.json`, when the project has
+ * one, holds only the copies `cossack eject` made, which the result carries as `ejected`.
  */
 export async function readManifest(projectDir) {
   const stored = await readJson(path.join(projectDir, '.cossack/scaffold.json'));
@@ -2028,9 +1603,9 @@ export async function readManifest(projectDir) {
       ...(stored?.ejected && Object.keys(stored.ejected).length ? { ejected: stored.ejected } : {}),
     };
   }
-  // A CMS project whose recipe is still in the manifest: its file records are not used, and
-  // the next change (add, remove, upgrade) moves the recipe to package.json.
-  if (stored && supportedManifest(stored) && Array.isArray(stored.resolvedFeatures) && stored.resolvedFeatures.includes('cms')) {
+  // A recipe still in the manifest, from before it moved to package.json: its file records are
+  // not used, and the next change (add, remove, upgrade) moves the recipe and removes them.
+  if (stored && supportedManifest(stored) && Array.isArray(stored.explicitFeatures ?? stored.resolvedFeatures)) {
     const { files: _files, dependencyBaseline: _baseline, ...recipe } = stored;
     return { ...recipe, recordsFiles: false };
   }
@@ -2038,11 +1613,11 @@ export async function readManifest(projectDir) {
 }
 
 /**
- * For a project that records no files, the files as its recipe renders them now stand in
- * for the record: a file equal to the rendering is replaced, another one is merged over it.
+ * The files as the project's recipe renders them now stand in for a record of them: a file
+ * equal to the rendering is replaced, another one is merged over it.
  */
 function withRenderedFiles(manifest, rendered) {
-  if (manifest?.recordsFiles !== false) return manifest;
+  if (!manifest) return manifest;
   const files = {};
   const bases = new Map();
   for (const [rel, entry] of rendered) {
@@ -2223,12 +1798,7 @@ async function mergePackage(
   const recorded = await readManifest(projectDir);
   let ownedDependencies = recorded?.dependencyBaseline ?? previous;
   if (recorded && !recorded.dependencyBaseline) {
-    // A project without file records states its dependencies through its recipe, as rendered now.
-    if (recorded.recordsFiles !== false && recorded.templateVersion !== templateVersion) throw Object.assign(new Error(
-      'Run cossack upgrade to record dependency ownership before composing this older scaffold.'),
-    { code: 'COSSACK_SCAFFOLD_DEPENDENCY_BASELINE_MISSING' });
-    // Current-version manifests can be reconstructed locally. Rendering an old
-    // recipe with a different release would silently invent ownership values.
+    // The project states its dependencies through its recipe, as this release renders it.
     ownedDependencies = JSON.parse(packageJson(await inferRecipe(projectDir, recorded), path.basename(projectDir)));
   }
   const dependencies = planDependencyChanges(current, desired, ownedDependencies, { force: forceManaged });
@@ -2418,79 +1988,9 @@ async function applyPlan(projectDir, rendered, plan) {
   }
 }
 
-export async function writeManifest(
-  projectDir,
-  recipe,
-  rendered,
-  previousManifest = undefined,
-  plan = undefined,
-) {
-  if (!recordsFiles(recipe)) return dropFileRecords(projectDir, previousManifest);
-  const files = {};
-  const written = plan
-    ? new Set(plan.writes.map((change) => change.path))
-    : undefined;
-  // A base that exists only in memory (the project recorded no files until now) is stored.
-  const keptBase = async (name) => previousManifest?.bases?.has(name)
-    ? putBase(projectDir, previousManifest.bases.get(name)) : name;
-  for (const [rel, entry] of rendered) {
-    if (entry.capability === LOCAL_ENV_CAPABILITY) continue;
-    const previous = previousManifest?.files?.[rel];
-    // `base` is the upstream text the file descends from; `hash` is the file on disk.
-    const upstream = async () => KEY_MERGED.has(rel) ? {} : { base: await putBase(projectDir, entry.content) };
-    if (plan && !written.has(rel)) {
-      if (previous) {
-        const recorded = typeof previous === 'string' ? previous : previous.hash;
-        const unchanged = recorded === hash(entry.content) && await currentHash(path.join(projectDir, rel)) === recorded;
-        files[rel] = {
-          capability: entry.capability,
-          hash: recorded,
-          // A preserved edit keeps the base it was made on.
-          ...(unchanged ? await upstream() : typeof previous.base === 'string' ? { base: await keptBase(previous.base) } : {}),
-        };
-      }
-      // A matching pre-existing file without a prior manifest entry remains
-      // user-owned; rendering the same bytes does not transfer ownership.
-      continue;
-    }
-    const contentHash = await currentHash(path.join(projectDir, rel));
-    if (contentHash) files[rel] = { capability: entry.capability, hash: contentHash, ...await upstream() };
-  }
-  const manifest = {
-    schemaVersion: MANIFEST_SCHEMA_VERSION,
-    tool: '@cossackframework/scaffold',
-    templateVersion,
-    updatedAt: new Date().toISOString(),
-    runtime: recipe.adapter,
-    preset: recipe.preset,
-    explicitFeatures: recipe.explicitFeatures,
-    resolvedFeatures: recipe.resolvedFeatures,
-    dashboardModules: recipe.dashboardModules,
-    config: publicRecipe(recipe).config,
-    // Copies made by cossack eject are recorded here and belong to no recipe.
-    ...(previousManifest?.ejected && Object.keys(previousManifest.ejected).length ? { ejected: previousManifest.ejected } : {}),
-    dependencyBaseline: rendered.get('package.json')?.dependencyBaseline ??
-      (!written || written.has('package.json')
-        ? dependencyBaseline(JSON.parse(packageJson(recipe, path.basename(projectDir))))
-        : previousManifest?.dependencyBaseline ?? dependencyBaseline({})),
-    files,
-  };
-  const manifestDir = path.join(projectDir, '.cossack');
-  await fs.mkdir(manifestDir, { recursive: true });
-  const manifestPath = path.join(manifestDir, 'scaffold.json');
-  const temporaryPath = path.join(
-    manifestDir,
-    `.scaffold.json.${process.pid}.${randomBytes(6).toString('hex')}.tmp`,
-  );
-  try {
-    await fs.writeFile(temporaryPath, JSON.stringify(manifest, null, 2) + '\n');
-    await fs.rename(temporaryPath, manifestPath);
-  } catch (error) {
-    await fs.rm(temporaryPath, { force: true });
-    throw error;
-  }
-  await pruneBases(projectDir);
-  return manifestPath;
+/** Record the outcome of a change: the recipe is in the package.json the change wrote, and no file is recorded. */
+export async function writeManifest(projectDir, _recipe, _rendered, previousManifest = undefined) {
+  return dropFileRecords(projectDir, previousManifest);
 }
 
 function databaseChoices(adapter, includeAll = false) {
@@ -2649,7 +2149,7 @@ export async function createApp(projectName, options = {}) {
     if (prompted.dryRun) {
       return {
         status: 'dry-run', projectDir, adapter: recipe.adapter,
-        manifestPath: path.join(projectDir, '.cossack/scaffold.json'),
+        manifestPath: path.join(projectDir, 'package.json'),
         recipe: publicRecipe(recipe), changes: plan,
       };
     }
@@ -2664,7 +2164,7 @@ export async function createApp(projectName, options = {}) {
       continue;
     }
     if (!confirmation) {
-      return { projectDir, adapter: recipe.adapter, manifestPath: path.join(projectDir, '.cossack/scaffold.json'), recipe: publicRecipe(recipe), status: 'cancelled' };
+      return { projectDir, adapter: recipe.adapter, manifestPath: path.join(projectDir, 'package.json'), recipe: publicRecipe(recipe), status: 'cancelled' };
     }
     const manifestPath = await applyPlanAndManifestAtomically(projectDir, rendered, plan, recipe, undefined);
     return {
@@ -2722,9 +2222,6 @@ async function inferRecipe(projectDir, manifest) {
   if (dependencies['@cossackframework/database']) features.push('database');
   if (dependencies['@cossackframework/studio']) features.push('studio');
   if (dependencies['@cossackframework/auth']) features.push('auth');
-  if (dependencies.unified && await access(path.join(projectDir, 'src/markdown-processor.ts'))) {
-    features.push('markdown');
-  }
   const runtime = await detectProjectRuntime(projectDir, manifest);
   const recipe = resolveRecipe({
     adapter: runtime ?? 'cloudflare',
@@ -2947,11 +2444,11 @@ export async function switchAdapter(projectDir, target, options = {}) {
     );
   }
   const root = path.resolve(projectDir);
-  const manifestPath = path.join(root, '.cossack/scaffold.json');
+  const manifestPath = path.join(root, 'package.json');
   const manifest = await readManifest(root);
   if (!manifest) {
     throw new Error(
-      'Adapter switching requires a .cossack/scaffold.json manifest.',
+      'Adapter switching requires a recipe in package.json#cossack (features). Create the project with cossack create.',
     );
   }
   if (!supportedManifest(manifest)) {
@@ -3315,9 +2812,8 @@ export async function addFeature(projectDir, feature, options = {}) {
       environmentContent: environment.content,
     });
     await mergePackage(root, rendered);
-    const recorded = manifest?.recordsFiles === false
-      ? withRenderedFiles(manifest, await renderRecipe(current, { projectName: path.basename(root), environmentContent: environment.content }))
-      : manifest;
+    const recorded = withRenderedFiles(manifest, manifest
+      ? await renderRecipe(current, { projectName: path.basename(root), environmentContent: environment.content }) : undefined);
     const plan = await buildPlan(root, rendered, recorded, prompted.force);
     if (plan.conflicts.length) {
       throw new Error(`Scaffold conflicts: ${plan.conflicts.join(', ')}. Re-run with --force to overwrite.`);
@@ -3333,7 +2829,7 @@ export async function addFeature(projectDir, feature, options = {}) {
         changes: plan,
         addedFeatures,
         addedDashboardModules,
-        manifestPath: path.join(root, '.cossack/scaffold.json'),
+        manifestPath: path.join(root, 'package.json'),
       };
     }
     if (prompted.dryRun) {
@@ -3343,7 +2839,7 @@ export async function addFeature(projectDir, feature, options = {}) {
         changes: plan,
         addedFeatures,
         addedDashboardModules,
-        manifestPath: path.join(root, '.cossack/scaffold.json'),
+        manifestPath: path.join(root, 'package.json'),
       };
     }
     const confirmation = await confirmPlan(plan, prompted, {
@@ -3363,7 +2859,7 @@ export async function addFeature(projectDir, feature, options = {}) {
         changes: plan,
         addedFeatures: [],
         addedDashboardModules: [],
-        manifestPath: path.join(root, '.cossack/scaffold.json'),
+        manifestPath: path.join(root, 'package.json'),
       };
     }
     const manifestPath = await applyPlanAndManifestAtomically(root, rendered, plan, recipe, recorded);
@@ -3391,7 +2887,7 @@ export async function removeFeatureFromProject(projectDir, feature, options = {}
       status: 'absent',
       recipe: publicRecipe(current),
       changes: empty,
-      manifestPath: path.join(root, '.cossack/scaffold.json'),
+      manifestPath: path.join(root, 'package.json'),
     };
   }
 
@@ -3429,7 +2925,7 @@ export async function removeFeatureFromProject(projectDir, feature, options = {}
       status: 'absent',
       recipe: publicRecipe(recipe),
       changes: plan,
-      manifestPath: path.join(root, '.cossack/scaffold.json'),
+      manifestPath: path.join(root, 'package.json'),
     };
   }
   if (options.dryRun) {
@@ -3437,7 +2933,7 @@ export async function removeFeatureFromProject(projectDir, feature, options = {}
       status: 'dry-run',
       recipe: publicRecipe(recipe),
       changes: plan,
-      manifestPath: path.join(root, '.cossack/scaffold.json'),
+      manifestPath: path.join(root, 'package.json'),
     };
   }
   const removedFeatures = current.resolvedFeatures.filter(
@@ -3452,7 +2948,7 @@ export async function removeFeatureFromProject(projectDir, feature, options = {}
       status: 'cancelled',
       recipe: publicRecipe(current),
       changes: plan,
-      manifestPath: path.join(root, '.cossack/scaffold.json'),
+      manifestPath: path.join(root, 'package.json'),
     };
   }
   const manifestPath = await applyPlanAndManifestAtomically(root, rendered, plan, recipe, recorded);

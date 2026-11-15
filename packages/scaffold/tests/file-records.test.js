@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  addFeature, createApp, readManifest, recipeCapabilityRequirements, recordsFiles, removeFeatureFromProject, resolveRecipe,
+  addFeature, createApp, readManifest, recipeCapabilityRequirements, removeFeatureFromProject, resolveRecipe,
 } from '../src/index.js';
 
 const temporaryDirectories = [];
@@ -20,7 +20,7 @@ const exists = file => fs.access(file).then(() => true, () => false);
 const json = async file => JSON.parse(await fs.readFile(file, 'utf8'));
 const version = async () => (await json(new URL('../package.json', import.meta.url))).version;
 
-// A CMS project's files are its own: the package serves what a release changes, so the
+// A project's files are its own: the packages it mounts serve what a release changes, so the
 // scaffold records no hash and no upstream text of them. Its recipe is in package.json.
 describe('projects that record no files', () => {
   it('creates a CMS project without a manifest or a base store', async () => {
@@ -33,8 +33,6 @@ describe('projects that record no files', () => {
     expect(manifest).toMatchObject({ recordsFiles: false, runtime: 'cloudflare', explicitFeatures: ['cms'], templateVersion: await version() });
     expect(manifest.resolvedFeatures).toEqual(expect.arrayContaining(['ui', 'auth', 'dashboard', 'cms']));
     expect(manifest.files).toBeUndefined();
-    expect(recordsFiles(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'] }))).toBe(false);
-    expect(recordsFiles(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['dashboard'] }))).toBe(true);
   });
 
   it('records the options that are not the defaults', async () => {
@@ -120,12 +118,16 @@ describe('projects that record no files', () => {
     expect((await json(path.join(root, 'package.json'))).cossack.features).toEqual(expect.arrayContaining(['examples', 'cms']));
   });
 
-  it('keeps recording the files of a project without the CMS', async () => {
-    const root = await project({ adapter: 'node' });
-    expect((await json(path.join(root, 'package.json'))).cossack).toEqual({ runtime: 'node' });
+  it('records no files for a project without the CMS either', async () => {
+    const root = await project({ adapter: 'node', features: ['dashboard'] });
+    expect((await json(path.join(root, 'package.json'))).cossack).toEqual({
+      runtime: 'node', packages: ['@cossackframework/dashboard'], features: ['dashboard'], template: await version(),
+    });
+    expect(await exists(path.join(root, '.cossack'))).toBe(false);
     const manifest = await readManifest(root);
-    expect(manifest.recordsFiles).toBeUndefined();
-    expect(Object.keys(manifest.files)).toContain('src/index.ts');
-    expect(await exists(path.join(root, '.cossack/base'))).toBe(true);
+    expect(manifest).toMatchObject({ recordsFiles: false, runtime: 'node', explicitFeatures: ['dashboard'] });
+    expect(manifest.files).toBeUndefined();
+    const minimal = await project({ adapter: 'node' });
+    expect((await json(path.join(minimal, 'package.json'))).cossack).toEqual({ runtime: 'node', features: [], template: await version() });
   });
 });

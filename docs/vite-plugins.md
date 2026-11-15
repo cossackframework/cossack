@@ -28,7 +28,7 @@ finds them in `src/` and in the mounted packages, so the file lists none.
 
 | Option | What it does |
 | --- | --- |
-| `markdownProcessor` | The processor of Markdown pages, from `src/markdown-processor.ts`. |
+| `markdownProcessor` | Your own processor of Markdown pages. A project with the `markdown` feature uses the framework's without it (see [Markdown pages](./markdown.md)). |
 | `configPath` | The Wrangler configuration file, when it is not `wrangler.jsonc`. Every plugin that reads it gets the path. |
 | `pages` | More options for `cossackPages()`, such as `developmentTraces` or `templateDiagnostics`. `capabilities` is merged with the project's own. |
 | `ssg` | Options for `cossackSsg()`, such as `baseUrl`; `false` leaves static generation out. |

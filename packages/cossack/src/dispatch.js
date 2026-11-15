@@ -237,7 +237,7 @@ ${wrapList(FEATURES, 31)}
   routes                       List all routes in the project.
   config                       List configuration factory type origins; --generate emits types.
   typecheck                    Write the generated types, then run tsc --noEmit.
-  upgrade [dir]                Update Cossack deps and scaffold files; merge your edits.
+  upgrade [dir]                Update Cossack dependencies; merge ejected copies and plugins.
   eject <package> <path>       Copy a served page, config or plugin into the project.
   ssg                          Pre-render pages marked ssg:true to static HTML.
   image <subcommand>           Image tooling. Subcommands: optimize.

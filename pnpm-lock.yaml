@@ -269,9 +269,6 @@ importers:
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.1.6(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0))
-      '@types/mdast':
-        specifier: ^4.0.4
-        version: 4.0.4
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.1
@@ -281,33 +278,6 @@ importers:
       prettier:
         specifier: ^3.4.0
         version: 3.9.10
-      rehype-raw:
-        specifier: ^7.0.0
-        version: 7.0.0
-      rehype-slug:
-        specifier: ^6.0.0
-        version: 6.0.0
-      rehype-stringify:
-        specifier: ^10.0.1
-        version: 10.0.1
-      remark-frontmatter:
-        specifier: ^5.0.0
-        version: 5.0.0(supports-color@10.2.2)
-      remark-gfm:
-        specifier: ^4.0.1
-        version: 4.0.1(supports-color@10.2.2)
-      remark-parse:
-        specifier: ^11.0.0
-        version: 11.0.0(supports-color@10.2.2)
-      remark-rehype:
-        specifier: ^11.1.2
-        version: 11.1.2
-      remark-sugar-high:
-        specifier: ^0.6.3
-        version: 0.6.3
-      remark-toc:
-        specifier: ^9.0.0
-        version: 9.0.0
       tailwindcss:
         specifier: ^4.3.3
         version: 4.3.3
@@ -317,12 +287,6 @@ importers:
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
-      unified:
-        specifier: ^11.0.5
-        version: 11.0.5
-      vfile-matter:
-        specifier: ^5.0.1
-        version: 5.0.1
       vite:
         specifier: ~8.1.6
         version: 8.1.6(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0)
@@ -409,6 +373,116 @@ importers:
       yaml:
         specifier: ^2.9.0
         version: 2.9.0
+
+  packages/dashboard:
+    dependencies:
+      '@cossackframework/auth':
+        specifier: workspace:*
+        version: link:../auth
+      '@cossackframework/core':
+        specifier: workspace:*
+        version: link:../core
+      '@cossackframework/renderer':
+        specifier: workspace:*
+        version: link:../renderer
+      '@cossackframework/solar-icons':
+        specifier: 0.7.1
+        version: 0.7.1
+    devDependencies:
+      '@cossackframework/database':
+        specifier: workspace:*
+        version: link:../database
+      '@cossackframework/framework':
+        specifier: workspace:*
+        version: link:../framework
+      '@cossackframework/ui':
+        specifier: workspace:*
+        version: link:../ui
+      hono:
+        specifier: ^4.13.7
+        version: 4.13.11
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@26.0.0)(happy-dom@21.0.4)(jsdom@29.1.1)(vite@8.1.6(@types/node@26.0.0)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0))
+
+  packages/dashboard/app:
+    dependencies:
+      '@cossackframework/auth':
+        specifier: workspace:*
+        version: link:../../auth
+      '@cossackframework/core':
+        specifier: workspace:*
+        version: link:../../core
+      '@cossackframework/dashboard':
+        specifier: workspace:*
+        version: link:..
+      '@cossackframework/database':
+        specifier: workspace:*
+        version: link:../../database
+      '@cossackframework/framework':
+        specifier: workspace:*
+        version: link:../../framework
+      '@cossackframework/node-adapter':
+        specifier: workspace:*
+        version: link:../../node-adapter
+      '@cossackframework/renderer':
+        specifier: workspace:*
+        version: link:../../renderer
+      '@cossackframework/solar-icons':
+        specifier: 0.7.1
+        version: 0.7.1
+      '@cossackframework/ui':
+        specifier: workspace:*
+        version: link:../../ui
+      '@hono/node-server':
+        specifier: ^2.1.6
+        version: 2.1.6(hono@4.13.11)
+      cossack:
+        specifier: workspace:*
+        version: link:../../cossack
+      hono:
+        specifier: ^4.13.7
+        version: 4.13.11
+      reflect-metadata:
+        specifier: ^0.2.2
+        version: 0.2.2
+      ws:
+        specifier: ^8.18.0
+        version: 8.21.1
+    devDependencies:
+      '@cossackframework/scaffold':
+        specifier: workspace:*
+        version: link:../../scaffold
+      '@cossackframework/typescript-plugin':
+        specifier: workspace:*
+        version: link:../../typescript-plugin
+      '@tailwindcss/vite':
+        specifier: ^4.3.3
+        version: 4.3.3(vite@8.1.6(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0))
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.1
+      '@types/ws':
+        specifier: ^8.18.0
+        version: 8.18.1
+      prettier:
+        specifier: ^3.4.0
+        version: 3.9.10
+      tailwindcss:
+        specifier: ^4.3.3
+        version: 4.3.3
+      tsx:
+        specifier: ^4.23.0
+        version: 4.23.0
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vite:
+        specifier: ~8.1.6
+        version: 8.1.6(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0)
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@22.20.1)(happy-dom@21.0.4)(jsdom@29.1.1)(vite@8.1.6(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/database:
     dependencies:
@@ -6450,6 +6524,13 @@ snapshots:
       '@tailwindcss/oxide': 4.3.3
       tailwindcss: 4.3.3
       vite: 8.1.6(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0)
+
+  '@tailwindcss/vite@4.3.3(vite@8.1.6(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0))':
+    dependencies:
+      '@tailwindcss/node': 4.3.3
+      '@tailwindcss/oxide': 4.3.3
+      tailwindcss: 4.3.3
+      vite: 8.1.6(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0)
 
   '@tailwindcss/vite@4.3.3(vite@8.1.6(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0))':
     dependencies:

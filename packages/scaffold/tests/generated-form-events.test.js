@@ -3,7 +3,7 @@ import { transformSync } from 'esbuild';
 import { renderRecipe, resolveRecipe } from '../src/index.js';
 
 async function renderedControls(file, state) {
-  const files = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'full-stack' }));
+  const files = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'full-stack' }), { servedFiles: true });
   const source = files.get(file).content.toString();
   const start = source.lastIndexOf('    render() {');
   expect(start).toBeGreaterThan(0);
