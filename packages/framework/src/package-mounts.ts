@@ -46,6 +46,34 @@ export interface MountedPackage {
   host: string[];
   /** Oldest scaffold template whose host modules the served code works with. */
   hostTemplate?: string;
+  /**
+   * How the package exports its served root, from an `exports` entry such as
+   * `"./app/*": "./app/src/*.ts"`: the subpath before the star, and the suffix the target adds.
+   */
+  exported?: { subpath: string; suffix: string };
+}
+
+/**
+ * The import specifier of a served file (`@cossackframework/cms/app/pages/x`), or null when the
+ * package does not export its served root. Generated types use it: unlike an install path, it
+ * does not change with the package's version or the package manager's layout.
+ */
+export function servedSpecifier(mounted: MountedPackage, path: string): string | null {
+  if (!mounted.exported) return null;
+  if (mounted.exported.suffix && !path.endsWith(mounted.exported.suffix)) return null;
+  return `${mounted.name}/${mounted.exported.subpath}${path.slice(0, path.length - mounted.exported.suffix.length)}`;
+}
+
+function exportedRoot(exports: unknown, root: string): MountedPackage['exported'] {
+  if (!exports || typeof exports !== 'object') return undefined;
+  for (const [key, value] of Object.entries(exports as Record<string, unknown>)) {
+    const target = typeof value === 'string' ? value : value && typeof value === 'object'
+      ? (value as Record<string, unknown>).import ?? (value as Record<string, unknown>).default : undefined;
+    const prefix = `./${root.replace(/\/+$/, '')}/*`;
+    if (!key.startsWith('./') || !key.endsWith('/*') || typeof target !== 'string' || !target.startsWith(prefix)) continue;
+    return { subpath: key.slice(2, -1), suffix: target.slice(prefix.length) };
+  }
+  return undefined;
 }
 
 const posix = (path: string) => path.split(sep).join('/');
@@ -105,6 +133,7 @@ export function mountedPackages(projectRoot: string): MountedPackage[] {
       ...(field.middlewares !== undefined ? { middlewares: field.middlewares } : {}),
       host: list('host', () => true, 'paths under the application\'s src'),
       ...(typeof field.hostTemplate === 'string' ? { hostTemplate: field.hostTemplate } : {}),
+      ...(exportedRoot(manifest.exports, field.root) ? { exported: exportedRoot(manifest.exports, field.root) } : {}),
     });
   }
   cache.set(projectRoot, { stamp, packages });

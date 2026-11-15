@@ -4,6 +4,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { parseSync } from 'vite';
 import { buildRoutesManifest, classifyRoute, computeRouteIds, filePathToHttpRoute, type RoutesManifest } from './route-ids.js';
 import { scanPageSources } from './plugin-sources.js';
+import { mountedPackages, servedFile, servedSpecifier } from './package-mounts.js';
 import { httpHandlerAnswersGet, isHttpHandlerProgram } from './page-inspection.js';
 
 export const ROUTES_MODULE_ID = 'virtual:cossack-routes';
@@ -108,18 +109,34 @@ function handlerSource(code: string): { handler: boolean; get: boolean } {
  * outside `/api` are endpoints by their syntax ({@link discoverHttpHandlers}).
  */
 export function discoverRoutes(projectRoot: string, includeMarkdown = false): RoutesManifest {
-  const { pageKeys, layoutKeys, sources, plugins } = scanPageSources(projectRoot, includeMarkdown);
+  const { pageKeys, layoutKeys, sources, plugins, origins } = scanPageSources(projectRoot, includeMarkdown);
   const handlers = discoverHttpHandlers(projectRoot, pageKeys, sources);
   const manifest = buildRoutesManifest(pageKeys, layoutKeys, computeRouteIds(pageKeys, layoutKeys), { handlers, owners: plugins });
   const pluginSources = Object.fromEntries(Object.entries(sources).filter(([key, source]) => key !== source));
-  return Object.keys(pluginSources).length ? { ...manifest, sources: pluginSources } : manifest;
+  // Which mounted package a key comes from, and how to import its module by name.
+  const packages: Record<string, string> = {};
+  const specifiers: Record<string, string> = {};
+  for (const [key, origin] of Object.entries(origins)) {
+    const served = mountedPackages(projectRoot).length ? servedFile(projectRoot, origin.file) : null;
+    if (!served) continue;
+    packages[key] = served.package.name;
+    const specifier = servedSpecifier(served.package, served.path);
+    if (specifier) specifiers[key] = specifier;
+  }
+  return {
+    ...manifest,
+    ...(Object.keys(pluginSources).length ? { sources: pluginSources } : {}),
+    ...(Object.keys(packages).length ? { packages } : {}),
+    ...(Object.keys(specifiers).length ? { specifiers } : {}),
+  };
 }
 
 /** Runtime paths plus type-only native exports. No application runtime imports enter the client graph. */
 export function renderRouteSource(manifest: RoutesManifest): string {
   const patterns = Object.fromEntries(manifest.routes.filter(route => route.addressable).map(route => [route.name, route.pattern]));
   const apiModules = manifest.routes.filter(route => route.kind === 'api' && route.addressable)
-    .map(route => `  ${JSON.stringify(route.name)}: typeof import(${JSON.stringify('..' + (manifest.sources?.[route.filePath] ?? route.filePath))});`).join('\n');
+    // A package's module is imported by name: its path changes with the version and the install layout.
+    .map(route => `  ${JSON.stringify(route.name)}: typeof import(${JSON.stringify(manifest.specifiers?.[route.filePath] ?? '..' + (manifest.sources?.[route.filePath] ?? route.filePath))});`).join('\n');
   return GENERATED_HEADER + "import { createRouteBuilder } from '@cossackframework/core/routes';\n" +
     `export const routePatterns = ${JSON.stringify(patterns, null, 2)} as const;\n` +
     'export const routes = createRouteBuilder(routePatterns);\n' +

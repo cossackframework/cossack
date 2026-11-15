@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { hostContractProblems, mountedPackages, PackageMountError } from '../src/package-mounts';
 import { listPlugins, overrideReport, pluginLocations, readRenderedPlugins, scanPageSources } from '../src/plugin-sources';
 import { discoverConfigSources, generateConfigTypes } from '../src/config-codegen';
-import { discoverRoutes } from '../src/route-codegen';
+import { discoverRoutes, renderRouteSource } from '../src/route-codegen';
 import { getModulePreloads } from '../src/route-ids';
 import { cossackConfig, cossackMiddlewares, cossackPages } from '../src/vite-plugin';
 
@@ -196,6 +196,19 @@ describe('mounted packages', () => {
     // An application file of the same name wins.
     write(root, { 'src/config/kit.ts': 'export default () => ({ name: "mine" });' });
     expect(discoverConfigSources(root).find(entry => entry.key === 'kit')!.file).toBe(join(root, 'src/config/kit.ts'));
+  });
+
+  it('names a served module by its package specifier in generated types', () => {
+    const { root, kit } = project();
+    write(kit, { 'package.json': JSON.stringify({ name: '@acme/kit', version: '1.4.0', exports: { './app/*': './app/src/*.ts' }, cossack: field }) });
+    const manifest = discoverRoutes(root);
+    expect(manifest.packages).toMatchObject({ '/src/pages/api/kit/ping.ts': '@acme/kit', '/src/pages/theme/index.ts': '@acme/kit' });
+    expect(manifest.specifiers!['/src/pages/api/kit/ping.ts']).toBe('@acme/kit/app/pages/api/kit/ping');
+    // An install path holds the version and the package manager's layout; the specifier does not.
+    expect(renderRouteSource(manifest)).toContain('typeof import("@acme/kit/app/pages/api/kit/ping");');
+    const types = generateConfigTypes(root, { write: false }).source;
+    expect(types).toContain('"kit": FactoryResult<typeof import("@acme/kit/app/config/kit").default>;');
+    expect(types).toContain('"kit-theme::look": FactoryResult<typeof import("@acme/kit/app/plugins/kit-theme/config/look").default>;');
   });
 
   it('runs package middleware after the application list', () => {

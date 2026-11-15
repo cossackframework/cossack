@@ -1,7 +1,7 @@
 /** Node-only tooling. Factory modules are referenced as types, never evaluated. */
 import { existsSync, statSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { mountedPackages, projectPath } from './package-mounts.js';
+import { mountedPackages, projectPath, servedSpecifier } from './package-mounts.js';
 import { pluginLocations } from './plugin-sources.js';
 
 export const CONFIG_TYPES_PATH = '.cossack/config.d.ts';
@@ -22,6 +22,8 @@ export interface ConfigSource {
   source: string;
   /** Absolute path of the factory module. */
   file: string;
+  /** Package import specifier, for a factory a mounted package exports. */
+  specifier?: string;
 }
 
 /**
@@ -34,11 +36,16 @@ export function discoverConfigSources(root: string): ConfigSource[] {
   for (const mounted of mountedPackages(root)) for (const path of mounted.config) {
     const key = path.slice('config/'.length, -3);
     const existing = sources.find(source => source.key === key);
-    if (!existing && existsSync(join(mounted.root, path))) sources.push(entry(key, join(mounted.root, path)));
+    const specifier = servedSpecifier(mounted, path);
+    if (!existing && existsSync(join(mounted.root, path))) sources.push({ ...entry(key, join(mounted.root, path)), ...(specifier ? { specifier } : {}) });
   }
   sources.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
   for (const plugin of pluginLocations(root)) {
-    for (const file of factoryFiles(join(plugin.directory, 'config'))) sources.push(entry(`${plugin.name}::${file.slice(0, -3)}`, join(plugin.directory, 'config', file)));
+    const mounted = plugin.package ? mountedPackages(root).find(candidate => candidate.name === plugin.package) : undefined;
+    for (const file of factoryFiles(join(plugin.directory, 'config'))) {
+      const specifier = mounted ? servedSpecifier(mounted, `plugins/${plugin.name}/config/${file}`) : null;
+      sources.push({ ...entry(`${plugin.name}::${file.slice(0, -3)}`, join(plugin.directory, 'config', file)), ...(specifier ? { specifier } : {}) });
+    }
   }
   return sources;
 }
@@ -57,7 +64,7 @@ export function generateConfigTypes(root: string, options: { write?: boolean } =
   const source = HEADER + "import '@cossackframework/framework/config';\n" +
     "type FactoryResult<T extends (...args: any[]) => object> = ReturnType<T>;\n" +
     "declare module '@cossackframework/framework/config' {\n  interface CossackGeneratedConfigRegistry {\n" +
-    sources.map(entry => `    ${JSON.stringify(entry.key)}: FactoryResult<typeof import(${JSON.stringify('../' + entry.source)}).default>;`).join('\n') +
+    sources.map(entry => `    ${JSON.stringify(entry.key)}: FactoryResult<typeof import(${JSON.stringify(entry.specifier ?? '../' + entry.source)}).default>;`).join('\n') +
     '\n  }\n}\n';
   const file = resolve(root, CONFIG_TYPES_PATH);
   for (const target of [dirname(file), file]) {

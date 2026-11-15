@@ -11,7 +11,7 @@ import { createJsoncEditor, jsoncProperty, parseJsoncObject } from './jsonc-edit
  */
 export async function pluginRuntime(root, name) {
   const runtime = (await detectProjectRuntime(root)) ?? 'node';
-  return { ...pluginPlacement(root, { name, version: '', manifest: `src/plugins/${name}/plugin.json` }, runtime), runtime };
+  return { ...pluginPlacement(root, { name, version: '', manifest: `src/plugins/${name}/plugin.json`, directory: path.resolve(root, 'src/plugins', name) }, runtime), runtime };
 }
 
 /** One line for people: what the build will enforce for this plugin. */

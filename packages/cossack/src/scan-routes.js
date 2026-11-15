@@ -32,8 +32,11 @@ export function buildRouteModel(projectRoot, options = {}) {
     name: descriptor.name, routeId: descriptor.routeId, params: descriptor.parameters,
     layoutPaths: descriptor.layoutPaths, errorBoundary: descriptor.errorBoundary,
     notFoundBoundary: descriptor.notFoundBoundary, addressable: descriptor.addressable,
+    // The mounted package that serves the route, when the application does not.
+    ...(manifest.packages?.[descriptor.filePath] ? { package: manifest.packages[descriptor.filePath] } : {}),
   }));
-  const layouts = manifest.layoutKeys.map(filePath => ({ filePath, scope: dirScope(filePath), routeId: manifest.filePathToId[filePath] }));
+  const layouts = manifest.layoutKeys.map(filePath => ({ filePath, scope: dirScope(filePath), routeId: manifest.filePathToId[filePath],
+    ...(manifest.packages?.[filePath] ? { package: manifest.packages[filePath] } : {}) }));
   return { pages, layouts, manifest };
 }
 

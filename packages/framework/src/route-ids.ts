@@ -502,8 +502,12 @@ export interface RoutesManifest {
   routes: RouteDescriptor[];
   /** Route keys of functional HTTP handler modules outside `/api`, classified by their syntax. */
   handlers?: string[];
-  /** Route key to real source path, for plugin pages rendered under `src/plugins/<name>/pages`. */
+  /** Route key to real source path, where the module is not at the key: a plugin's or a mounted package's page. */
   sources?: Record<string, string>;
+  /** Route key to the mounted package that serves it. */
+  packages?: Record<string, string>;
+  /** Route key to the package import specifier of its module, for a served file the package exports. */
+  specifiers?: Record<string, string>;
 }
 
 export interface RouteDescriptor {

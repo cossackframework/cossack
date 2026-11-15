@@ -115,6 +115,10 @@
       "types": "./dist/esm/route-codegen.d.ts",
       "import": "./dist/esm/route-codegen.js"
     },
+    "./package-mounts": {
+      "types": "./dist/esm/package-mounts.d.ts",
+      "import": "./dist/esm/package-mounts.js"
+    },
     "./api": {
       "types": "./dist/esm/api.d.ts",
       "import": "./dist/esm/api.js"
