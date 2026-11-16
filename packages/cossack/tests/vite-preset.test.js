@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createApp } from '@cossackframework/scaffold';
-import { cossackApp, projectModule, packageEntries } from '../src/vite.js';
+import { cossackApp, projectModule, packageEntries, viteRequestsSkipTheWorker } from '../src/vite.js';
 
 const roots = [];
 afterEach(async () => { for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true }); });
@@ -103,6 +103,24 @@ describe('cossack/vite preset', () => {
     const config = await configOf(await project({ adapter: 'cloudflare', features: ['workflows', 'schedules'] }));
     expect(names(config)).toEqual(expect.arrayContaining(['cossackWorkflows', 'cossackSchedules']));
     expect(names(await configOf(await project({ adapter: 'cloudflare' })))).not.toContain('cossackWorkflows');
+  });
+
+  it('keeps Vite\'s own requests away from the Worker in development', async () => {
+    const root = await project({ adapter: 'cloudflare' });
+    const skipped = ['!/@vite/*', '!/@fs/*', '!/@id/*', '!/node_modules/*', '!/src/*'];
+    // The Cloudflare plugin adds an addition's lists to the configuration's own.
+    expect(viteRequestsSkipTheWorker({ assets: { run_worker_first: ['/*', '!/assets/*'] } })).toEqual({ assets: { run_worker_first: skipped } });
+    expect(viteRequestsSkipTheWorker({ assets: { run_worker_first: ['/*', '!/src/*'] } }).assets.run_worker_first).not.toContain('!/src/*');
+    expect(viteRequestsSkipTheWorker({ assets: { run_worker_first: true } })).toEqual({ assets: { run_worker_first: ['/*', ...skipped] } });
+    expect(viteRequestsSkipTheWorker({ assets: { binding: 'ASSETS' } })).toEqual({});
+    expect(viteRequestsSkipTheWorker({})).toEqual({});
+    const worker = { name: 'app', assets: { run_worker_first: ['/*', '!/assets/*'] } };
+    const serve = plugin(await configOf(root, { cloudflare: { config: () => ({ vars: { A: '1' } }) } }, { mode: 'development', command: 'serve' }), 'cloudflare').options;
+    // The project's or a package's own addition is kept beside it.
+    expect(serve.config(worker)).toEqual({ vars: { A: '1' }, assets: { run_worker_first: skipped } });
+    expect(plugin(await configOf(root, {}, { mode: 'development', command: 'serve' }), 'cloudflare').options.config(worker)).toEqual({ assets: { run_worker_first: skipped } });
+    // A build's configuration is the deployed one.
+    expect(plugin(await configOf(root), 'cloudflare').options.config).toBeUndefined();
   });
 
   it('bundles every entry of core and the renderer for the development server, and neither for a build or Desktop', async () => {

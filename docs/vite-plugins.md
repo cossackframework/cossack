@@ -76,6 +76,13 @@ the preset keeps their number low:
   pass, so the application and the packages share one copy. A build and the Desktop target
   keep them as separate modules.
 - Vite transforms a module's imports ahead of the server asking for them.
+- Vite's own requests do not go through the Worker. With `run_worker_first` rules (the
+  generated `["/*", "!/assets/*"]`, or `true`), the Cloudflare plugin sends every request to
+  the Worker before Vite, the modules a page's scripts import included: hundreds of requests
+  a page, each through the application's middleware and back to Vite. In development the
+  preset adds `!/@vite/*`, `!/@fs/*`, `!/@id/*`, `!/node_modules/*` and `!/src/*` to the
+  rules, so a page of the application under one of those paths is not reachable in
+  development.
 - The CMS bundles its library and the RomeDB bindings, and names the Worker classes its
   entry exports (`PluginBridge`, `PluginTail`) as service bindings of the local Worker. The
   Cloudflare plugin compares the exports the configuration declares with the ones the Worker

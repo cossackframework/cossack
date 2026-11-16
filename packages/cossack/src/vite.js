@@ -75,6 +75,25 @@ async function projectImport(root, specifier, required = true) {
   return import(pathToFileURL(file).href);
 }
 
+/** Where the Vite dev server serves modules from: its own endpoints, linked files, dependencies and the project's sources. */
+export const VITE_MODULE_PATHS = ['/@vite/*', '/@fs/*', '/@id/*', '/node_modules/*', '/src/*'];
+
+/**
+ * Development only: an addition to the Worker's configuration that keeps Vite's own requests
+ * away from the Worker. With `run_worker_first` rules (the generated `["/*", "!/assets/*"]`,
+ * or `true`), the Cloudflare plugin sends every request to the Worker before Vite, the
+ * modules a page's scripts import included: hundreds of requests a page, each through the
+ * application's middleware and back to Vite. The rules added here send them straight to Vite.
+ * A page of the application under one of these paths is not reachable in development.
+ */
+export function viteRequestsSkipTheWorker(workerConfig) {
+  const rules = workerConfig?.assets?.run_worker_first;
+  const skipped = VITE_MODULE_PATHS.map(pattern => `!${pattern}`);
+  // The Cloudflare plugin adds the lists of an addition to the configuration's own.
+  if (Array.isArray(rules)) return { assets: { run_worker_first: skipped.filter(rule => !rules.includes(rule)) } };
+  return rules === true ? { assets: { run_worker_first: ['/*', ...skipped] } } : {};
+}
+
 /** The project's recipe (runtime and features), or null for a project the scaffold did not make. */
 async function projectRecipe(root) {
   const { readManifest, resolveManifestRecipe, recipeCapabilityRequirements } = await import('@cossackframework/scaffold');
@@ -144,7 +163,10 @@ export function cossackApp(options = {}) {
     if (tailwind) plugins.push(tailwind.default());
     if (runtime === 'cloudflare' && !desktop) {
       const { cloudflare } = await projectImport(root, '@cloudflare/vite-plugin');
-      plugins.push(cloudflare({ viteEnvironment: { name: 'ssr' }, ...partOptions('cloudflare'), ...wrangler, ...options.cloudflare }),
+      const given = { ...partOptions('cloudflare'), ...options.cloudflare };
+      plugins.push(cloudflare({ viteEnvironment: { name: 'ssr' }, ...given, ...wrangler,
+        ...(command === 'serve' ? { config: (workerConfig, context) => mergeConfig(
+          (typeof given.config === 'function' ? given.config(workerConfig, context) : given.config) ?? {}, viteRequestsSkipTheWorker(workerConfig)) } : {}) }),
         framework.cossackBuildBudgets({ ...wrangler, ...options.budgets }));
     }
     plugins.push(cossackSecurityPlugin({ devWarning: true, ...options.security }));
