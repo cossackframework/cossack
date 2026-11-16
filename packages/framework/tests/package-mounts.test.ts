@@ -248,6 +248,15 @@ describe('mounted packages', () => {
     // What the package declares is named through the package: a strict install hides it from the application.
     expect(config.environments.client.optimizeDeps.include).toEqual(expect.arrayContaining(['@acme/kit > @tiptap/core', '@cossackframework/solar-icons/outline/pen', 'hono/cookie']));
     expect(config.environments.client.optimizeDeps.include.join(' ')).not.toMatch(/left-alone|starter-kit|pm\/model/);
+    // Pages load on first use, so each page and layout is an entry of Vite's dependency scan:
+    // what a page imports is bundled before the first request. Paths are written as globs.
+    const entries: string[] = config.environments.ssr.optimizeDeps.entries;
+    expect(entries.some(entry => entry.endsWith('app/src/pages/\\(site\\)/edit/index.ts'))).toBe(true);
+    expect(entries.join(' ')).not.toMatch(/index\.test\.ts/);
+    // Not for a build, Desktop, or a project that imports every page up front.
+    expect((cossackPages().config as Function)({ root }, { command: 'build' }).environments.ssr.optimizeDeps.entries).toBeUndefined();
+    expect((cossackPages().config as Function)({ root }, { command: 'serve', mode: 'desktop' }).environments.ssr.optimizeDeps.entries).toBeUndefined();
+    expect((cossackPages({ deferPages: false }).config as Function)({ root }, { command: 'serve' }).environments.ssr.optimizeDeps.entries).toBeUndefined();
     // The server bundles the editor and icon subpaths up front, and keeps the framework's own packages as one copy.
     expect(config.environments.ssr.optimizeDeps.include).toEqual(expect.arrayContaining(['@acme/kit > @tiptap/core', '@cossackframework/solar-icons/outline/pen']));
     expect(config.environments.ssr.optimizeDeps.include).not.toContain('hono/cookie');

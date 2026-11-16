@@ -118,6 +118,18 @@ export type MarkdownProcessor = (
   id: string,
 ) => MarkdownResult | Promise<MarkdownResult>;
 
+
+/** The page and layout source files (the project's, its plugins' and the mounted packages'), as glob patterns for Vite's dependency scan. */
+export function scanEntryFiles(root: string, markdown: boolean): string[] {
+  const { origins, pageKeys, layoutKeys } = scanPageSources(root, markdown);
+  const files = new Set<string>();
+  for (const key of [...pageKeys, ...layoutKeys]) {
+    const file = origins[key]?.file;
+    if (file && /\.[cm]?tsx?$/.test(file)) files.add(file.replaceAll('\\', '/').replace(/[()[\]{}!*?@+|]/g, '\\$&'));
+  }
+  return [...files].sort();
+}
+
 export interface CossackPagesOptions {
   /** Cloudflare source config for build binding checks; relative to the Vite root. */
   configPath?: string;
@@ -279,6 +291,14 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
       const ssrLinked = env.command === 'serve' ? linkedDependencyFolders(root, ssr) : [];
       // A running server watches them too: one rebuilt meanwhile restarts it (see configureServer).
       linkedFolders = [...new Map([...clientLinked, ...ssrLinked].map(entry => [entry.folder, entry])).values()];
+      // The development server loads a page with the first request for it, so Vite's scan of the
+      // server entry does not reach what pages import. A dependency first met in a page would
+      // be bundled during that request, beside the copies the running server already holds
+      // (a page then read `config()` from a second, empty copy of the framework's config
+      // module, in an installed project). Every page and layout is an entry of the scan, so
+      // their dependencies are in the first bundle. Each is a file path, written as a glob.
+      const scanEntries = env.command === 'serve' && env.mode !== 'desktop' && options.deferPages !== false
+        ? scanEntryFiles(root, markdownEnabled) : [];
       const devServer = {
         // CORS is the application's (src/config/cors.ts), in development as in production.
         // Vite's own CORS runs ahead of the application and answers every preflight itself, for
@@ -306,7 +326,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           },
           ssr: {
             // CommonJS reached through installed packages is pre-bundled up front; see the helper.
-            optimizeDeps: { include: serverInclude, ...linkedDependenciesConfig(ssrLinked) },
+            optimizeDeps: { include: serverInclude, ...(scanEntries.length ? { entries: scanEntries } : {}), ...linkedDependenciesConfig(ssrLinked) },
             resolve: {
               noExternal: inlined,
             },
