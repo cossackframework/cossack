@@ -134,6 +134,13 @@ export function cossackCmsIcons() {
     };
 }
 
+/** Every entry of the CMS library and its database bindings that server code imports on Workers. */
+const SERVER_ENTRIES = [
+    '@cossackframework/cms', '@cossackframework/cms/server', '@cossackframework/cms/cloudflare',
+    '@cossackframework/cms/storage', '@cossackframework/cms/storage/cloudflare',
+    '@cossackframework/romedb', '@cossackframework/romedb/cloudflare',
+];
+
 /**
  * The CMS's part of a project's Vite configuration; the `cossack/vite` preset calls it
  * (`cossack.vite` in this package's package.json).
@@ -155,6 +162,11 @@ export async function cossackVite({ runtime, mode, command }) {
         // RomeDB's native addon loads with Node, not through Vite, and shares @romedb/client's classes.
         config: runtime === 'node' && !(mode === 'desktop' && command === 'build')
             ? { environments: { ssr: { resolve: { external: ['@romedb/client', '@romedb/node'] } } } }
-            : undefined,
+            // The Workers development server fetches the server entry one module at a time. The
+            // CMS library and the RomeDB bindings are over a hundred modules that every start
+            // loads, so they are pre-bundled, all entries in one pass: they share their state.
+            : runtime === 'cloudflare' && command === 'serve'
+                ? { environments: { ssr: { optimizeDeps: { include: SERVER_ENTRIES } } } }
+                : undefined,
     };
 }
