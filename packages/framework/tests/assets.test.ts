@@ -33,6 +33,15 @@ function harness() {
 }
 
 describe('Worker-first static assets', () => {
+  it.each(['/cossack-manifest.json', '/cossack-routes.json', '/cossack-ssg-report.json', '/.vite/manifest.json'])
+    ('keeps the build metadata %s from visitors', async path => {
+      const { app, env, fetch } = harness();
+      app.get(path, c => c.text('SSR fallback', 404));
+      const response = await app.request(path, undefined, env);
+      expect(response.status).toBe(404);
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
   it.each(['websocket', 'WebSocket', 'h2c'])
     ('leaves %s upgrade requests in the transport pipeline without probing ASSETS', async upgrade => {
       const { app, env, fetch, policies } = harness();

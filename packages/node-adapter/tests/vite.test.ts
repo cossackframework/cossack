@@ -59,6 +59,29 @@ it('reloads the entry and disposes each replaced runtime and the final runtime',
         expect((globalThis as any)[key]).toEqual(['first', 'second']);
     } finally { delete (globalThis as any)[key]; }
 });
+it('reloads the entry when a source file is added to or removed from a linked package outside the project', async () => {
+    const key = 'cossack-linked-' + crypto.randomUUID();
+    (globalThis as any)[key] = 0;
+    try {
+        const { root, server, plugin, origin } = await fixture(`
+            const count = ++globalThis[${JSON.stringify(key)}];
+            export const app = { fetch() { return new Response('load ' + count); } };
+        `, 1000, false);
+        expect(await (await fetch(origin)).text()).toBe('load 1');
+        const hook = (file: string, type: string) => (plugin.hotUpdate as any).handler.call({ environment: server.environments.ssr }, {
+            file, type, modules: [], server, read: async () => '',
+        });
+        const linked = join(root, '../linked-package/app/src/pages/new/index.ts');
+        await hook(linked, 'update');
+        expect(await (await fetch(origin)).text()).toBe('load 1');
+        await hook(join(root, '../linked-package/node_modules/x/index.ts'), 'create');
+        expect(await (await fetch(origin)).text()).toBe('load 1');
+        await hook(linked, 'create');
+        expect(await (await fetch(origin)).text()).toBe('load 2');
+        await hook(linked, 'delete');
+        expect(await (await fetch(origin)).text()).toBe('load 3');
+    } finally { delete (globalThis as any)[key]; }
+});
 it('reports entry failures and recovers after a source correction', async () => {
     const { root, origin } = await fixture(`throw new Error('entry startup failed');`);
     expect((await fetch(origin)).status).toBe(500);

@@ -175,7 +175,11 @@ export function cossackNode(options: NodeDevelopmentOptions = {}): Plugin {
             async handler({ file, modules, read, type, server }) {
                 if (this.environment.name !== 'ssr' || !refresh) return;
                 const source = relative(server.config.root, file).replaceAll('\\', '/');
-                if (!modules.length && !(source.startsWith('src/') && !source.startsWith('src/client/') && /\.[cm]?[jt]sx?$|\.mdx?$/.test(source))) return;
+                const serverSource = /\.[cm]?[jt]sx?$|\.mdx?$/.test(source) && !source.includes('node_modules/');
+                // Outside the project Vite watches only workspace-linked packages: a page added to
+                // one or removed from it changes the route list before any module imports it.
+                const linkedTree = source.startsWith('../') && type !== 'update';
+                if (!modules.length && !(serverSource && (linkedTree || (source.startsWith('src/') && !source.startsWith('src/client/'))))) return;
                 if (type !== 'delete') await read();
                 try { await refresh(); }
                 catch (error) { server.config.logger.error(`[cossack node] reload failed: ${error}`); }

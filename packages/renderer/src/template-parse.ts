@@ -116,7 +116,8 @@ export type TemplateProblemCode =
   | 'COSSACK_TEMPLATE_PARTIAL_BINDING'
   | 'COSSACK_TEMPLATE_DUPLICATE_ATTRIBUTE'
   | 'COSSACK_TEMPLATE_UNCLOSED_COMPONENT'
-  | 'COSSACK_TEMPLATE_UNEXPECTED_COMPONENT_END';
+  | 'COSSACK_TEMPLATE_UNEXPECTED_COMPONENT_END'
+  | 'COSSACK_TEMPLATE_INLINE_SCRIPT';
 
 export interface TemplateProblem {
   readonly code: TemplateProblemCode;
@@ -604,7 +605,31 @@ const parse = (strings: readonly string[], options: { svg?: boolean }, onEnd?: (
   while (stack.length > 1) pop(end, true);
 
   checkAttributes(root.children, problems);
+  checkScripts(root.children, problems);
   return { nodes: root.children, bindings: roles, problems };
+};
+
+/** `type` values of a script element the browser runs; any other type is data. */
+const SCRIPT_TYPES = new Set(['', 'module', 'text/javascript', 'application/javascript', 'text/ecmascript', 'application/ecmascript']);
+
+/**
+ * A script element runs when the browser parses it with the page. A template rendered in the
+ * browser (client navigation, an update) clones its markup, and browsers never run a cloned
+ * script, so such a script runs on a full page load only.
+ */
+const checkScripts = (nodes: readonly TemplateNode[], problems: TemplateProblem[]) => {
+  for (const node of nodes) {
+    if (node.type !== 'element' && node.type !== 'component') continue;
+    if (node.type === 'element' && node.namespace === 'html' && node.name === 'script') {
+      const type = node.attributes.find((attribute) => attribute.name.toLowerCase() === 'type');
+      const value = type && type.bindings.length === 0 ? type.segments.join('').trim().toLowerCase() : type ? null : '';
+      if (value !== null && SCRIPT_TYPES.has(value)) {
+        problems.push({ code: 'COSSACK_TEMPLATE_INLINE_SCRIPT', severity: 'warning', range: node.startTag,
+          message: 'A <script> in a template runs only on a full page load: not after client navigation or a re-render. Run the code from a @Client() method or onMount instead.' });
+      }
+    }
+    checkScripts(node.children, problems);
+  }
 };
 
 /** Attribute rules that need no types: binding forms and duplicates. */

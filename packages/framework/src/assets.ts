@@ -2,6 +2,7 @@ import type { MiddlewareHandler } from 'hono';
 import { TrieRouter } from 'hono/router/trie-router';
 import { compareHttpRoutes, filePathToHttpRoute, resolvePageRouteFiles, type RouterContext } from './route-ids.js';
 import { withRuntimeRouteParams } from './runtime-websocket.js';
+import { isBuildMetadataPath } from './runtime-constants.js';
 
 interface AssetOwner { filePath: string; pattern: string }
 interface AssetsBinding { fetch(request: Request): Promise<Response> }
@@ -36,6 +37,8 @@ export function createAssetsMiddleware(ctx: RouterContext): MiddlewareHandler {
     // Empty segments (`//host`) and backslashes can turn an alias redirect
     // into a protocol-relative, off-site Location. Leave them to SSR/404.
     if (pathname.includes('//') || pathname.includes('\\')) return next();
+    // The route and Vite manifests stay on the server: ASSETS.fetch from the router still reads them.
+    if (isBuildMetadataPath(pathname)) return next();
     const canonical = pathname.endsWith('/index.html')
       ? pathname.slice(0, -'/index.html'.length) || '/'
       : pathname.endsWith('.html') ? pathname.slice(0, -'.html'.length) || '/' : pathname;

@@ -59,9 +59,10 @@ describe.each(['http', 'sse'] as const)('%s child RPC ownership', transport => {
             const ssr = await app.request('/child-sse', {}, {} as any);
             expect(ssr.status, await ssr.text()).toBe(200);
         } else {
-            // Rendering during actual RPC reconstructs deterministic child IDs.
+            // Rendering during actual RPC reconstructs deterministic child IDs. A call to a
+            // page action is refused before rendering; one to an unknown child renders the tree.
             // HTTP pages also support API-only GET behavior; do not invent SSR.
-            expect((await call('notAnAction')).status).toBe(403);
+            expect((await call('increment', 'missing')).status).toBe(404);
         }
         if (transport === 'sse') registerSseStoreEntry(ids as any, paths.sse, scopeKey, snapshot);
         expect(childId).toBeTruthy(); cleaned = 0;

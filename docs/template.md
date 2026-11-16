@@ -68,8 +68,11 @@ To render an HTML string, use `unsafeHTML`:
 
 ```typescript
 import { unsafeHTML } from '@cossackframework/renderer';
-html`<div>${unsafeHTML('<script>...</script>')}</div>`;
+html`<div>${unsafeHTML('<p>Hello</p>')}</div>`;
 ```
+
+A `<script>` inside the string does not run when the browser renders it, as with
+a `<script>` in a template.
 
 ## Using Components in Templates
 
@@ -170,6 +173,11 @@ cossack check templates --json --verbose
   that is not a string is an error: write `count=${3}`, not `count="3"`.
   Unknown elements, such as custom elements, accept global attributes, with a
   warning for others.
+- **Scripts** (warning): a `<script>` the browser would run, inline or with
+  `src`, runs only when the browser loads the page. A template rendered in the
+  browser, after client navigation or an update, clones its markup, and browsers
+  never run a cloned script. Run the code from a `@Client()` method or `onMount`.
+  Data scripts, such as `type="application/ld+json"`, are not reported.
 - **Hints**: a `component()` call with a literal class can be a component tag.
   Hints are listed with `--verbose`.
 

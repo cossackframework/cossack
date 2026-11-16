@@ -1378,6 +1378,11 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
         await componentInstance.bootstrap({ context: componentContext, user, env: c.env, runtime: runtimeInfo, skipInit: true });
         if (authoritativeState !== undefined) applyReceivedState(componentInstance, authoritativeState);
         else if (!target || target === componentInstance._id) applyReceivedState(componentInstance, state);
+        // A call to the page or layout itself is refused before its tree is rendered; a child
+        // target exists only after rendering, and is checked below.
+        if ((!target || target === componentInstance._id) && !isRpcCallableActionOrService(componentInstance, action)) {
+          return c.json({ error: `Action '${action}' is not a callable server method`, code: 'COSSACK_RPC_FORBIDDEN', requestId }, 403);
+        }
         componentInstance.__renderRpcTarget();
         let targetInstance: any = componentInstance;
         if (target && target !== targetInstance._id) {
