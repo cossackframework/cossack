@@ -35,6 +35,15 @@ export default class ResetPasswordPage extends Cossack {
         }
     }
 
+    /** A field marked wrong is checked again as it is edited, so its message goes once the value is fixed. A submit checks every field. */
+    @Client()
+    async recheck(field: 'password' | 'confirm', value: string) {
+        this.form[field] = value;
+        if (this.hasError(`form.${field}`)) await this.validateProperty(`form.${field}`, 'input');
+        // The confirmation is checked against the password, so a changed password checks it again too.
+        if (field === 'password' && this.hasError('form.confirm')) await this.validateProperty('form.confirm', 'input');
+    }
+
     @Server({ input: resetPasswordInput })
     async doReset(submitted: ResetPasswordInput) {
         const { token, password, confirm } = await resetPasswordInput.parse(submitted);
@@ -54,9 +63,9 @@ export default class ResetPasswordPage extends Cossack {
             <h3 class="mb-6 text-xl font-semibold text-foreground">${__('Reset Password')}</h3>
             <form @submit="${(e: Event) => this.handleSubmit(e)}" class="space-y-4">
                 ${component(Field, { label: __('New Password'), for: 'password', error: this.getError('form.password'),
-                    control: attributes => component(PasswordInput, { ...attributes, value: this.form.password, placeholder: '••••••••', autocomplete: 'new-password', onValueChange: (v: string) => this.form.password = v }) })}
+                    control: attributes => component(PasswordInput, { ...attributes, value: this.form.password, placeholder: '••••••••', autocomplete: 'new-password', required: true, minlength: 8, onValueChange: (v: string) => this.recheck('password', v) }) })}
                 ${component(Field, { label: __('Confirm New Password'), for: 'confirm', error: this.getError('form.confirm'),
-                    control: attributes => component(PasswordInput, { ...attributes, value: this.form.confirm, placeholder: '••••••••', autocomplete: 'new-password', onValueChange: (v: string) => this.form.confirm = v }) })}
+                    control: attributes => component(PasswordInput, { ...attributes, value: this.form.confirm, placeholder: '••••••••', autocomplete: 'new-password', required: true, onValueChange: (v: string) => this.recheck('confirm', v) }) })}
                 ${this.error ? component(Alert, { variant: 'destructive' }, this.error) : null}
                 ${component(Button, { type: 'submit', block: true }, __('Reset Password'))}
             </form>

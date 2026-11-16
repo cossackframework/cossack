@@ -94,8 +94,11 @@ export default class PublicLayout extends Cossack {
 
     @Client()
     toggleTheme() {
+        // The opposite of what shows. Back to the system's scheme forgets the choice, so the
+        // page follows the system again; a choice that differs from it is kept until undone.
         const theme = themeStore.get() === 'dark' ? 'light' : 'dark';
-        document.cookie = `cs-theme=${theme}; Path=/; Max-Age=31536000; SameSite=Lax`;
+        const system = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        document.cookie = theme === system ? 'cs-theme=; Path=/; Max-Age=0; SameSite=Lax' : `cs-theme=${theme}; Path=/; Max-Age=31536000; SameSite=Lax`;
         themeStore.set(theme);
     }
 

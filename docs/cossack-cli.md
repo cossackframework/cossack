@@ -548,7 +548,7 @@ cossack add database --database turso
 
 Adds full working session authentication: `@cossackframework/auth` plus the `database` support it depends on. The sign-in pages (login, register, forgot and reset password, two-step sign-in), the `createAuth`-backed auth module (PBKDF2 password hashing, sessions, password reset) and the guard are served from the `@cossackframework/dashboard` package, which the project mounts (`package.json#cossack.packages`). The project gets:
 
-- `src/dashboard.config.ts`: its choices (`authMethods`, `oauth`, the dashboard's `modules`), which the served code reads. A page of something that is off answers 404.
+- `src/dashboard.config.ts`: its choices (`authMethods`, `oauth`, the dashboard's `modules` and `navigation`), which the served code reads. A page of something that is off answers 404.
 - its schema: the `User`, `Session`, `Role`, `UserRole` and `OAuthAccount` models and their migrations.
 - `...authMiddlewares` in `src/bootstrap/middlewares.ts`, and the Cloudflare `send_email` binding for password-reset emails.
 
@@ -576,6 +576,30 @@ subset with `--features`.
 cossack add dashboard
 cossack add dashboard --features users,sessions
 ```
+
+Your own screens go in `src/pages/dashboard/` (the layout wraps them; guard them yourself).
+To link them in the navigation without replacing the layout, list them in
+`src/dashboard.config.ts`:
+
+```ts
+import { ChartIcon } from '@cossackframework/solar-icons/chart/line';
+
+export const dashboard: DashboardConfig = {
+  modules: ['users', 'sessions', 'settings', 'roles'],
+  navigation: [
+    // Any signed-in user sees it; `authorization: 'admin'` or `{ permission }` narrows it.
+    { id: 'reports', label: 'Reports', href: '/dashboard/reports', icon: { line: ChartIcon },
+      children: [{ label: 'Weekly', href: '/dashboard/reports/weekly' }] },
+    // Inside the Users group, after its own links.
+    { id: 'invites', label: 'Invitations', href: '/dashboard/invites', parent: 'users', authorization: 'admin' },
+  ],
+};
+```
+
+The items appear after the modules and in the Ctrl/Meta+K palette. The layout itself is
+`DashboardShell` from `@cossackframework/ui/blocks`: an application with another user store
+builds its own layout from it, passing the user, the navigation and the callbacks, and keeps
+the shell's later fixes.
 
 #### `cossack remove <feature>`
 

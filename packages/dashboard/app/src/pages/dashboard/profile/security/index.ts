@@ -1,6 +1,6 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
 import { input } from '@cossackframework/core/input';
-import { Alert, Badge, Button, Card, CardBody, CardHeader, Field, Input } from '@cossackframework/ui';
+import { Alert, Badge, Button, Card, CardBody, CardHeader, CopyField, Field, Input } from '@cossackframework/ui';
 import { notice, pageHeader } from '@cossackframework/ui/blocks';
 import { html, component, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
 import {
@@ -94,12 +94,6 @@ export default class SecurityPage extends Cossack {
         } catch (error) { this.error = (error as Error).message; }
     }
 
-    @Client()
-    async copyCodes() {
-        this.error = '';
-        try { await navigator.clipboard.writeText(this.recoveryCodes.join('\n')); this.message = __('Recovery codes copied.'); }
-        catch { this.message = ''; this.error = __('Copy the codes from the list.'); }
-    }
 
     // --- Passkeys ------------------------------------------------------------------
 
@@ -231,8 +225,8 @@ export default class SecurityPage extends Cossack {
             ${this.error ? notice(this.error, 'error') : null}
             ${this.recoveryCodes.length ? component(Card, {}, html`${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Your recovery codes')}</h2>`)}
                 ${component(CardBody, { class: 'space-y-3' }, html`<p class="text-sm text-muted-foreground">${__('Save them somewhere safe. They are shown only now; each signs you in once without your phone.')}</p>
-                    <ul class="grid grid-cols-2 gap-1 font-mono text-sm sm:grid-cols-5" data-recovery-codes>${this.recoveryCodes.map(code => html`<li class="rounded bg-muted px-2 py-1 text-center">${code}</li>`)}</ul>
-                    ${component(Button, { type: 'button', variant: 'outline', size: 'sm', '@click': () => this.copyCodes() }, __('Copy'))}`)}`) : null}
+                    ${component(CopyField, { label: __('Your recovery codes'), value: this.recoveryCodes.join('\n'), 'data-recovery-codes': '',
+                        copyLabel: __('Copy'), copiedLabel: __('Copied.'), copyFailedLabel: __('Copy the codes from the list.') })}`)}`) : null}
             ${this.available ? component(Card, {}, html`${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Two-step sign-in')}</h2>`)}
                 ${component(CardBody, {}, this.authenticator())}`) : null}
             ${this.available ? component(Card, {}, html`${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Passkeys')}</h2>

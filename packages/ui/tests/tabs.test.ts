@@ -27,3 +27,14 @@ it('supports rich labels with an explicit accessible name', () => {
 it.each([{ id: 'bad id' }, { label: '' }, { items: [{ value: 'x', label: 'X' }, { value: 'x', label: 'Again' }] }, { items: [{ value: 'rich', label: {} }] }])('rejects invalid tabs contracts: %j', patch => {
     expect(() => renderToString(component(Tabs, { id: 'tabs', label: 'Sections', ...patch } as any))).toThrow('Tabs');
 });
+it('keeps inactive panels findable and only the selected one focusable', () => {
+    const output = renderToString(component(Tabs, { id: 'tabs', label: 'Sections', items }));
+    const panel = (value: string) => output.match(new RegExp(`<div role="tabpanel" id="tabs-panel-${value}"[^>]*>`))![0];
+    expect(panel('a%2Fb%20%23%3F')).toContain('tabindex="0"');
+    expect(panel('a%2Fb%20%23%3F')).not.toContain('hidden');
+    expect(panel('last')).toContain('hidden="until-found"');
+    expect(panel('last')).not.toContain('tabindex');
+    expect(panel('last')).not.toContain('aria-hidden');
+    // A disabled tab cannot be selected, so find-in-page must not reveal its panel either.
+    expect(panel('disabled')).toContain('hidden=""');
+});

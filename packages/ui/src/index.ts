@@ -64,6 +64,7 @@ export { AspectRatio, type AspectRatioProps } from "./components/AspectRatio";
 export { Field, type FieldProps, type FieldControlAttributes } from "./components/Field";
 export { Form, type FormProps } from "./components/Form";
 export { Empty, type EmptyProps } from "./components/Empty";
+export { CopyField, SecretNotice, type CopyFieldProps, type SecretNoticeProps } from "./components/CopyField";
 export { Kbd, type KbdProps } from "./components/Kbd";
 export { ButtonGroup, type ButtonGroupProps } from "./components/ButtonGroup";
 export { AlertDialog, type AlertDialogProps } from "./components/AlertDialog";

@@ -1,3 +1,5 @@
+import type { IconEntry } from '@cossackframework/solar-icons/types';
+
 /** A sign-in method: email and password (with reset, registration and two-step sign-in), or OAuth providers. */
 export type AuthMethod = 'credentials' | 'oauth';
 /** An OAuth provider the sign-in page can offer. */
@@ -23,4 +25,29 @@ export interface DashboardConfig {
     dashboard?: boolean;
     /** Where a completed sign-in goes. Default: `/dashboard`, or `/` without a dashboard. `AUTH_REDIRECT_AFTER_LOGIN` replaces it. */
     redirectAfterLogin?: string;
+    /** The project's own screens in the dashboard's navigation, after the modules. Default: none. */
+    navigation?: DashboardNavigationItem[];
+}
+
+/**
+ * A screen of the project in the dashboard's navigation, such as `/dashboard/reports`. The page
+ * itself is the project's (`src/pages/dashboard/reports/index.ts`); this only links to it.
+ */
+export interface DashboardNavigationItem {
+    /** Unique among the items and the modules. */
+    id: string;
+    label: string;
+    href: string;
+    /** Default: a generic screen icon. */
+    icon?: IconEntry;
+    /** Who sees the link: any signed-in user (default), administrators, or holders of a permission. Guard the page as well. */
+    authorization?: 'authenticated' | 'admin' | { permission: string };
+    /** In the sidebar (default) or in the account menu. */
+    placement?: 'navigation' | 'account';
+    /** Links under the item, shown as a group. */
+    children?: { label: string; href: string }[];
+    /** A module or item whose group lists this item's links, after its own, such as `users`. */
+    parent?: string;
+    /** Highlighted on every page under this path, for screens with their own navigation. */
+    activeFor?: string;
 }

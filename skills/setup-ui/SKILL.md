@@ -36,13 +36,12 @@ Verify `src/style.css` now contains (after `@import "tailwindcss";`):
 @import "@cossackframework/ui/theme/theme.css";
 @import "@cossackframework/ui/theme/themes/blue.css";   /* only if --theme was an accent/neutral palette */
 
-@source "../node_modules/@cossackframework/ui/src/components";
-@source "../node_modules/@cossackframework/ui/src/icons";
+@source "../node_modules/@cossackframework/ui/dist";
 ```
 
-> The `@source` lines are **required** — Tailwind v4 excludes `node_modules` by
-> default, so without them most component variants render unstyled. If they are
-> missing, add them by hand.
+> The `@source` line is **required** — Tailwind v4 excludes `node_modules` by
+> default, so without them most component variants render unstyled. If it is
+> missing, add it by hand.
 
 ## Step 2: Choose a theme
 
@@ -64,16 +63,19 @@ Components are imported from `@cossackframework/ui` and rendered with
 ```ts
 import { html, component } from "@cossackframework/renderer";
 import { ArrowRightIcon } from "@cossackframework/solar-icons/arrow-right";
-import { Button, Input, Label, Card, Icon, toast } from "@cossackframework/ui";
+import { Button, Input, Label, Card, Icon } from "@cossackframework/ui";
+import { notice } from "@cossackframework/ui/blocks";
 
 @Page()
 export default class DemoPage extends Cossack {
-    @Client() save() { toast.success("Saved!"); }
+    @State() saved = false;
+    @Client() save() { this.saved = true; }
 
     render() {
         return html`
             ${component(Card, {},
                 html`
+                    ${this.saved ? notice("Saved.", "success") : ""}
                     ${component(Label, { for: "email" }, "Email")}
                     ${component(Input, { id: "email", type: "email", placeholder: "you@ex.com" })}
                     ${component(Button, { variant: "default", "@click": this.save }, "Save")}
@@ -134,29 +136,26 @@ class CommandPalette extends Cossack {
 > and **`Sheet`** are built on `<dialog>`, which traps focus automatically.
 > `focusTrap` is only for custom overlays that DON'T use `<dialog>`.
 
-## Step 6: (Optional) Wire the global Toaster
+## Step 6: Show messages with `notice()`
 
-The UI package ships a toast system built on `createStore`. Mount a single
-`Toaster` host, then call the imperative `toast` API from anywhere — including
-`@Server` methods:
-
-```ts
-import { Toaster, toast } from "@cossackframework/ui";
-import { component } from "@cossackframework/renderer";
-
-// In your App component (mounted once, persists across navigations):
-render() {
-    return html`<main>${this.children}</main>${component(Toaster, {})}`;
-}
-```
+Show the outcome of an action where it happened, with `notice(text, tone)` from
+`@cossackframework/ui/blocks` (tones: `info`, `success`, `warning`, `error`). The
+dashboard and the CMS show every message this way and mount no Toaster:
 
 ```ts
 @Server()
 async saveSettings() {
-    await Setting.update({ id }, patch);
-    toast.success("Settings saved!");   // fires on the client
+    try { await Setting.update({ id }, patch); this.message = "Settings saved."; this.failed = false; }
+    catch { this.message = "Could not save the settings."; this.failed = true; }
+}
+
+render() {
+    return html`${this.message ? notice(this.message, this.failed ? "error" : "success") : ""}<form>…</form>`;
 }
 ```
+
+`Toaster` and `toast` stay available for a message that belongs to no screen; do not use
+them for the result of a form.
 
 ## Step 7: Dark mode (opt-in)
 
@@ -168,18 +167,18 @@ user wants a toggle, toggle the class on `document.documentElement`.
 
 1. Run `pnpm tsc --noEmit` — no type errors.
 2. Run `pnpm run dev` and confirm components render styled (if they look
-   unstyled, the `@source` lines in Step 1 are missing).
+   unstyled, the `@source` line in Step 1 is missing).
 3. Toggle `class="dark"` to confirm dark mode.
-4. Click a `Button` with a `toast` handler to confirm the Toaster works.
+4. Click the demo `Button` and confirm its `notice()` appears.
 
 ## Checklist
 
 - [ ] `cossack add ui` ran (or package installed + CSS wired by hand)
-- [ ] `src/style.css` has the `base.css` + `theme.css` imports and the two `@source` lines
+- [ ] `src/style.css` has the `base.css` + `theme.css` imports and the `@source` line
 - [ ] `--theme=<palette>` applied if the user chose a non-default palette
 - [ ] A demo page renders `Button` / `Input` / `Icon` styled
 - [ ] (If used) custom overlay uses `focusTrap` from `@cossackframework/core`; Modal/Sheet left to native `<dialog>`
-- [ ] (If used) `Toaster` mounted once in App; `toast.success(...)` callable from a `@Server` method
+- [ ] Action results render with `notice()` near the action, not as toasts
 - [ ] `pnpm tsc --noEmit` passes
 
 ## Use typed accessible bindings

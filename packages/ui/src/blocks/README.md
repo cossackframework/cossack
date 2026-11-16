@@ -22,6 +22,8 @@ Blocks sit one level above individual UI components.
 | SettingsPanel | Card-section settings page (switch toggles, text inputs, action buttons) |
 | CommandPalette | Opt-in Ctrl/Meta+K palette with grouped substring search and keyboard navigation |
 | DashboardPage | `pageHeader()`, `linkButton()` and `notice()`: the heading, link buttons and messages every dashboard screen shares, plugin screens included. Functions, not ejectable |
+| DashboardShell | The dashboard's frame: sidebar with brand and navigation, account menu, light and dark toggle, Ctrl/Meta+K palette, notices and taskbar. Takes the user, the navigation and the callbacks as props, and reads no store, session or database. The dashboard and the CMS use it |
+| ListPage | `listTable()`, `listFilters()`, `listFooter()`, `rowActions()`, `bulkBar()`, `selectAllBox()`, `selectBox()`, `toggleSelected()`, `countBadge()`, `tabFromQuery()`, `rememberTab()`: the list screens of the dashboard and the CMS. The page owns the rows, the selection and the actions; filters are a GET form. Text defaults to English and every function takes its labels as options. Functions, not ejectable |
 
 The controlled `DataTable` is available from `@cossackframework/ui` as a component.
 Its parent owns server queries and row actions.

@@ -24,13 +24,12 @@ Or install the package directly and wire the CSS by hand in `src/style.css`
 @import "@cossackframework/ui/theme/theme.css";
 @import "@cossackframework/ui/theme/themes/blue.css";   /* optional named palette */
 
-/* Tailwind v4 excludes node_modules by default. These tell it to scan the
+/* Tailwind v4 excludes node_modules by default. This tells it to scan the
    package so every utility class referenced inside components is generated. */
-@source "../node_modules/@cossackframework/ui/src/components";
-@source "../node_modules/@cossackframework/ui/src/icons";
+@source "../node_modules/@cossackframework/ui/dist";
 ```
 
-> Without the `@source` lines, only classes that also appear in your own source
+> Without the `@source` line, only classes that also appear in your own source
 > are emitted and most variants will render unstyled.
 
 ## Usage — consume with `component()`, not JSX
@@ -41,7 +40,7 @@ from `@cossackframework/renderer`:
 ```ts
 import { html, component } from "@cossackframework/renderer";
 import { ArrowRightIcon } from "@cossackframework/solar-icons/arrow-right";
-import { Button, Input, Icon, toast } from "@cossackframework/ui";
+import { Button, Input, Icon } from "@cossackframework/ui";
 
 html`
   ${component(Button, { variant: "default", "@click": this.save }, "Save")}
@@ -71,7 +70,7 @@ html`
   DropdownMenu, Sheet (`<dialog>`), Accordion (button + animated panel; automatic height and visible overflow when open), Tabs,
   AlertDialog, HoverCard, Collapsible, NavigationMenu, Menubar, Command,
   Combobox, MultiSelect, Carousel, Resizable, ScrollArea, Breadcrumb,
-  Pagination, ButtonGroup, Toaster + `toast` (reactive store).
+  Pagination, ButtonGroup, Toaster + `toast` (reactive store; see Messages below).
 
 See `packages/ui/README.md` in the monorepo for the full table with native
 elements.
@@ -209,22 +208,30 @@ the interceptor and restores focus.
   automatically; if you use `focusFirst` manually, store `document.activeElement`
   before opening and restore it on close.
 
-## Toaster + `toast` (built on reactive store)
+## Messages: `notice()`, not toasts
 
-The UI package ships a ready-made toast system built on `createStore` (see
-`references/reactive-store.md`). Mount a single `Toaster`, then call the
-imperative `toast` API from anywhere — including `@Server` methods:
+A screen shows the outcome of an action, or why it failed, where the action happened:
+`notice(text, tone)` from `@cossackframework/ui/blocks` renders an Alert (errors are
+announced at once, the rest politely). The dashboard and the CMS use it everywhere and
+mount no Toaster. Keep the message in `@State` and render it near the form:
 
 ```ts
-import { Toaster, toast } from "@cossackframework/ui";
+import { notice } from "@cossackframework/ui/blocks";
 
-// render the host once (e.g. in App):
-html`${component(Toaster, {})}`;
+@State() message = '';
+@State() failed = false;
 
-// fire a toast from anywhere:
 @Server()
 async save() {
-    await Setting.update({ id }, patch);
-    toast.success('Settings saved!');
+    try { await Setting.update({ id }, patch); this.message = 'Settings saved.'; this.failed = false; }
+    catch { this.message = 'Could not save the settings.'; this.failed = true; }
+}
+
+render() {
+    return html`${this.message ? notice(this.message, this.failed ? 'error' : 'success') : ''}<form>…</form>`;
 }
 ```
+
+`Toaster` and `toast` remain in `@cossackframework/ui` for a message that belongs to no
+screen, such as a background job finishing while the user is elsewhere. Do not use them
+for the result of a form.

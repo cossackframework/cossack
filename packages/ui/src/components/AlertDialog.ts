@@ -42,9 +42,9 @@ export class AlertDialog extends Cossack {
 
         return html`<dialog
             ref=${(element: Element) => { this.dialogRef.value = element as HTMLDialogElement; this.dialog.connect(element as HTMLDialogElement); }}
-            id=${id} role="alertdialog" aria-modal="true" aria-labelledby=${`${id}-title`}
+            id=${id} role="alertdialog" closedby=${this.dialog.closedBy()} aria-labelledby=${`${id}-title`}
             aria-describedby=${description ? `${id}-description` : undefined}
-            class="cs-alert-dialog m-auto p-0 bg-transparent max-w-none max-h-none overflow-hidden"
+            class="cs-alert-dialog m-auto p-0 bg-transparent max-w-none max-h-none overflow-hidden overscroll-contain backdrop:overflow-hidden backdrop:overscroll-contain"
             ...=${{ ...rest, ...this.dialog.events() }}>
             <div data-dialog-panel class="cs-alert-dialog__panel w-full max-w-md bg-popover text-popover-foreground rounded-lg shadow-xl border p-6">
                 <h2 id=${`${id}-title`} class="cs-alert-dialog__title text-lg font-semibold mb-2">${title}</h2>

@@ -34,6 +34,7 @@ function shared(labels: { close: string; previous: string; next: string }): Ligh
     if (lightbox?.dialog.isConnected) return lightbox;
     const dialog = document.createElement('dialog');
     dialog.className = 'cms-lightbox';
+    dialog.id = 'cms-lightbox';
     const stage = document.createElement('div');
     stage.className = 'cms-lightbox-stage';
     const caption = document.createElement('p');
@@ -45,17 +46,21 @@ function shared(labels: { close: string; previous: string; next: string }): Ligh
     for (const part of [close, previous, stage, next, caption]) dialog.appendChild(part);
     document.body.appendChild(dialog);
     const created: Lightbox = { dialog, stage, caption, previous, next, items: [], index: 0 };
-    close.addEventListener('click', () => dialog.close());
+    // The close button closes the dialog by itself where the browser has invoker commands; elsewhere a click does it.
+    close.setAttribute('commandfor', dialog.id);
+    close.setAttribute('command', 'close');
+    if (!('commandForElement' in HTMLButtonElement.prototype)) close.addEventListener('click', () => dialog.close());
     previous.addEventListener('click', () => show(created, created.index - 1));
     next.addEventListener('click', () => show(created, created.index + 1));
-    // A click on the dark ground, not on the file or a button, closes.
+    // A click on the dark ground, not on the file or a button, closes. The dialog fills the screen,
+    // so there is no backdrop to click and `closedby="any"` would never fire: this stays a script.
     dialog.addEventListener('click', event => { if (event.target === dialog || event.target === stage) dialog.close(); });
     dialog.addEventListener('keydown', event => {
         if (event.key === 'ArrowRight') show(created, created.index + 1);
         if (event.key === 'ArrowLeft') show(created, created.index - 1);
     });
-    // Closing stops a playing video and lets the page scroll again.
-    dialog.addEventListener('close', () => { stage.replaceChildren(); document.documentElement.style.removeProperty('overflow'); });
+    // Closing stops a playing video.
+    dialog.addEventListener('close', () => stage.replaceChildren());
     lightbox = created;
     return created;
 }
@@ -103,7 +108,7 @@ export function enhanceLightbox(root: HTMLElement): void {
             alt: entry.querySelector('img')?.alt ?? '', caption: entry.dataset.caption ?? '',
         }));
         show(box, Math.max(links.indexOf(link), 0));
-        document.documentElement.style.overflow = 'hidden';
+        // The page behind stays still through overscroll-behavior on the dialog (blocks.css), not by hiding its scrollbar.
         if (!box.dialog.open) box.dialog.showModal();
     });
 }

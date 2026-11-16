@@ -190,10 +190,9 @@ describe('recipe resolution', () => {
     if (recipe.resolvedFeatures.includes('dashboard')) {
       const served = await renderRecipe(recipe, { servedFiles: true });
       const layout = served.get('src/pages/dashboard/layout.ts').content.toString();
-      expect(layout).toContain('component(Sidebar');
-      expect(layout).toContain('component(DropdownMenu');
-      expect(layout).toContain('collapsible:');
-      expect(layout).toContain('accountModules.map');
+      expect(layout).toContain('component(DashboardShell');
+      expect(layout).toContain('accountLinks: accountModules.map');
+      expect(layout).toContain('onCollapsedChange:');
       expect(layout).toContain('await navigation(this.c)');
       expect(served.has('src/dashboard/access.ts')).toBe(true);
     }

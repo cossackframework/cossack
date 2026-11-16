@@ -42,4 +42,21 @@ describe.each([Accordion, Collapsible])('%s state ownership', (Component) => {
         instance.toggle();
         expect(onOpenChange).toHaveBeenLastCalledWith(false);
     });
+
+    it('opens a panel that find-in-page revealed, and only proposes it when controlled', () => {
+        const instance = new Component(), onOpenChange = vi.fn();
+        instance.props = { id: 'test', summary: 'Section', trigger: 'Section', onOpenChange };
+        expect(renderToString(instance.render())).toContain('hidden="until-found"');
+        (instance as any).revealed();
+        expect(onOpenChange).toHaveBeenCalledExactlyOnceWith(true);
+        expect(renderToString(instance.render())).toContain('aria-expanded="true"');
+        (instance as any).revealed();
+        expect(onOpenChange).toHaveBeenCalledOnce();
+
+        const controlled = new Component(), propose = vi.fn();
+        controlled.props = { id: 'test', summary: 'Section', trigger: 'Section', open: false, onOpenChange: propose };
+        (controlled as any).revealed();
+        expect(propose).toHaveBeenCalledExactlyOnceWith(true);
+        expect(renderToString(controlled.render())).toContain('aria-expanded="false"');
+    });
 });

@@ -12,4 +12,5 @@ export const authOptions: Required<DashboardConfig> = {
     modules: dashboard.modules ?? ['users', 'sessions', 'settings', 'roles'],
     dashboard: showsDashboard,
     redirectAfterLogin: dashboard.redirectAfterLogin ?? (showsDashboard ? '/dashboard' : '/'),
+    navigation: dashboard.navigation ?? [],
 };

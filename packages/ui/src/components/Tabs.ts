@@ -118,11 +118,14 @@ export class Tabs extends Cossack {
         if (!active) return;
         this.placed = this.placement();
         const underline = this.props.variant === 'underline', vertical = this.props.orientation === 'vertical';
-        const paint = underline ? 'background:var(--color-primary, #2563eb);border-radius:1px;' : 'background:var(--color-background, #fff);border-radius:0.25rem;box-shadow:0 1px 2px rgb(0 0 0 / 0.06);';
+        // Forced colors drops backgrounds and shadows but forces border colors: the underline is a border, and the pill
+        // keeps a transparent border that becomes visible there, so the selected tab is never marked by text color alone.
+        const color = 'var(--color-primary, #2563eb)';
+        const pill = 'box-sizing:border-box;border:1px solid transparent;background:var(--color-background, #fff);border-radius:0.25rem;box-shadow:0 1px 2px rgb(0 0 0 / 0.06);';
         if (vertical) {
             const edge = list.ownerDocument.defaultView?.getComputedStyle(list).direction === 'rtl' ? 'left' : 'right';
-            indicator.style.cssText = `top:${active.offsetTop}px;height:${active.offsetHeight}px;` + (underline ? `${edge}:0;width:2px;` : 'left:4px;right:4px;') + paint;
-        } else indicator.style.cssText = `left:${active.offsetLeft}px;width:${active.offsetWidth}px;` + (underline ? 'bottom:0;height:2px;' : 'top:4px;bottom:4px;') + paint;
+            indicator.style.cssText = `top:${active.offsetTop}px;height:${active.offsetHeight}px;` + (underline ? `${edge}:0;width:2px;box-sizing:border-box;border-${edge}:2px solid ${color};` : 'left:4px;right:4px;' + pill);
+        } else indicator.style.cssText = `left:${active.offsetLeft}px;width:${active.offsetWidth}px;` + (underline ? `bottom:0;height:2px;box-sizing:border-box;border-bottom:2px solid ${color};` : 'top:4px;bottom:4px;' + pill);
     }
     render() {
         const { id, label, items = [], orientation = 'horizontal', variant = 'pill', activation = 'automatic', listProps = {},
@@ -145,7 +148,7 @@ export class Tabs extends Cossack {
             const panel = Array.from(this.root.children).find(child => child.getAttribute('role') === 'tabpanel' && child.contains(active));
             if (tab || panel) this.focusRepair = active;
         }
-        return html`<div ref=${(element: Element) => this.connect(element as HTMLDivElement)} id=${id} class=${classMap({ 'cs-tabs w-full': true, 'flex gap-4': vertical })} ...=${rest}>
+        return html`<div ref=${(element: Element) => this.connect(element as HTMLDivElement)} id=${id} class=${classMap({ 'cs-tabs w-full': true, 'flex': vertical })} ...=${rest}>
             <div ref=${this.tablistRef} id=${`${id}-list`} role="tablist" aria-label=${label} aria-orientation=${orientation} tabindex="-1"
                 class=${classMap({ 'cs-tabs__list relative inline-flex rounded-md bg-muted p-1': true, 'items-center gap-1': !vertical, 'flex-col gap-0.5 self-start': vertical })}
                 ...=${{ ...listProps, '@keydown': tabsKeydown(listProps['@keydown'], event => this.keydown(event)) }}>
@@ -163,9 +166,10 @@ export class Tabs extends Cossack {
                 <span ref=${(element: Element) => { this.indicator = element as HTMLSpanElement; }} aria-hidden="true" class="cs-tabs__indicator absolute z-0 transition-all duration-300 ease-in-out motion-reduce:transition-none"></span>
             </div>
             ${repeat(items, item => item.value, item => html`<div role="tabpanel" id=${this.panelId(item.value)} aria-labelledby=${this.tabId(item.value)}
-                class=${classMap({ 'cs-tabs__panel focus:outline-none': true, 'mt-4': !vertical, 'flex-1': vertical })}
-                tabindex=${current === item.value ? 0 : -1} aria-hidden=${current !== item.value} ?hidden=${current !== item.value}>
-                ${item.content ?? this.children}
+                class=${classMap({ 'cs-tabs__panel focus:outline-none': true, 'flex-1': vertical && current === item.value })}
+                tabindex=${current === item.value ? 0 : null} hidden=${current === item.value ? null : item.disabled ? '' : 'until-found'}
+                @beforematch=${() => this.select(item.value)}>
+                <div class=${classMap({ 'cs-tabs__panel-content': true, 'mt-4': !vertical, 'ms-4': vertical })}>${item.content ?? this.children}</div>
             </div>`)}
         </div>`;
     }

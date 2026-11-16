@@ -2,6 +2,7 @@
 // states them in src/dashboard.config.ts. The CMS always has email and password (with passkeys
 // and sign-in links, which its auth.ts adds) and every account screen; the OAuth providers are
 // the site's `oauth` option in src/cms.config.ts.
+import type { DashboardNavigationItem } from './dashboard/types';
 import { currentCms } from './cms/index';
 
 function providers(): string[] {
@@ -15,4 +16,6 @@ export const authOptions = {
     modules: ['users', 'sessions', 'settings', 'roles'],
     dashboard: true,
     redirectAfterLogin: '/dashboard',
+    /** The CMS's screens come from its own navigation and its plugins, not from this list. */
+    navigation: [] as DashboardNavigationItem[],
 };

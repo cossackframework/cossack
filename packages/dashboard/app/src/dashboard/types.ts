@@ -20,6 +20,9 @@ export interface DashboardModule {
   activeFor?: string;
 }
 
+/** A screen of the project in the navigation (src/dashboard.config.ts: `navigation`): a module whose icon and authorization have defaults. */
+export type DashboardNavigationItem = Omit<DashboardModule, 'icon' | 'authorization'> & Partial<Pick<DashboardModule, 'icon' | 'authorization'>>;
+
 /** A status the dashboard's taskbar shows: what waits for the user, and where to go. */
 export interface DashboardStatus {
   id: string;

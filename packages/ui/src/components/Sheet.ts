@@ -38,7 +38,8 @@ export class Sheet extends Cossack {
         const value = fullScreen ? (dims.dim === 'width' ? '100vw' : '100vh') : size || dims.val;
         const style = `${SIDE_POSITION[side]};${dims.dim}:${value};${dims.dim === 'width' ? 'max-width' : 'max-height'}:${fullScreen ? '100' : dims.dim === 'width' ? '90' : '85'}${dims.dim === 'width' ? 'vw' : 'vh'};`;
         return html`<dialog ref=${(element: Element) => { this.dialogRef.value = element as HTMLDialogElement; this.dialog.connect(element as HTMLDialogElement); }}
-            class="cs-sheet" ...=${{ ...rest, ...this.dialog.events() }}>
+            closedby=${this.dialog.closedBy()}
+            class="cs-sheet overscroll-contain backdrop:overflow-hidden backdrop:overscroll-contain" ...=${{ ...rest, ...this.dialog.events() }}>
             <div data-dialog-panel class=${classMap({ 'cs-sheet__panel fixed bg-popover text-popover-foreground shadow-lg border flex flex-col z-[100]': true,
                 [`cs-sheet--${side}`]: true, 'border-r': side === 'left', 'border-l': side === 'right', 'border-b': side === 'top', 'border-t': side === 'bottom' })}
                 style=${style}>${this.children}</div>

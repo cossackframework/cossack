@@ -16,7 +16,7 @@ The project lists the package in `package.json#cossack.packages` and keeps:
 
 | File | What it holds |
 | --- | --- |
-| `src/dashboard.config.ts` | Sign-in methods, OAuth providers, dashboard modules, where to go after sign-in. |
+| `src/dashboard.config.ts` | Sign-in methods, OAuth providers, dashboard modules, the project's own screens in the navigation, where to go after sign-in. |
 | `src/models/`, `src/migrations/`, `src/seeders/` | The schema: users, sessions, roles, OAuth accounts. |
 | `src/stores.client.ts` | The project's client stores. |
 

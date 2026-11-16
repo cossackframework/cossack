@@ -4,7 +4,7 @@
  * Security and the user screen; the page owns the list and the new password, shown once.
  */
 import { Client, ClientState, Component, Cossack } from '@cossackframework/core';
-import { Badge, Button, Field, Input, NativeSelect } from '@cossackframework/ui';
+import { Badge, Button, Field, Input, NativeSelect, SecretNotice } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import type { ApiToken } from '../auth';
 
@@ -27,8 +27,6 @@ export class AppPasswords extends Cossack {
     @ClientState() private scope: 'read' | 'write' = 'write';
     /** Days until the password expires, as the select's value; '0' is never. */
     @ClientState() private expires = '0';
-    /** Whether Copy worked: the button says so, or the box asks to copy by hand. */
-    @ClientState() private copied: 'yes' | 'no' | '' = '';
 
     @Client()
     private async submit(event: Event) {
@@ -41,20 +39,10 @@ export class AppPasswords extends Cossack {
         this.expires = '0';
     }
 
-    @Client()
-    private async copy() {
-        try { await navigator.clipboard.writeText(this.props.newToken); this.copied = 'yes'; }
-        catch { this.copied = 'no'; }
-    }
-
     render() {
         return html`<div class="space-y-4">
-            ${this.props.newToken ? html`<div class="space-y-2 rounded-md border border-emerald-500/40 bg-emerald-500/5 p-3">
-                <p class="text-sm font-medium text-foreground">${__('Copy the new application password now. You will not see it again.')}</p>
-                <div class="flex gap-2"><input readonly class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs" aria-label=${__('New application password')} .value=${this.props.newToken} data-new-token>
-                    ${component(Button, { type: 'button', size: 'sm', variant: 'outline', '@click': () => this.copy() }, this.copied === 'yes' ? __('Copied.') : __('Copy'))}</div>
-                ${this.copied === 'no' ? html`<p role="alert" class="text-xs text-destructive">${__('Copy it from the box.')}</p>` : null}
-            </div>` : null}
+            ${this.props.newToken ? component(SecretNotice, { label: __('New application password'), value: this.props.newToken, 'data-new-token': '',
+                message: __('Copy the new application password now. You will not see it again.'), copyLabel: __('Copy'), copiedLabel: __('Copied.'), copyFailedLabel: __('Copy it from the box.') }) : null}
             <form class="flex flex-wrap items-end gap-2" @submit=${(event: Event) => this.submit(event)}>
                 ${component(Field, { label: __('Name'), for: 'token-name', control: attributes => component(Input, { ...attributes, required: true, maxlength: 80, placeholder: __('Such as Mobile app'),
                     '.value': this.name, '@input': (event: Event) => { this.name = (event.target as HTMLInputElement).value; } }) })}

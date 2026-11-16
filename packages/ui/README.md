@@ -86,6 +86,8 @@ Then add to `src/style.css` (after `@import "tailwindcss";`):
 | Sidebar | `<aside>` | Collapsible nav rail (icon / offcanvas) with nested groups + agnostic footer slot |
 | Drawer | `<dialog>` | Slide-in drawer panel with drag handle grip and backdrop |
 | Item | `<div>` | Generic list-row primitive with media/content/trailing slots |
+| CopyField | `<input readonly>` / `<textarea readonly>` | A value with a Copy button; when the browser refuses the clipboard it selects the text and asks to copy by hand (`copyLabel`, `copiedLabel`, `copyFailedLabel`, `mono`, `rows`, `onCopy`) |
+| SecretNotice | `<div role="group">` | A value shown once (API key, token, invitation code): a `message` above a CopyField |
 
 ### Chat
 | Component | Native element | Description |
@@ -321,7 +323,7 @@ import path (`arrow-right`, `eye-closed`, `alt-arrow-down`).
 
 ### Styles
 
-Solar ships six styles. The `style` prop selects one style. Missing styles fall
+Solar ships six styles. The `variant` prop selects one style. Missing styles fall
 back to `line`:
 
 | key           | Solar source folder |

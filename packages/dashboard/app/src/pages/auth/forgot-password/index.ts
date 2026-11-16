@@ -40,6 +40,13 @@ export default class ForgotPasswordPage extends Cossack {
         }
     }
 
+    /** A field marked wrong is checked again as it is edited, so its message goes once the value is fixed. A submit checks it too. */
+    @Client()
+    async recheck(value: string) {
+        this.form.email = value;
+        if (this.hasError('form.email')) await this.validateProperty('form.email', 'input');
+    }
+
     @Server({ input: resetRequestInput })
     async requestReset(submitted: ResetRequestInput) {
         const { email, turnstile } = await resetRequestInput.parse(submitted);
@@ -63,7 +70,7 @@ export default class ForgotPasswordPage extends Cossack {
                     __('If an account exists for that email, a reset link has been sent.'))
                 : html`<form @submit="${(e: Event) => this.handleSubmit(e)}" class="space-y-4">
                     ${component(Field, { label: __('Email'), for: 'email', error: this.getError('form.email'),
-                        control: attributes => component(Input, { ...attributes, type: 'email', placeholder: 'user@example.com', variant: this.hasError('form.email') ? 'error' : 'default', '.value': bind(this.form, 'email') }) })}
+                        control: attributes => component(Input, { ...attributes, type: 'email', autocomplete: 'username', spellcheck: 'false', required: true, placeholder: 'user@example.com', variant: this.hasError('form.email') ? 'error' : 'default', '.value': bind(this.form, 'email'), '@input': (e: Event) => this.recheck((e.target as HTMLInputElement).value) }) })}
                     ${this.botKey ? component(Turnstile, { id: 'reset-verify', siteKey: this.botKey, action: 'reset', label: __('Bot protection') }) : null}
                     ${component(Button, { type: 'submit', block: true }, __('Send Reset Link'))}
                 </form>`}
