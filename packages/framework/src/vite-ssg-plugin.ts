@@ -308,7 +308,8 @@ async function loadEntry(
       ...applicationPlugins,
       // The same cossack plugins the project's vite.config.ts registers, so
       // virtual:cossack-pages/-config/-lang and the .mdx transform resolve.
-      cossackPages({ markdownProcessor: getConfiguredMarkdownProcessor() }),
+      // The static build reads every page at once: none is left to load on first use.
+      cossackPages({ markdownProcessor: getConfiguredMarkdownProcessor(), deferPages: false }),
       cossackLang(),
       cossackMiddlewares(),
       cossackConfig(),

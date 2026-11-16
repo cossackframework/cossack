@@ -238,6 +238,12 @@ const { pages, layouts } = registry;
 /** Route key -> rendered plugin whose `pages/` the module comes from (pages and layouts). */
 const owners: Record<string, string> = registry.owners ?? {};
 const sources: Record<string, string> = registry.sources ?? {};
+/**
+ * Development only: loads the modules of the named pages into `pages`. A page not loaded yet
+ * is `undefined` there; the keys are complete from the start. Absent when every page is
+ * imported up front (builds).
+ */
+const loadPages = registry.load;
 const HTTP_HANDLER_EXPORTS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'] as const;
 /** A function the router can call as a handler. Classes, component or not, are never handlers. */
 function isHandlerFunction(value: unknown): value is Handler {
@@ -531,6 +537,7 @@ export function createApp(options: CreateAppOptions = {}) {
   // Shared context passed to transport handlers
   const routerContext: RouterContext = {
     routeIdMap,
+    loadPages,
     routePathToIdMap,
     routePathToFilePathMap,
     pages,
@@ -958,6 +965,8 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
 
   /** Route patterns of functional HTTP handlers. Their failures are never HTML documents. */
   const endpointRoutes = new Set<string>();
+  /** Routes whose module loads on first use (development), each with its loader. */
+  const deferredRoutes = new Map<string, () => Promise<unknown>>();
   /** Hono route pattern -> handler file path, for handler routes. */
   const endpointPathByRoute = new Map<string, string>();
   /** Whether the route that ran is a functional endpoint (not one a skipped plugin route only matched). */
@@ -987,6 +996,8 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
   const matchedEndpoint = async (c: Context): Promise<boolean> => {
     const ran = runningRoute(c);
     if (ran !== undefined) return endpointRoutes.has(ran);
+    // A route that has not run yet is a page or an endpoint only once its module is loaded.
+    for (const route of c.req.matchedRoutes) await deferredRoutes.get(route.path)?.();
     for (const route of c.req.matchedRoutes) if (endpointRoutes.has(route.path) && !(await inactiveRoute(c, route.path))) return true;
     return false;
   };
@@ -1635,13 +1646,10 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
   const pagePaths = resolvePageRouteFiles(Object.keys(pages)).sort((a, b) =>
     compareHttpRoutes(filePathToHttpRoute(a), filePathToHttpRoute(b)),
   );
-  for (const path of pagePaths) {
-    let httpRoute = filePathToHttpRoute(path);
-
-    if (httpRoute.endsWith('/404') || httpRoute.endsWith('/error')) continue;
-    pagePathByRoute.set(httpRoute, path);
-
-    const module = pages[path] as any;
+  /** Where a route's handlers go: `null` is path middleware, `ALL` every method. */
+  type RouteTarget = { add(method: string | null, handler: Handler | Middleware): void };
+  /** Register what the module at `path` answers: a page, its HTTP methods, or a functional handler. */
+  const registerRoute = (target: RouteTarget, path: string, httpRoute: string, module: any): void => {
     const mainExport = getModuleDefault(module);
 
     // 1. Check if it's a Cossack Component
@@ -1655,11 +1663,11 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       // variable-length middleware spread can't be type-checked — `app.use` avoids that
       // and lets the handlers below be registered as plain single-handler routes.
       const pageOwner = owners[path];
-      if (pageOwner) app.use(httpRoute, routeGate(path, pageOwner));
+      if (pageOwner) target.add(null, routeGate(path, pageOwner));
       const step = <H extends (c: Context, next: Next) => unknown>(handler: H): H => pageOwner ? skippable(path, handler) : handler;
-      app.use(httpRoute, step(markRoute(httpRoute)));
+      target.add(null, step(markRoute(httpRoute)));
       for (const middleware of combinedMiddlewares) {
-        app.use(httpRoute, step(middleware));
+        target.add(null, step(middleware));
       }
       // A class that does not override render() is a pure API route: GET must
       // return JSON (via the API handler) rather than render HTML. A class that
@@ -1672,10 +1680,10 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       if (isApiRoute) {
         // GET -> JSON. `get()` is the canonical HTTP-GET handler; `init()` is
         // kept as a server-side alias for backward compatibility.
-        app.get(httpRoute, step(createApiHandler(PageComponent, ['get', 'init'], apiHandlerOptions(path))));
+        target.add('GET', step(createApiHandler(PageComponent, ['get', 'init'], apiHandlerOptions(path))));
       } else {
         const ssrHandler = createSsrHandler(PageComponent, path, pageOptions);
-        app.get(httpRoute, step(ssrHandler));
+        target.add('GET', step(ssrHandler));
       }
 
       // Handle class-based HTTP method handlers for hybrid pages
@@ -1686,7 +1694,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
           // Only authored methods (stopping before Cossack.prototype) become
           // routes; a framework default can never expose a public verb.
           if (typeof getAuthoredRouteMember(PageComponent, method)?.value === 'function') {
-            (app as any)[method](httpRoute, step(createApiHandler(PageComponent, method, apiHandlerOptions(path))));
+            target.add(method.toUpperCase(), step(createApiHandler(PageComponent, method, apiHandlerOptions(path))));
           }
         }
       }
@@ -1698,14 +1706,56 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       endpointRoutes.add(httpRoute);
       endpointPathByRoute.set(httpRoute, path);
       const owner = owners[path];
-      if (owner) app.use(httpRoute, routeGate(path, owner));
+      if (owner) target.add(null, routeGate(path, owner));
       const step = <H extends (c: Context, next: Next) => unknown>(handler: H): H => owner ? skippable(path, handler) : handler;
-      app.use(httpRoute, step(markRoute(httpRoute)));
-      if (isHandlerFunction(mainExport)) app.all(httpRoute, step(mainExport));
+      target.add(null, step(markRoute(httpRoute)));
+      if (isHandlerFunction(mainExport)) target.add('ALL', step(mainExport));
       for (const method of HTTP_HANDLER_EXPORTS) {
-        if (isHandlerFunction(module[method])) (app as any)[method.toLowerCase()](httpRoute, step(module[method]));
+        if (isHandlerFunction(module[method])) target.add(method, step(module[method]));
       }
     }
+  };
+  const direct = (httpRoute: string): RouteTarget => ({
+    add: (method, handler) => method === null ? app.use(httpRoute, handler as Middleware)
+      : (app as any)[method === 'ALL' ? 'all' : method.toLowerCase()](httpRoute, handler),
+  });
+  /**
+   * Development: a page's module loads with the first request for its route, so the server
+   * starts without evaluating every page. The route keeps its place among the others; its
+   * handlers are collected once and run in the order the router would have registered them.
+   */
+  const deferred = (path: string, httpRoute: string): Middleware => {
+    let collected: Promise<{ method: string | null; handler: Handler | Middleware }[]> | undefined;
+    const collect = () => collected ??= loadPages!([path]).then(() => {
+      const handlers: { method: string | null; handler: Handler | Middleware }[] = [];
+      registerRoute({ add: (method, handler) => { handlers.push({ method, handler }); } }, path, httpRoute, pages[path]);
+      return handlers;
+    }).catch(error => { collected = undefined; throw error; });
+    deferredRoutes.set(httpRoute, collect);
+    return async (c, next) => {
+      const method = c.req.method === 'HEAD' ? 'GET' : c.req.method;
+      const chain = (await collect()).filter(entry => entry.method === null || entry.method === 'ALL' || entry.method === method);
+      let index = -1;
+      const dispatch = async (position: number): Promise<void> => {
+        if (position <= index) throw new Error('next() called multiple times');
+        index = position;
+        const entry = chain[position];
+        if (!entry) return next();
+        const response = await (entry.handler as Middleware)(c, () => dispatch(position + 1));
+        if (response instanceof Response && !c.finalized) c.res = response;
+      };
+      await dispatch(0);
+      return c.finalized ? c.res : undefined;
+    };
+  };
+  for (const path of pagePaths) {
+    const httpRoute = filePathToHttpRoute(path);
+
+    if (httpRoute.endsWith('/404') || httpRoute.endsWith('/error')) continue;
+    pagePathByRoute.set(httpRoute, path);
+
+    if (loadPages && pages[path] === undefined) app.all(httpRoute, deferred(path, httpRoute));
+    else registerRoute(direct(httpRoute), path, httpRoute, pages[path]);
   }
 
   app.notFound(renderNotFound);

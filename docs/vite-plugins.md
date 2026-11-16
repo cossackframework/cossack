@@ -56,6 +56,17 @@ from the package directory, whose `cossackVite({ root, runtime, mode, command })
 returns `setup` (plugins that go first), `plugins`, `pages` and `cloudflare` (options for
 those plugins), `pluginPolicy` and `config`.
 
+### Pages load on first use in development
+
+The development server does not import every page when it starts. It registers each route
+from its file path and imports a page's module with the first request, RPC call or realtime
+connection that names it. Layouts, 404 and error pages and Markdown pages are imported at the
+start. Builds and the Desktop target import every page, as before.
+
+A page with an error therefore fails when it is first opened, not when the server starts:
+that page answers 500, the terminal prints the error, and the other pages keep working.
+`cossackApp({ pages: { deferPages: false } })` imports every page at the start again.
+
 ## The security plugin
 
 Cossack includes a security plugin named `vite-security-plugin`. It removes server code from client bundles.

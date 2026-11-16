@@ -376,6 +376,8 @@ export interface RouterContext {
   routePathToFilePathMap: Map<string, string>;
   pages: Record<string, any>;
   layouts: Record<string, any>;
+  /** Development: load the modules of these pages before reading them from `pages` (see the router). */
+  loadPages?: (paths: readonly (string | undefined)[]) => Promise<void>;
   /** Route key -> plugin name for plugin pages and layouts (see {@link resolveLayoutPaths}). */
   owners?: Readonly<Record<string, string>>;
   /** Allowed Origin values for transport requests. Defaults to same-origin. */

@@ -38,6 +38,11 @@ declare module 'virtual:cossack-pages' {
     sources?: Record<string, string>;
     /** Route keys of functional HTTP handlers (client registry only). */
     handlers?: string[];
+    /**
+     * Development server registry only: pages load on first use. `pages` holds every key, with
+     * `undefined` for a page not loaded yet; this loads the named ones. Unknown keys are ignored.
+     */
+    load?: (keys: readonly (string | undefined)[]) => Promise<void>;
   }
 
   const registry: CossackPagesRegistry;

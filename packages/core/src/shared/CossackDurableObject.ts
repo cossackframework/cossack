@@ -75,7 +75,7 @@ export abstract class CossackDurableObject {
     }
 
     private async createAndBootstrapComponent(request: DurableObjectComponentRequest): Promise<Cossack | undefined> {
-        const PageComponent = (await this.getComponentRegistry()).get(request.componentPath);
+        const PageComponent = (await this.getComponentRegistry(request.componentPath)).get(request.componentPath);
         if (!PageComponent) {
             logRuntimeFailure({ runtime: 'cloudflare' }, 'initialization');
             this.state.getWebSockets().forEach(ws => ws.close(1011, 'Component not found'));
@@ -295,7 +295,8 @@ export abstract class CossackDurableObject {
         return new Response(null, { status: 101, webSocket: client });
     }
 
-    abstract getComponentRegistry(): Promise<Map<string, new () => Cossack>>;
+    /** `componentPath` names the component about to be built, for a registry that loads on demand. */
+    abstract getComponentRegistry(componentPath?: string): Promise<Map<string, new () => Cossack>>;
 
     /** Framework runtimes override this to run fresh auth and inherited middleware. */
     protected async authorizeWebSocketPeer(

@@ -22,6 +22,12 @@ it('redacts malformed startup and browser overlay/HMR compiler errors, then reco
       ({ projectDir: root } = await scaffold.createApp('app', { cwd: parent, adapter: 'cloudflare', preset: 'minimal', interactive: false }));
       await fs.symlink(path.join(installedRoot, 'node_modules'), path.join(root, 'node_modules'), 'junction');
     } else root = await scaffoldLinkedApp(parent, { adapter: 'cloudflare', packages: ['framework', 'core', 'renderer', 'scaffold'] });
+    // This test is about a Worker that fails to start. With pages loaded on first use, a
+    // malformed page fails its own route only, so the page is imported up front here.
+    const viteConfig = path.join(root, 'vite.config.ts');
+    const configText = await fs.readFile(viteConfig, 'utf8');
+    if (!configText.includes('cossackApp({')) throw new Error('vite.config.ts no longer calls cossackApp({');
+    await fs.writeFile(viteConfig, configText.replace('cossackApp({', 'cossackApp({\n  pages: { deferPages: false },'));
     expect(await verifyCompilerBrowserPrivacy(root, { allowedPaths: installedRoot ? [installedRoot] : [repository] })).toMatchObject({ recovered: true });
   } finally { await fs.rm(parent, { recursive: true, force: true }); }
 }, 180000);

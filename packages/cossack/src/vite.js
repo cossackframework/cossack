@@ -149,6 +149,9 @@ export function cossackApp(options = {}) {
       ...partOptions('pages'),
       ...wrangler,
       ...(markdownProcessor ? { markdownProcessor } : {}),
+      // Desktop imports every page before its window opens: a window that opened on a page
+      // that failed to load has nothing to reload it once the page is repaired.
+      ...(desktop ? { deferPages: false } : {}),
       ...options.pages,
       ...(capabilities ? { capabilities } : {}),
     }));

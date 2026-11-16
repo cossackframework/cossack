@@ -64,6 +64,9 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
                     return c.json({ error: 'Invalid transport body' }, 400);
                 }
                 if (typeof body.action === 'string') action = body.action;
+                // Development: the pages the call names load before their modules are read.
+                await ctx.loadPages?.([body.componentRouteId, body.pageRouteId]
+                    .map(id => typeof id === 'string' ? ctx.routeIdMap.get(id) : undefined));
                 if (body.service !== undefined) {
                     // A layout service runs under the page the browser is on.
                     // Guard it like SSR of that page: every layout and page
@@ -99,6 +102,7 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
             // params. The guards run once, here, before the stream opens, with
             // the params that the scope key and revalidations use.
             const path = ctx.routeIdMap.get(c.req.param('componentRouteId') ?? '');
+            await ctx.loadPages?.([path]);
             if (path && (Object.hasOwn(ctx.pages, path) || Object.hasOwn(ctx.layouts, path))) {
                 const params = checkSseRouteParams(ctx, path, c.req.query('params'));
                 if (!params) return c.json({ error: 'Invalid route params', code: 'COSSACK_RPC_REQUEST_INVALID' }, 400);
@@ -114,6 +118,9 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
             // A cross-site upgrade (a page opening a socket with the victim's
             // cookies) is refused before any guard runs, as a POST is.
             if (!isOriginAllowed(c.req.header('origin'), c.req.url, ctx.allowedOrigins)) return c.text('Origin not allowed', 403);
+            const routePath = c.req.query('routePath') || c.req.query('componentPath');
+            await ctx.loadPages?.([ctx.routeIdMap.get(c.req.query('page') ?? ''),
+                routePath ? ctx.routePathToFilePathMap.get(routePath) ?? routePath : undefined]);
             const resolved = resolveRealtimeConnection(ctx, name => c.req.query(name));
             if ('error' in resolved) {
                 if (resolved.error === 'owner' && resolved.status === 404) return c.json({ error: 'Invalid component ID' }, 400);

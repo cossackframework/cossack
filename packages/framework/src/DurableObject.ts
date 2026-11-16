@@ -30,8 +30,10 @@ export class AppDurableObject extends CossackDurableObject {
         ensureRequestContextAlsWired();
     }
 
-    async getComponentRegistry(): Promise<Map<string, new () => Cossack>> {
+    async getComponentRegistry(componentPath?: string): Promise<Map<string, new () => Cossack>> {
         const registry = new Map<string, new () => Cossack>();
+        // Development: pages load on first use, so the one asked for loads here.
+        await applicationRegistry.load?.([componentPath]);
         // Share the router's compiler-owned application paths, including layouts.
         // A package-relative glob would register the framework's bundled demos.
         for (const [path, module] of Object.entries({ ...applicationRegistry.pages, ...applicationRegistry.layouts })) {
@@ -106,6 +108,7 @@ export class AppDurableObject extends CossackDurableObject {
         operation: (context: Context) => Promise<void>,
     ): Promise<boolean> {
         if (!peer.request || !peer.componentPath || !peer.scopeKey) return false;
+        await applicationRegistry.load?.([peer.componentPath, peer.guardPath]);
         const authorization = this.peerAuthorization(peer);
         if (!authorization) return false;
         const request = peer.request;

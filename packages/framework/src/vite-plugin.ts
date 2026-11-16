@@ -24,7 +24,7 @@ import { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
 import { checkCapabilityRequirements, type CapabilityUse, type RuntimeName } from './runtime-capabilities.js';
 import { extractPageOptionsFromAst, isHttpHandlerModule } from './page-inspection.js';
 import { readBuildBindingNames } from './build-bindings.js';
-import { filePathToRoutePath } from './route-ids.js';
+import { classifyRoute, filePathToHttpRoute, filePathToRoutePath } from './route-ids.js';
 import { validateMarkdownFrontmatter, isValidatedMarkdownFrontmatter } from './markdown-frontmatter.js';
 import { describeUncoveredClientOutput, uncoveredClientOutput, type StaticAssetRouteFact } from './static-asset-routing.js';
 import { checkReservedPaths, type ReservedPathDiagnostic } from './reserved-paths.js';
@@ -149,6 +149,12 @@ export interface CossackPagesOptions {
    * Default true.
    */
   templateDiagnostics?: boolean;
+  /**
+   * Development server: load a page's module with the first request that names it, rather than
+   * every page before the server answers. Default true; false imports every page up front, as
+   * a build does.
+   */
+  deferPages?: boolean;
 }
 
 let configuredMarkdownProcessor: MarkdownProcessor | undefined;
@@ -461,6 +467,38 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
         // The build manifest is keyed by a module's real path: the keys whose module is elsewhere.
         const elsewhere = Object.fromEntries(Object.entries(pageSources.sources).filter(([key, source]) => key !== source && pageSources.origins[key]));
 
+        // The development server loads a page's module with the first request that names it:
+        // importing every page up front costs a module fetch each before the server answers
+        // anything (about 25 s for the CMS's pages on Workers). The keys stay complete, so
+        // route ids and matching do not change. 404 and error pages and Markdown pages are
+        // imported up front: the router reads them outside a route of their own.
+        const deferPages = isSsrEnvironment && this.environment?.mode === 'dev' && options.deferPages !== false;
+        const upFront = (key: string) => {
+          if (/\.mdx?$/.test(key)) return true;
+          try { const kind = classifyRoute(filePathToHttpRoute(key)); return kind === '404' || kind === 'error'; }
+          catch { return true; }
+        };
+        const deferredPages = (keys: readonly string[]) => {
+          const sorted = [...keys].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+          return `
+          ${moduleMap('pagesUpFront', projectRoot, entries(sorted.filter(upFront)), { eager: true })}
+          ${moduleMap('pageLoaders', projectRoot, entries(sorted.filter(key => !upFront(key))), { eager: false })}
+          const pages = {};
+          for (const key of ${JSON.stringify(sorted)}) pages[key] = pagesUpFront[key];
+          const loading = {};
+          const load = keys => Promise.all(keys.map(key => {
+            if (typeof key !== 'string' || !Object.hasOwn(pageLoaders, key)) return undefined;
+            // The router answers a failed page with a redacted 500, so the reason is printed
+            // here, in the developer's terminal. The next request tries the import again.
+            return loading[key] ??= pageLoaders[key]().then(module => { pages[key] = module; }, error => {
+              delete loading[key];
+              console.error('[cossack] ' + key + ' failed to load:', error);
+              throw error;
+            });
+          })).then(() => undefined);
+          `;
+        };
+
         // Worker-rendered HTML may bypass transformIndexHtml. The client
         // registry is the shared bootstrap path for generated applications.
         return `
@@ -469,7 +507,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           const owners = ${JSON.stringify(pageSources.plugins)};
           // Route key -> real source path, where it differs from the key. The build manifest is keyed by it.
           const sources = ${isSsrEnvironment ? JSON.stringify(elsewhere) : '{}'};
-          ${moduleMap('pages', projectRoot, entries(pageSources.pageKeys), { eager: isSsrEnvironment })}
+          ${deferPages ? deferredPages(pageSources.pageKeys) : moduleMap('pages', projectRoot, entries(pageSources.pageKeys), { eager: isSsrEnvironment })}
 
           // Layouts: eager on SSR (synchronous server rendering), lazy on the
           // client. A layout often pulls in heavy deps (e.g. the dashboard
@@ -491,7 +529,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           // Functional HTTP handler routes: client navigation loads them as documents, without fetching first.
           const handlers = ${isSsrEnvironment ? '[]' : JSON.stringify(discoverGetHandlers(projectRoot, markdownEnabled))};
 
-          export default { pages, layouts, loadings, components, owners, sources, handlers };
+          export default { pages, layouts, loadings, components, owners, sources, handlers${deferPages ? ', load' : ''} };
         `;
       }
     },
