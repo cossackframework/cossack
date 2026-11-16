@@ -1,5 +1,5 @@
 import { Cossack, Page } from '@cossackframework/core';
-import { cacheHeaders } from '../../../cms/cache';
+import { cacheHeaders } from '#app/cms/cache';
 
 /**
  * The web app manifest: the site's name and its app icon from Settings → General, resized

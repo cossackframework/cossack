@@ -1,5 +1,5 @@
 import type { Context } from 'hono';
-import { writeAllowed, writeBody } from '../../../../cms/content-api';
+import { writeAllowed, writeBody } from '#app/cms/content-api';
 
 /** The block types a user inserted last, newest first, kept in their meta as `_recent_blocks`. */
 const KEY = '_recent_blocks';

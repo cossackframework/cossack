@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
-import { answer } from '../../../../cms/content-api';
-import { webhookCreate, webhooksList } from '../../../../cms/manage';
+import { answer } from '#app/cms/content-api';
+import { webhookCreate, webhooksList } from '#app/cms/manage';
 
 /** The site's webhooks: `GET /api/cms/webhooks`. Needs the webhooks permission. */
 export const GET = (c: Context) => answer(c, () => webhooksList(c));

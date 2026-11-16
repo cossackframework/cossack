@@ -3,10 +3,10 @@ import { input } from '@cossackframework/core/input';
 import { Button, Card, CardBody, CardHeader, Field, IconPicker, Input } from '@cossackframework/ui';
 import { component, html, repeat } from '@cossackframework/renderer';
 import { applyDashboardMenu, dashboardLinkModuleId, dashboardMenuOf, dashboardMenuProblems, DASHBOARD_MENU_LIMITS, isCmsError, PERMISSIONS, type DashboardMenu, type DashboardMenuLink } from '@cossackframework/cms';
-import { requireAny } from '../../../../../cms/guards';
-import { iconButton, notice, pageHeader } from '../../../../../cms/ui';
-import { defaultNavigation } from '../../../../../dashboard/access';
-import { ICON_CATALOG } from '../../../../../cms/icons';
+import { requireAny } from '#app/cms/guards';
+import { iconButton, notice, pageHeader } from '#app/cms/ui';
+import { defaultNavigation } from '#app/dashboard/access';
+import { ICON_CATALOG } from '#app/cms/icons';
 
 interface Row { id: string; label: string; href: string; link: boolean }
 

@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { isCmsError } from '@cossackframework/cms';
-import { routeResource } from '../../../../../../cms/content';
-import { writeAllowed, writeBody } from '../../../../../../cms/content-api';
+import { routeResource } from '#app/cms/content';
+import { writeAllowed, writeBody } from '#app/cms/content-api';
 
 /**
  * The editor's autosave: `POST /api/cms/content/<collection>/<id>/autosave` stores the signed-in

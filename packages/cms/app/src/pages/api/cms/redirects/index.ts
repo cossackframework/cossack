@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
-import { answer } from '../../../../cms/content-api';
-import { redirectCreate, redirectsList } from '../../../../cms/manage';
+import { answer } from '#app/cms/content-api';
+import { redirectCreate, redirectsList } from '#app/cms/manage';
 
 /** The site's redirects: `GET /api/cms/redirects?q=&page=&perPage=`. Needs the redirects permission. */
 export const GET = (c: Context) => answer(c, () => redirectsList(c, c.req.query()));

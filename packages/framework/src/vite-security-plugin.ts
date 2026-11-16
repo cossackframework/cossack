@@ -1608,8 +1608,36 @@ function isInstalledPackage(specifier: string, options: ClassDiscoveryOptions): 
 }
 
 /**
+ * The file a `#name` specifier names through `imports` in the package.json nearest to the
+ * importing module: an exact key or one `*` pattern with a string target. Conditions are not read.
+ */
+function packageImport(specifier: string, options: ClassDiscoveryOptions): string | null {
+  let directory = options.file && isAbsolute(options.file) ? dirname(options.file) : options.root;
+  while (directory) {
+    if (isFile(join(directory, 'package.json'))) {
+      let imports: unknown;
+      try { imports = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8')).imports; } catch { return null; }
+      if (!imports || typeof imports !== 'object') return null;
+      for (const [key, value] of Object.entries(imports as Record<string, unknown>)) {
+        if (typeof value !== 'string') continue;
+        if (key === specifier) return join(directory, value);
+        const [head, tail, ...more] = key.split('*');
+        if (tail === undefined || more.length || !specifier.startsWith(head!) || !specifier.endsWith(tail) || specifier.length < key.length) continue;
+        return join(directory, value.replace('*', specifier.slice(head!.length, specifier.length - tail.length)));
+      }
+      return null;
+    }
+    const parent = dirname(directory);
+    if (parent === directory) break;
+    directory = parent;
+  }
+  return null;
+}
+
+/**
  * Resolve an import specifier to a module file without evaluating anything:
- * Vite aliases first, then relative or root-relative paths with TypeScript
+ * Vite aliases first, then a package's `imports` (`#app/x`), then relative or root-relative
+ * paths with TypeScript
  * extension probing. Returns `'package'` for an installed package and `null`
  * when the specifier names no readable module.
  */
@@ -1625,6 +1653,7 @@ function resolveBaseModule(specifier: string, options: ClassDiscoveryOptions): s
     }
     break;
   }
+  if (target.startsWith('#')) target = packageImport(target, options) ?? target;
   const relative = target.startsWith('./') || target.startsWith('../');
   if (!relative && !isAbsolute(target)) return isInstalledPackage(target, options) ? 'package' : null;
   if (relative && (!options.file || !isAbsolute(options.file))) return null;

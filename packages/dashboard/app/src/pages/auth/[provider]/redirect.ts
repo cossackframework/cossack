@@ -1,5 +1,5 @@
 import type { Context } from 'hono';
-import { oauth, oauthProvider } from '../../../auth';
+import { oauth, oauthProvider } from '#app/auth';
 
 /** Send the visitor to the provider's consent page. A provider the project does not offer answers 404. */
 export const GET = async (c: Context) => {

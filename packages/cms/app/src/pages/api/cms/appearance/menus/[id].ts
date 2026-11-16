@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
-import { answer } from '../../../../../cms/content-api';
-import { menuDelete, menuRead, menuUpdate } from '../../../../../cms/manage';
+import { answer } from '#app/cms/content-api';
+import { menuDelete, menuRead, menuUpdate } from '#app/cms/manage';
 
 /** One menu with its items tree, `rev` and locations: `GET /api/cms/appearance/menus/<id>`. */
 export const GET = (c: Context) => answer(c, () => menuRead(c, c.req.param('id') ?? ''));

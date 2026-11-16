@@ -1,5 +1,5 @@
 import type { Context } from 'hono';
-import { apiError, writeAllowed } from '../../../../../cms/content-api';
+import { apiError, writeAllowed } from '#app/cms/content-api';
 
 /** The bytes of an upload begun at `POST /api/cms/uploads`, when the bucket does not take them directly. */
 export const PUT = async (c: Context) => {

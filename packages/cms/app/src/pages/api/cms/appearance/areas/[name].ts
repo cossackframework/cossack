@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
-import { answer } from '../../../../../cms/content-api';
-import { areaRead, areaReset, areaUpdate } from '../../../../../cms/manage';
+import { answer } from '#app/cms/content-api';
+import { areaRead, areaReset, areaUpdate } from '#app/cms/manage';
 
 /** One widget area with its blocks and `rev` (0 while the theme's defaults show): `GET /api/cms/appearance/areas/<name>`. */
 export const GET = (c: Context) => answer(c, () => areaRead(c, c.req.param('name') ?? ''));

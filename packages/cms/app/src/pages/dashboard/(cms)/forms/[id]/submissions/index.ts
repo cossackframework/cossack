@@ -3,8 +3,8 @@ import { Badge, Button, Card, CardBody, Checkbox, Input, NativeSelect } from '@c
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { displayValue, isCmsError, PERMISSIONS, SUBMISSION_STATUSES, type SubmissionStatus } from '@cossackframework/cms';
 import type { LoadedForm } from '@cossackframework/cms/server';
-import { requireAny } from '../../../../../../cms/guards';
-import { linkButton, notice, pageHeader, shortDate } from '../../../../../../cms/ui';
+import { requireAny } from '#app/cms/guards';
+import { linkButton, notice, pageHeader, shortDate } from '#app/cms/ui';
 
 /** Columns the inbox shows: the form's first inputs, as Gravity Forms' entry list. */
 const COLUMNS = 4;

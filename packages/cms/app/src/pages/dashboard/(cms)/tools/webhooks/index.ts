@@ -3,8 +3,8 @@ import { input } from '@cossackframework/core/input';
 import { AlertDialog, Badge, Button, Card, CardBody, CardHeader, Checkbox, Field, Input } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS, WEBHOOK_EVENTS, type Webhook, type WebhookDelivery, type WebhookEvent } from '@cossackframework/cms';
-import { requireAny } from '../../../../../cms/guards';
-import { notice, pageHeader, shortDate } from '../../../../../cms/ui';
+import { requireAny } from '#app/cms/guards';
+import { notice, pageHeader, shortDate } from '#app/cms/ui';
 
 const EVENT_LABELS: Record<WebhookEvent, string> = {
     'entry.created': 'An entry is created', 'entry.updated': 'An entry changes', 'entry.published': 'An entry is published',

@@ -2,10 +2,10 @@ import { Client, ClientState, Cossack, Page, State, type HeadValue } from '@coss
 import { Badge, Card, CardBody, Icon, Input } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { BLOCK_CATEGORIES, blockCategory, blockSupports, PERMISSIONS, type BlockCategory } from '@cossackframework/cms';
-import { FIELD_TYPES, typeOf } from '../../../../cms/builder';
-import { requireAny } from '../../../../cms/guards';
-import { blockIcon, blockIconColor, icon } from '../../../../cms/icons';
-import { pageHeader } from '../../../../cms/ui';
+import { FIELD_TYPES, typeOf } from '#app/cms/builder';
+import { requireAny } from '#app/cms/guards';
+import { blockIcon, blockIconColor, icon } from '#app/cms/icons';
+import { pageHeader } from '#app/cms/ui';
 
 /** The Style tab's properties as words; the advanced background's details fold into their main property. */
 const STYLE_LABELS: Record<string, string> = { background: 'background', text: 'text color', padding: 'padding', margin: 'margin', fontSize: 'font size', align: 'alignment', gradient: 'gradient', image: 'background image', overlay: 'overlay', video: 'background video' };

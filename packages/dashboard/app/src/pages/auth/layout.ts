@@ -1,7 +1,7 @@
 import { Cossack, Page, server$ } from '@cossackframework/core';
 import { Card, CardBody } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
-import { signInBrand } from '../../brand';
+import { signInBrand } from '#app/brand';
 
 @Page({ transport: 'http' })
 export default class AuthLayout extends Cossack {

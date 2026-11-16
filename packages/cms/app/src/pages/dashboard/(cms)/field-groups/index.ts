@@ -2,8 +2,8 @@ import { Cossack, Page, State, type HeadValue } from '@cossackframework/core';
 import { Badge, Card, CardBody } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { flattenGroupFields, PERMISSIONS, type FieldGroupTarget } from '@cossackframework/cms';
-import { requireAny } from '../../../../cms/guards';
-import { linkButton, pageHeader } from '../../../../cms/ui';
+import { requireAny } from '#app/cms/guards';
+import { linkButton, pageHeader } from '#app/cms/ui';
 
 interface Row { id: string; title: string; description: string; placement: string; fields: number; targets: string[] }
 

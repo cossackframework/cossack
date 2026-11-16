@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { isSameOriginPost } from '@cossackframework/cms';
-import { passesBotCheck } from '../../../auth-bot-check';
-import { auth, completeTwoFactor, beginTwoFactor, createSession, loginUser, logout, SignInLockedError, SignInPasskeyError } from '../../../auth';
+import { passesBotCheck } from '#app/auth-bot-check';
+import { auth, completeTwoFactor, beginTwoFactor, createSession, loginUser, logout, SignInLockedError, SignInPasskeyError } from '#app/auth';
 
 /**
  * JSON sign-in for tools such as `cossack <plugin>:<command>`: `{ email, password }` answers

@@ -2,8 +2,8 @@ import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackfr
 import { Badge, Button, Card, CardBody } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS } from '@cossackframework/cms';
-import { requireAny } from '../../../../cms/guards';
-import { artwork, authorLine, linkButton, notice, pageHeader } from '../../../../cms/ui';
+import { requireAny } from '#app/cms/guards';
+import { artwork, authorLine, linkButton, notice, pageHeader } from '#app/cms/ui';
 
 interface ThemeRow { name: string; label: string; description: string; version: string; author: { name: string; url: string; email: string } | null; locations: string[]; parent: string; options: boolean; problems: string[]; active: boolean; logo: string | null; cover: string | null }
 

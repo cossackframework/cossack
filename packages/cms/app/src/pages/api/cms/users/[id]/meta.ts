@@ -1,10 +1,10 @@
 import type { Context } from 'hono';
 import { hasPermission, PERMISSIONS } from '@cossackframework/cms';
-import { apiError, writeAllowed, writeBody } from '../../../../../cms/content-api';
-import { groupsView, metaInput, metaValues } from '../../../../../cms/content';
-import { canManageUser } from '../../../../../services/rbac';
-import { getUser } from '../../../../../services/users';
-import type { PublicUser } from '../../../../../auth';
+import { apiError, writeAllowed, writeBody } from '#app/cms/content-api';
+import { groupsView, metaInput, metaValues } from '#app/cms/content';
+import { canManageUser } from '#app/services/rbac';
+import { getUser } from '#app/services/users';
+import type { PublicUser } from '#app/auth';
 import type { Principal } from '@cossackframework/cms';
 
 /** The caller as `canManageUser` takes it: the session's user, or an application password's principal. */

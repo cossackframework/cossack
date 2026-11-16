@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
-import { answer } from '../../../../../../cms/content-api';
-import { siteGet, siteSetStatus } from '../../../../../../cms/manage';
+import { answer } from '#app/cms/content-api';
+import { siteGet, siteSetStatus } from '#app/cms/manage';
 
 /** One site with its domains: `GET /api/cms/network/sites/<id>` (`main` for the main site). */
 export const GET = (c: Context) => answer(c, () => siteGet(c, c.req.param('id') ?? ''));

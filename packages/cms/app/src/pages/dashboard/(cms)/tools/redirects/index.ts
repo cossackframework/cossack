@@ -3,8 +3,8 @@ import { input } from '@cossackframework/core/input';
 import { AlertDialog, Badge, Button, Card, CardBody, Field, Input, NativeSelect, Pagination } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS, principalId, REDIRECT_STATUSES, type Redirect, type RedirectStatus } from '@cossackframework/cms';
-import { requireAny } from '../../../../../cms/guards';
-import { notice, pageHeader, shortDate } from '../../../../../cms/ui';
+import { requireAny } from '#app/cms/guards';
+import { notice, pageHeader, shortDate } from '#app/cms/ui';
 
 const PAGE_SIZE = 20;
 const TYPES: Record<RedirectStatus, string> = { 301: '301 Moved permanently', 302: '302 Found (temporary)', 307: '307 Temporary redirect', 308: '308 Permanent redirect', 410: '410 Gone' };

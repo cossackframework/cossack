@@ -2,11 +2,11 @@ import { Cossack, Page, State, Server, Client, flash, flashed, type HeadValue } 
 import { Button, Card, CardBody, Icon, Input, NativeSelect, Pagination } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { formatBytes, isSameOriginPost, mediaKind, mediaUrl, PERMISSIONS, type MediaKind } from '@cossackframework/cms';
-import { requireAny } from '../../../../cms/guards';
-import { icon } from '../../../../cms/icons';
-import { formFiles, uploadFiles } from '../../../../cms/uploads';
-import { uploadFile } from '../../../../cms/media-chooser';
-import { notice, pageHeader, shortDate } from '../../../../cms/ui';
+import { requireAny } from '#app/cms/guards';
+import { icon } from '#app/cms/icons';
+import { formFiles, uploadFiles } from '#app/cms/uploads';
+import { uploadFile } from '#app/cms/media-chooser';
+import { notice, pageHeader, shortDate } from '#app/cms/ui';
 
 const PAGE_SIZE = 40;
 

@@ -2,8 +2,8 @@ import { Cossack, Page, State, Server, type HeadValue } from '@cossackframework/
 import { Button, Card, CardBody, CodeEditor, NativeSelect } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { compareRecords, isCmsError, recordTitle, type FieldChange } from '@cossackframework/cms';
-import { routeResource } from '../../../../../../../cms/content';
-import { notice, pageHeader, shortDate } from '../../../../../../../cms/ui';
+import { routeResource } from '#app/cms/content';
+import { notice, pageHeader, shortDate } from '#app/cms/ui';
 
 interface RevisionOption { revision: number; at: number; actor: string }
 

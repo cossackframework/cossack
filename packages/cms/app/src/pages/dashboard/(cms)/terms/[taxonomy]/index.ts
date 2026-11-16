@@ -2,10 +2,10 @@ import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackfr
 import { AlertDialog, Button, Card, CardBody, Field, Icon, Input, NativeSelect, Textarea, CardHeader } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS, slugify, type TermShape } from '@cossackframework/cms';
-import { requireAny } from '../../../../../cms/guards';
-import { icon } from '../../../../../cms/icons';
-import { iconSelect } from '../../../../../cms/term-icons';
-import { notice, pageHeader } from '../../../../../cms/ui';
+import { requireAny } from '#app/cms/guards';
+import { icon } from '#app/cms/icons';
+import { iconSelect } from '#app/cms/term-icons';
+import { notice, pageHeader } from '#app/cms/ui';
 
 interface Row { id: string; name: string; slug: string; description: string; icon: string; depth: number; count: number }
 interface Draft { name: string; slug: string; parent: string; description: string; icon: string }

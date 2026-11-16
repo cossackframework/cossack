@@ -3,10 +3,10 @@ import { input } from '@cossackframework/core/input';
 import { Card, CardBody, CardHeader, Checkbox, Field, Input, PasswordInput, Button, Form } from '@cossackframework/ui';
 import { linkButton, notice, pageHeader } from '@cossackframework/ui/blocks';
 import { html, component, bind } from '@cossackframework/renderer';
-import { canAssignRoles, canGrantRoles, guard } from '../../../../services/rbac';
-import { createUser } from '../../../../services/users';
-import { defaultRole, getRole, listRoles, type RoleDetail } from '../../../../services/roles';
-import type { PublicUser } from '../../../../auth';
+import { canAssignRoles, canGrantRoles, guard } from '#app/services/rbac';
+import { createUser } from '#app/services/users';
+import { defaultRole, getRole, listRoles, type RoleDetail } from '#app/services/roles';
+import type { PublicUser } from '#app/auth';
 
 interface NewUserForm {
     name: string;

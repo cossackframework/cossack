@@ -1,10 +1,10 @@
 import { Cossack, Page, State, flash, flashed, type HeadValue } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
 import { isSameOriginPost } from '@cossackframework/cms';
-import { notice, pageHeader } from '../../../../../cms/ui';
-import { requireNetworkAdmin } from '../../../../../cms/guards';
-import { network } from '../../../../../cms/network-ui';
-import { submitButton } from '../../../../../cms/network-view';
+import { notice, pageHeader } from '#app/cms/ui';
+import { requireNetworkAdmin } from '#app/cms/guards';
+import { network } from '#app/cms/network-ui';
+import { submitButton } from '#app/cms/network-view';
 
 /**
  * Network → Updates: sites whose schema has host steps to apply after a deploy. Each site

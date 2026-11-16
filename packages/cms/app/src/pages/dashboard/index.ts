@@ -3,10 +3,10 @@ import { Avatar, Badge, Icon } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { plugins } from '@cossackframework/framework/plugins';
 import { evaluateRule, hasPermission, PERMISSIONS, recordTitle } from '@cossackframework/cms';
-import { icon } from '../../cms/icons';
-import { box, notice, screenHelp, shortDate } from '../../cms/ui';
-import { agentIcon, browserIcon, osIcon } from '../../dashboard/agent-icons';
-import { parseUserAgent } from '../../dashboard/session-list';
+import { icon } from '#app/cms/icons';
+import { box, notice, screenHelp, shortDate } from '#app/cms/ui';
+import { agentIcon, browserIcon, osIcon } from '#app/dashboard/agent-icons';
+import { parseUserAgent } from '#app/dashboard/session-list';
 
 /** Components active plugins export as `slots['dashboard.overview']` from their ui.ts. */
 function overviewWidgets(active: readonly string[]): TemplateResult[] {

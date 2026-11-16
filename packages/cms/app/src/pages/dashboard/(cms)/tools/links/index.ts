@@ -2,8 +2,8 @@ import { Cossack, Page, State, type HeadValue } from '@cossackframework/core';
 import { Badge, Card, CardBody, CardHeader } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { ANONYMOUS, blockLinks, internalLinkPath, isCmsError, markdownLinks, PERMISSIONS, recordTitle, richTextLinks, type Block, type FieldFilter, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
-import { requireAny } from '../../../../../cms/guards';
-import { notice, pageHeader } from '../../../../../cms/ui';
+import { requireAny } from '#app/cms/guards';
+import { notice, pageHeader } from '#app/cms/ui';
 
 interface LinkedEntry { id: string; title: string; url: string; collection: string; edit: string; inbound: number; outbound: number; cornerstone: boolean }
 

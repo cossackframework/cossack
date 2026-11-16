@@ -3,8 +3,8 @@ import { Badge, Card, CardBody } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { PERMISSIONS } from '@cossackframework/cms';
 import type { AuditEntry } from '@cossackframework/cms/server';
-import { requireAny } from '../../../../../cms/guards';
-import { pageHeader, shortDate } from '../../../../../cms/ui';
+import { requireAny } from '#app/cms/guards';
+import { pageHeader, shortDate } from '#app/cms/ui';
 
 const PER_PAGE = 50;
 

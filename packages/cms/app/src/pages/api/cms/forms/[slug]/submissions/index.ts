@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 import { SUBMISSION_STATUSES, type SubmissionStatus } from '@cossackframework/cms';
-import { apiError } from '../../../../../../cms/content-api';
+import { apiError } from '#app/cms/content-api';
 
 /**
  * A form's submissions, newest first, for an application password or a session with

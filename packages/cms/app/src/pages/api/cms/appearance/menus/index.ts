@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
-import { answer } from '../../../../../cms/content-api';
-import { menuCreate, menusList } from '../../../../../cms/manage';
+import { answer } from '#app/cms/content-api';
+import { menuCreate, menusList } from '#app/cms/manage';
 
 /** The site's menus with how many items each has and where it shows: `GET /api/cms/appearance/menus`. Needs the appearance permission. */
 export const GET = (c: Context) => answer(c, () => menusList(c));

@@ -2,12 +2,12 @@ import { Client, ClientState, Cossack, Inject, Page, PreventNavigation, Server, 
 import { Button, Card, CardBody, CodeEditor } from '@cossackframework/ui';
 import { component, html, key } from '@cossackframework/renderer';
 import { isCmsError, isNetworkAdmin, MAIN_SITE, parseSettingsDocument, PERMISSIONS, SETTINGS_DOCUMENT_MAX_BYTES, SETTINGS_DOCUMENT_MAX_FIELDS, settingsJsonSchema, stringifySettingsDocument, type SettingsDocument } from '@cossackframework/cms';
-import { requireAny } from '../../../../../cms/guards';
-import { formatSettingsDraft, mergeSettings, settingsChanges, SettingsDraft, settingsNavigation } from '../../../../../cms/settings-draft';
-import { settingsEditorSnapshot } from '../../../../../cms/settings-form';
-import { settingsErrorSummary, settingsFrame, settingsLinks, type SettingsLink } from '../../../../../cms/settings-nav';
-import { notice, pageHeader } from '../../../../../cms/ui';
-import { settingsSearchEntries, type SettingsSearchEntry } from '../../../../../cms/settings-search';
+import { requireAny } from '#app/cms/guards';
+import { formatSettingsDraft, mergeSettings, settingsChanges, SettingsDraft, settingsNavigation } from '#app/cms/settings-draft';
+import { settingsEditorSnapshot } from '#app/cms/settings-form';
+import { settingsErrorSummary, settingsFrame, settingsLinks, type SettingsLink } from '#app/cms/settings-nav';
+import { notice, pageHeader } from '#app/cms/ui';
+import { settingsSearchEntries, type SettingsSearchEntry } from '#app/cms/settings-search';
 
 interface JsonSettingsView { links: SettingsLink[]; entries: SettingsSearchEntry[]; snapshot: SettingsDocument; invalid: Record<string, string>; schema: object; references: string[] }
 interface PreviewResult { before: SettingsDocument; after: SettingsDocument; patch: SettingsDocument; error: string; fields: Record<string, string> }

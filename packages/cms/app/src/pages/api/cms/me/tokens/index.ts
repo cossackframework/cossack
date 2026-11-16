@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
-import { answer } from '../../../../../cms/content-api';
-import { tokenCreate, tokensList } from '../../../../../cms/manage';
+import { answer } from '#app/cms/content-api';
+import { tokenCreate, tokensList } from '#app/cms/manage';
 
 /** The signed-in user's application passwords: `GET /api/cms/me/tokens`. The secrets are never listed. */
 export const GET = (c: Context) => answer(c, () => tokensList(c));

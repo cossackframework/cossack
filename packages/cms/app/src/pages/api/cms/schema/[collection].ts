@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { recordSchema } from '@cossackframework/cms';
-import { apiError, apiHeaders } from '../../../../cms/content-api';
-import { routeResource } from '../../../../cms/content';
+import { apiError, apiHeaders } from '#app/cms/content-api';
+import { routeResource } from '#app/cms/content';
 
 /** The JSON Schema of a content type's entries: `GET /api/cms/schema/posts`. For validating writes and imports. */
 export const GET = async (c: Context) => {

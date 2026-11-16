@@ -1,9 +1,9 @@
 import { Cossack, Page } from '@cossackframework/core';
 import { isCmsError } from '@cossackframework/cms';
-import { llmsTxt } from '../../../cms/machine';
-import { siteOrigin } from '../../../cms/seo';
-import { trackCrawler } from '../../../cms/traffic';
-import { cacheHeaders } from '../../../cms/cache';
+import { llmsTxt } from '#app/cms/machine';
+import { siteOrigin } from '#app/cms/seo';
+import { trackCrawler } from '#app/cms/traffic';
+import { cacheHeaders } from '#app/cms/cache';
 
 /** `/llms.txt`: the site for AI assistants, as Settings → SEO allows. Off with the site hidden from search engines. */
 @Page({ transport: 'http' })

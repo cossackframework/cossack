@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
-import { answer } from '../../../../../cms/content-api';
-import { siteCreate, sitesList } from '../../../../../cms/manage';
+import { answer } from '#app/cms/content-api';
+import { siteCreate, sitesList } from '#app/cms/manage';
 
 /** The network's sites, the main site first: `GET /api/cms/network/sites?q=blog&status=active`, for network admins on the network host. */
 export const GET = (c: Context) => answer(c, () => sitesList(c, c.req.query()));

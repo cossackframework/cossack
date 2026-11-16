@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
-import { answer, apiHeaders } from '../../../cms/content-api';
-import { siteSearch } from '../../../cms/manage';
+import { answer, apiHeaders } from '#app/cms/content-api';
+import { siteSearch } from '#app/cms/manage';
 
 /**
  * The site's search: `GET /api/cms/search?q=walrus+facts&page=2`. Published entries visitors may

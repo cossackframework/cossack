@@ -1,19 +1,19 @@
 import { Client, ClientState, Cossack, Page, Server, State, server$, setRequestLocale, type HeadContext, type HeadTag, type HeadValue } from '@cossackframework/core';
-import { analyticsTags, NO_ANALYTICS, type AnalyticsServices } from '../../cms/analytics';
-import { listedCollections } from '../../cms/cache';
+import { analyticsTags, NO_ANALYTICS, type AnalyticsServices } from '#app/cms/analytics';
+import { listedCollections } from '#app/cms/cache';
 import { html } from '@cossackframework/renderer';
 import { hasPermission, PERMISSIONS, PLACEHOLDER_SCRIPT, usesUserBinding, type RenderedBlock, type SiteView, type ThemeData } from '@cossackframework/cms';
-import { areaViews, bindableEntry, bindingScopes, languageLinks, resolvedOptions, siteMenus, siteView, themeData, themeState, unlockCookie, type Resolved, type ThemeState } from '../../cms/site';
+import { areaViews, bindableEntry, bindingScopes, languageLinks, resolvedOptions, siteMenus, siteView, themeData, themeState, unlockCookie, type Resolved, type ThemeState } from '#app/cms/site';
 import { getCookie } from 'hono/cookie';
-import { blockOptions } from '../../cms/content';
-import { areaDraftBlocks, patternDraftBlocks } from '../../cms/site-editing';
-import { siteSession, type AreaDraft, type PatternDraft, type SiteEditingContext } from '../../cms/site-session';
-import { closeMenusOnFollow, pluginHeads, siteTheme, tagDocument, themeHelpers } from '../../cms/site-view';
-import { siteTaskbar } from '../../cms/site-taskbar';
-import { ICON_STYLE_META, iconStyle } from '../../cms/icons';
-import { taskbar, type TaskbarView } from '../../cms/taskbar';
+import { blockOptions } from '#app/cms/content';
+import { areaDraftBlocks, patternDraftBlocks } from '#app/cms/site-editing';
+import { siteSession, type AreaDraft, type PatternDraft, type SiteEditingContext } from '#app/cms/site-session';
+import { closeMenusOnFollow, pluginHeads, siteTheme, tagDocument, themeHelpers } from '#app/cms/site-view';
+import { siteTaskbar } from '#app/cms/site-taskbar';
+import { ICON_STYLE_META, iconStyle } from '#app/cms/icons';
+import { taskbar, type TaskbarView } from '#app/cms/taskbar';
 
-import { logout } from '../../auth';
+import { logout } from '#app/auth';
 
 /**
  * The public site's frame, drawn by the active theme's layout, in the page's language, with

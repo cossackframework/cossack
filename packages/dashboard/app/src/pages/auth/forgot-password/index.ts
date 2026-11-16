@@ -1,10 +1,10 @@
 import { Cossack, Page, State, ClientState, ClientStore, Validate, Client, Server, storeRules, ClientVisibleError, isClientVisibleError } from '@cossackframework/core';
 import { Field, Input, Button, Alert, Turnstile } from '@cossackframework/ui';
 import { html, component, bind } from '@cossackframework/renderer';
-import { requestPasswordReset } from '../../../auth';
-import { resetRequestInput, type ResetRequestInput } from '../../../auth-input';
-import { botCheckKey, passesBotCheck } from '../../../auth-bot-check';
-import { BOT_CHECK_FAILED, botCheckToken } from '../../../auth-bot-token';
+import { requestPasswordReset } from '#app/auth';
+import { resetRequestInput, type ResetRequestInput } from '#app/auth-input';
+import { botCheckKey, passesBotCheck } from '#app/auth-bot-check';
+import { BOT_CHECK_FAILED, botCheckToken } from '#app/auth-bot-token';
 
 @Page({ transport: 'http' })
 export default class ForgotPasswordPage extends Cossack {

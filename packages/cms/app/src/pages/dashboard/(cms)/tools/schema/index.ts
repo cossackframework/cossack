@@ -2,8 +2,8 @@ import { Cossack, Page, State, flash, flashed, type HeadValue } from '@cossackfr
 import { Card, CardBody, Button } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isSameOriginPost, PERMISSIONS } from '@cossackframework/cms';
-import { requireAny } from '../../../../../cms/guards';
-import { notice, pageHeader } from '../../../../../cms/ui';
+import { requireAny } from '#app/cms/guards';
+import { notice, pageHeader } from '#app/cms/ui';
 
 interface StepView { id: string; description: string; rql: string[] }
 

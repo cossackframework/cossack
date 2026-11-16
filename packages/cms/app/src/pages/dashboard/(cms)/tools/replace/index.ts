@@ -3,9 +3,9 @@ import { input } from '@cossackframework/core/input';
 import { Button, Card, CardBody, CardHeader, Checkbox, Field, Input, NativeSelect } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS, recordTitle, type Block, type RichTextDoc } from '@cossackframework/cms';
-import { replaceableFields, replaceInBlocks, replaceInDoc, replaceInText } from '../../../../../cms/replace';
-import { requireAny } from '../../../../../cms/guards';
-import { notice, pageHeader } from '../../../../../cms/ui';
+import { replaceableFields, replaceInBlocks, replaceInDoc, replaceInText } from '#app/cms/replace';
+import { requireAny } from '#app/cms/guards';
+import { notice, pageHeader } from '#app/cms/ui';
 
 interface Match { id: string; title: string; href: string; fields: string[]; count: number }
 

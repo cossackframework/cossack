@@ -2,10 +2,10 @@ import { Cossack, Page, State, flash, flashed, type HeadValue } from '@cossackfr
 import { Badge, Card, CardBody } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, isSameOriginPost, PERMISSIONS } from '@cossackframework/cms';
-import { approveRegistration } from '../../../../auth';
-import { requireAny } from '../../../../cms/guards';
-import { notice, pageHeader, shortDate } from '../../../../cms/ui';
-import { actionButton } from '../../../../cms/network-view';
+import { approveRegistration } from '#app/auth';
+import { requireAny } from '#app/cms/guards';
+import { notice, pageHeader, shortDate } from '#app/cms/ui';
+import { actionButton } from '#app/cms/network-view';
 
 interface Waiting { id: string; name: string; email: string; verified: boolean; createdAt: number }
 

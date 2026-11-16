@@ -3,8 +3,8 @@ import { input } from '@cossackframework/core/input';
 import { Button, Card, CardBody, CardHeader, Field, Input, Textarea } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { AUTHOR_FIELDS, authorUrl, isCmsError } from '@cossackframework/cms';
-import { siteOrigin } from '../../../../../cms/seo';
-import { notice, pageHeader } from '../../../../../cms/ui';
+import { siteOrigin } from '#app/cms/seo';
+import { notice, pageHeader } from '#app/cms/ui';
 
 /** The author profile as the form holds it. */
 interface PublicProfile { slug: string; bio: string; jobTitle: string; website: string; profiles: string }

@@ -3,18 +3,18 @@ import { input } from '@cossackframework/core/input';
 import { Alert, Card, CardBody, CardHeader, Field, Input, PasswordInput, Button, Checkbox, Form, Tabs } from '@cossackframework/ui';
 import { notice, pageHeader } from '@cossackframework/ui/blocks';
 import { html, component, bind } from '@cossackframework/renderer';
-import { canAssignRoles, canManageUser, canManageAccess, guard, canGrantRoles } from '../../../../services/rbac';
-import { getUser, updateUser, syncUserRoles, changeUserPassword, type UserDetail } from '../../../../services/users';
-import { listRoles, type RoleDetail } from '../../../../services/roles';
+import { canAssignRoles, canManageUser, canManageAccess, guard, canGrantRoles } from '#app/services/rbac';
+import { getUser, updateUser, syncUserRoles, changeUserPassword, type UserDetail } from '#app/services/users';
+import { listRoles, type RoleDetail } from '#app/services/roles';
 import {
     apiTokensAvailable, avatarUploads, createApiToken, listApiTokens, resetSecondFactors, revokeApiToken, revokeSessionOf, revokeSessionsOf, securityStatus, sessionsOf,
     passwordMatches, twoFactorAvailable, uploadAvatar, type ApiToken, type PublicUser, type SessionInfo,
-} from '../../../../auth';
-import { AppPasswords } from '../../../../dashboard/app-passwords';
-import { avatarField } from '../../../../dashboard/avatar-field';
-import { sessionTable } from '../../../../dashboard/session-list';
-import { countBadge, rememberTab, tabFromQuery } from '../../../../dashboard/tabs';
-import { userFields, UserFields, type UserFieldsData } from '../../../../dashboard/user-sections';
+} from '#app/auth';
+import { AppPasswords } from '#app/dashboard/app-passwords';
+import { avatarField } from '#app/dashboard/avatar-field';
+import { sessionTable } from '#app/dashboard/session-list';
+import { countBadge, rememberTab, tabFromQuery } from '#app/dashboard/tabs';
+import { userFields, UserFields, type UserFieldsData } from '#app/dashboard/user-sections';
 
 @Page({ transport: 'http', middlewares: [guard.requireRole('admin')] })
 export default class EditUserPage extends Cossack {

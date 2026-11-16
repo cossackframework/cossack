@@ -1,8 +1,8 @@
 import { Client, Cossack, Page, Server, State } from '@cossackframework/core';
 import { Alert, Button } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
-import { authSessions, linkAccountEmail, verifyEmail } from '../../../auth';
-import { networkFor, siteUrl, type CmsBindings } from '../../../cms/index';
+import { authSessions, linkAccountEmail, verifyEmail } from '#app/auth';
+import { networkFor, siteUrl, type CmsBindings } from '#app/cms/index';
 import { networkSite } from '@cossackframework/cms/server';
 
 /**

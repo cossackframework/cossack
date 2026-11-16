@@ -2,8 +2,8 @@ import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackfr
 import { AlertDialog, Badge, Button, Card, CardBody, Field, Input, NativeSelect } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS } from '@cossackframework/cms';
-import { requireAny } from '../../../../../cms/guards';
-import { notice, pageHeader, shortDate } from '../../../../../cms/ui';
+import { requireAny } from '#app/cms/guards';
+import { notice, pageHeader, shortDate } from '#app/cms/ui';
 
 interface MenuRow { id: string; name: string; items: number; locations: string[]; updatedAt: number }
 interface LocationRow { name: string; label: string; theme: string; active: boolean; menu: string }

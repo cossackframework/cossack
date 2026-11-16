@@ -5,24 +5,24 @@ import { getCookie } from 'hono/cookie';
 import { component, html } from '@cossackframework/renderer';
 import { hasPermission, isCmsError, isSameOriginPost, PERMISSIONS, type ArchiveView, type EntryView, type LanguageLink, type Note, type RecordShape, type ThemeData } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
-import { archive, authorArchive, authorView, bindableEntry, bindingScopes, commentResult, entryLock, entryViews, homeView, isMembersOnly, isProtected, languageLinks, localePrefix, pageNumber, redirectFor, requestLock, resolvePath, searchBase, searchEntries, termArchive, themeData, themeState, unlockCookie, unlockToken, resolvedOptions, type Resolved, type ThemeState, notFoundPage } from '../../../cms/site';
-import { archiveTemplate, entryTemplate, withContentFields, siteContent, siteTheme, tagDocument, themeContext, unavailable } from '../../../cms/site-view';
-import { authorSeo, entrySeo, homeSeo, listSeo } from '../../../cms/seo';
-import { emptySeo, seoHead, type SeoView } from '../../../cms/seo-head';
-import type { SiteDraft, SiteEditable } from '../../../cms/site-editor';
-import { draftBlockOptions, draftEntry, draftMedia, editableRecord, frameDraft, saveDocuments, saveDraft, siteDraft, siteEditable } from '../../../cms/site-editing';
-import { siteSession, type SiteEditingContext } from '../../../cms/site-session';
-import type { SiteDocument } from '../../../cms/site-editor';
-import { contentMenus, siteInfo, type SiteInfo } from '../../../cms/site';
+import { archive, authorArchive, authorView, bindableEntry, bindingScopes, commentResult, entryLock, entryViews, homeView, isMembersOnly, isProtected, languageLinks, localePrefix, pageNumber, redirectFor, requestLock, resolvePath, searchBase, searchEntries, termArchive, themeData, themeState, unlockCookie, unlockToken, resolvedOptions, type Resolved, type ThemeState, notFoundPage } from '#app/cms/site';
+import { archiveTemplate, entryTemplate, withContentFields, siteContent, siteTheme, tagDocument, themeContext, unavailable } from '#app/cms/site-view';
+import { authorSeo, entrySeo, homeSeo, listSeo } from '#app/cms/seo';
+import { emptySeo, seoHead, type SeoView } from '#app/cms/seo-head';
+import type { SiteDraft, SiteEditable } from '#app/cms/site-editor';
+import { draftBlockOptions, draftEntry, draftMedia, editableRecord, frameDraft, saveDocuments, saveDraft, siteDraft, siteEditable } from '#app/cms/site-editing';
+import { siteSession, type SiteEditingContext } from '#app/cms/site-session';
+import type { SiteDocument } from '#app/cms/site-editor';
+import { contentMenus, siteInfo, type SiteInfo } from '#app/cms/site';
 import type { MenuItemView } from '@cossackframework/cms';
-import { fieldErrors } from '../../../cms/content';
-import { entryAsMarkdown, wantsMarkdown } from '../../../cms/machine';
-import { applyCacheHeaders, cacheHeaders, listedCollections } from '../../../cms/cache';
-import { trackCrawler, trackNotFound } from '../../../cms/traffic';
-import { siteOrigin } from '../../../cms/seo';
-import type { EditorBlock, EditorValues } from '../../../cms/editor';
-import type { MediaPreview } from '../../../cms/field-controls';
-import type { MediaChooserState } from '../../../cms/media-chooser';
+import { fieldErrors } from '#app/cms/content';
+import { entryAsMarkdown, wantsMarkdown } from '#app/cms/machine';
+import { applyCacheHeaders, cacheHeaders, listedCollections } from '#app/cms/cache';
+import { trackCrawler, trackNotFound } from '#app/cms/traffic';
+import { siteOrigin } from '#app/cms/seo';
+import type { EditorBlock, EditorValues } from '#app/cms/editor';
+import type { MediaPreview } from '#app/cms/field-controls';
+import type { MediaChooserState } from '#app/cms/media-chooser';
 
 /** What the layout needs of the draft's documents at render time, to mark the areas and the patterns in them. */
 function editingContext(documents: readonly SiteDocument[]): SiteEditingContext {
@@ -34,7 +34,7 @@ function editingContext(documents: readonly SiteDocument[]): SiteEditingContext 
 }
 
 /** The site editor, loaded the first time an editor enters edit mode; visitors never load it. */
-let SiteEditor: typeof import('../../../cms/site-editor.client').SiteEditor | undefined;
+let SiteEditor: typeof import('#app/cms/site-editor.client').SiteEditor | undefined;
 
 const segmentsOf = (path: string | undefined) => (path ?? '').split('/').filter(Boolean);
 
@@ -508,7 +508,7 @@ export default class SitePath extends Cossack {
     @Client()
     async loadEditor(element: Element | undefined) {
         if (!element || SiteEditor) { this.editorReady = Boolean(SiteEditor); return; }
-        SiteEditor = (await import('../../../cms/site-editor.client')).SiteEditor;
+        SiteEditor = (await import('#app/cms/site-editor.client')).SiteEditor;
         this.editorReady = true;
     }
 

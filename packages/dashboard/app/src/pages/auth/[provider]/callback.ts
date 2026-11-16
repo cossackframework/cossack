@@ -1,5 +1,5 @@
 import type { Context } from 'hono';
-import { handleOAuthUser, oauth, oauthProvider } from '../../../auth';
+import { handleOAuthUser, oauth, oauthProvider } from '#app/auth';
 
 /** The provider sends the visitor back here: sign in the account it names, or create one. A provider the project does not offer answers 404. */
 export const GET = async (c: Context) => {

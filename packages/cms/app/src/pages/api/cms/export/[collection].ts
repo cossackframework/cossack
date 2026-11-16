@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
-import { apiError } from '../../../../cms/content-api';
-import { exportEntries, routeResource } from '../../../../cms/content';
+import { apiError } from '#app/cms/content-api';
+import { exportEntries, routeResource } from '#app/cms/content';
 
 /**
  * Every entry of a content type the caller may read, whatever its status, as a JSON document

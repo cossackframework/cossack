@@ -1,15 +1,15 @@
 import { Cossack, Page, State, Server, Client } from '@cossackframework/core';
 import { AlertDialog } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
-import { requireRoleManager } from '../../../services/rbac';
-import { listFilters, listFooter, listTable, rowActions } from '../../../dashboard/list-table';
+import { requireRoleManager } from '#app/services/rbac';
+import { listFilters, listFooter, listTable, rowActions } from '#app/dashboard/list-table';
 import { linkButton, notice, pageHeader } from '@cossackframework/ui/blocks';
 import {
     listRoles,
     deleteRole,
     type RoleDetail,
     type ListRolesResult,
-} from '../../../services/roles';
+} from '#app/services/roles';
 
 const PAGE_SIZE = 20;
 

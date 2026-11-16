@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
-import { answer } from '../../../../../cms/content-api';
-import { termDelete, termRead, termUpdate } from '../../../../../cms/manage';
+import { answer } from '#app/cms/content-api';
+import { termDelete, termRead, termUpdate } from '#app/cms/manage';
 
 /** One term: `GET /api/cms/terms/categories/<id>`. */
 export const GET = (c: Context) => answer(c, () => termRead(c, c.req.param('taxonomy') ?? '', c.req.param('id') ?? ''));

@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
-import { formFiles, uploadFiles } from '../../../cms/uploads';
-import { answer, cappedRequest, writeAllowed } from '../../../cms/content-api';
-import { mediaList } from '../../../cms/manage';
+import { formFiles, uploadFiles } from '#app/cms/uploads';
+import { answer, cappedRequest, writeAllowed } from '#app/cms/content-api';
+import { mediaList } from '#app/cms/manage';
 
 /** Library files for the dashboard's choosers, the CLI and MCP: `?q=` matches titles and names, `?kind=image` (video, audio, document, archive) narrows them. */
 export const GET = (c: Context) => answer(c, () => mediaList(c, c.req.query()));

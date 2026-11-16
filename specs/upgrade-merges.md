@@ -124,9 +124,9 @@ Each owned file has *ours* (the file on disk), *base* (the stored blob) and *the
     would never be used. A plugin or `cms.config.ts` is the way to change behaviour
     there.
   - The command refuses an existing file without `--force`.
-- **Imports are rewritten, like UI eject.** A relative import that resolves inside
-  the package becomes the package specifier
-  (`'../../../cms/site'` → `'@cossackframework/cms/app/cms/site'`). The copy and
+- **Imports are rewritten, like UI eject.** A relative or `#app/` import that resolves
+  inside the package becomes the package specifier
+  (`'#app/cms/site'` → `'@cossackframework/cms/app/cms/site'`). The copy and
   the package then share module instances. The rewrite is a pure function of the
   text and the path, and upgrades apply it to *theirs* before merging, so an
   ejected file merges cleanly against package changes.

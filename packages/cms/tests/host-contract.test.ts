@@ -51,17 +51,27 @@ describe('the host contract of the served CMS app', () => {
         expect([...host].filter(module => !used.has(module))).toEqual([]);
     });
 
-    it('keeps every relative import inside the served set', () => {
+    it('keeps every relative and #app/ import inside the served set', () => {
         const leaving: string[] = [];
         for (const file of sources) for (const specifier of importsOf(file)) {
-            if (!specifier.startsWith('.')) continue;
-            const stem = path.posix.join(path.posix.dirname(file), specifier);
+            // `#app/` is the served root (`imports` in package.json): `#app/cms/site` is `src/cms/site.ts`.
+            if (!specifier.startsWith('.') && !specifier.startsWith('#app/')) continue;
+            const stem = specifier.startsWith('#app/') ? `src/${specifier.slice(5)}` : path.posix.join(path.posix.dirname(file), specifier);
             const candidates = [stem, `${stem}.ts`, `${stem}/index.ts`];
             // A file of the served set, or an asset beside it (a stylesheet, a JSON catalog).
             if (!candidates.some(candidate => served.has(candidate))) leaving.push(`${file}: ${specifier}`);
         }
         // A copy of an application module in the project would never be used by such an import.
         expect(leaving).toEqual([]);
+    });
+
+    it('names the served root #app/ in the package and in its development application', () => {
+        const own = JSON.parse(readFileSync(path.join(app, 'package.json'), 'utf8')) as { imports: Record<string, string> };
+        expect((manifest as { imports?: Record<string, string> }).imports).toEqual({ '#app/*': './app/src/*.ts' });
+        expect(own.imports).toEqual({ '#app/*': './src/*.ts' });
+        // Two directories up or more is written #app/, so a moved file keeps its imports.
+        const climbing = sources.flatMap(file => importsOf(file).filter(specifier => specifier.startsWith('../../')).map(specifier => `${file}: ${specifier}`));
+        expect(climbing).toEqual([]);
     });
 
     it('never imports the package source by a path: the core is a package import', () => {

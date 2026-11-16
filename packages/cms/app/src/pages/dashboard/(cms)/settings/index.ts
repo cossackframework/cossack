@@ -3,17 +3,17 @@ import { input } from '@cossackframework/core/input';
 import { Badge, Card, CardBody } from '@cossackframework/ui';
 import { component, html, repeat, type TemplateResult } from '@cossackframework/renderer';
 import { hasPermission, isCmsError, isNetworkAdmin, MAIN_SITE, PERMISSIONS, type SettingsDocument, type SettingsSection as SectionDeclaration } from '@cossackframework/cms';
-import { requireAny } from '../../../../cms/guards';
-import { SettingsDraft, settingsNavigation } from '../../../../cms/settings-draft';
-import { findSettingsMedia, settingControl, settingInput, settingRows, settingsEditorSnapshot, type ChoiceCache, type SettingRow, type SettingValue, type SettingValues } from '../../../../cms/settings-form';
-import { filterSettingsLinks, settingsErrorSummary, settingsFrame, settingsLinks, type SettingsLink } from '../../../../cms/settings-nav';
-import { searchSettings, settingsSearchEntries, settingsSectionId, type SettingsSearchEntry } from '../../../../cms/settings-search';
-import { SettingsSection } from '../../../../cms/settings-section';
-import { activeSettingsSection } from '../../../../cms/settings-scroll';
-import { languageDraft, languageInput, LanguagesSettings, loadLanguageSettings, saveLanguageSettings, type LanguageSettingsData, type LanguageSettingsInput } from '../../../../cms/settings-languages';
-import { PermalinksSettings, loadPermalinkSettings, permalinkDraft, savePermalinkSettings, type PermalinkSettingsData, type PermalinkSettingsInput } from '../../../../cms/settings-permalinks';
-import { NetworkSettingsForm, loadNetworkSettings, networkDraft, saveNetworkSettings, type NetworkSettingsData, type NetworkSettingsInput } from '../../../../cms/settings-network';
-import { notice } from '../../../../cms/ui';
+import { requireAny } from '#app/cms/guards';
+import { SettingsDraft, settingsNavigation } from '#app/cms/settings-draft';
+import { findSettingsMedia, settingControl, settingInput, settingRows, settingsEditorSnapshot, type ChoiceCache, type SettingRow, type SettingValue, type SettingValues } from '#app/cms/settings-form';
+import { filterSettingsLinks, settingsErrorSummary, settingsFrame, settingsLinks, type SettingsLink } from '#app/cms/settings-nav';
+import { searchSettings, settingsSearchEntries, settingsSectionId, type SettingsSearchEntry } from '#app/cms/settings-search';
+import { SettingsSection } from '#app/cms/settings-section';
+import { activeSettingsSection } from '#app/cms/settings-scroll';
+import { languageDraft, languageInput, LanguagesSettings, loadLanguageSettings, saveLanguageSettings, type LanguageSettingsData, type LanguageSettingsInput } from '#app/cms/settings-languages';
+import { PermalinksSettings, loadPermalinkSettings, permalinkDraft, savePermalinkSettings, type PermalinkSettingsData, type PermalinkSettingsInput } from '#app/cms/settings-permalinks';
+import { NetworkSettingsForm, loadNetworkSettings, networkDraft, saveNetworkSettings, type NetworkSettingsData, type NetworkSettingsInput } from '#app/cms/settings-network';
+import { notice } from '#app/cms/ui';
 
 interface GroupView {
     id: string; label: string; description: string; plugin: string; active: boolean; theme: boolean; portable: boolean;

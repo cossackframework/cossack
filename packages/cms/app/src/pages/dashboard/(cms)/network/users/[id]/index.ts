@@ -3,11 +3,11 @@ import { Badge, Card, CardBody, CardHeader, Field, NativeSelect } from '@cossack
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { DEFAULT_ROLES, isCmsError, isSameOriginPost, MAIN_SITE, NETWORK_ADMIN } from '@cossackframework/cms';
 import { networkSite, type CmsHost } from '@cossackframework/cms/server';
-import { notice, pageHeader, shortDate } from '../../../../../../cms/ui';
-import { requireNetworkAdmin } from '../../../../../../cms/guards';
-import { network, siteLinks, siteNames } from '../../../../../../cms/network-ui';
-import { actionButton, field, submitButton } from '../../../../../../cms/network-view';
-import { listTable } from '../../../../../../dashboard/list-table';
+import { notice, pageHeader, shortDate } from '#app/cms/ui';
+import { requireNetworkAdmin } from '#app/cms/guards';
+import { network, siteLinks, siteNames } from '#app/cms/network-ui';
+import { actionButton, field, submitButton } from '#app/cms/network-view';
+import { listTable } from '#app/dashboard/list-table';
 
 interface Membership { id: string; name: string; roles: string; dashboard: string }
 

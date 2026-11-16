@@ -1,12 +1,12 @@
 import { Cossack, Page, State, flash, flashed, type HeadValue } from '@cossackframework/core';
-import { settingsSectionHref } from '../../../../../cms/settings-search';
+import { settingsSectionHref } from '#app/cms/settings-search';
 import { Badge, Card, CardBody, CardHeader } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { cacheHoldSeconds, cachePurge, isCmsError, isSameOriginPost, PERMISSIONS, type CacheHold } from '@cossackframework/cms';
 import type { PurgeRecord } from '@cossackframework/cms/server';
-import { requireAny } from '../../../../../cms/guards';
-import { notice, pageHeader, shortDate } from '../../../../../cms/ui';
-import { actionButton } from '../../../../../cms/network-view';
+import { requireAny } from '#app/cms/guards';
+import { notice, pageHeader, shortDate } from '#app/cms/ui';
+import { actionButton } from '#app/cms/network-view';
 
 /**
  * Tools → Cache: what the caches in front of the site are told (Settings → Cache), which

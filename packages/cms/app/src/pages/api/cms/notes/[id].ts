@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
-import { answer } from '../../../../cms/content-api';
-import { noteChange, noteRemove } from '../../../../cms/manage';
+import { answer } from '#app/cms/content-api';
+import { noteChange, noteRemove } from '#app/cms/manage';
 
 /**
  * Change a note: `PATCH /api/cms/notes/<id>` with `body` (its author alone) and, on a thread's

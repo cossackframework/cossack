@@ -87,6 +87,9 @@
     "./app/cms/blocks.css": "./app/src/cms/blocks.css",
     "./package.json": "./package.json"
   },
+  "imports": {
+    "#app/*": "./app/src/*.ts"
+  },
   "cossack": {
     "vite": "src/vite.js",
     "root": "app/src",

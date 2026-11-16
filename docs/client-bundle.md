@@ -293,7 +293,7 @@ A class is a framework class when one of these is true:
 - Its superclass is imported from another application module and that class is
   a framework class. The plugin reads the module without running it. It follows
   relative imports, root-relative imports (`/src/...`), Vite `resolve.alias`
-  entries, re-exports, `export *`, default exports, namespace imports and
+  entries, a package's own `imports` (`#app/...`), re-exports, `export *`, default exports, namespace imports and
   inheritance chains across modules, up to 8 modules deep. Every class that
   `@cossackframework/ui` exports is a framework class.
 - It has a `@Page`, `@Component` or `@Service` decorator. The decorator can come

@@ -2,9 +2,9 @@ import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackfr
 import { Button, Card, CardBody, CodeEditor, ColorPicker, Field, Input } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { customCssProblem, hasPermission, isCmsError, PERMISSIONS, presetOverridesProblem, resolvePresets, slugify, type Preset } from '@cossackframework/cms';
-import { requireAny } from '../../../../../cms/guards';
-import { findSettingsMedia, settingControl, settingInput, settingRows, type SettingRow, type SettingValues } from '../../../../../cms/settings-form';
-import { linkButton, notice, pageHeader } from '../../../../../cms/ui';
+import { requireAny } from '#app/cms/guards';
+import { findSettingsMedia, settingControl, settingInput, settingRows, type SettingRow, type SettingValues } from '#app/cms/settings-form';
+import { linkButton, notice, pageHeader } from '#app/cms/ui';
 
 /** A palette color or a gradient as the screen edits it: the theme's value, and the site's when changed. */
 interface ColorRow { slug: string; name: string; value: string; themeValue: string }

@@ -2,9 +2,9 @@ import { Cossack, Page, State, type HeadValue } from '@cossackframework/core';
 import { Badge, Card, CardBody, Icon } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { PERMISSIONS } from '@cossackframework/cms';
-import { requireAny } from '../../../../cms/guards';
-import { icon } from '../../../../cms/icons';
-import { linkButton, pageHeader } from '../../../../cms/ui';
+import { requireAny } from '#app/cms/guards';
+import { icon } from '#app/cms/icons';
+import { linkButton, pageHeader } from '#app/cms/ui';
 
 interface Row { name: string; label: string; singular: string; icon: string; builtin: boolean; entries: number; fields: number; taxonomies: string[]; path: string | null }
 

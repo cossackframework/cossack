@@ -1,7 +1,7 @@
 import { Cossack, Page, State, type HeadValue } from '@cossackframework/core';
 import type { ArchiveView, ThemeData } from '@cossackframework/cms';
-import { pageNumber, searchBase, searchEntries, siteInfo, themeData, themeState, type SiteInfo, type ThemeState } from '../../../cms/site';
-import { archiveTemplate, siteContent, siteTheme, themeContext } from '../../../cms/site-view';
+import { pageNumber, searchBase, searchEntries, siteInfo, themeData, themeState, type SiteInfo, type ThemeState } from '#app/cms/site';
+import { archiveTemplate, siteContent, siteTheme, themeContext } from '#app/cms/site-view';
 
 /** Search published entries of every collection on the site. */
 @Page({ transport: 'http' })

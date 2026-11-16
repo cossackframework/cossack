@@ -3,8 +3,8 @@ import { input } from '@cossackframework/core/input';
 import { Card, CardBody, CardHeader, Field, Input, Button, Avatar, Form, NativeSelect } from '@cossackframework/ui';
 import { notice, pageHeader } from '@cossackframework/ui/blocks';
 import { html, component, bind } from '@cossackframework/renderer';
-import { avatarUploads, deleteOwnAccount, updateUserProfile, uploadAvatar } from '../../../auth';
-import { avatarField } from '../../../dashboard/avatar-field';
+import { avatarUploads, deleteOwnAccount, updateUserProfile, uploadAvatar } from '#app/auth';
+import { avatarField } from '#app/dashboard/avatar-field';
 
 /** A language's name in itself, such as Français or Tiếng Việt. */
 function languageLabel(code: string): string {

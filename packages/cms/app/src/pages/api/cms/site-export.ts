@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 import { hasPermission, holdsAll, isNetworkAdmin, MAIN_SITE, PERMISSIONS } from '@cossackframework/cms';
-import { exportResponse, fileExportResponse } from '../../../cms/site-export';
+import { exportResponse, fileExportResponse } from '#app/cms/site-export';
 
 /**
  * This site's database as a JSON file, `GET /api/cms/site-export`, for its admins signed in

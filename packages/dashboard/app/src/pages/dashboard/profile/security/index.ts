@@ -6,9 +6,9 @@ import { html, component, unsafeHTML, type TemplateResult } from '@cossackframew
 import {
     addPasskey, apiTokensAvailable, confirmAuthenticator, createApiToken, disableAuthenticator, listApiTokens, newRecoveryCodes, passkeyRegistration,
     removePasskey, revokeApiToken, securityStatus, startAuthenticator, twoFactorAvailable, type ApiToken, type PublicUser, type SecurityStatus,
-} from '../../../../auth';
-import { createPasskey } from '../../../../passkeys.client';
-import { AppPasswords } from '../../../../dashboard/app-passwords';
+} from '#app/auth';
+import { createPasskey } from '#app/passkeys.client';
+import { AppPasswords } from '#app/dashboard/app-passwords';
 
 const date = (value: number | null) => value ? new Date(value).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : '—';
 

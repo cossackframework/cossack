@@ -3,14 +3,14 @@ import { input } from '@cossackframework/core/input';
 import { Button, Card, CardBody, Field, Input, NativeSelect, Textarea } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { fieldVisibility, hasPermission, isCmsError, mediaUrl, PERMISSIONS, slugify } from '@cossackframework/cms';
-import { findMedia, groupsView, metaInput, metaValues, type GroupsView } from '../../../../../../cms/content';
-import { fieldControl, type MediaHooks, type MediaPreview } from '../../../../../../cms/field-controls';
-import { FieldGroupView, plainBlocks, visibilityTypes, type RowPath } from '../../../../../../cms/field-group-view';
-import { requireAny } from '../../../../../../cms/guards';
-import { closedChooser, mediaChooser, uploadMedia, withFile, type MediaChooserState } from '../../../../../../cms/media-chooser';
-import { iconSelect } from '../../../../../../cms/term-icons';
-import { box, notice, pageHeader } from '../../../../../../cms/ui';
-import type { EditorField, EditorValues } from '../../../../../../cms/editor';
+import { findMedia, groupsView, metaInput, metaValues, type GroupsView } from '#app/cms/content';
+import { fieldControl, type MediaHooks, type MediaPreview } from '#app/cms/field-controls';
+import { FieldGroupView, plainBlocks, visibilityTypes, type RowPath } from '#app/cms/field-group-view';
+import { requireAny } from '#app/cms/guards';
+import { closedChooser, mediaChooser, uploadMedia, withFile, type MediaChooserState } from '#app/cms/media-chooser';
+import { iconSelect } from '#app/cms/term-icons';
+import { box, notice, pageHeader } from '#app/cms/ui';
+import type { EditorField, EditorValues } from '#app/cms/editor';
 
 interface Draft { name: string; slug: string; parent: string; description: string; icon: string }
 /** Where a chosen file goes: a meta field, through the rows it sits in. */

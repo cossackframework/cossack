@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
-import { answer, apiHeaders } from '../../../../../cms/content-api';
-import { entriesList, entryCreate } from '../../../../../cms/manage';
+import { answer, apiHeaders } from '#app/cms/content-api';
+import { entriesList, entryCreate } from '#app/cms/manage';
 
 /**
  * Entries of a collection: `GET /api/cms/content/posts?page=2&perPage=10`. Visitors get published

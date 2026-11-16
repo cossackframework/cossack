@@ -4,17 +4,17 @@ import { Badge, Button, Card, CardBody } from '@cossackframework/ui';
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
 import type { CmsHost } from '@cossackframework/cms/server';
 import { findBlock, flattenBlocks, hasPermission, isCmsError, PERMISSIONS, updateBlock, type RichTextDoc, type ThemePresets } from '@cossackframework/cms';
-import { requireAny } from '../../../../../cms/guards';
-import { notice, pageHeader } from '../../../../../cms/ui';
-import { blockFilePreviews, blockOptions, findMedia, sourceChoices } from '../../../../../cms/content';
-import { blocksInput, controlValue, editorBlocks, editorInput, type BlockOption, type EditorBlock, type EditorField, type SourceChoices } from '../../../../../cms/editor';
-import { RichTextField, richTextEditors } from '../../../../../cms/rich-text-field';
-import { blockFields, type MediaHooks, type MediaPreview } from '../../../../../cms/field-controls';
-import { BlockTree } from '../../../../../cms/block-tree';
-import { blockPanel } from '../../../../../cms/block-panel';
-import { chooserKind, closedChooser, mediaChooser, uploadMedia, withFile, type MediaChooserState } from '../../../../../cms/media-chooser';
-import { activePresets } from '../../../../../cms/site';
-import { blockIdOf, styleValues, withStyle, type BlockTab, type StyleValues } from '../../../../../cms/style-controls';
+import { requireAny } from '#app/cms/guards';
+import { notice, pageHeader } from '#app/cms/ui';
+import { blockFilePreviews, blockOptions, findMedia, sourceChoices } from '#app/cms/content';
+import { blocksInput, controlValue, editorBlocks, editorInput, type BlockOption, type EditorBlock, type EditorField, type SourceChoices } from '#app/cms/editor';
+import { RichTextField, richTextEditors } from '#app/cms/rich-text-field';
+import { blockFields, type MediaHooks, type MediaPreview } from '#app/cms/field-controls';
+import { BlockTree } from '#app/cms/block-tree';
+import { blockPanel } from '#app/cms/block-panel';
+import { chooserKind, closedChooser, mediaChooser, uploadMedia, withFile, type MediaChooserState } from '#app/cms/media-chooser';
+import { activePresets } from '#app/cms/site';
+import { blockIdOf, styleValues, withStyle, type BlockTab, type StyleValues } from '#app/cms/style-controls';
 
 interface AreaRow { name: string; label: string; theme: string; active: boolean; revision: number; blocks: EditorBlock[]; changed: boolean; /** The theme's default blocks show: nothing is saved for this site yet. */ defaulted: boolean; hasDefaults: boolean }
 /** The block being edited in the dialog: its fields' values on the General tab, its style on the Style tab. */

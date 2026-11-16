@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
-import { answer } from '../../../../../cms/content-api';
-import { termCreate, termsList } from '../../../../../cms/manage';
+import { answer } from '#app/cms/content-api';
+import { termCreate, termsList } from '#app/cms/manage';
 
 /** A taxonomy's terms: `GET /api/cms/terms/categories?q=news&page=1&perPage=50`. */
 export const GET = (c: Context) => answer(c, () => termsList(c, c.req.param('taxonomy') ?? '', c.req.query()));

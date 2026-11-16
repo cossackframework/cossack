@@ -2,9 +2,9 @@ import { Client, ClientState, Cossack, Page, State, flash, flashed, type HeadVal
 import { Badge, Card, CardBody, Input, NativeSelect, Button } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { hasPermission, isCmsError, isNetworkAdmin, isSameOriginPost, PERMISSIONS } from '@cossackframework/cms';
-import { requireAny } from '../../../../cms/guards';
-import { artwork, authorLine, notice, pageHeader, unrestrictedConfirm, unrestrictedNotice } from '../../../../cms/ui';
-import { settingsSectionHref } from '../../../../cms/settings-search';
+import { requireAny } from '#app/cms/guards';
+import { artwork, authorLine, notice, pageHeader, unrestrictedConfirm, unrestrictedNotice } from '#app/cms/ui';
+import { settingsSectionHref } from '#app/cms/settings-search';
 
 interface PluginRow {
     name: string;

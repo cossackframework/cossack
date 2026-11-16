@@ -3,11 +3,11 @@ import { AlertDialog } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, MAIN_SITE } from '@cossackframework/cms';
 import { networkSite, type SiteStatus } from '@cossackframework/cms/server';
-import { linkButton, notice, pageHeader, shortDate } from '../../../../../cms/ui';
-import { requireNetworkAdmin } from '../../../../../cms/guards';
-import { network, siteIconUrl, siteLinks } from '../../../../../cms/network-ui';
-import { siteIcon, siteStatus } from '../../../../../cms/network-view';
-import { listFilters, listFooter, listTable, rowActions } from '../../../../../dashboard/list-table';
+import { linkButton, notice, pageHeader, shortDate } from '#app/cms/ui';
+import { requireNetworkAdmin } from '#app/cms/guards';
+import { network, siteIconUrl, siteLinks } from '#app/cms/network-ui';
+import { siteIcon, siteStatus } from '#app/cms/network-view';
+import { listFilters, listFooter, listTable, rowActions } from '#app/dashboard/list-table';
 
 const PAGE_SIZE = 20;
 const STATUSES = ['active', 'archived', 'deleted', 'creating'] as const;

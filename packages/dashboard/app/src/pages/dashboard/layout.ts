@@ -3,14 +3,14 @@ import { Sidebar, DropdownMenu, Avatar, Icon, type SidebarItem } from '@cossackf
 import { CommandPalette, type CommandItem } from '@cossackframework/ui/blocks';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { getCookie } from 'hono/cookie';
-import { dashboardFind, dashboardNotices, dashboardSearch, dashboardStatus, navigation } from '../../dashboard/access';
-import { shellIcons } from '../../dashboard/icons';
-import { dashboardHead } from '../../dashboard/head';
+import { dashboardFind, dashboardNotices, dashboardSearch, dashboardStatus, navigation } from '#app/dashboard/access';
+import { shellIcons } from '#app/dashboard/icons';
+import { dashboardHead } from '#app/dashboard/head';
 import { notice } from '@cossackframework/ui/blocks';
-import { siteHasLogo, siteLogo, siteName } from '../../brand';
-import type { DashboardModule, DashboardNotice, DashboardStatus } from '../../dashboard/types';
-import { logout } from '../../auth';
-import { requireDashboardUser } from '../../middlewares/auth';
+import { siteHasLogo, siteLogo, siteName } from '#app/brand';
+import type { DashboardModule, DashboardNotice, DashboardStatus } from '#app/dashboard/types';
+import { logout } from '#app/auth';
+import { requireDashboardUser } from '#app/middlewares/auth';
 import { themeStore } from '@/stores.client';
 
 /**

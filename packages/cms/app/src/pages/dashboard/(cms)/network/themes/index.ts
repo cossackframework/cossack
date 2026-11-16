@@ -2,10 +2,10 @@ import { Cossack, Page, State, flash, flashed, type HeadValue } from '@cossackfr
 import { Badge, Card, CardBody } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, isSameOriginPost } from '@cossackframework/cms';
-import { artwork, notice, pageHeader } from '../../../../../cms/ui';
-import { requireNetworkAdmin } from '../../../../../cms/guards';
-import { network } from '../../../../../cms/network-ui';
-import { actionButton } from '../../../../../cms/network-view';
+import { artwork, notice, pageHeader } from '#app/cms/ui';
+import { requireNetworkAdmin } from '#app/cms/guards';
+import { network } from '#app/cms/network-ui';
+import { actionButton } from '#app/cms/network-view';
 
 interface NetworkThemeRow {
     name: string;

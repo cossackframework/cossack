@@ -3,6 +3,9 @@
   "version": "0.9.0",
   "private": true,
   "type": "module",
+  "imports": {
+    "#app/*": "./src/*.ts"
+  },
   "description": "The sign-in pages and the dashboard as an application: the served source of @cossackframework/dashboard, run from the workspace",
   "cossack": {
     "runtime": "node",

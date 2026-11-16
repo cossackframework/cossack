@@ -2,8 +2,8 @@ import { Cossack, Page, State, type HeadValue } from '@cossackframework/core';
 import { Badge } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS, recordTitle } from '@cossackframework/cms';
-import { requireAny } from '../../../../cms/guards';
-import { pageHeader } from '../../../../cms/ui';
+import { requireAny } from '#app/cms/guards';
+import { pageHeader } from '#app/cms/ui';
 
 interface Day { date: string; day: number; inMonth: boolean; entries: { id: string; title: string; href: string; status: string; collection: string; time: string }[] }
 

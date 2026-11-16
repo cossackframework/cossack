@@ -1,10 +1,10 @@
 import { Cossack, Page } from '@cossackframework/core';
 import { isCmsError } from '@cossackframework/cms';
-import { siteOrigin } from '../../../cms/seo';
+import { siteOrigin } from '#app/cms/seo';
 import registry from 'virtual:cossack-pages';
-import { sitemapFiles, staticPages, xmlEscape } from '../../../cms/sitemaps';
-import { trackCrawler } from '../../../cms/traffic';
-import { cacheHeaders } from '../../../cms/cache';
+import { sitemapFiles, staticPages, xmlEscape } from '#app/cms/sitemaps';
+import { trackCrawler } from '#app/cms/traffic';
+import { cacheHeaders } from '#app/cms/cache';
 
 /** The sitemap index: one sitemap per 1,000 entries of each collection on the site, and one per taxonomy. */
 @Page({ transport: 'http' })

@@ -2,9 +2,9 @@ import { Cossack, Page, State, flash, flashed, type HeadValue } from '@cossackfr
 import { Card, CardBody } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { hasPermission, holdsAll, isCmsError, isNetworkAdmin, isSameOriginPost, MAIN_SITE, PERMISSIONS } from '@cossackframework/cms';
-import { requireAny } from '../../../../../cms/guards';
-import { notice, pageHeader, shortDate } from '../../../../../cms/ui';
-import { actionButton } from '../../../../../cms/network-view';
+import { requireAny } from '#app/cms/guards';
+import { notice, pageHeader, shortDate } from '#app/cms/ui';
+import { actionButton } from '#app/cms/network-view';
 
 /** How this site may export its database: at once, or through a network admin's approval. */
 type ExportAccess =

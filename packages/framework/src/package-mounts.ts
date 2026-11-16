@@ -340,11 +340,14 @@ export function servedPrebundle(projectRoot: string): { client: string[]; server
   return { client: [...client].sort(), server: [...server].sort() };
 }
 
+/** A served file's name for the served root of its own package: `#app/cms/site` is `<root>/cms/site.ts`. */
+export const SERVED_ALIAS = '#app/';
+
 /**
  * The text of a served file as a copy in the application holds it: an import that leaves the
  * copied unit and stays inside the package becomes the package specifier
- * (`'../../../cms/site'` → `'@cossackframework/cms/app/cms/site'`), so the copy and the package
- * share one instance of every module. `unit` is the served path of what is copied as a whole:
+ * (`'#app/cms/site'` or `'../site'` → `'@cossackframework/cms/app/cms/site'`), so the copy and
+ * the package share one instance of every module. `#app/` means nothing in the application. `unit` is the served path of what is copied as a whole:
  * the file itself, or a plugin's directory (`plugins/default-theme/`), whose own files keep
  * their relative imports. A pure function of the text and the paths: an upgrade applies it to
  * the package's new text before it merges.
@@ -352,16 +355,24 @@ export function servedPrebundle(projectRoot: string): { client: string[]; server
 export function rewriteServedImports(text: string, mounted: MountedPackage, path: string, unit: string = path): string {
   const directory = path.slice(0, path.lastIndexOf('/') + 1);
   const inUnit = (target: string) => unit.endsWith('/') ? target.startsWith(unit) : target === unit;
-  return text.replace(/((?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)')(\.{1,2}\/[^']*)(')/g, (all, before: string, specifier: string, after: string) => {
-    const [bare, query = ''] = specifier.split(/(?=[?#])/, 2) as [string, string?];
+  return text.replace(/((?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)')(\.{1,2}\/[^']*|#app\/[^']*)(')/g, (all, before: string, specifier: string, after: string) => {
+    // `#app/` is the package's own name for its served root (`imports` in its package.json).
+    const aliased = specifier.startsWith(SERVED_ALIAS);
+    const [bare, query = ''] = (aliased ? specifier.slice(SERVED_ALIAS.length) : specifier).split(/(?=[?#])/, 2) as [string, string?];
     const parts: string[] = [];
-    for (const part of (directory + bare).split('/')) {
+    for (const part of ((aliased ? '' : directory) + bare).split('/')) {
       if (part === '..') { if (!parts.length) return all; parts.pop(); }
       else if (part !== '.' && part !== '') parts.push(part);
     }
     const stem = parts.join('/');
     const target = [stem, `${stem}.ts`, `${stem}/index.ts`].find(candidate => existsSync(join(mounted.root, candidate)) && statSync(join(mounted.root, candidate)).isFile());
-    if (!target || inUnit(target)) return all;
+    if (!target) return all;
+    if (inUnit(target)) {
+      if (!aliased) return all;
+      // The copy has no `#app/`: a file of the copied unit is named by its path again.
+      const beside = relative(`/${directory}`, `/${target.replace(/\.ts$/, '')}`).split(sep).join('/');
+      return `${before}${beside.startsWith('.') ? beside : `./${beside}`}${query}${after}`;
+    }
     const named = servedSpecifier(mounted, target) ?? (mounted.exported ? `${mounted.name}/${mounted.exported.subpath}${target}` : null);
     return named ? `${before}${named}${query}${after}` : all;
   });

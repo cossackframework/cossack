@@ -2,10 +2,10 @@ import { Cossack, Page, State, flash, flashed, type HeadValue } from '@cossackfr
 import { Card, CardBody, Checkbox } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, isSameOriginPost } from '@cossackframework/cms';
-import { notice, pageHeader } from '../../../../../../cms/ui';
-import { requireNetworkAdmin } from '../../../../../../cms/guards';
-import { network } from '../../../../../../cms/network-ui';
-import { field, submitButton } from '../../../../../../cms/network-view';
+import { notice, pageHeader } from '#app/cms/ui';
+import { requireNetworkAdmin } from '#app/cms/guards';
+import { network } from '#app/cms/network-ui';
+import { field, submitButton } from '#app/cms/network-view';
 
 interface NewSiteForm { name: string; host: string; language: string; admin: string; starter: boolean }
 

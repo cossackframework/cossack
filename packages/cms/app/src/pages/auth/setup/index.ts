@@ -3,10 +3,10 @@ import { Alert } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { DEFAULT_ROLES, MAIN_SITE, NETWORK_ADMIN, isCmsError, isSameOriginPost, systemPrincipal } from '@cossackframework/cms';
 import { normalizeEmail, seedStarterContent } from '@cossackframework/cms/server';
-import { authSessions, setupRequired } from '../../../auth';
-import { CONTROL } from '../../../cms/ui';
-import { importRequest, importSummary, sendsExport } from '../../../cms/site-import';
-import { sendExport } from '../../../cms/import.client';
+import { authSessions, setupRequired } from '#app/auth';
+import { CONTROL } from '#app/cms/ui';
+import { importRequest, importSummary, sendsExport } from '#app/cms/site-import';
+import { sendExport } from '#app/cms/import.client';
 
 /** Compare digests so the comparison time does not depend on how much of the code matches. */
 async function sameSecret(candidate: string, expected: string): Promise<boolean> {

@@ -3,9 +3,9 @@ import { Badge, Card, CardBody, CardHeader } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, isSameOriginPost, PERMISSIONS } from '@cossackframework/cms';
 import type { ScheduleRow } from '@cossackframework/cms/server';
-import { requireAny } from '../../../../../cms/guards';
-import { notice, pageHeader, shortDate } from '../../../../../cms/ui';
-import { actionButton } from '../../../../../cms/network-view';
+import { requireAny } from '#app/cms/guards';
+import { notice, pageHeader, shortDate } from '#app/cms/ui';
+import { actionButton } from '#app/cms/network-view';
 
 interface Waiting { id: string; topic: string; attempts: number; availableAt: number; plugins: string[] | null }
 interface Dead { id: string; topic: string; attempts: number; at: number; plugins: string[] }

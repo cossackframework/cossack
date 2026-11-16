@@ -3,10 +3,10 @@ import { Badge, Button, Card, CardBody, CardHeader } from '@cossackframework/ui'
 import { html, component } from '@cossackframework/renderer';
 import { ANONYMOUS, isSameOriginPost, type Principal } from '@cossackframework/cms';
 import { defineServerMiddleware } from '@cossackframework/core';
-import { networkFor, updateSettings, type CmsBindings } from '../../../../../cms/index';
-import { clearRequest, requestUpdate, updateHook, updateStatus, type UpdateStatus } from '../../../../../cms/updates';
-import { managesUpdates } from '../../../../../dashboard/access';
-import { notice, pageHeader, shortDate } from '../../../../../cms/ui';
+import { networkFor, updateSettings, type CmsBindings } from '#app/cms/index';
+import { clearRequest, requestUpdate, updateHook, updateStatus, type UpdateStatus } from '#app/cms/updates';
+import { managesUpdates } from '#app/dashboard/access';
+import { notice, pageHeader, shortDate } from '#app/cms/ui';
 
 /** Holders of the updates permission on the main site; in a network, its administrators. */
 const requireUpdates = defineServerMiddleware(async (c, next) => {

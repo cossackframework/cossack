@@ -3,9 +3,9 @@ import { createTurnstileVerifier } from '@cossackframework/auth/turnstile';
 import { formDataValues, FORM_UPLOAD_LIMIT_MB, isCmsError, isSameOriginPost, type CmsError, type FormField, type PostedValue, type SubmittedValues } from '@cossackframework/cms';
 import { renderMarkdown, type LoadedForm } from '@cossackframework/cms/server';
 import { getClientIp } from '@cossackframework/core';
-import { apiError, cappedRequest } from '../../../../../cms/content-api';
-import { messageHtml, type FormResult } from '../../../../../cms/site-forms';
-import { mailOrigin } from '../../../../../cms/seo';
+import { apiError, cappedRequest } from '#app/cms/content-api';
+import { messageHtml, type FormResult } from '#app/cms/site-forms';
+import { mailOrigin } from '#app/cms/seo';
 
 /**
  * A form for headless sites: `GET /api/cms/forms/contact` answers its inputs (name, label,

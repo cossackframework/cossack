@@ -2,9 +2,9 @@ import { Client, ClientState, Cossack, Inject, Page } from '@cossackframework/co
 import { Button, Icon, Input } from '@cossackframework/ui';
 import { component, html } from '@cossackframework/renderer';
 import { PERMISSIONS } from '@cossackframework/cms';
-import { requireAny } from '../../../../cms/guards';
-import { icon } from '../../../../cms/icons';
-import { SettingsDraft, settingsNavigation } from '../../../../cms/settings-draft';
+import { requireAny } from '#app/cms/guards';
+import { icon } from '#app/cms/icons';
+import { SettingsDraft, settingsNavigation } from '#app/cms/settings-draft';
 
 /** This scope survives Settings navigation and disposes its client draft on exit. */
 @Page({ transport: 'http', services: [SettingsDraft], middlewares: [requireAny(PERMISSIONS.manageSettings)] })

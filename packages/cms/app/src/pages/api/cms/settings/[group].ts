@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
-import { answer } from '../../../../cms/content-api';
-import { settingsRead, settingsUpdate } from '../../../../cms/manage';
+import { answer } from '#app/cms/content-api';
+import { settingsRead, settingsUpdate } from '#app/cms/manage';
 
 /** One settings group with its values and fields: `GET /api/cms/settings/general`. */
 export const GET = (c: Context) => answer(c, () => settingsRead(c, c.req.param('group') ?? ''));

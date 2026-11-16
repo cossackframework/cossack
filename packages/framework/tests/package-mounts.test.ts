@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { hostContractProblems, hostStepsSince, mountedPackages, PackageMountError, projectTemplate } from '../src/package-mounts';
+import { hostContractProblems, hostStepsSince, mountedPackages, PackageMountError, projectTemplate, rewriteServedImports } from '../src/package-mounts';
 import { listPlugins, overrideReport, pluginLocations, readRenderedPlugins, scanPageSources } from '../src/plugin-sources';
 import { discoverConfigSources, generateConfigTypes } from '../src/config-codegen';
 import { discoverRoutes, renderRouteSource } from '../src/route-codegen';
@@ -209,6 +209,30 @@ describe('mounted packages', () => {
     const types = generateConfigTypes(root, { write: false }).source;
     expect(types).toContain('"kit": FactoryResult<typeof import("@acme/kit/app/config/kit").default>;');
     expect(types).toContain('"kit-theme::look": FactoryResult<typeof import("@acme/kit/app/plugins/kit-theme/config/look").default>;');
+  });
+
+  it("writes a copy's imports without the package's #app/ alias", () => {
+    const { root, kit } = project();
+    write(kit, { 'package.json': JSON.stringify({ name: '@acme/kit', version: '1.4.0', exports: { './app/*': './app/src/*.ts' }, imports: { '#app/*': './app/src/*.ts' }, cossack: field }) });
+    const mounted = mountedPackages(root)[0]!;
+    const text = [
+      "import middleware from '#app/kit/middleware';",
+      "import near from '../../kit/middleware';",
+      "const look = await import('#app/plugins/kit-theme/config/look');",
+      "import missing from '#app/kit/missing';",
+      "import { html } from '@cossackframework/core';",
+    ].join('\n');
+    // One page: everything it imports stays in the package.
+    expect(rewriteServedImports(text, mounted, 'pages/(site)/index.ts')).toBe([
+      "import middleware from '@acme/kit/app/kit/middleware';",
+      "import near from '@acme/kit/app/kit/middleware';",
+      "const look = await import('@acme/kit/app/plugins/kit-theme/config/look');",
+      "import missing from '#app/kit/missing';",
+      "import { html } from '@cossackframework/core';",
+    ].join('\n'));
+    // A plugin copied whole: its own files are named by their paths.
+    expect(rewriteServedImports(text, mounted, 'plugins/kit-theme/pages/theme/index.ts', 'plugins/kit-theme/').split('\n')[2])
+      .toBe("const look = await import('../../config/look');");
   });
 
   it('resolves a served module imported by package name to the served file', () => {

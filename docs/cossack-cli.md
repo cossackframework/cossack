@@ -874,8 +874,8 @@ cossack eject --restore "src/pages/(site)/search/index.ts"
 
 Rules:
 
-- Only pages, layouts, loading states, configuration files and whole plugins can be ejected. A shared module such as `cms/site.ts` cannot: the package's own code imports it by relative path and would never use a copy. The command stops with `COSSACK_EJECT_NOT_OVERRIDABLE`.
-- In the copy, an import that stays in the package is rewritten to the package's name (`'../../../cms/site'` becomes `'@cossackframework/cms/app/cms/site'`). The copy and the package then share one instance of each module.
+- Only pages, layouts, loading states, configuration files and whole plugins can be ejected. A shared module such as `cms/site.ts` cannot: the package's own code imports it by its path in the package and would never use a copy. The command stops with `COSSACK_EJECT_NOT_OVERRIDABLE`.
+- In the copy, an import that stays in the package is rewritten to the package's name (`'#app/cms/site'` or `'../site'` becomes `'@cossackframework/cms/app/cms/site'`). The copy and the package then share one instance of each module.
 - The copy is recorded in `.cossack/scaffold.json` under `ejected`, with the package text it was made from.
 - `cossack upgrade` merges the package's later changes into every ejected copy, after it installs the new version. A copy you did not edit takes the package's new text. A copy whose merge conflicts is kept and listed, or gets conflict markers with `--conflicts=markers`.
 - If you update the package with `pnpm up` alone, nothing is merged. The dev server and the build then name each override that fell behind: `src/pages/(site)/search/index.ts overrides @cossackframework/cms 0.10.0; the package changed it since 0.9.0: run cossack upgrade`.

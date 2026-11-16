@@ -2,10 +2,10 @@ import { Client, Cossack, Page, Server, State, type HeadValue } from '@cossackfr
 import { AlertDialog, Badge } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { evaluateRule, hasPermission, isCmsError, PERMISSIONS } from '@cossackframework/cms';
-import { bulkBar, type BulkChoice } from '../../../../dashboard/bulk';
-import { listTable, rowActions } from '../../../../dashboard/list-table';
-import { requireAny } from '../../../../cms/guards';
-import { linkButton, notice, pageHeader } from '../../../../cms/ui';
+import { bulkBar, type BulkChoice } from '#app/dashboard/bulk';
+import { listTable, rowActions } from '#app/dashboard/list-table';
+import { requireAny } from '#app/cms/guards';
+import { linkButton, notice, pageHeader } from '#app/cms/ui';
 
 /** What a bulk action writes to each selected form. */
 const BULK_PATCHES: Record<string, Record<string, unknown>> = {

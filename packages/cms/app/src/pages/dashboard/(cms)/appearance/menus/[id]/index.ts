@@ -6,15 +6,15 @@ import {
     type MenuMove, type MenuRow, type Principal,
 } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
-import { requireAny } from '../../../../../../cms/guards';
-import { groupsView, listUpTo, metaInput, metaValues, type GroupsView } from '../../../../../../cms/content';
-import { fieldControl } from '../../../../../../cms/field-controls';
-import { FieldGroupView, plainBlocks, visibilityTypes, type RowPath } from '../../../../../../cms/field-group-view';
+import { requireAny } from '#app/cms/guards';
+import { groupsView, listUpTo, metaInput, metaValues, type GroupsView } from '#app/cms/content';
+import { fieldControl } from '#app/cms/field-controls';
+import { FieldGroupView, plainBlocks, visibilityTypes, type RowPath } from '#app/cms/field-group-view';
 import { fieldVisibility } from '@cossackframework/cms';
-import type { EditorField } from '../../../../../../cms/editor';
-import { icon } from '../../../../../../cms/icons';
-import { box, CONTROL, iconButton, linkButton, notice, pageHeader } from '../../../../../../cms/ui';
-import { openMatches } from '../../../../../../cms/site';
+import type { EditorField } from '#app/cms/editor';
+import { icon } from '#app/cms/icons';
+import { box, CONTROL, iconButton, linkButton, notice, pageHeader } from '#app/cms/ui';
+import { openMatches } from '#app/cms/site';
 
 interface SourceEntry { id: string; title: string; depth: number }
 interface Source { kind: 'collection' | 'taxonomy'; name: string; label: string; singular: string; icon: string; archive: boolean; entries: SourceEntry[] }

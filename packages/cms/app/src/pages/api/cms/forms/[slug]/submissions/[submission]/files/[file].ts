@@ -1,5 +1,5 @@
 import type { Context } from 'hono';
-import { apiError } from '../../../../../../../../cms/content-api';
+import { apiError } from '#app/cms/content-api';
 
 /**
  * A file sent with a form submission: `GET /api/cms/forms/<form>/submissions/<id>/files/<file>`,

@@ -1,10 +1,10 @@
 import { Cossack, Page, State, type HeadValue } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
 import { isCmsError, type EntryView, type RecordShape, type RenderedBlock, type ThemeData } from '@cossackframework/cms';
-import { entryInput } from '../../../../../cms/content';
-import { entryViews, formPreviewBlock, siteView, themeData, themeState, type ThemeState } from '../../../../../cms/site';
-import { entryTemplate, withContentFields, siteContent, siteTheme, themeContext, themeHelpers } from '../../../../../cms/site-view';
-import { contentMenus, siteInfo, type SiteInfo } from '../../../../../cms/site';
+import { entryInput } from '#app/cms/content';
+import { entryViews, formPreviewBlock, siteView, themeData, themeState, type ThemeState } from '#app/cms/site';
+import { entryTemplate, withContentFields, siteContent, siteTheme, themeContext, themeHelpers } from '#app/cms/site-view';
+import { contentMenus, siteInfo, type SiteInfo } from '#app/cms/site';
 import type { MenuItemView } from '@cossackframework/cms';
 
 /**

@@ -2,8 +2,8 @@ import { Cossack, Page, State, Server, Client } from '@cossackframework/core';
 import { Alert, Button, Field, Input } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { deleteCookie, getCookie } from 'hono/cookie';
-import { completeTwoFactor, createSession, TWO_FACTOR_COOKIE } from '../../../auth';
-import { returnPath } from '../../../auth-input';
+import { completeTwoFactor, createSession, TWO_FACTOR_COOKIE } from '#app/auth';
+import { returnPath } from '#app/auth-input';
 
 /**
  * The second step of signing in: a code from the authenticator app, or a recovery code. The

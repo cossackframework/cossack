@@ -2,9 +2,9 @@ import { Cossack, Page, Store, State, Validate, Client, Server, storeRules } fro
 import { Card, CardBody, CardHeader, Field, Input, Button, Checkbox, Form } from '@cossackframework/ui';
 import { linkButton, notice, pageHeader } from '@cossackframework/ui/blocks';
 import { html, component, bind } from '@cossackframework/renderer';
-import { requireRoleManager } from '../../../../services/rbac';
-import { createRole } from '../../../../services/roles';
-import { PERMISSIONS, permissionLabel, type Permission } from '../../../../lib/permissions';
+import { requireRoleManager } from '#app/services/rbac';
+import { createRole } from '#app/services/roles';
+import { PERMISSIONS, permissionLabel, type Permission } from '#app/lib/permissions';
 
 interface NewRoleForm {
     name: string;

@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
-import { apiError, writeAllowed } from '../../../../cms/content-api';
-import { importEntries, importItems } from '../../../../cms/content';
+import { apiError, writeAllowed } from '#app/cms/content-api';
+import { importEntries, importItems } from '#app/cms/content';
 
 /**
  * Import entries, as `/api/cms/export/<collection>` wrote them or as a JSON list in the API's

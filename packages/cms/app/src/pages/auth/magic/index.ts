@@ -2,7 +2,7 @@ import { Client, Cossack, Page, Server, State } from '@cossackframework/core';
 import { Alert, Button } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { setCookie } from 'hono/cookie';
-import { authSessions, beginTwoFactor, consumeMagicLink, linkAccountEmail, SignInPasskeyError, TWO_FACTOR_COOKIE } from '../../../auth';
+import { authSessions, beginTwoFactor, consumeMagicLink, linkAccountEmail, SignInPasskeyError, TWO_FACTOR_COOKIE } from '#app/auth';
 
 /**
  * A sign-in link from the email. Opening it signs nobody in: a button does, so a mail scanner

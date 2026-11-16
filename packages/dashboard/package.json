@@ -47,6 +47,9 @@
     "./app/*": "./app/src/*.ts",
     "./package.json": "./package.json"
   },
+  "imports": {
+    "#app/*": "./app/src/*.ts"
+  },
   "cossack": {
     "root": "app/src",
     "alias": "dashboard",

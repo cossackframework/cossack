@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 import { mediaUrl } from '@cossackframework/cms';
-import { apiError, writeAllowed } from '../../../../../cms/content-api';
+import { apiError, writeAllowed } from '#app/cms/content-api';
 
 /** Finish an upload: the bytes are checked against the declared size and type, and the file is made. */
 export const POST = async (c: Context) => {

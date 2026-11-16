@@ -2,8 +2,8 @@ import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackfr
 import { Button, Card, CardBody, Input, NativeSelect, Textarea } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS, recordTitle, renderSeoTemplate, TITLE_SEPARATORS, type FieldFilter } from '@cossackframework/cms';
-import { requireAny } from '../../../../../cms/guards';
-import { notice, pageHeader } from '../../../../../cms/ui';
+import { requireAny } from '#app/cms/guards';
+import { notice, pageHeader } from '#app/cms/ui';
 
 interface SeoRow { id: string; title: string; url: string | null; status: string; seoTitle: string; description: string; summary: string; rev: number; saved: boolean }
 

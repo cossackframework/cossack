@@ -2,9 +2,9 @@ import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackfr
 import { Badge, Button, Card, CardBody, Checkbox, Field, Input, CardHeader } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS } from '@cossackframework/cms';
-import { fieldName } from '../../../../cms/builder';
-import { requireAny } from '../../../../cms/guards';
-import { notice, pageHeader } from '../../../../cms/ui';
+import { fieldName } from '#app/cms/builder';
+import { requireAny } from '#app/cms/guards';
+import { notice, pageHeader } from '#app/cms/ui';
 
 interface Row { name: string; label: string; hierarchical: boolean; builtin: boolean; path: string | null; collections: string[]; terms: number }
 

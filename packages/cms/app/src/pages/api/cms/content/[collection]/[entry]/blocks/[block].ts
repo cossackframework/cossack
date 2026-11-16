@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { CmsError } from '@cossackframework/cms';
-import { answer, apiHeaders } from '../../../../../../../cms/content-api';
-import { entryBlock } from '../../../../../../../cms/manage';
+import { answer, apiHeaders } from '#app/cms/content-api';
+import { entryBlock } from '#app/cms/manage';
 
 /**
  * One block of an entry by its ID: `GET /api/cms/content/posts/hello-world/blocks/hero`. Editors

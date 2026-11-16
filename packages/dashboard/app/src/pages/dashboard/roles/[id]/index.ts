@@ -3,9 +3,9 @@ import { input } from '@cossackframework/core/input';
 import { Card, CardBody, CardHeader, Field, Input, Button, Checkbox, Form } from '@cossackframework/ui';
 import { linkButton, notice, pageHeader } from '@cossackframework/ui/blocks';
 import { html, component, bind } from '@cossackframework/renderer';
-import { requireRoleManager } from '../../../../services/rbac';
-import { getRole, updateRole, type RoleDetail } from '../../../../services/roles';
-import { PERMISSIONS, permissionLabel, type Permission } from '../../../../lib/permissions';
+import { requireRoleManager } from '#app/services/rbac';
+import { getRole, updateRole, type RoleDetail } from '#app/services/roles';
+import { PERMISSIONS, permissionLabel, type Permission } from '#app/lib/permissions';
 
 @Page({ transport: 'http', middlewares: [requireRoleManager] })
 export default class EditRolePage extends Cossack {

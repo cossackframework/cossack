@@ -3,13 +3,13 @@ import { Badge, Card, CardBody, CardHeader, NativeSelect, Button } from '@cossac
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { isCmsError, isSameOriginPost } from '@cossackframework/cms';
 import { networkSite, siteImportState, type SiteDomain, type SiteStatus } from '@cossackframework/cms/server';
-import { notice, pageHeader, shortDate } from '../../../../../../cms/ui';
-import { requireNetworkAdmin } from '../../../../../../cms/guards';
-import { network, siteLinks } from '../../../../../../cms/network-ui';
-import { actionButton, field, siteStatus, submitButton } from '../../../../../../cms/network-view';
-import { listTable } from '../../../../../../dashboard/list-table';
-import { importRequest, importSummary, sendsExport } from '../../../../../../cms/site-import';
-import { sendExport } from '../../../../../../cms/import.client';
+import { notice, pageHeader, shortDate } from '#app/cms/ui';
+import { requireNetworkAdmin } from '#app/cms/guards';
+import { network, siteLinks } from '#app/cms/network-ui';
+import { actionButton, field, siteStatus, submitButton } from '#app/cms/network-view';
+import { listTable } from '#app/dashboard/list-table';
+import { importRequest, importSummary, sendsExport } from '#app/cms/site-import';
+import { sendExport } from '#app/cms/import.client';
 
 /** `movable`: the account can change kind here, a network account only when it belongs to this site alone and does not run the network. */
 interface Member { id: string; name: string; email: string; roles: string; account: 'site' | 'network'; movable: boolean }

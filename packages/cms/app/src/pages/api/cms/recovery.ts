@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
-import { recoverAccount, RecoveryError } from '../../../cms/recovery';
-import { cappedRequest } from '../../../cms/content-api';
+import { recoverAccount, RecoveryError } from '#app/cms/recovery';
+import { cappedRequest } from '#app/cms/content-api';
 
 /** `{ email, secondFactors }` is a few hundred bytes. */
 const RECOVERY_MAX_BYTES = 4 * 1024;

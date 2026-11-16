@@ -3,6 +3,9 @@
   "version": "0.9.0",
   "private": true,
   "type": "module",
+  "imports": {
+    "#app/*": "./src/*.ts"
+  },
   "description": "The Cossack CMS as an application: the source of the files `cossack add cms` renders, run from the workspace",
   "cossack": {
     "runtime": "node",

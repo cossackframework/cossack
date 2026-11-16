@@ -3,8 +3,8 @@ import { Badge, Button, Card, CardBody, Checkbox, Input, NativeSelect, Textarea 
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { displayValue, formatBytes, formatSiteDate, formFiles, isCmsError, isRows, PERMISSIONS, type FormField, type SubmissionShape, type SubmissionStatus } from '@cossackframework/cms';
 import type { LoadedForm } from '@cossackframework/cms/server';
-import { requireAny } from '../../../../../../../cms/guards';
-import { notice, pageHeader } from '../../../../../../../cms/ui';
+import { requireAny } from '#app/cms/guards';
+import { notice, pageHeader } from '#app/cms/ui';
 
 /** An answer; a repeater's rows as a table, one column per input of a row; a file upload's files as downloads. */
 interface Answer { label: string; value: string; rows?: { columns: string[]; cells: string[][] }; files?: { name: string; size: string; url: string }[] }

@@ -1,10 +1,10 @@
 import { Cossack, Page } from '@cossackframework/core';
 import { isCmsError } from '@cossackframework/cms';
-import { siteOrigin } from '../../../../cms/seo';
+import { siteOrigin } from '#app/cms/seo';
 import registry from 'virtual:cossack-pages';
-import { sitemapUrls, staticPages, xmlEscape } from '../../../../cms/sitemaps';
-import { trackCrawler } from '../../../../cms/traffic';
-import { cacheHeaders } from '../../../../cms/cache';
+import { sitemapUrls, staticPages, xmlEscape } from '#app/cms/sitemaps';
+import { trackCrawler } from '#app/cms/traffic';
+import { cacheHeaders } from '#app/cms/cache';
 
 /** One sitemap: `/sitemaps/posts-1.xml` for entries, `/sitemaps/terms-categories.xml` for a taxonomy's archives. */
 @Page({ transport: 'http' })

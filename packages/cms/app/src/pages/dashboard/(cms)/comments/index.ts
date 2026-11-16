@@ -2,8 +2,8 @@ import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackfr
 import { Avatar, Badge, Button, Card, CardBody, Checkbox, Input, NativeSelect, Pagination, Textarea } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { CmsError, COMMENT_STATUSES, hasPermission, isCmsError, PERMISSIONS, recordTitle, type CommentStatus } from '@cossackframework/cms';
-import { requireAny } from '../../../../cms/guards';
-import { notice, pageHeader, shortDate } from '../../../../cms/ui';
+import { requireAny } from '#app/cms/guards';
+import { notice, pageHeader, shortDate } from '#app/cms/ui';
 
 const PAGE_SIZE = 20;
 

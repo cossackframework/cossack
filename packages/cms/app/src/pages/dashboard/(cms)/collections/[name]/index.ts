@@ -3,21 +3,21 @@ import { input } from '@cossackframework/core/input';
 import { AlertDialog, Badge, Button, Card, CardBody, CardHeader, Checkbox, Field, Input, NativeSelect, Tabs, Textarea } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { bindingPaths, findBlock, flattenBlocks, flattenGroupFields, hasPermission, isCmsError, PERMISSIONS, RESERVED_FIELDS, SCHEMA_PROPERTIES, SCHEMA_TYPE_LABELS, SCHEMA_TYPES, SEO_TEMPLATE_VARIABLES, updateBlock, type Block, type RichTextDoc, type SchemaType, type ThemePresets } from '@cossackframework/cms';
-import { collectionDraft, definitionOf, type CollectionDraft } from '../../../../../cms/builder';
-import { blockPanel } from '../../../../../cms/block-panel';
-import { BlockTree } from '../../../../../cms/block-tree';
-import { blockFilePreviews, blockOptions, findMedia, optionsOf, sourceChoices } from '../../../../../cms/content';
-import { EditorLayoutEditor, type EditorLayoutDraft } from '../../../../../cms/editor-layout-editor';
+import { collectionDraft, definitionOf, type CollectionDraft } from '#app/cms/builder';
+import { blockPanel } from '#app/cms/block-panel';
+import { BlockTree } from '#app/cms/block-tree';
+import { blockFilePreviews, blockOptions, findMedia, optionsOf, sourceChoices } from '#app/cms/content';
+import { EditorLayoutEditor, type EditorLayoutDraft } from '#app/cms/editor-layout-editor';
 import { CORE_FIELDS, editorBoxes, editorLayoutTypes, resolveEditorLayout, type EditorBox, type EditorLayout, type EditorLayoutAddition } from '@cossackframework/cms';
-import { blocksInput, controlValue, editorBlocks, editorInput, type BlockOption, type EditorBlock, type EditorField, type SourceChoices } from '../../../../../cms/editor';
-import { bindingChoices, blockFields, moveItem, type BindingChoice, type MediaHooks, type MediaPreview } from '../../../../../cms/field-controls';
-import { requireAny } from '../../../../../cms/guards';
-import { iconSelect } from '../../../../../cms/term-icons';
-import { chooserKind, closedChooser, mediaChooser, uploadMedia, withFile, type MediaChooserState } from '../../../../../cms/media-chooser';
-import { RichTextField, richTextEditors } from '../../../../../cms/rich-text-field';
-import { activePresets } from '../../../../../cms/site';
-import { styleValues, withStyle, type BlockTab, type StyleValues } from '../../../../../cms/style-controls';
-import { iconButton, linkButton, notice, pageHeader, rememberTab, tabFromQuery } from '../../../../../cms/ui';
+import { blocksInput, controlValue, editorBlocks, editorInput, type BlockOption, type EditorBlock, type EditorField, type SourceChoices } from '#app/cms/editor';
+import { bindingChoices, blockFields, moveItem, type BindingChoice, type MediaHooks, type MediaPreview } from '#app/cms/field-controls';
+import { requireAny } from '#app/cms/guards';
+import { iconSelect } from '#app/cms/term-icons';
+import { chooserKind, closedChooser, mediaChooser, uploadMedia, withFile, type MediaChooserState } from '#app/cms/media-chooser';
+import { RichTextField, richTextEditors } from '#app/cms/rich-text-field';
+import { activePresets } from '#app/cms/site';
+import { styleValues, withStyle, type BlockTab, type StyleValues } from '#app/cms/style-controls';
+import { iconButton, linkButton, notice, pageHeader, rememberTab, tabFromQuery } from '#app/cms/ui';
 
 /** The template block being edited in the panel. */
 interface BlockDialog { id: string; values: Record<string, unknown>; style: StyleValues; tab: BlockTab; errors: Record<string, string> }

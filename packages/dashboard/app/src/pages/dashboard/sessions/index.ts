@@ -10,8 +10,8 @@ import {
     revokeAllUserSessions,
     expiredSessionCookie,
     type SessionInfo,
-} from '../../../auth';
-import { sessionTable } from '../../../dashboard/session-list';
+} from '#app/auth';
+import { sessionTable } from '#app/dashboard/session-list';
 
 @Page({ transport: 'http' })
 export default class SessionsPage extends Cossack {

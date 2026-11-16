@@ -3,10 +3,10 @@ import { Badge, Card, CardBody } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, isSameOriginPost } from '@cossackframework/cms';
 import type { NetworkPluginState } from '@cossackframework/cms/server';
-import { artwork, notice, pageHeader, unrestrictedConfirm, unrestrictedNotice } from '../../../../../cms/ui';
-import { requireNetworkAdmin } from '../../../../../cms/guards';
-import { network } from '../../../../../cms/network-ui';
-import { actionButton } from '../../../../../cms/network-view';
+import { artwork, notice, pageHeader, unrestrictedConfirm, unrestrictedNotice } from '#app/cms/ui';
+import { requireNetworkAdmin } from '#app/cms/guards';
+import { network } from '#app/cms/network-ui';
+import { actionButton } from '#app/cms/network-view';
 
 interface NetworkPluginRow {
     name: string;

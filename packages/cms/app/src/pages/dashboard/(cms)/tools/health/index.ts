@@ -1,13 +1,13 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
 import { input } from '@cossackframework/core/input';
-import { settingsSectionHref } from '../../../../../cms/settings-search';
+import { settingsSectionHref } from '#app/cms/settings-search';
 import { Badge, Button, Card, CardBody, CardHeader } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { ANONYMOUS, ARTICLE_TYPES, CmsError, CRAWLER_GROUPS, hasPermission, isCmsError, PERMISSIONS, recordTitle, type FieldFilter } from '@cossackframework/cms';
 import type { CrawlerVisits, NotFoundRow } from '@cossackframework/cms/server';
-import { requireAny } from '../../../../../cms/guards';
-import { siteOrigin } from '../../../../../cms/seo';
-import { notice, pageHeader, shortDate } from '../../../../../cms/ui';
+import { requireAny } from '#app/cms/guards';
+import { siteOrigin } from '#app/cms/seo';
+import { notice, pageHeader, shortDate } from '#app/cms/ui';
 
 interface Finding { id: string; tone: 'ok' | 'warn' | 'info'; title: string; detail: string; href?: string; items?: { title: string; href: string }[] }
 

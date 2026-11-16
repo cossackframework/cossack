@@ -1,5 +1,5 @@
 import type { Context } from 'hono';
-import { apiError, writeAllowed, writeBody } from '../../../../cms/content-api';
+import { apiError, writeAllowed, writeBody } from '#app/cms/content-api';
 
 /**
  * Start an upload the browser sends itself: answers where to PUT the bytes. With a bucket that

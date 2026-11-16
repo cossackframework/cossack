@@ -2,8 +2,8 @@ import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackfr
 import { Button, Card, CardBody, Checkbox, Field, Input } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS } from '@cossackframework/cms';
-import { requireAny } from '../../../../../cms/guards';
-import { notice, pageHeader } from '../../../../../cms/ui';
+import { requireAny } from '#app/cms/guards';
+import { notice, pageHeader } from '#app/cms/ui';
 
 /** Rename a taxonomy, change its URL, or delete it with its terms. */
 @Page({ transport: 'http', middlewares: [requireAny(PERMISSIONS.manageCollections)] })

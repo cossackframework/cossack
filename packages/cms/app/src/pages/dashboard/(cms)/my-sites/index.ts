@@ -2,9 +2,9 @@ import { Cossack, Page, State, type HeadValue } from '@cossackframework/core';
 import { Card, CardBody } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { MAIN_SITE, type SiteStatus } from '@cossackframework/cms/server';
-import { pageHeader } from '../../../../cms/ui';
-import { network, siteLinks } from '../../../../cms/network-ui';
-import { siteStatus } from '../../../../cms/network-view';
+import { pageHeader } from '#app/cms/ui';
+import { network, siteLinks } from '#app/cms/network-ui';
+import { siteStatus } from '#app/cms/network-view';
 
 interface MySite {
     id: string;

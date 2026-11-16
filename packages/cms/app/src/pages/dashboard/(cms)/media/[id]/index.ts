@@ -2,9 +2,9 @@ import { Cossack, Page, State, ClientState, Server, Client, type HeadValue } fro
 import { AlertDialog, Button, Card, CardBody, Field, Input, Tabs, Textarea } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { formatBytes, imageUrl, isCmsError, mediaKind, mediaUrl, PERMISSIONS, transformable, type ImageEdits, type ImageRect, type MediaKind } from '@cossackframework/cms';
-import { requireAny } from '../../../../../cms/guards';
-import { mediaUsage, type MediaUse } from '../../../../../cms/media-usage';
-import { notice, pageHeader, shortDate, statusBadge } from '../../../../../cms/ui';
+import { requireAny } from '#app/cms/guards';
+import { mediaUsage, type MediaUse } from '#app/cms/media-usage';
+import { notice, pageHeader, shortDate, statusBadge } from '#app/cms/ui';
 
 interface Details { title: string; alt: string; caption: string; description: string }
 

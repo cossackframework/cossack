@@ -2,8 +2,8 @@ import { ClientVisibleError, Cossack, Page, State, Server, Client } from '@cossa
 import { input } from '@cossackframework/core/input';
 import { Avatar, Badge, NativeSelect, AlertDialog } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
-import { canAssignRoles, canGrantRoles, canManageUser, guard } from '../../../services/rbac';
-import type { PublicUser } from '../../../auth';
+import { canAssignRoles, canGrantRoles, canManageUser, guard } from '#app/services/rbac';
+import type { PublicUser } from '#app/auth';
 import {
     getUser,
     listUsers,
@@ -11,11 +11,11 @@ import {
     syncUserRoles,
     type UserSummary,
     type ListUsersResult,
-} from '../../../services/users';
-import { listRoles, type RoleDetail } from '../../../services/roles';
-import { bulkBar, type BulkChoice } from '../../../dashboard/bulk';
-import { timeAgo } from '../../../dashboard/time-ago';
-import { listFilters, listFooter, listTable, rowActions } from '../../../dashboard/list-table';
+} from '#app/services/users';
+import { listRoles, type RoleDetail } from '#app/services/roles';
+import { bulkBar, type BulkChoice } from '#app/dashboard/bulk';
+import { timeAgo } from '#app/dashboard/time-ago';
+import { listFilters, listFooter, listTable, rowActions } from '#app/dashboard/list-table';
 import { linkButton, notice, pageHeader } from '@cossackframework/ui/blocks';
 
 const PAGE_SIZE = 20;

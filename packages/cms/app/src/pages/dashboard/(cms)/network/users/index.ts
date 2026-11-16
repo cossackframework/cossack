@@ -2,10 +2,10 @@ import { Client, Cossack, Page, Server, State, flashed, type HeadValue } from '@
 import { AlertDialog, Badge } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, NETWORK_ADMIN } from '@cossackframework/cms';
-import { linkButton, notice, pageHeader, shortDate } from '../../../../../cms/ui';
-import { requireNetworkAdmin } from '../../../../../cms/guards';
-import { network, siteNames } from '../../../../../cms/network-ui';
-import { listFilters, listFooter, listTable, rowActions } from '../../../../../dashboard/list-table';
+import { linkButton, notice, pageHeader, shortDate } from '#app/cms/ui';
+import { requireNetworkAdmin } from '#app/cms/guards';
+import { network, siteNames } from '#app/cms/network-ui';
+import { listFilters, listFooter, listTable, rowActions } from '#app/dashboard/list-table';
 
 const PAGE_SIZE = 20;
 

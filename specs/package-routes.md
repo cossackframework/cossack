@@ -153,7 +153,12 @@ Paths are under `packages/`.
 - **Tailwind.** The scaffold writes one `@source` per mounted package root into
   `style.css` (`@source "../node_modules/@cossackframework/cms/app/src"`). The
   framework does not edit CSS.
-- **The `@` alias is the host contract.** Inside a served file, a relative import is
+- **`#app/` is the served root** (2026-11-16). A served file names another served file
+  two or more directories away as `#app/<path>` (`imports` in the package's
+  `package.json`: `"#app/*": "./app/src/*.ts"`; the development application's own
+  `package.json` has `"./src/*.ts"`). Node, Vite and TypeScript resolve it from the
+  package.json nearest to the importing file, so a project configures nothing.
+- **The `@` alias is the host contract.** Inside a served file, a relative or `#app/` import is
   package-internal, and `@/<path>` is a module the application provides. The
   template's alias (`'@': ./src` in `vite.config.ts`, `"@/*": ["./src/*"]` in
   `tsconfig.json`, and the SSG runner's copy) already resolves it, and it applies to

@@ -3,8 +3,8 @@ import { input } from '@cossackframework/core/input';
 import { Badge, Button, Card, CardBody, CardHeader, Checkbox, Field, Input, NativeSelect, Textarea } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { AUTOMATION_EVENT_LABELS, AUTOMATION_EVENTS, isCmsError, PERMISSIONS, type Automation, type AutomationEvent } from '@cossackframework/cms';
-import { requireAny } from '../../../../../cms/guards';
-import { linkButton, notice, pageHeader, shortDate } from '../../../../../cms/ui';
+import { requireAny } from '#app/cms/guards';
+import { linkButton, notice, pageHeader, shortDate } from '#app/cms/ui';
 
 interface Form { id: string; name: string; event: AutomationEvent; collection: string; form: string; to: string; subject: string; text: string; active: boolean }
 const EMPTY: Form = { id: '', name: '', event: 'entry.published', collection: '', form: '', to: '', subject: '{{ $.title }} was published', text: '{{ $.title }}\n{{ $.url }}', active: true };

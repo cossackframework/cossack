@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
-import { answer } from '../../../../../cms/content-api';
-import { userDelete, userGet, userUpdate } from '../../../../../cms/manage';
+import { answer } from '#app/cms/content-api';
+import { userDelete, userGet, userUpdate } from '#app/cms/manage';
 
 /** One user, by ID or email: `GET /api/cms/users/<id>`. */
 export const GET = (c: Context) => answer(c, () => userGet(c, c.req.param('id') ?? ''));

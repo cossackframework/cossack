@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 import { isCmsError } from '@cossackframework/cms';
-import { cappedRequest } from '../../../../cms/content-api';
+import { cappedRequest } from '#app/cms/content-api';
 
 /** Stripe's events are a few kilobytes; anything far larger is not one. */
 const WEBHOOK_MAX_BYTES = 1024 * 1024;

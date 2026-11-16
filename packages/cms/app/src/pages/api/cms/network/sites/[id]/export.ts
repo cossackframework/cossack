@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { isNetworkAdmin, MAIN_SITE } from '@cossackframework/cms';
 import { networkSite } from '@cossackframework/cms/server';
-import { exportResponse, fileExportResponse } from '../../../../../../cms/site-export';
+import { exportResponse, fileExportResponse } from '#app/cms/site-export';
 
 /** A site's database for network admins, on the network host: `GET /api/cms/network/sites/<id>/export`, as JSON, or a `.romedb` file with `?format=romedb`. */
 export const GET = async (c: Context) => {

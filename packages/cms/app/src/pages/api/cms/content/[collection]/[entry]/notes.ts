@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
-import { answer } from '../../../../../../cms/content-api';
-import { noteAdd, notesForEntry } from '../../../../../../cms/manage';
+import { answer } from '#app/cms/content-api';
+import { noteAdd, notesForEntry } from '#app/cms/manage';
 
 /**
  * An entry's review notes: `GET /api/cms/content/posts/<id>/notes` answers its threads, each a

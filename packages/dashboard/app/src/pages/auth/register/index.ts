@@ -1,10 +1,10 @@
 import { Cossack, Page, State, ClientStore, Validate, Client, Server, storeRules, isClientVisibleError } from '@cossackframework/core';
 import { Field, Input, PasswordInput, Button, Alert, Turnstile } from '@cossackframework/ui';
 import { html, component, bind } from '@cossackframework/renderer';
-import { authSessions, registerUser, registrationOpen } from '../../../auth';
-import { registerInput, returnPath, type RegisterInput } from '../../../auth-input';
-import { botCheckKey, passesBotCheck } from '../../../auth-bot-check';
-import { BOT_CHECK_FAILED, botCheckToken } from '../../../auth-bot-token';
+import { authSessions, registerUser, registrationOpen } from '#app/auth';
+import { registerInput, returnPath, type RegisterInput } from '#app/auth-input';
+import { botCheckKey, passesBotCheck } from '#app/auth-bot-check';
+import { BOT_CHECK_FAILED, botCheckToken } from '#app/auth-bot-token';
 
 const REGISTRATION_MESSAGES = new Set(['An account with this email already exists.', 'Registration is closed on this site.']);
 

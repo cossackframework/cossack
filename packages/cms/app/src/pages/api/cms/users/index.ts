@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
-import { answer } from '../../../../cms/content-api';
-import { userCreate, usersList } from '../../../../cms/manage';
+import { answer } from '#app/cms/content-api';
+import { userCreate, usersList } from '#app/cms/manage';
 
 /** The site's users: `GET /api/cms/users?q=ada&role=editor&page=1&perPage=20`. Needs the users permission. */
 export const GET = (c: Context) => answer(c, () => usersList(c, c.req.query()));

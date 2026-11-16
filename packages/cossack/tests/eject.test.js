@@ -9,7 +9,7 @@ import { diffEjected, ejectFiles, mergeEjected, resolveEjectTarget, restoreEject
 const roots = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });
 
-const page = body => `import { helper } from '../../lib/helper';\nimport { format } from './format';\nimport type { Host } from '@/kit/host';\n\nexport default class Page {\n  title = 'Kit';\n  render() {\n    return helper(${JSON.stringify(body)});\n  }\n  footer() {\n    return format('footer');\n  }\n}\n`;
+const page = body => `import { helper } from '#app/lib/helper';\nimport { format } from './format';\nimport type { Host } from '@/kit/host';\n\nexport default class Page {\n  title = 'Kit';\n  render() {\n    return helper(${JSON.stringify(body)});\n  }\n  footer() {\n    return format('footer');\n  }\n}\n`;
 
 async function write(root, files) {
   for (const [file, content] of Object.entries(files)) {
@@ -34,7 +34,7 @@ async function project() {
     'node_modules/@acme/kit/app/src/lib/helper.ts': 'export const helper = (text: string) => text;\n',
     'node_modules/@acme/kit/app/src/config/kit.ts': "import { helper } from '../lib/helper';\nexport default () => ({ name: helper('kit') });\n",
     'node_modules/@acme/kit/app/src/plugins/kit-theme/plugin.json': JSON.stringify({ name: 'kit-theme', version: '1.0.0' }),
-    'node_modules/@acme/kit/app/src/plugins/kit-theme/templates/entry.ts': "import { part } from '../parts/part';\nimport { helper } from '../../../lib/helper';\nexport default () => helper(part);\n",
+    'node_modules/@acme/kit/app/src/plugins/kit-theme/templates/entry.ts': "import { part } from '../parts/part';\nimport { helper } from '#app/lib/helper';\nexport default () => helper(part);\n",
     'node_modules/@acme/kit/app/src/plugins/kit-theme/parts/part.ts': "export const part = 'part';\n",
     'node_modules/@acme/kit/app/src/plugins/kit-theme/assets/logo.svg': '<svg/>',
   });

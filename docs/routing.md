@@ -328,7 +328,7 @@ An override means the whole file. It stops receiving the package's fixes for tha
 
 #### What the package needs from the application
 
-Inside a served file, a relative import stays inside the package, and an `@/…` import is a module the application provides. The package lists these modules in `cossack.host`. The build stops when one is missing (`COSSACK_PACKAGE_HOST_MISSING`), or when the project's template is older than `cossack.hostTemplate` (`COSSACK_PACKAGE_HOST_OUTDATED`).
+Inside a served file, a relative import and a `#app/…` import stay inside the package, and an `@/…` import is a module the application provides. `#app/` is the package's name for its served root (`imports` in its `package.json`: `#app/cms/site` is `app/src/cms/site.ts`). It means nothing in the application's own files, which import a served module by the package's name (`@cossackframework/cms/app/cms/site`). The package lists these modules in `cossack.host`. The build stops when one is missing (`COSSACK_PACKAGE_HOST_MISSING`), or when the project's template is older than `cossack.hostTemplate` (`COSSACK_PACKAGE_HOST_OUTDATED`).
 
 - A missing module: run `cossack upgrade`, which writes it.
 - An older template, in a project whose files `cossack upgrade` updates: run `cossack upgrade`.

@@ -4,9 +4,9 @@ import { isCmsError, isSameOriginPost, systemPrincipal, type CommentShape } from
 import type { CmsHost } from '@cossackframework/cms/server';
 import { getCookie } from 'hono/cookie';
 import { getClientIp } from '@cossackframework/core';
-import { apiError, cappedRequest } from '../../../../cms/content-api';
-import { mailOrigin } from '../../../../cms/seo';
-import { isMembersOnly, isProtected, requestLock, unlockCookie } from '../../../../cms/site';
+import { apiError, cappedRequest } from '#app/cms/content-api';
+import { mailOrigin } from '#app/cms/seo';
+import { isMembersOnly, isProtected, requestLock, unlockCookie } from '#app/cms/site';
 
 /**
  * Approved comments of an entry, oldest first, for headless sites:

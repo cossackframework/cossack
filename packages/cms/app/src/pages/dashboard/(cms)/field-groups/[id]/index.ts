@@ -3,13 +3,13 @@ import { input } from '@cossackframework/core/input';
 import { AlertDialog, Button, Card, CardBody, CardHeader, Checkbox, Field, Input, NativeSelect, Textarea } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { CORE_FIELDS, isCmsError, PERMISSIONS, type Block, type FieldGroup, type FieldGroupTarget } from '@cossackframework/cms';
-import { collectionName } from '../../../../../cms/builder';
-import { blockOptions } from '../../../../../cms/content';
-import { blocksInput, editorBlocks, type BlockOption, type EditorBlock } from '../../../../../cms/editor';
-import { FieldGroupEditor } from '../../../../../cms/field-group-editor';
-import { describeBlockError } from '../../../../../cms/block-errors';
-import { requireAny } from '../../../../../cms/guards';
-import { notice, pageHeader } from '../../../../../cms/ui';
+import { collectionName } from '#app/cms/builder';
+import { blockOptions } from '#app/cms/content';
+import { blocksInput, editorBlocks, type BlockOption, type EditorBlock } from '#app/cms/editor';
+import { FieldGroupEditor } from '#app/cms/field-group-editor';
+import { describeBlockError } from '#app/cms/block-errors';
+import { requireAny } from '#app/cms/guards';
+import { notice, pageHeader } from '#app/cms/ui';
 
 interface Draft { id: string; title: string; description: string; placement: 'main' | 'sidebar'; order: string }
 interface TargetChoice { kind: FieldGroupTarget['kind']; name: string; label: string }

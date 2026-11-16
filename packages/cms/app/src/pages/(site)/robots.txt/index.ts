@@ -1,8 +1,8 @@
 import { Cossack, Page } from '@cossackframework/core';
 import { robotsTxtLines } from '@cossackframework/cms';
-import { siteOrigin } from '../../../cms/seo';
-import { trackCrawler } from '../../../cms/traffic';
-import { cacheHeaders } from '../../../cms/cache';
+import { siteOrigin } from '#app/cms/seo';
+import { trackCrawler } from '#app/cms/traffic';
+import { cacheHeaders } from '#app/cms/cache';
 
 /**
  * robots.txt: keeps crawlers out of the dashboard, the API, sign-in, previews and the IndexNow

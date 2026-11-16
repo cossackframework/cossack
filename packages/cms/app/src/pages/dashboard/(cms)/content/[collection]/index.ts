@@ -1,17 +1,17 @@
 import { Cossack, Page, State, Server, Client, Ref, type RefObject, type HeadValue } from '@cossackframework/core';
 import { input } from '@cossackframework/core/input';
 import { getCookie } from 'hono/cookie';
-import { bulkBar } from '../../../../../dashboard/bulk';
-import { listFilters, listFooter, listTable } from '../../../../../dashboard/list-table';
+import { bulkBar } from '#app/dashboard/bulk';
+import { listFilters, listFooter, listTable } from '#app/dashboard/list-table';
 import { Avatar, AvatarGroup, HoverCard, Icon, NativeSelect, AlertDialog, Tooltip, Button, Input } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { ENTRY_ACTION_IDS, entryAuthors, evaluateRule, isCmsError, languageName, mediaUrl, participantColor, recordTitle, translationGroupOf, type BuiltinEntryAction, type EntryAction, type EntryColumn, type FieldFilter, type ListFilter, type RecordShape } from '@cossackframework/cms';
-import { duplicateEntry, importEntries, importItems, listExtras, routeResource, runEntryCommand, termOptions, type ImportReport } from '../../../../../cms/content';
-import type { TermOption } from '../../../../../cms/editor';
-import { avatarStack, type Someone } from '../../../../../cms/collab/presence';
-import { icon } from '../../../../../cms/icons';
-import { clampPerPage, iconButton, linkButton, notice, pageHeader, saveScreenPreferences, screenCookie, screenHelp, screenOptions, screenPreferences, shortDate, statusBadge } from '../../../../../cms/ui';
-import { openMatches } from '../../../../../cms/site';
+import { duplicateEntry, importEntries, importItems, listExtras, routeResource, runEntryCommand, termOptions, type ImportReport } from '#app/cms/content';
+import type { TermOption } from '#app/cms/editor';
+import { avatarStack, type Someone } from '#app/cms/collab/presence';
+import { icon } from '#app/cms/icons';
+import { clampPerPage, iconButton, linkButton, notice, pageHeader, saveScreenPreferences, screenCookie, screenHelp, screenOptions, screenPreferences, shortDate, statusBadge } from '#app/cms/ui';
+import { openMatches } from '#app/cms/site';
 
 const PAGE_SIZE = 20;
 

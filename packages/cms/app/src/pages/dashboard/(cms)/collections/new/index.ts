@@ -3,10 +3,10 @@ import { input } from '@cossackframework/core/input';
 import { Button, Card, CardBody, Field, IconPicker, Input, NativeSelect } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS } from '@cossackframework/cms';
-import { collectionName } from '../../../../../cms/builder';
-import { requireAny } from '../../../../../cms/guards';
-import { ICON_CATALOG } from '../../../../../cms/icons';
-import { notice, pageHeader } from '../../../../../cms/ui';
+import { collectionName } from '#app/cms/builder';
+import { requireAny } from '#app/cms/guards';
+import { ICON_CATALOG } from '#app/cms/icons';
+import { notice, pageHeader } from '#app/cms/ui';
 
 /** A new collection: its names and icon; the builder takes over once it exists. */
 @Page({ transport: 'http', middlewares: [requireAny(PERMISSIONS.manageCollections)] })

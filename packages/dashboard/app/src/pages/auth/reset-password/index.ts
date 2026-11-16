@@ -1,8 +1,8 @@
 import { Cossack, Page, State, ClientStore, Validate, Client, Server, storeRules } from '@cossackframework/core';
 import { Field, PasswordInput, Button, Alert } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
-import { resetPassword } from '../../../auth';
-import { resetPasswordInput, type ResetPasswordInput } from '../../../auth-input';
+import { resetPassword } from '#app/auth';
+import { resetPasswordInput, type ResetPasswordInput } from '#app/auth-input';
 
 @Page({ transport: 'http' })
 export default class ResetPasswordPage extends Cossack {

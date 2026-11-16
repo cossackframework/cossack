@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
-import { answer } from '../../../../../../cms/content-api';
-import { entryPublish } from '../../../../../../cms/manage';
+import { answer } from '#app/cms/content-api';
+import { entryPublish } from '#app/cms/manage';
 
 /**
  * Publish an entry: `POST /api/cms/content/posts/<id>/publish` with an optional `at` (ISO 8601;

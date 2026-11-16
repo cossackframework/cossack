@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { CmsError } from '@cossackframework/cms';
-import { answer, apiHeaders, writeAllowed, writeBody } from '../../../../../cms/content-api';
-import { entryDelete, entryRead, entryUpdate } from '../../../../../cms/manage';
+import { answer, apiHeaders, writeAllowed, writeBody } from '#app/cms/content-api';
+import { entryDelete, entryRead, entryUpdate } from '#app/cms/manage';
 
 /**
  * One entry by slug (published only) or by ID (whatever the reader may see, such as their own

@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
-import { handleMcp } from '../../../cms/mcp';
-import { cmsTools, siteInstructions, toolError } from '../../../cms/mcp-tools';
+import { handleMcp } from '#app/cms/mcp';
+import { cmsTools, siteInstructions, toolError } from '#app/cms/mcp-tools';
 
 const UNAUTHENTICATED = { error: 'Send an application password: Authorization: Bearer cms_… (Profile → Application passwords, or cossack cms login).', code: 'CMS_UNAUTHENTICATED' };
 

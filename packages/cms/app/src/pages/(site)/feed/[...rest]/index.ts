@@ -1,6 +1,6 @@
 import { Cossack, Page } from '@cossackframework/core';
-import { feedResponse } from '../../../../cms/feeds';
-import { trackCrawler } from '../../../../cms/traffic';
+import { feedResponse } from '#app/cms/feeds';
+import { trackCrawler } from '#app/cms/traffic';
 
 /** `/feed/atom`, `/feed/json`, `/feed/<collection>` and `/feed/<collection>/<format>`, with `?term=<slug>` on each. */
 @Page({ transport: 'http' })

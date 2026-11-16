@@ -2,12 +2,12 @@ import { Cossack, Page, State, ClientStore, Validate, Client, Server, storeRules
 import { Field, Input, PasswordInput, Button, Alert, Turnstile } from '@cossackframework/ui';
 import { html, component, bind, unsafeHTML } from '@cossackframework/renderer';
 import { setCookie } from 'hono/cookie';
-import { authSessions, beginTwoFactor, completePasskeySignIn, createSession, loginUser, passkeySignIn, registrationOpen, requestMagicLink, twoFactorAvailable, TWO_FACTOR_COOKIE } from '../../../auth';
-import { loginInput, returnPath, type LoginInput } from '../../../auth-input';
-import { botCheckKey, passesBotCheck } from '../../../auth-bot-check';
-import { BOT_CHECK_FAILED, botCheckToken } from '../../../auth-bot-token';
-import { authOptions } from '../../../auth-options';
-import { OAUTH_PROVIDER_ICONS, OAUTH_PROVIDER_LABELS } from '../../../auth-providers';
+import { authSessions, beginTwoFactor, completePasskeySignIn, createSession, loginUser, passkeySignIn, registrationOpen, requestMagicLink, twoFactorAvailable, TWO_FACTOR_COOKIE } from '#app/auth';
+import { loginInput, returnPath, type LoginInput } from '#app/auth-input';
+import { botCheckKey, passesBotCheck } from '#app/auth-bot-check';
+import { BOT_CHECK_FAILED, botCheckToken } from '#app/auth-bot-token';
+import { authOptions } from '#app/auth-options';
+import { OAUTH_PROVIDER_ICONS, OAUTH_PROVIDER_LABELS } from '#app/auth-providers';
 
 /** Why a provider's sign-in did not happen, by the `oauth` query the callback sends. */
 const OAUTH_REFUSALS: Record<string, string> = {
@@ -20,7 +20,7 @@ const OAUTH_REFUSALS: Record<string, string> = {
 
 /** Sign-in failures the visitor is told about, after the password matched or before it is checked; see auth.ts. */
 const TOLD = new Set(['SignInLockedError', 'SignInPendingError', 'SignInPasskeyError']);
-import { usePasskey } from '../../../passkeys.client';
+import { usePasskey } from '#app/passkeys.client';
 
 interface LoginForm {
     email: string;
