@@ -150,6 +150,12 @@ and `*.example.com` (HTTP or HTTPS). Subdomain patterns exclude the apex.
 Malformed entries never match. `CORS_CREDENTIALS=true` with global `*` is
 rejected because credentialed CORS requires an explicit origin.
 
+The development server applies the same rules. Vite has a CORS setting of its own
+(`server.cors`), which would answer every preflight ahead of the application for
+`localhost` origins only; the framework's Vite plugin turns it off for the Node and
+Workers dev servers. A project that sets `server.cors` in its Vite configuration keeps
+its setting, and then Vite answers preflights again.
+
 For Node.js development, put values in `.env`. Production processes must receive
 their variables from the host. For local Wrangler development, use `.dev.vars`:
 

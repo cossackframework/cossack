@@ -279,8 +279,18 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
       const ssrLinked = env.command === 'serve' ? linkedDependencyFolders(root, ssr) : [];
       // A running server watches them too: one rebuilt meanwhile restarts it (see configureServer).
       linkedFolders = [...new Map([...clientLinked, ...ssrLinked].map(entry => [entry.folder, entry])).values()];
+      const devServer = {
+        // CORS is the application's (src/config/cors.ts), in development as in production.
+        // Vite's own CORS runs ahead of the application and answers every preflight itself, for
+        // localhost origins only: an origin in CORS_ORIGINS never reached the application.
+        // Turned off, Vite's own files carry no CORS headers, so another origin cannot read
+        // them. A project that sets `server.cors` keeps its setting, and Desktop, whose window
+        // loads its assets across origins, keeps Vite's default.
+        ...(env.command === 'serve' && env.mode !== 'desktop' && userConfig.server?.cors === undefined ? { cors: false } : {}),
+        ...(linkedRoots.length && env.command === 'serve' ? { fs: { allow: [searchForWorkspaceRoot(root), ...linkedRoots] } } : {}),
+      };
       return {
-        ...(linkedRoots.length && env.command === 'serve' ? { server: { fs: { allow: [searchForWorkspaceRoot(root), ...linkedRoots] } } } : {}),
+        ...(Object.keys(devServer).length ? { server: devServer } : {}),
         ssr: {
           noExternal: inlined,
         },

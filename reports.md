@@ -132,3 +132,21 @@ sits next to the page or the page only defines `loadingTemplate()`. It skips
 RPC after hydration. `loading.ts` still shows during client navigation while
 the next page is fetched. Docs: `docs/loading.md`. Tests:
 `packages/framework/tests/router-loading-init.test.ts`.
+
+## Dev server: Vite's default CORS answers API preflights, so `CORS_ORIGINS` is ignored in development
+
+**Found in:** storm-matching, `scripts/dev.js` (Node dev server, Vite in middleware mode, framework 0.8.3), 2026-11-16.
+
+**What happened:** The SDK on `http://book.claimz.test` called `http://localhost:4200/api/autocomplete` with an `X-API-Key` header. `CORS_ORIGINS` listed `*.claimz.test` and the built-in API CORS (`createCorsMiddleware()`, `src/config/cors.ts`) matched it, yet the browser got a 204 preflight without `Access-Control-Allow-Origin`. `vite.middlewares` runs before the Hono app, and Vite's default `server.cors` (localhost origins only, `Allow-Methods: GET,HEAD,PUT,PATCH,POST,DELETE`) ends every OPTIONS preflight itself. Only `localhost` origins ever passed, and wildcard or non-localhost entries in `CORS_ORIGINS` were never consulted in dev. Production (no Vite) was fine.
+
+**Expected:** The dev server leaves CORS to the app: the generated `scripts/dev.js` (and the node-adapter's Vite plugin, if it puts Vite's middlewares in front of the app) sets `server.cors: false`, or passes `/api` preflights through to the app, so `CORS_ORIGINS` behaves the same in dev and production.
+
+**Workaround:** `server: { middlewareMode: true, cors: false }` in the project's `scripts/dev.js`.
+
+**Status:** Fixed. The framework's Vite plugin turns Vite's own CORS off for
+the Node and Workers dev servers, so preflights reach the application and
+`CORS_ORIGINS` behaves as in production. A project that sets `server.cors`
+keeps its setting, and Desktop keeps Vite's default. A dev server written by
+hand gets the fix as long as it loads the project's Vite config (the plugin
+sets it), with or without middleware mode. Docs: `docs/config.md` (CORS).
+Tests: `packages/framework/tests/package-mounts.test.ts`.

@@ -254,7 +254,7 @@ describe('mounted packages', () => {
     // Served files are TypeScript: Node cannot load them from node_modules, so Vite keeps them.
     expect(config.ssr.noExternal).toContain('@acme/kit');
     expect(config.environments.ssr.resolve.noExternal).toContain('@acme/kit');
-    expect(config.server).toBeUndefined();
+    expect(config.server.fs).toBeUndefined();
 
     // A dependency the application declares as well is listed both ways: with resolve.dedupe the served
     // file's import goes to the application's copy, which a linked package does not share.
@@ -283,6 +283,13 @@ describe('mounted packages', () => {
     // A linked package is outside the project: the dev server must be allowed to serve its files.
     const linked = project({}, { linked: true });
     expect((cossackPages().config as Function)({ root: linked.root }, { command: 'serve' }).server.fs.allow).toContain(linked.kit);
+    // The development server leaves CORS to the application: Vite's own would answer API
+    // preflights ahead of it. A project's own setting, a build and Desktop are left alone.
+    const hook = cossackPages().config as Function;
+    expect(hook({ root: linked.root }, { command: 'serve', mode: 'development' }).server.cors).toBe(false);
+    expect(hook({ root: linked.root, server: { cors: true } }, { command: 'serve', mode: 'development' }).server.cors).toBeUndefined();
+    expect(hook({ root: linked.root }, { command: 'serve', mode: 'desktop' }).server.cors).toBeUndefined();
+    expect(hook({ root: own.root }, { command: 'build', mode: 'production' }).server).toBeUndefined();
     expect((cossackPages().config as Function)({ root: linked.root }, { command: 'build' }).server).toBeUndefined();
   });
 
