@@ -1,19 +1,34 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { processMarkdown } from '../src/markdown-processor';
 import { cossackPages } from '../src/vite-plugin';
+
+/** A project with one TypeScript page and two Markdown pages. */
+function markdownProject(): string {
+  const root = mkdtempSync(join(tmpdir(), 'cossack-markdown-'));
+  mkdirSync(join(root, 'src/pages'), { recursive: true });
+  writeFileSync(join(root, 'src/pages/index.ts'), 'export default class Page {}');
+  writeFileSync(join(root, 'src/pages/guide.md'), '# Guide');
+  writeFileSync(join(root, 'src/pages/notes.mdx'), '# Notes');
+  return root;
+}
 
 describe('Markdown processor', () => {
   it('omits Markdown routes and warns once when no processor is configured', async () => {
     // Template checks run in buildStart too; they would check this whole package.
     const plugin = cossackPages({ templateDiagnostics: false });
     const load = plugin.load as Function;
+    const root = markdownProject();
+    (plugin.configResolved as Function).call({}, { root, publicDir: false, base: '/' });
     const virtual = load.call(
       { environment: { name: 'client' } },
       '\0virtual:cossack-pages',
     );
-    expect(virtual).toContain('"/src/pages/**/*.ts"');
-    expect(virtual).not.toContain('"/src/pages/**/*.md"');
-    expect(virtual).not.toContain('"/src/pages/**/*.mdx"');
+    expect(virtual).toContain('"/src/pages/index.ts": () => import("/src/pages/index.ts")');
+    expect(virtual).not.toContain('guide.md');
+    expect(virtual).not.toContain('notes.mdx');
 
     const warn = vi.fn();
     const buildStart = plugin.buildStart as Function;
@@ -25,13 +40,15 @@ describe('Markdown processor', () => {
 
   it('includes Markdown route globs only when a processor is configured', () => {
     const plugin = cossackPages({ markdownProcessor: processMarkdown });
+    (plugin.configResolved as Function).call({}, { root: markdownProject(), publicDir: false, base: '/' });
     const source = (plugin.load as Function).call(
       { environment: { name: 'ssr' } },
       '\0virtual:cossack-pages',
-    );
-    expect(source).toContain('"/src/pages/**/*.md"');
-    expect(source).toContain('"/src/pages/**/*.mdx"');
-    expect(source).toContain('{ eager: true }');
+    ) as string;
+    // The server imports every page eagerly, Markdown pages included.
+    expect(source).toMatch(/import \* as (\w+) from "\/src\/pages\/guide\.md";[\s\S]*"\/src\/pages\/guide\.md": \1,/);
+    expect(source).toMatch(/import \* as \w+ from "\/src\/pages\/notes\.mdx";/);
+    expect(source).not.toContain('() => import(');
   });
 
   it('extracts frontmatter and renders CommonMark, GFM, raw HTML, and slugs', async () => {

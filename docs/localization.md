@@ -126,6 +126,49 @@ window.addEventListener('localechange', (e) => {
 });
 ```
 
+## Content language
+
+A page can render in the language of its content, whatever the visitor's cookie says. Call
+`setRequestLocale()` on the server, before rendering, such as in a page middleware once the
+route knows its content:
+
+```ts
+import { defineServerMiddleware, setRequestLocale } from '@cossackframework/core';
+
+export const contentLanguage = defineServerMiddleware(async (c, next) => {
+  if (c.req.path.startsWith('/fr/')) setRequestLocale('fr');
+  await next();
+});
+```
+
+- `__()` reads that locale's catalog and falls back to the default one.
+- A locale without a catalog still becomes `<html lang>`, and its text uses the default
+  catalog.
+- The `cossack_locale` cookie does not change.
+- Client navigation to a page in another locale switches the client's locale and
+  `<html lang>` for that page, without the cookie.
+
+The CMS does this for site pages: `/fr/a-propos` renders in French.
+
+## Plugin catalogs and language packs
+
+A plugin's `lang/<locale>.json` joins the application's catalogs under the plugin's name:
+`{ "title": "Support desk" }` in `src/plugins/support-desk/lang/en.json` is
+`__('support-desk::title')`. These catalogs join locales the application already has.
+
+A language pack is a plugin that translates the application, or other plugins:
+
+| File | Translates |
+| --- | --- |
+| `src/plugins/<pack>/translations/<locale>.json` | The application's keys |
+| `src/plugins/<pack>/translations/<locale>/<plugin>.json` | `<plugin>::` keys |
+
+- A pack adds its locales.
+- When the application has no catalog for its default locale, a pack adds an empty one, so
+  the source text stays the default.
+- The application's `src/lang/<locale>.json` overrides packs, and packs override a plugin's
+  own `lang/<locale>.json`.
+
 ## Translation files
 
 Catalogs are JSON files in `src/lang/`. Each file maps keys to translated strings.
@@ -279,6 +322,7 @@ export const template = `
 |---|---|
 | `__(key, params?)` | Translate `key` for the current locale, with optional placeholder/pluralization params. Falls back to the default locale, then the key itself. |
 | `setLocale(locale)` | Switch the active locale in the browser. The method is async and saves the locale in a cookie. It accepts `'AUTO:BROWSER'`. |
+| `setRequestLocale(locale)` | Server only: render the current request in `locale`, such as its content's language. The cookie does not change. |
 | `getLocale()` | Returns the current locale code. |
 | `isLocale(locale)` | Returns `true` if `locale` is a supported locale. |
 | `registerLocale(locale, messages)` | Registers a catalog programmatically (used internally for hydration). |
@@ -291,7 +335,7 @@ export const template = `
 | Command | Description |
 |---|---|
 | `cossack lang publish` | Create `src/lang/en.json` with starter keys. Use `--locale=<code>` for a different default. |
-| `cossack lang add <locale>` | Create `src/lang/<locale>.json` with empty values, mirroring existing keys. |
+| `cossack lang add <locale>` | Create `src/lang/<locale>.json` with empty values, mirroring the default catalog's keys. Without a default catalog, it lists every literal `__()` key under `src`, leaving out `plugin::` keys. |
 | `cossack lang publish --locale=es` | Create `src/lang/es.json`, seeded from `en.json`'s keys. |
 
 Both honor `--force` (overwrite) and `--dry-run` (preview without writing).

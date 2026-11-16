@@ -1,7 +1,7 @@
 /** Node-only metadata inspection. Never imports or evaluates application modules. */
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { discoverConfigFactories } from './config-codegen.js';
+import { discoverConfigSources } from './config-codegen.js';
 import { normalizeConfigRequirements, type ConfigRequirements, type ConfigRequirementDiagnostic } from './config-requirements.js';
 
 type AstNode = any;
@@ -68,8 +68,8 @@ export async function inspectConfigRequirements(root: string): Promise<{ factori
   let parser: typeof import('vite').parseSync | undefined;
   try { parser = (await import('vite')).parseSync; } catch { /* unavailable is explicit */ }
   const factories: ConfigFactoryInspection[] = [];
-  for (const file of discoverConfigFactories(root)) {
-    const row: ConfigFactoryInspection = { key: file.slice(0, -3), source: 'src/config/' + file, status: 'none', diagnostics: [] };
+  for (const { key, source: file } of discoverConfigSources(root)) {
+    const row: ConfigFactoryInspection = { key, source: file, status: 'none', diagnostics: [] };
     const fail = (status: 'unknown' | 'invalid') => {
       row.status = status;
       row.diagnostics.push({ code: status === 'unknown' ? 'COSSACK_CONFIG_REQUIREMENTS_UNKNOWN' : 'COSSACK_CONFIG_REQUIREMENTS_INVALID', severity: 'error', name: 'requirements', kind: 'metadata', source: row.source,

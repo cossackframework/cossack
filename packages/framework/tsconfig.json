@@ -34,5 +34,8 @@
     "src/**/*.ts",
     ".cossack/config.d.ts",
     "tests/**/*.ts"
+  ],
+  "exclude": [
+    "tests/fixtures/page-package"
   ]
 }

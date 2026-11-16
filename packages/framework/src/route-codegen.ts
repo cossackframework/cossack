@@ -1,7 +1,11 @@
 /** Node-only compiler output. The core URL helper remains portable. */
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
-import { buildRoutesManifest, computeRouteIds, type RoutesManifest } from './route-ids.js';
+import { parseSync } from 'vite';
+import { buildRoutesManifest, classifyRoute, computeRouteIds, filePathToHttpRoute, type RoutesManifest } from './route-ids.js';
+import { scanPageSources } from './plugin-sources.js';
+import { mountedPackages, servedFile, servedSpecifier } from './package-mounts.js';
+import { httpHandlerAnswersGet, isHttpHandlerProgram } from './page-inspection.js';
 
 export const ROUTES_MODULE_ID = 'virtual:cossack-routes';
 export const ROUTES_SOURCE_PATH = '.cossack/routes.ts';
@@ -16,6 +20,10 @@ export const ROUTE_GLOB_EXCLUDES = [
 export function scanPagesDir(
   pagesDir: string,
   includeMarkdown = false,
+  /** Key of the directory itself. A mounted package's `pages/(site)/` is `/src/pages/(site)/`. */
+  keyPrefix = '/src/pages/',
+  /** Only the directory's own files. */
+  shallow = false,
 ): { pageKeys: string[]; layoutKeys: string[]; markdownKeys: string[] } {
   const pageKeys: string[] = [];
   const layoutKeys: string[] = [];
@@ -26,14 +34,14 @@ export function scanPagesDir(
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const fullPath = join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (TEST_DIRECTORIES.has(entry.name)) continue;
+        if (shallow || TEST_DIRECTORIES.has(entry.name)) continue;
         walk(fullPath);
       } else if (entry.isFile()) {
         if (/\.(?:test|spec)\.[^.]+$/.test(entry.name) || entry.name.endsWith('.d.ts')) {
           continue;
         }
         const rel = relative(pagesDir, fullPath).split(sep).join('/');
-        const key = `/src/pages/${rel}`;
+        const key = `${keyPrefix}${rel}`;
         if (entry.name === 'layout.ts') {
           layoutKeys.push(key);
         } else if (entry.name === 'loading.ts') {
@@ -52,17 +60,83 @@ export function scanPagesDir(
   return { pageKeys: pageKeys.sort(), layoutKeys: layoutKeys.sort(), markdownKeys: markdownKeys.sort() };
 }
 
-/** Same discovered files and collision resolution as virtual:cossack-pages. */
+/** Parse results by source file; a page is parsed again only when its size or mtime changes. */
+const handlerSyntax = new Map<string, { size: number; mtimeMs: number; handler: boolean; get: boolean }>();
+
+/**
+ * Route keys of the functional HTTP handler modules outside `/api`: TypeScript page
+ * files whose exports are a default function, `defineApi()` or `GET`/`POST`… handlers
+ * rather than a component. The same Oxc parse that the client security plugin uses
+ * decides, so the manifest, the generated API types and the browser stubs agree, and
+ * nothing executes. Modules under `/api` are endpoints by path and are not parsed;
+ * Markdown pages are never handlers.
+ */
+export function discoverHttpHandlers(projectRoot: string, pageKeys: readonly string[], sources: Record<string, string> = {}, options: { get?: boolean } = {}): string[] {
+  const handlers: string[] = [];
+  for (const key of pageKeys) {
+    if (!key.endsWith('.ts') || classifyRoute(filePathToHttpRoute(key)) !== 'page') continue;
+    const file = resolve(projectRoot, (sources[key] ?? key).slice(1));
+    const { size, mtimeMs } = statSync(file);
+    const cached = handlerSyntax.get(file);
+    const syntax = cached && cached.size === size && cached.mtimeMs === mtimeMs ? cached : { size, mtimeMs, ...handlerSource(readFileSync(file, 'utf8')) };
+    handlerSyntax.set(file, syntax);
+    if (options.get ? syntax.get : syntax.handler) handlers.push(key);
+  }
+  return handlers;
+}
+
+/**
+ * Handler routes that answer GET, which client navigation loads as documents
+ * instead of fetching. A handler exporting only `POST` leaves GET to the page
+ * that would otherwise match, such as a catch-all.
+ */
+export function discoverGetHandlers(projectRoot: string, includeMarkdown = false): string[] {
+  const { pageKeys, sources } = scanPageSources(projectRoot, includeMarkdown);
+  return discoverHttpHandlers(projectRoot, pageKeys, sources, { get: true });
+}
+
+function handlerSource(code: string): { handler: boolean; get: boolean } {
+  try {
+    const result = parseSync('page.ts', code);
+    if (result.errors?.length) return { handler: false, get: false };
+    return { handler: isHttpHandlerProgram(result.program), get: httpHandlerAnswersGet(result.program) };
+  } catch { return { handler: false, get: false }; }
+}
+
+/**
+ * Same discovered files and collision resolution as virtual:cossack-pages,
+ * including plugin pages under `src/plugins/<name>/pages`. Functional handlers
+ * outside `/api` are endpoints by their syntax ({@link discoverHttpHandlers}).
+ */
 export function discoverRoutes(projectRoot: string, includeMarkdown = false): RoutesManifest {
-  const { pageKeys, layoutKeys } = scanPagesDir(resolve(projectRoot, 'src/pages'), includeMarkdown);
-  return buildRoutesManifest(pageKeys, layoutKeys, computeRouteIds(pageKeys, layoutKeys));
+  const { pageKeys, layoutKeys, sources, plugins, origins } = scanPageSources(projectRoot, includeMarkdown);
+  const handlers = discoverHttpHandlers(projectRoot, pageKeys, sources);
+  const manifest = buildRoutesManifest(pageKeys, layoutKeys, computeRouteIds(pageKeys, layoutKeys), { handlers, owners: plugins });
+  const pluginSources = Object.fromEntries(Object.entries(sources).filter(([key, source]) => key !== source));
+  // Which mounted package a key comes from, and how to import its module by name.
+  const packages: Record<string, string> = {};
+  const specifiers: Record<string, string> = {};
+  for (const [key, origin] of Object.entries(origins)) {
+    const served = mountedPackages(projectRoot).length ? servedFile(projectRoot, origin.file) : null;
+    if (!served) continue;
+    packages[key] = served.package.name;
+    const specifier = servedSpecifier(served.package, served.path);
+    if (specifier) specifiers[key] = specifier;
+  }
+  return {
+    ...manifest,
+    ...(Object.keys(pluginSources).length ? { sources: pluginSources } : {}),
+    ...(Object.keys(packages).length ? { packages } : {}),
+    ...(Object.keys(specifiers).length ? { specifiers } : {}),
+  };
 }
 
 /** Runtime paths plus type-only native exports. No application runtime imports enter the client graph. */
 export function renderRouteSource(manifest: RoutesManifest): string {
   const patterns = Object.fromEntries(manifest.routes.filter(route => route.addressable).map(route => [route.name, route.pattern]));
   const apiModules = manifest.routes.filter(route => route.kind === 'api' && route.addressable)
-    .map(route => `  ${JSON.stringify(route.name)}: typeof import(${JSON.stringify('..' + route.filePath)});`).join('\n');
+    // A package's module is imported by name: its path changes with the version and the install layout.
+    .map(route => `  ${JSON.stringify(route.name)}: typeof import(${JSON.stringify(manifest.specifiers?.[route.filePath] ?? '..' + (manifest.sources?.[route.filePath] ?? route.filePath))});`).join('\n');
   return GENERATED_HEADER + "import { createRouteBuilder } from '@cossackframework/core/routes';\n" +
     `export const routePatterns = ${JSON.stringify(patterns, null, 2)} as const;\n` +
     'export const routes = createRouteBuilder(routePatterns);\n' +

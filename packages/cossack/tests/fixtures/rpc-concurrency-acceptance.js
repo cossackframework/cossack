@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { expect } from 'vitest';
 import { chromium } from '@playwright/test';
+import { useAppDurableObject } from './generated-app.js';
 
 export async function writeRpcConcurrencyAcceptance(root,adapter) {
  const write=async(name,source)=>{const file=path.join(root,name);await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(file,source);};
@@ -23,7 +24,8 @@ export async function writeRpcConcurrencyAcceptance(root,adapter) {
  if(adapter==='cloudflare') {
  await write('src/pages/api/lifecycle.ts',`export const GET=(c:any)=>{const id=c.env.COSSACK_OBJECT.idFromName('lifecycle');const op=new URL(c.req.url).searchParams.get('op');if(op==='id')return c.json({id:id.toString()});const stub=c.env.COSSACK_OBJECT.get(id);if(op)return stub.fetch('https://fixture.test/'+op);return stub.fetch(new Request('https://fixture.test/global?pathname=/live&params={}',{headers:{Upgrade:'websocket','X-Component-Path':'/fixture/live.ts'}}));};`);
 
- const configFile=path.join(root,'wrangler.jsonc');const config=JSON.parse(await fs.readFile(configFile,'utf8'));config.durable_objects.bindings.push({name:'COSSACK_OBJECT',class_name:'AppDurableObject'});config.migrations[0].new_sqlite_classes.push('AppDurableObject');await fs.writeFile(configFile,JSON.stringify(config));
+ // The generated app already binds COSSACK_OBJECT to AppDurableObject, which src/index.ts below re-exports from the fixture.
+ await useAppDurableObject(root);
  await write('src/fixture-do.ts',`
  import {Cossack,CossackDurableObject,Page,State,Server} from '@cossackframework/core';
  @Page({transport:'durable-object',stateful:true}) class Live extends Cossack {

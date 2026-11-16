@@ -9,8 +9,12 @@
  * they're linked locally, pre-1.0), Vite's SSR loader re-transforms every one
  * of their ~100 source files on each cold dev start — ~14s of pure TS
  * transform time per boot. Pre-bundling them once with esbuild (and caching the
- * result in node_modules/.vite/deps_ssr) cuts cold start to ~5s and warm start
- * to ~2.5s. The app's own src/ still transforms normally, so HMR is unaffected.
+ * result in node_modules/.vite/deps_ssr) cuts cold start to ~5s. The app's own
+ * src/ still transforms normally, so HMR is unaffected. The framework plugin
+ * keys Vite's cache on the linked packages' files (Vite's own key does not
+ * follow their sources), so a changed package is bundled again under a new
+ * address, and a running dev server restarts when one is rebuilt: a change in
+ * the framework checkout is never served stale.
  *
  * This is applied ONLY when the COSSACK_LOCAL env var is set (see scripts/dev.js):
  *

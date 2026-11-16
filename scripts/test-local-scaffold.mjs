@@ -1,6 +1,7 @@
 import { verifyAuxiliaryBuildBudgets } from './verify-auxiliary-build-budgets.mjs';
 import { verifyBudgetBuildModes } from './verify-budget-build-modes.mjs';
 import { verifyBuildBudgets } from './verify-build-budgets.mjs';
+import { verifyCmsApplications } from './verify-cms-applications.mjs';
 import { verifyConfigHydration } from './verify-config-hydration.mjs';
 import { verifyDesktopTraceReaders } from '../packages/cossack/tests/fixtures/desktop-trace-readers.js';
 import { writeDesktopRuntimeAcceptance, verifyDesktopRuntimeApplication, verifyDesktopDevelopmentApplication } from '../packages/cossack/tests/fixtures/desktop-runtime-acceptance.js';
@@ -29,6 +30,10 @@ const packageDirectories = [
   'node-adapter',
   'desktop',
   'auth',
+  'romedb',
+  'cms',
+  // The sign-in pages and the dashboard of projects on the database ORM, mounted like the CMS.
+  'dashboard',
   'ui',
   'framework',
   'database',
@@ -100,7 +105,8 @@ async function useTarballs(projectDir, tarballs, { documentation = false } = {})
   // their features into the minimal application.
   if (documentation) for (const name of [
     '@cossackframework/ui', '@cossackframework/auth', '@cossackframework/database',
-    '@cossackframework/node-adapter', '@cossackframework/studio',
+    '@cossackframework/node-adapter', '@cossackframework/studio', '@cossackframework/romedb', '@cossackframework/cms',
+    '@cossackframework/dashboard',
   ]) {
     if (!pkg.dependencies?.[name]) pkg.devDependencies[name] = `file:${tarballs.get(name)}`;
   }
@@ -581,10 +587,8 @@ export default class PackagingSsgPage extends Cossack {
   await run('pnpm', ['run', 'migrate'], { cwd: projectDir });
   await run('pnpm', ['run', 'build'], { cwd: projectDir });
   await verifyGeneratedMigrationPlans(projectDir);
-  const cloudflareManifest = JSON.parse(await fs.readFile(
-    path.join(projectDir, '.cossack/scaffold.json'),
-    'utf8',
-  ));
+  // The recipe is recorded in package.json#cossack.
+  const cloudflareManifest = JSON.parse(await fs.readFile(path.join(projectDir, 'package.json'), 'utf8')).cossack;
   if (cloudflareManifest.runtime !== 'cloudflare') {
     throw new Error('Node to Cloudflare smoke switch did not update the manifest');
   }
@@ -610,10 +614,7 @@ export default class PackagingSsgPage extends Cossack {
   await verifyReleaseStripping(projectDir);
   await run('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: projectDir });
   await verifyNodeProductionAssets(projectDir);
-  const nodeManifest = JSON.parse(await fs.readFile(
-    path.join(projectDir, '.cossack/scaffold.json'),
-    'utf8',
-  ));
+  const nodeManifest = JSON.parse(await fs.readFile(path.join(projectDir, 'package.json'), 'utf8')).cossack;
   if (nodeManifest.runtime !== 'node') {
     throw new Error('Cloudflare to Node smoke switch did not update the manifest');
   }
@@ -643,6 +644,7 @@ const agentDocsOnly = process.argv.includes('--agent-docs-only');
 const publishedReleaseOnly = process.argv.includes('--published-release-only');
 const deploymentGuideOnly = process.argv.includes('--deployment-guide-only');
 const scaffoldOnly = process.argv.includes('--scaffold-only');
+const cmsOnly = process.argv.includes('--cms-only');
 const reuseDirectory = process.argv.find(argument => argument.startsWith('--reuse-artifacts='))?.slice('--reuse-artifacts='.length);
 const includeDesktop = desktopRuntimeOnly;
 
@@ -677,7 +679,9 @@ try {
   const minimalProjectDir = path.join(temporaryRoot, 'minimal-production');
   await useTarballs(minimalProjectDir, tarballs, { documentation: !desktopRuntimeOnly });
   await installGeneratedProject(minimalProjectDir);
-  if (deploymentGuideOnly) {
+  if (cmsOnly) {
+    await verifyCmsApplications(temporaryRoot, tarballs, { run, useTarballs, install: installGeneratedProject });
+  } else if (deploymentGuideOnly) {
     console.log(JSON.stringify(await verifyDeploymentGuide(minimalProjectDir), null, 2));
   } else if (publishedReleaseOnly) {
     await verifyPublishedRelease(minimalProjectDir);
@@ -686,7 +690,7 @@ try {
   } else if (desktopRuntimeOnly) {
     await writeDesktopRuntimeAcceptance(minimalProjectDir);
     const configFile = path.join(minimalProjectDir, 'vite.config.ts');
-    await fs.writeFile(configFile, (await fs.readFile(configFile, 'utf8')).replace('cossackPages({', 'cossackPages({ developmentTraces:true,'));
+    await fs.writeFile(configFile, (await fs.readFile(configFile, 'utf8')).replace('cossackApp({', 'cossackApp({ pages: { developmentTraces: true },'));
     await run('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: minimalProjectDir });
     await run('pnpm', ['run', 'build:desktop'], { cwd: minimalProjectDir });
     await verifyDesktopRuntimeApplication(minimalProjectDir);
@@ -705,8 +709,9 @@ try {
       await verifyAuxiliaryBuildBudgets(minimalProjectDir);
     }
   }
-  if (!deploymentGuideOnly && !publishedReleaseOnly && !scaffoldOnly && !desktopRuntimeOnly && !nodeDevelopmentOnly && !agentDocsOnly) {
+  if (!cmsOnly && !deploymentGuideOnly && !publishedReleaseOnly && !scaffoldOnly && !desktopRuntimeOnly && !nodeDevelopmentOnly && !agentDocsOnly) {
     await verifyScaffoldApplications(temporaryRoot, minimalProjectDir, tarballs);
+    await verifyCmsApplications(temporaryRoot, tarballs, { run, useTarballs, install: installGeneratedProject });
   }
 } finally {
   if (keep) {

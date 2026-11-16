@@ -311,6 +311,12 @@ export function isHttpHandlerProgram(program: AstNode): boolean {
   return apiSyntax(program).http;
 }
 
+/** Whether a handler module answers GET: a default export, or a `GET` export. */
+export function httpHandlerAnswersGet(program: AstNode): boolean {
+  const syntax = apiSyntax(program);
+  return syntax.http && syntax.exports.some(entry => entry.method === '*' || entry.method === 'GET');
+}
+
 export interface ApiContractFact {
   method: string;
   declaration: 'defineApi' | 'unvalidated' | 'unknown';

@@ -106,6 +106,13 @@ describe('lang add', () => {
     expect(parsed.welcome).toBe('');
   });
 
+  it('starts from the source text without a default catalog', async () => {
+    fs.mkdirSync(path.join(tmp, 'src/pages'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, 'src/pages/index.ts'), "export const a = () => __('Read more') + __('support-desk::title') + __('Read more') + __('Search');\n");
+    expect(await langCommand(['add', 'vi'], ctx)).toBe(0);
+    expect(readLang('vi')).toEqual({ 'Read more': '', Search: '' });
+  });
+
   it('reports exists and stays silent-success on a repeat', async () => {
     await langCommand(['publish'], ctx);
     expect(await langCommand(['add', 'fr'], ctx)).toBe(0);

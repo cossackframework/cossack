@@ -63,6 +63,11 @@ describe('parseTemplate', () => {
     expect(codes(strings`<svg><path d="M0" /><circle r="1"/></svg>`)).toEqual([]);
     expect(codes(strings`<path d="M0" />`, { svg: true })).toEqual([]);
     expect(codes(strings`<div />`)).toEqual(['COSSACK_TEMPLATE_SELF_CLOSING_ELEMENT']);
+    // A binding directly before `/>` is the whole value; the slash closes the tag.
+    expect(codes(strings`<input ...=${1}/>`)).toEqual([]);
+    expect(codes(strings`<input .value=${1}/>`)).toEqual([]);
+    expect(parseTemplate(strings`<input .value=${1}/>`).nodes[0]).toMatchObject({ selfClosing: true, attributes: [{ name: '.value', segments: ['', ''] }] });
+    expect(parseTemplate(strings`<a href=/x/>`).nodes[0]).toMatchObject({ selfClosing: false, attributes: [{ name: 'href', segments: ['/x/'] }] });
   });
 
   it('reports structural problems', () => {

@@ -17,9 +17,11 @@ async function linkDependencies(root, installedRoot) {
  const sourceModules = path.join(installedRoot ?? repository, 'node_modules');
  await fs.mkdir(modules);
  for (const name of await fs.readdir(sourceModules)) {
-  if (name.startsWith('.') || name === '@cossackframework') continue;
+  // The application's vite.config.ts imports the preset from the CLI package.
+  if (name.startsWith('.') || name === '@cossackframework' || name === 'cossack') continue;
   await fs.symlink(path.join(sourceModules, name), path.join(modules, name), 'junction');
  }
+ await fs.symlink(installedRoot ? await fs.realpath(path.join(sourceModules, 'cossack')) : path.join(repository, 'packages/cossack'), path.join(modules, 'cossack'), 'junction');
  await fs.mkdir(path.join(modules, '@cossackframework'));
  for (const name of ['framework','core','renderer','node-adapter','auth','database','ui']) {
   const target = installedRoot

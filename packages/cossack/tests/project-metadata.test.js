@@ -28,7 +28,7 @@ it('uses registry dependencies and excludes arbitrary recorded secrets', async (
     { name: 'auth', requires: ['ui', 'database'] },
   ]);
   expect(result.recipe.runtime).toBe('node');
-  expect(result.recipe.capabilityRequirements.web).toEqual([{ feature: 'database/sqlite', source: { file: '.cossack/scaffold.json' }, requires: { filesystem: true } }]);
+  expect(result.recipe.capabilityRequirements.web).toEqual([{ feature: 'database/sqlite', source: { file: 'package.json' }, requires: { filesystem: true } }]);
   expect(JSON.stringify(result)).not.toContain('PRIVATE_VALUE');
 });
 it('rejects provider/runtime conflicts using the scaffold registry', async () => {
@@ -44,7 +44,7 @@ it('keeps an older unsupported target recipe inspectable with a capability diagn
   expect(result.recipe.features.map(feature => feature.name)).toEqual(['database', 'desktop']);
   expect(result.diagnostics).toEqual([expect.objectContaining({
     code: 'COSSACK_CAPABILITY_UNSUPPORTED', severity: 'error', target: 'desktop',
-    feature: 'database/d1', source: '.cossack/scaffold.json',
+    feature: 'database/d1', source: 'package.json',
   })]);
   expect(JSON.stringify(result)).not.toContain('PRIVATE_VALUE');
 });

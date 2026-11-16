@@ -9,7 +9,9 @@ Cossack can show a spinner or skeleton while it fetches data or processes an act
 
 ## File-based Loading Convention (`loading.ts`)
 
-You can create a `loading.ts` file in any route directory. Cossack renders this component immediately when a user navigates to that route. The main Page component is fetched and its `init()` method runs at the same time.
+You can create a `loading.ts` file in any route directory. During client navigation, Cossack renders this component immediately while it fetches the next page. The server renders the page as usual, including `init()`, so the fetched page arrives with its data.
+
+`loading.ts` has no effect on the first (server-rendered) load of a page. To show a skeleton there, use `loadingTemplate()` with `clientInit()` (see below).
 
 Use this convention for global page transitions and skeleton screens.
 
@@ -40,7 +42,7 @@ When the framework initializes a component through `init()` or `get()`, it sets 
 
 ### The `loadingTemplate()` Convention
 
-If you define a `loadingTemplate()` method in your component, Cossack renders it while `this.loading.init` is true. Use it for component-level loading states or during a refresh.
+If you define a `loadingTemplate()` method in your component, Cossack renders it while `this.loading.init` is true. Use it for component-level loading states or during a refresh. On its own, it does not change server rendering: `init()` still runs during SSR.
 
 ```typescript
 import { Cossack, Page } from '@cossackframework/core';
@@ -93,7 +95,7 @@ render() {
 
 ## Client-Only Initialization (`clientInit`)
 
-To show a loading skeleton on the first page load instead of waiting for server-side `init()`, define `clientInit()` and `loadingTemplate()`:
+To show a loading skeleton on the first page load instead of waiting for server-side `init()`, define both `clientInit()` and `loadingTemplate()`. Only this pair makes SSR skip `init()`: `init()` is stripped from the client bundle, so nothing but your `clientInit()` can run it after hydration.
 
 ```typescript
 import { Cossack, Page, State, html } from '@cossackframework/core';
@@ -133,7 +135,7 @@ export default class DataPage extends Cossack {
 ```
 
 The flow:
-1. SSR: the server renders `loadingTemplate()` immediately. It skips `init()` when `loadingTemplate()` exists.
+1. SSR: the server renders `loadingTemplate()` immediately. It skips `init()` because the page defines both `loadingTemplate()` and `clientInit()`.
 2. Client hydration: the client hydrates with the loading UI visible.
 3. `clientInit()`: it calls `init()` through RPC. The RPC call fetches data from the server.
 4. Data loaded: the loading state clears and the component re-renders with the actual content.

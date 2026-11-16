@@ -1,0 +1,6 @@
+/* The example/callout block on the site, added to every page's head by ui.ts while the plugin is active. */
+.example-callout { border-left: 4px solid var(--example-tone, #2563eb); background: color-mix(in srgb, var(--example-tone, #2563eb) 8%, transparent); border-radius: 0.5rem; padding: 0.875rem 1rem; margin-block: 1rem; }
+.example-callout[data-tone="success"] { --example-tone: #059669; }
+.example-callout[data-tone="warning"] { --example-tone: #d97706; }
+.example-callout__title { font-weight: 600; margin: 0 0 0.25rem; }
+.example-callout__text { margin: 0; white-space: pre-line; }

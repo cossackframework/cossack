@@ -1,0 +1,34 @@
+# What the package ships of this folder: the served sources (the scaffold's
+# SERVED_DASHBOARD_PATHS), not the development application's project files around them.
+/*
+!/README.md
+!/src/
+/src/*
+!/src/auth.ts
+!/src/auth-options.ts
+!/src/auth-providers.ts
+!/src/auth-input.ts
+!/src/auth-bot-check.ts
+!/src/auth-bot-token.ts
+!/src/brand.ts
+!/src/passkeys.client.ts
+!/src/config/
+/src/config/*
+!/src/config/auth.ts
+!/src/dashboard/
+!/src/lib/
+/src/lib/*
+!/src/lib/permissions.ts
+!/src/lib/uuid.ts
+!/src/middlewares/
+/src/middlewares/*
+!/src/middlewares/auth.ts
+!/src/services/
+/src/services/*
+!/src/services/users.ts
+!/src/services/roles.ts
+!/src/services/rbac.ts
+!/src/pages/
+/src/pages/*
+!/src/pages/auth/
+!/src/pages/dashboard/

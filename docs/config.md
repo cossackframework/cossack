@@ -141,6 +141,7 @@ cross-origin origins.
 | `CORS_EXPOSE_HEADERS` | empty | Response headers exposed to browser code |
 | `CORS_CREDENTIALS` | `false` | Permit credentialed browser requests |
 | `CORS_MAX_AGE` | `86400` | Browser preflight cache duration in seconds |
+| `CORS_PATHS` | empty | Paths outside `/api` the built-in CORS also covers, such as `/webhooks` or `/feed.xml`. An entry covers that path and everything below it. |
 
 CSV values are trimmed and empty entries discarded. Methods are normalized to
 uppercase, and trailing slashes on exact origins are ignored. Supported origins
@@ -148,6 +149,12 @@ are exact HTTP(S) origins, global `*`, `https://*.example.com` (scheme-specific)
 and `*.example.com` (HTTP or HTTPS). Subdomain patterns exclude the apex.
 Malformed entries never match. `CORS_CREDENTIALS=true` with global `*` is
 rejected because credentialed CORS requires an explicit origin.
+
+The development server applies the same rules. Vite has a CORS setting of its own
+(`server.cors`), which would answer every preflight ahead of the application for
+`localhost` origins only; the framework's Vite plugin turns it off for the Node and
+Workers dev servers. A project that sets `server.cors` in its Vite configuration keeps
+its setting, and then Vite answers preflights again.
 
 For Node.js development, put values in `.env`. Production processes must receive
 their variables from the host. For local Wrangler development, use `.dev.vars`:

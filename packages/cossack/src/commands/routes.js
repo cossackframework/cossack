@@ -49,12 +49,12 @@ export async function routesCommand(args, ctx) {
   for (const route of routes) {
     const group = pagesByRoute.get(route);
     for (const page of group) {
-      console.log(formatRow(method(page.kind), route, page.filePath));
+      console.log(formatRow(method(page.kind), route, sourceLabel(page)));
     }
     // show layout stack for the first page on this route
     const layouts = layoutStackForPage(group[0].filePath, layoutKeys);
     for (const lp of layouts) {
-      console.log(formatRow('LAYOUT', '  \u2514 layout', lp));
+      console.log(formatRow('LAYOUT', '  \u2514 layout', sourceLabel(model.layouts.find((layout) => layout.filePath === lp) ?? { filePath: lp })));
     }
   }
 
@@ -67,7 +67,7 @@ export async function routesCommand(args, ctx) {
   }
   for (const l of model.layouts) {
     if (!usedLayouts.has(l.filePath)) {
-      console.log(formatRow('LAYOUT', '(orphan)', l.filePath));
+      console.log(formatRow('LAYOUT', '(orphan)', sourceLabel(l)));
     }
   }
 
@@ -81,6 +81,11 @@ export async function routesCommand(args, ctx) {
   }
   return null;
   });
+}
+
+/** A route's file, and the package that serves it when the application does not. */
+function sourceLabel(entry) {
+  return entry.package ? `${entry.filePath}  (${entry.package})` : entry.filePath;
 }
 
 function formatRow(method, route, filePath) {

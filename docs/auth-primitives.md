@@ -86,8 +86,8 @@ removed by logout. Existing stores with other JSON encodings must adapt their
 conditional matching or normalize the metadata explicitly.
 
 Every callback receives the Hono request context. SQL, transactions and
-cross-process atomicity remain storage responsibilities. See the generated
-[adapter](../packages/scaffold/template/src/auth.ts) for the D1/SQLite composition.
+cross-process atomicity remain storage responsibilities. See the auth module that
+`@cossackframework/dashboard` serves ([source](../packages/dashboard/app/src/auth.ts)) for the D1/SQLite composition.
 
 ## Compose the session middleware
 

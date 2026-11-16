@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { Cossack, getRequestContext } from '@cossackframework/core';
 
 const { registry, session } = vi.hoisted(() => ({
-    registry: { pages: {} as Record<string, any>, layouts: {} as Record<string, any>, loadings: {} },
+    registry: { pages: {} as Record<string, any>, layouts: {} as Record<string, any>, loadings: {}, owners: {} as Record<string, string> },
     session: { userId: 'u1' },
 }));
 vi.mock('virtual:cossack-pages', () => ({ default: registry }));
@@ -22,8 +22,9 @@ Reflect.defineMetadata('page:options', {
 }, Room);
 registry.pages[pagePath] = { default: Room };
 const { AppDurableObject } = await import('../src/DurableObject');
+const { setPluginActivity } = await import('../src/plugin-activity');
 
-afterEach(() => { session.userId = 'u1'; routeGuard.mockClear(); });
+afterEach(() => { session.userId = 'u1'; routeGuard.mockClear(); registry.owners = {}; setPluginActivity(undefined); });
 
 function objectUnderTest() {
     const object = Object.create(AppDurableObject.prototype) as any;
@@ -68,4 +69,15 @@ it('closes a hibernated peer after its user or scope changes', async () => {
     const staleScope = { ...peer(), scopeKey: 'team:other' };
     expect(await object.authorizeWebSocketPeer(undefined, staleScope, operation)).toBe(false);
     expect(operation).not.toHaveBeenCalled();
+});
+
+it('refuses a plugin page peer once the plugin is inactive', async () => {
+    registry.owners = { [pagePath]: 'shop' };
+    let active = true;
+    setPluginActivity(plugin => plugin === 'shop' && active);
+    const operation = vi.fn();
+    expect(await objectUnderTest().authorizeWebSocketPeer(undefined, peer(), operation)).toBe(true);
+    active = false;
+    expect(await objectUnderTest().authorizeWebSocketPeer(undefined, peer(), operation)).toBe(false);
+    expect(operation).toHaveBeenCalledOnce();
 });

@@ -5,6 +5,7 @@ import path from 'node:path';
 
 vi.mock('../src/page-options-ast.js', () => ({
   extractPageOptionsFromAst: async () => null,
+  isHttpHandlerModule: async () => false,
   extractMethodClassificationsFromAst: async () => null,
   inspectDefaultClassExport: async () => ({ status: 'unknown', reason: 'Module syntax could not be parsed.' }),
 }));

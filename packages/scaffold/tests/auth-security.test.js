@@ -8,7 +8,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 async function generatedAuth() {
   const files = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'auth', oauth: 'github',
-    features: ['dashboard'], dashboardModules: ['sessions'] }));
+    features: ['dashboard'], dashboardModules: ['sessions'] }), { servedFiles: true });
   const source = files.get('src/auth.ts').content.toString();
   const { code } = transformSync(source, { loader: 'ts', format: 'cjs', target: 'es2022' });
   const Session = { find: vi.fn(), findOne: vi.fn(), delete: vi.fn(async () => ({ meta: { rowsAffected: 1 } })), insert: vi.fn() };
@@ -24,7 +24,9 @@ async function generatedAuth() {
       createCredentialVerifier, createSessionManager, hashPassword, verifyPassword },
     '@cossackframework/database': { MoreThan: (value) => value, sql },
     '@cossackframework/core': { ClientVisibleError: Error },
-    '@/lib/uuid': { uuidv7: () => 'generated-id' },
+    './lib/uuid': { uuidv7: () => 'generated-id' },
+    // The project's choices, as src/dashboard.config.ts states them for this recipe.
+    './auth-options': { authOptions: { authMethods: ['credentials', 'oauth'], oauth: ['github'], modules: ['sessions'], dashboard: true, redirectAfterLogin: '/dashboard' } },
     '@/models/User': { User },
     '@/models/Session': { Session },
     '@/models/OAuthAccount': { OAuthAccount },
@@ -53,7 +55,9 @@ function generatedSessionsPage(files, api) {
   const module = { exports: {} };
   new Function('require', 'module', 'exports', code)(name => {
     if (name === '@cossackframework/core') return { Cossack: class {}, Page: () => () => {}, State: () => () => {}, Server: () => () => {} };
-    if (name === '../../../auth') return api;
+    if (name === '#app/auth') return api;
+    if (name === '#app/dashboard/session-list') return { sessionTable: () => null };
+    if (name === '@cossackframework/ui/blocks') return { notice: () => null, pageHeader: () => null };
     if (name === 'hono/cookie') return { getCookie: c => c?.cookie };
     if (name === '@cossackframework/ui' || name.startsWith('@cossackframework/solar-icons/')) return {};
     if (name === '@cossackframework/renderer') return {};
@@ -62,7 +66,7 @@ function generatedSessionsPage(files, api) {
   return new module.exports.default();
 }
 
-function generatedFormPage(files, name, api) {
+function generatedFormPage(files, name, api, bot = { passes: true }) {
   const module = { exports: {} };
   const schemaModule = { exports: {} };
   const schemaCode = transformSync(files.get('src/auth-input.ts').content.toString(), { loader: 'ts', format: 'cjs' }).code;
@@ -74,8 +78,15 @@ function generatedFormPage(files, name, api) {
     if (name === '@cossackframework/core') return { Cossack: class {}, isClientVisibleError, ClientVisibleError, storeRules: v => v,
       Page: decorator, State: decorator, ClientState: decorator, ClientStore: decorator,
       Validate: decorator, Client: decorator, Server: decorator };
-    if (name === '../../../auth') return api;
-    if (name === '../../../auth-input') return schemaModule.exports;
+    // Accounts without a second factor sign in after the password.
+    if (name === '#app/auth') return { beginTwoFactor: async () => null, twoFactorAvailable: false, TWO_FACTOR_COOKIE: 'two_factor', ...api };
+    if (name === '#app/auth-input') return schemaModule.exports;
+    if (name === '#app/auth-bot-check') return { botCheckKey: () => null, passesBotCheck: async () => bot.passes };
+    if (name === '#app/auth-bot-token') return { botCheckToken: () => '', BOT_CHECK_FAILED: 'The check against bots failed. Try again.' };
+    if (name === '#app/passkeys.client') return { usePasskey: vi.fn() };
+    if (name === '#app/auth-options') return { authOptions: { authMethods: ['credentials', 'oauth'], oauth: ['github'] } };
+    if (name === '#app/auth-providers') return { OAUTH_PROVIDER_ICONS: {}, OAUTH_PROVIDER_LABELS: {} };
+    if (name === 'hono/cookie') return { setCookie: vi.fn(), getCookie: vi.fn(), deleteCookie: vi.fn() };
     if (name === '@cossackframework/ui' || name === '@cossackframework/renderer') return {};
     throw new Error(`Unexpected form dependency: ${name}`);
   }, module, module.exports);
@@ -232,12 +243,40 @@ describe('generated auth security', () => {
   it.each([
     ['login', 'login', { email: 'valid@example.test', password: 'valid-password' }, 'loginUser', 'Could not sign in. Try again.'],
     ['register', 'register', { name: '', email: 'valid@example.test', password: 'valid-password' }, 'registerUser', 'Could not create the account. Try again or sign in.'],
-    ['reset-password', 'doReset', { token: 'token', password: 'valid-password' }, 'resetPassword', 'Could not reset the password. Request a new reset link.'],
+    ['reset-password', 'doReset', { token: 'token', password: 'valid-password', confirm: 'valid-password' }, 'resetPassword', 'Could not reset the password. Request a new reset link.'],
   ])('redacts storage failures in the actual generated %s method', async (name, method, submitted, helper, message) => {
     const { files } = await generatedAuth();
     const page = generatedFormPage(files, name, { [helper]: vi.fn().mockRejectedValue(new Error('PRIVATE_DATABASE')) });
     await page[method](submitted);
     expect(page.error).toBe(message); expect(page.c.header).not.toHaveBeenCalled(); expect(page.redirect).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['login', 'login', { email: 'valid@example.test', password: 'valid-password', turnstile: 'bad' }, 'loginUser'],
+    ['register', 'register', { name: '', email: 'valid@example.test', password: 'valid-password', turnstile: 'bad' }, 'registerUser'],
+  ])('refuses a generated %s whose bot check fails before touching credentials', async (name, method, submitted, helper) => {
+    const { files } = await generatedAuth();
+    const api = { [helper]: vi.fn() };
+    const page = generatedFormPage(files, name, api, { passes: false });
+    await page[method](submitted);
+    expect(page.error).toBe('The check against bots failed. Try again.');
+    expect(api[helper]).not.toHaveBeenCalled(); expect(page.c.header).not.toHaveBeenCalled(); expect(page.redirect).not.toHaveBeenCalled();
+  });
+
+  it('refuses a generated reset request whose bot check fails before touching accounts', async () => {
+    const { files } = await generatedAuth();
+    const requestPasswordReset = vi.fn();
+    const page = generatedFormPage(files, 'forgot-password', { requestPasswordReset }, { passes: false });
+    await expect(page.requestReset({ email: 'valid@example.test', turnstile: 'bad' })).rejects.toThrow('The check against bots failed. Try again.');
+    expect(requestPasswordReset).not.toHaveBeenCalled();
+  });
+
+  it('refuses a reset whose confirmation differs before touching credentials', async () => {
+    const { files } = await generatedAuth();
+    const resetPassword = vi.fn();
+    const page = generatedFormPage(files, 'reset-password', { resetPassword });
+    await page.doReset({ token: 'token', password: 'valid-password', confirm: 'valid-passwort' });
+    expect(page.error).toBe('The passwords do not match'); expect(resetPassword).not.toHaveBeenCalled(); expect(page.redirect).not.toHaveBeenCalled();
   });
 
   it('only preserves the known duplicate account error and does not copy arbitrary visible errors', async () => {

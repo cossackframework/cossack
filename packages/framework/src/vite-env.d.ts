@@ -32,6 +32,17 @@ declare module 'virtual:cossack-pages' {
     layouts: Record<string, LayoutModule | LayoutModuleLoader>;
     loadings: Record<string, LoadingModule | undefined>;
     components: Record<string, ComponentModule>;
+    /** Route key -> rendered plugin whose `pages/` the page or layout comes from. */
+    owners?: Record<string, string>;
+    /** Route key -> real source path (`/src/plugins/<name>/pages/...`), where it differs from the key. Server registry only. */
+    sources?: Record<string, string>;
+    /** Route keys of functional HTTP handlers (client registry only). */
+    handlers?: string[];
+    /**
+     * Development server registry only: pages load on first use. `pages` holds every key, with
+     * `undefined` for a page not loaded yet; this loads the named ones. Unknown keys are ignored.
+     */
+    load?: (keys: readonly (string | undefined)[]) => Promise<void>;
   }
 
   const registry: CossackPagesRegistry;
@@ -58,7 +69,10 @@ declare module 'virtual:cossack-lang' {
 
 declare module 'virtual:cossack-middlewares' {
   import type { MiddlewareHandler } from 'hono';
-  /** Ordered list of global request middlewares from `src/bootstrap/middlewares.ts`. */
+  /**
+   * Ordered list of global request middlewares from `src/bootstrap/middlewares.ts`, then
+   * each plugin's `middlewares.ts`, tagged with `cossackPlugin` (see `plugin-activity.ts`).
+   */
   const middlewares: MiddlewareHandler[];
   export default middlewares;
 }
@@ -70,6 +84,13 @@ declare module 'virtual:cossack-config' {
   export const requirements: import('./config-requirements').ConfigRequirementCollection;
   export const environment: string | null;
   export default configs;
+}
+
+declare module 'virtual:cossack-plugins' {
+  /** Rendered plugins from `src/plugins/<name>/plugin.json`, sorted by name. */
+  const plugins: readonly import('./plugin-registry').PluginRegistration[];
+  export { plugins };
+  export default plugins;
 }
 
 declare module 'virtual:cossack-realtime-components' {

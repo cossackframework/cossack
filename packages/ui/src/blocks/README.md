@@ -21,6 +21,7 @@ Blocks sit one level above individual UI components.
 | DashboardStat | Stat cards grid (KPI tiles with trend indicators) |
 | SettingsPanel | Card-section settings page (switch toggles, text inputs, action buttons) |
 | CommandPalette | Opt-in Ctrl/Meta+K palette with grouped substring search and keyboard navigation |
+| DashboardPage | `pageHeader()`, `linkButton()` and `notice()`: the heading, link buttons and messages every dashboard screen shares, plugin screens included. Functions, not ejectable |
 
 The controlled `DataTable` is available from `@cossackframework/ui` as a component.
 Its parent owns server queries and row actions.

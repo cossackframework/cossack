@@ -1,0 +1,95 @@
+import { Cossack, Page, Store, State, Validate, Client, Server, storeRules } from '@cossackframework/core';
+import { Card, CardBody, CardHeader, Field, Input, Button, Checkbox, Form } from '@cossackframework/ui';
+import { linkButton, notice, pageHeader } from '@cossackframework/ui/blocks';
+import { html, component, bind } from '@cossackframework/renderer';
+import { requireRoleManager } from '#app/services/rbac';
+import { createRole } from '#app/services/roles';
+import { PERMISSIONS, permissionLabel, type Permission } from '#app/lib/permissions';
+
+interface NewRoleForm {
+    name: string;
+    permissions: Permission[];
+}
+
+@Page({ transport: 'http', middlewares: [requireRoleManager] })
+export default class NewRolePage extends Cossack {
+    @Store()
+    @Validate({
+        rules: storeRules<NewRoleForm>({
+            name: { required: true, message: 'Name is required' },
+        }),
+        config: { trigger: 'all', runOn: 'both' }
+    })
+    form: NewRoleForm = { name: '', permissions: [] };
+
+    @State() error = '';
+
+    @Client()
+    togglePermission(perm: Permission, checked: boolean) {
+        this.form.permissions = checked
+            ? [...this.form.permissions, perm]
+            : this.form.permissions.filter((p) => p !== perm);
+    }
+
+    @Client()
+    async handleSubmit(event: Event) {
+        event.preventDefault();
+        this.error = '';
+        const ok = await this.validateAll();
+        if (!ok) return;
+        try {
+            await this.create(this.form.name, this.form.permissions);
+        } catch (e: any) {
+            this.error = e?.message || __('Could not create role');
+        }
+    }
+
+    @Server()
+    async create(name: string, permissions: Permission[]) {
+        await createRole({ name, permissions });
+        this.redirect('/dashboard/roles');
+    }
+
+    render() {
+        return html`
+            <div class="max-w-2xl space-y-6">
+                ${pageHeader(__('New role'), { description: __('Define a role and the permissions it grants.') })}
+                ${this.error ? notice(this.error, 'error') : null}
+
+                ${component(Card, {}, html`
+                    ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Details')}</h2>`)}
+                    ${component(CardBody, {}, html`
+                        ${component(Form, {
+                            submit: (e: Event) => this.handleSubmit(e),
+                        }, html`
+                            <div class="flex flex-col space-y-4">
+                            ${component(Field, { label: __('Name'), for: 'name', error: this.getError('form.name'),
+                                control: attributes => component(Input, { ...attributes, type: 'text', placeholder: 'editor', '.value': bind(this.form, 'name') }) })}
+
+                            <div>
+                                <p class="text-sm font-medium text-foreground mb-2">${__('Permissions')}</p>
+                                <div class="space-y-2">
+                                    ${PERMISSIONS.map((perm) => html`
+                                        <div class="[&_.cs-checkbox]:items-start [&_.cs-checkbox>input]:mt-0.5">${component(Checkbox, {
+                                            checked: this.form.permissions.includes(perm),
+                                            '@change': (e: any) => this.togglePermission(perm, e.target.checked),
+                                        }, html`<span>
+                                            <span class="block text-sm text-foreground">${__(permissionLabel(perm))}</span>
+                                            <span class="block text-xs text-muted-foreground font-mono">${perm}</span>
+                                        </span>`)}</div>
+                                    `)}
+                                </div>
+                            </div>
+
+                            <div class="flex items-center gap-2">
+                                ${component(Button, { type: 'submit' }, __('Create role'))}
+                                ${linkButton(__('Cancel'), '/dashboard/roles', 'outline')}
+                            </div>
+                            </div>
+                        `)}
+                    `)}
+                `)}
+            </div>
+        `;
+    }
+}

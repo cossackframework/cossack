@@ -1,0 +1,33 @@
+# What the package ships of this folder: the served sources (cossack-recipe.json: `served`
+# and `shell`) and the recipe. .gitignore does not apply once this file exists: the shell is
+# untracked, written by `pnpm sync`, and shipped.
+/*
+!/README.md
+!/cossack-recipe.json
+!/src/
+/src/*
+!/src/auth.ts
+!/src/auth-options.ts
+!/src/auth-providers.ts
+!/src/auth-input.ts
+!/src/auth-bot-check.ts
+!/src/auth-bot-token.ts
+!/src/brand.ts
+!/src/passkeys.client.ts
+!/src/cms/
+!/src/config/
+/src/config/*
+!/src/config/cms.ts
+!/src/config/auth.ts
+!/src/dashboard/
+!/src/lib/
+/src/lib/*
+!/src/lib/permissions.ts
+!/src/middlewares/
+/src/middlewares/*
+!/src/middlewares/auth.ts
+!/src/services/
+!/src/pages/
+!/src/plugins/
+/src/plugins/*
+!/src/plugins/default-theme/

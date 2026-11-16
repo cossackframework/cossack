@@ -6,7 +6,7 @@ export interface TurnstileError {
     code: 'script-load' | 'render-failed' | 'widget-error' | 'timeout' | 'unsupported' | 'invalid-token';
     providerCode?: string;
 }
-export interface TurnstileProps {
+export type TurnstileProps = {
     id: string;
     siteKey: string;
     action?: string;
@@ -22,7 +22,8 @@ export interface TurnstileProps {
     onError?: (error: TurnstileError) => void;
     /** Test/custom loader only: client callbacks never replace server verification. */
     loadClient?: TurnstileLoader;
-}
+};
+
 @Component()
 export class Turnstile extends Cossack {
     declare props: TurnstileProps;

@@ -1,9 +1,10 @@
 import type { Plugin } from 'vite';
-import { parseSync } from 'vite';
+import { parseSync, transformWithOxc } from 'vite';
 import { readFileSync, statSync } from 'node:fs';
 import { isBuiltin } from 'node:module';
 import { dirname, isAbsolute, join, posix, resolve as resolvePath } from 'node:path';
 import { isHttpHandlerProgram } from './page-inspection.js';
+import { servedFile } from './package-mounts.js';
 
 export interface CossackSecurityPluginOptions {
   devWarning?: boolean;
@@ -78,10 +79,31 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
   const discoveryOptions = (id: string): ClassDiscoveryOptions => ({
     file: id.split(/[?#]/)[0], root: projectRoot, aliases,
   });
+  /** The mounted package that serves a file, with the file's path under the package's served root. */
+  const servedOf = (file: string) => {
+    if (!projectRoot) return null;
+    try { return servedFile(projectRoot, file.split(/[?#]/)[0]); } catch { return null; }
+  };
+  /**
+   * A served file's path as if it were the application's own: `<root>/src/<path>`. The path
+   * rules below (pages, configuration, src/auth.ts) then hold for a package's files too.
+   */
+  const applicationPath = (cleanId: string): string => {
+    const served = servedOf(cleanId);
+    return served ? `${projectRoot!.replace(/\\/g, '/').replace(/\/+$/, '')}/src/${served.path}` : cleanId;
+  };
+  /**
+   * Stable key of a module for generated names and labels. A served file is
+   * `<package>/<path under its root>`, never its install path, which holds a version.
+   */
+  const moduleKey = (id: string): string => {
+    const served = servedOf(id);
+    return served ? `${served.package.name}/${served.path}` : resourceModuleKey(id, projectRoot);
+  };
   const reportEndpoints = (id: string, endpoints: AutomaticRpcEndpoints[]) => {
     if (!serving || !logRpcEndpoints || !logInfo) return;
     const list = endpoints.flatMap(({ className, methods }) => methods.map(method => `${className}.${method}`)).join(', ');
-    const label = resourceModuleKey(id, projectRoot);
+    const label = moduleKey(id);
     if ((loggedEndpoints.get(label) ?? '') === list) return;
     loggedEndpoints.set(label, list);
     logInfo(list
@@ -95,8 +117,9 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
   // and each entry is taken (removed) by the first transform of its id.
   const loadedPrograms = new Map<string, { source: string; program: any }>();
 
-  /** An application source file: inside the Vite root, outside dependencies. */
+  /** An application source file: inside the Vite root and outside dependencies, or served by a mounted package. */
   function isProjectModule(cleanId: string): boolean {
+    if (servedOf(cleanId)) return true;
     if (!projectRoot || cleanId.includes('/node_modules/')) return false;
     const root = projectRoot.replace(/\\/g, '/').replace(/\/+$/, '');
     return cleanId.replace(/\\/g, '/').startsWith(`${root}/`);
@@ -107,8 +130,8 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
    * Only process user application code, not framework/library code.
    */
   function shouldProcessFile(id: string): boolean {
-    // Skip node_modules
-    if (id.includes('node_modules')) return false;
+    // Skip node_modules, except the files a mounted package serves: they are application code.
+    if (id.includes('node_modules') && !servedOf(id)) return false;
     // Never transform the plugin's Node-only implementation when Vite/Vitest
     // loads it as part of the build configuration.
     if (/(^|\/)vite-security-plugin\.m?ts(?:$|[?#])/.test(id)) return false;
@@ -129,7 +152,37 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
     return cleanId.endsWith('.ts') || cleanId.endsWith('.mts');
   }
 
-  return {
+  /**
+   * Vite reads decorator and class-field settings from the nearest tsconfig.json, and reads
+   * none for a file under node_modules. A served file is application code wherever its package
+   * is installed, so it is compiled here with the application's settings: an installed package
+   * and a workspace link give the same output.
+   */
+  let compilerOptions: Record<string, unknown> | undefined;
+  const applicationCompilerOptions = (): Record<string, unknown> => {
+    if (compilerOptions) return compilerOptions;
+    const read = (file: string, depth = 0): Record<string, unknown> => {
+      let config: { extends?: unknown; compilerOptions?: Record<string, unknown> };
+      // tsconfig.json allows comments and trailing commas.
+      try { config = JSON.parse(readFileSync(file, 'utf8').replace(/("(?:[^"\\]|\\.)*")|\/\/[^\n]*|\/\*[\s\S]*?\*\//g, (_match, text) => text ?? '').replace(/,(\s*[}\]])/g, '$1')); }
+      catch { return {}; }
+      const parent = typeof config.extends === 'string' && config.extends.startsWith('.') && depth < 8
+        ? read(resolvePath(dirname(file), config.extends.endsWith('.json') ? config.extends : `${config.extends}.json`), depth + 1) : {};
+      return { ...parent, ...config.compilerOptions };
+    };
+    const all = projectRoot ? read(join(projectRoot, 'tsconfig.json')) : {};
+    const picked: Record<string, unknown> = { experimentalDecorators: true, emitDecoratorMetadata: true };
+    for (const key of ['experimentalDecorators', 'emitDecoratorMetadata', 'useDefineForClassFields', 'target', 'verbatimModuleSyntax',
+      'jsx', 'jsxFactory', 'jsxFragmentFactory', 'jsxImportSource']) if (all[key] !== undefined) picked[key] = all[key];
+    return compilerOptions = picked;
+  };
+  const compileServed = async (id: string, result: { code: string; map: unknown }) => {
+    const compiled = await transformWithOxc(result.code, id.split(/[?#]/)[0], { lang: 'ts', sourcemap: true,
+      tsconfig: { compilerOptions: applicationCompilerOptions() } } as Parameters<typeof transformWithOxc>[2], (result.map ?? undefined) as object | undefined);
+    return { code: compiled.code, map: compiled.map };
+  };
+
+  const plugin: Plugin = {
     name: 'cossack-security',
     enforce: 'pre', // Run before other plugins to ensure we process raw source
 
@@ -159,9 +212,9 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
      */
     async load(id) {
       const isClientEnvironment = this.environment?.name === 'client';
-      if (id.includes('node_modules')) return;
       // Virtual modules have no file on disk for any branch below to inspect.
       if (id.startsWith('\0')) return;
+      if (id.includes('node_modules') && !servedOf(id)) return;
 
       // Vite module ids frequently include query strings (e.g. `src/auth.ts?import`
       // or `?v=abc123`). Strip `?…` / `#…` before matching or reading the file so
@@ -204,7 +257,9 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       // APIs or platform bindings, without a known server-library import.
       // Keep their export interface in the browser route catalog, but never
       // load their bodies or transitive database/credential dependencies.
-      if (/(?:^|[/\\])src[/\\]pages[/\\].+\.m?ts$/.test(cleanId)) {
+      // Plugin pages under `src/plugins/<name>/pages/` follow the same rule.
+      const shaped = applicationPath(cleanId);
+      if (/(?:^|[/\\])src[/\\](?:plugins[/\\][^/\\]+[/\\])?pages[/\\].+\.m?ts$/.test(shaped)) {
         // An unreadable page fails the build instead of being skipped.
         source = readFileSync(cleanId, 'utf8');
         const pageProgram = parsedModule();
@@ -223,7 +278,8 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       // Match files in the project's `src/config/` directory. Anchored to
       // `/src/config/` so it doesn't catch unrelated `/config/` paths in
       // dependencies or other project subdirectories.
-      if (/(^|\/)src\/config\/[^/]+\.m?ts$/.test(cleanId)) {
+      // Plugin configuration (`src/plugins/<name>/config/`) is server-only too.
+      if (/(^|\/)src\/(?:plugins\/[^/]+\/)?config\/[^/]+\.m?ts$/.test(shaped)) {
         return `export default {};\n`;
       }
 
@@ -237,8 +293,11 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       // The export list is derived dynamically from the real `src/auth.ts` (via
       // the Oxc AST) so it tracks the generator exactly — including conditional
       // OAuth exports (`oauth`, `handleOAuthUser`) — and never drifts.
-      if (/(^|\/)src\/auth\.m?ts$/.test(cleanId)) {
+      if (/(^|\/)src\/auth\.m?ts$/.test(shaped)) {
         const authProgram = parsedModule();
+        // A re-export of a mounted package's auth module (`export * from '<package>/app/auth'`) has no
+        // names of its own to stub: the module it names is stubbed by this same rule, with its real exports.
+        if (authProgram?.body.some((statement: any) => statement.type === 'ExportAllDeclaration')) return;
         return authClientStub(authProgram ? namedExportsOf(authProgram) : []);
       }
 
@@ -297,7 +356,7 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       // generated method retains the loader; the normal client pass below
       // replaces that method with the existing RPC proxy stub.
       if (code.includes('server$')) {
-        module = module.with(expandServerResources(module.code, module.program, id, undefined, projectRoot, module.imported));
+        module = module.with(expandServerResources(module.code, module.program, id, undefined, projectRoot, module.imported, moduleKey(id)));
       }
 
       // Check if this file contains a Cossack class or a @Service decorated class
@@ -331,6 +390,13 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       return { code: module.code, map: null };
     },
   };
+  const secure = plugin.transform as (this: unknown, code: string, id: string) => { code: string; map: unknown };
+  // Only a served file takes the extra, asynchronous step.
+  plugin.transform = function (code, id) {
+    const result = secure.call(this, code, id);
+    return (servedOf(id) && shouldProcessFile(id) ? compileServed(id, result) : result) as ReturnType<typeof compileServed>;
+  };
+  return plugin;
 }
 
 /**
@@ -366,8 +432,19 @@ function isServerOnlyImportSource(source: string): boolean {
     source === '@cossackframework/framework/session' ||
     source === '@cossackframework/auth' ||
     source.startsWith('@cossackframework/auth/') ||
+    // RomeDB clients and the CMS host: pages use them only inside @Server methods.
+    ((source === '@cossackframework/romedb' || source.startsWith('@cossackframework/romedb/') ||
+      source === '@romedb/client' || source.startsWith('@romedb/client/') ||
+      source === '@romedb/node' || source.startsWith('@romedb/node/')) && !CLIENT_SAFE_IMPORT_SOURCES.has(source)) ||
+    CMS_SERVER_ENTRIES.has(source) ||
     source.startsWith('node:');
 }
+
+/**
+ * Every server-side entry of the CMS package: the host, the Node and Cloudflare runtime pieces,
+ * the plugin isolate and the Vite plugin. Only `@cossackframework/cms` itself is client-safe.
+ */
+const CMS_SERVER_ENTRIES: ReadonlySet<string> = new Set(['server', 'node', 'cloudflare', 'isolate', 'vite'].map(entry => `@cossackframework/cms/${entry}`));
 
 /** AST child keys that only hold type syntax. */
 const TYPE_ONLY_KEYS: ReadonlySet<string> = new Set([
@@ -509,6 +586,8 @@ function expandServerResources(
   sources?: ResourceSource[],
   root?: string,
   imported: ImportedBases = NO_IMPORTED_BASES,
+  /** Stable key of the module; the root-relative path by default. */
+  key: string = resourceModuleKey(id, root),
 ): string {
   if (!program) throw new Error(`[Cossack server$] Could not parse ${id}.`);
   const bindings = new Set<string>();
@@ -544,7 +623,7 @@ function expandServerResources(
       }
       if (loader.generator) throw new Error(`[Cossack server$] ${id}: ${name} loader must return data; use @Server for generators.`);
       const options = call.arguments[1] ? sourceSlice(code, call.arguments[1]) : '{}';
-      const method = `__cossack_server_resource_${stableResourceHash(`${resourceModuleKey(id, root)}:${className}:${name}`)}`;
+      const method = `__cossack_server_resource_${stableResourceHash(`${key}:${className}:${name}`)}`;
       const args = (loader.params ?? []).map((p: any) => sourceSlice(code, p)).join(', ');
       const body = loader.body.type === 'BlockStatement'
         ? sourceSlice(code, loader.body)
@@ -915,6 +994,18 @@ function authClientStub(namedExports: string[]): string {
 const SERVER_ONLY_IMPORT_SOURCES = new Set([
   '@cossackframework/database',
   '@cossackframework/framework/session',
+  // RomeDB credentials, pending writes and CMS repositories never reach the client.
+  '@cossackframework/romedb',
+  '@romedb/client',
+  '@romedb/node',
+  ...CMS_SERVER_ENTRIES,
+]);
+
+/** Client-safe subpaths of otherwise server-only packages (typed values and transport codecs). */
+const CLIENT_SAFE_IMPORT_SOURCES = new Set([
+  '@cossackframework/romedb/values',
+  '@romedb/client/values',
+  '@romedb/node/values',
 ]);
 
 /**
@@ -986,6 +1077,7 @@ function isServerOnlyProgram(program: any): boolean {
 
 function isServerOnlyModuleSource(spec: string): boolean {
   if (spec.startsWith('node:')) return true;
+  if (CLIENT_SAFE_IMPORT_SOURCES.has(spec)) return false;
   return [...SERVER_ONLY_IMPORT_SOURCES].some((source) =>
     spec === source || spec.startsWith(`${source}/`),
   );
@@ -1516,8 +1608,36 @@ function isInstalledPackage(specifier: string, options: ClassDiscoveryOptions): 
 }
 
 /**
+ * The file a `#name` specifier names through `imports` in the package.json nearest to the
+ * importing module: an exact key or one `*` pattern with a string target. Conditions are not read.
+ */
+function packageImport(specifier: string, options: ClassDiscoveryOptions): string | null {
+  let directory = options.file && isAbsolute(options.file) ? dirname(options.file) : options.root;
+  while (directory) {
+    if (isFile(join(directory, 'package.json'))) {
+      let imports: unknown;
+      try { imports = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8')).imports; } catch { return null; }
+      if (!imports || typeof imports !== 'object') return null;
+      for (const [key, value] of Object.entries(imports as Record<string, unknown>)) {
+        if (typeof value !== 'string') continue;
+        if (key === specifier) return join(directory, value);
+        const [head, tail, ...more] = key.split('*');
+        if (tail === undefined || more.length || !specifier.startsWith(head!) || !specifier.endsWith(tail) || specifier.length < key.length) continue;
+        return join(directory, value.replace('*', specifier.slice(head!.length, specifier.length - tail.length)));
+      }
+      return null;
+    }
+    const parent = dirname(directory);
+    if (parent === directory) break;
+    directory = parent;
+  }
+  return null;
+}
+
+/**
  * Resolve an import specifier to a module file without evaluating anything:
- * Vite aliases first, then relative or root-relative paths with TypeScript
+ * Vite aliases first, then a package's `imports` (`#app/x`), then relative or root-relative
+ * paths with TypeScript
  * extension probing. Returns `'package'` for an installed package and `null`
  * when the specifier names no readable module.
  */
@@ -1533,6 +1653,7 @@ function resolveBaseModule(specifier: string, options: ClassDiscoveryOptions): s
     }
     break;
   }
+  if (target.startsWith('#')) target = packageImport(target, options) ?? target;
   const relative = target.startsWith('./') || target.startsWith('../');
   if (!relative && !isAbsolute(target)) return isInstalledPackage(target, options) ? 'package' : null;
   if (relative && (!options.file || !isAbsolute(options.file))) return null;

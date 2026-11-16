@@ -186,3 +186,9 @@ it('requires the Durable Object binding for realtime layouts and realtime compon
   await expect(run([])).rejects.toMatchObject({ message: expect.stringMatching(/layout\.ts:2: realtime layout[\s\S]*COSSACK_OBJECT[\s\S]*Cart\.ts:2: realtime component/) });
   await expect(run(['COSSACK_OBJECT'])).resolves.toBeDefined();
 });
+it('accepts discovered HTTP handler modules outside /api', async () => {
+  await expect(buildFixture('desktop', 'http', [], {},
+    "export async function GET(c) { return c.text('<rss/>'); }", undefined, 'src/pages/feed.xml/index.ts')).resolves.toBeDefined();
+  await expect(buildFixture('desktop', 'http', [], {},
+    'export default (c) => c.text("ok");', undefined, 'src/pages/webhooks/crm/index.ts')).resolves.toBeDefined();
+});

@@ -24,6 +24,9 @@ function fixture() {
   write(root, 'package.json', { name: 'monorepo', version: '1.0.0' });
   write(root, 'packages/core/package.json', { name: '@scope/core', version: '1.0.0' });
   write(root, 'packages/cli/package.json', { name: 'cli', version: '1.0.0', scaffold: { dependencyVersions: { '@scope/core': '^1.0.0', external: '^1.0.0' } } });
+  // The CMS sends this constant to the update server.
+  fs.mkdirSync(path.join(root, 'packages/cms/src'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'packages/cms/src/version.ts'), "export const CMS_VERSION = '1.0.0';\n");
   // Examples are private and historically drifted behind the packages.
   fs.mkdirSync(path.join(root, 'scripts'));
   fs.copyFileSync(source, path.join(root, 'scripts', 'bump.mjs'));
@@ -42,6 +45,7 @@ describe('scripts/bump.mjs', () => {
       version: '1.1.0',
       dependencies: { '@scope/core': 'workspace:*', cli: '^1.1.0' },
     });
+    expect(fs.readFileSync(path.join(root, 'packages/cms/src/version.ts'), 'utf8')).toBe("export const CMS_VERSION = '1.1.0';\n");
   });
 
   it('writes nothing on --dry-run', () => {
@@ -49,5 +53,6 @@ describe('scripts/bump.mjs', () => {
     execFileSync(process.execPath, [path.join(root, 'scripts', 'bump.mjs'), '2.0.0', '--dry-run'], { stdio: 'pipe' });
     expect(read(root, 'examples/demo/package.json').version).toBe('0.8.3');
     expect(read(root, 'packages/core/package.json').version).toBe('1.0.0');
+    expect(fs.readFileSync(path.join(root, 'packages/cms/src/version.ts'), 'utf8')).toContain("'1.0.0'");
   });
 });

@@ -46,3 +46,15 @@ it('treats blank group labels as ungrouped content rather than unnamed ARIA grou
     expect(out).not.toContain('role="group"');
     expect(out).toContain('role="option" aria-label="One"');
 });
+
+it('shows items the application matched while there is text, whatever their label', () => {
+    const items = [{ id: 'screen', label: 'Settings' }, { id: 'entry', label: 'Hello world', group: 'Posts', matched: true }] as const;
+    const command = new Command();
+    command.props = { id: 'commands', label: 'Commands', items, grouped: true };
+    expect(command.getFiltered().map(item => item.id)).toEqual(['screen']);
+    (command as unknown as { searchText: string }).searchText = 'hel';
+    expect(command.getFiltered().map(item => item.id)).toEqual(['entry']);
+    (command as unknown as { searchText: string }).searchText = 'sett';
+    expect(command.getFiltered().map(item => item.id)).toEqual(['screen', 'entry']);
+    expect(() => renderToString(component(Command, { id: 'commands', label: 'Commands', items: [{ id: 'a', label: 'A', matched: 'yes' as unknown as boolean }] }))).toThrow('matched');
+});

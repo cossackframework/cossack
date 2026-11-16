@@ -9,7 +9,7 @@ Cossack uses Tailwind CSS 4.x by default. The scaffolded project includes its co
 
 ## How It Works
 
-The `@tailwindcss/vite` plugin loads Tailwind from `vite.config.ts`. The CSS entry point is `src/style.css`:
+The preset in `vite.config.ts` loads Tailwind through the `@tailwindcss/vite` plugin when the project has it installed. The CSS entry point is `src/style.css`:
 
 ```css
 @import "tailwindcss";

@@ -5,14 +5,14 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { transform } from 'esbuild';
 import { createApp, addFeature, readManifest, resolveRecipe, recipeCapabilityRequirements } from '../src/index.js';
+import { recipeCapabilities, recipeFiles } from './recipe-files.js';
 
 const temporary = [];
 async function directory() { const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-service-recipes-')); temporary.push(root); return root; }
 afterEach(async () => { await Promise.all(temporary.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });
 async function read(root, file) { return fs.readFile(path.join(root, file), 'utf8'); }
 async function ownedSnapshot(root) {
-  const manifest = await readManifest(root);
-  return Object.fromEntries(await Promise.all(Object.keys(manifest.files).sort().map(async file => [file, await read(root, file)])));
+  return Object.fromEntries(await Promise.all((await recipeFiles(root)).map(async file => [file, await read(root, file)])));
 }
 async function moduleFrom(source, modules) {
   const output = await transform(source, { loader: 'ts', format: 'cjs', tsconfigRaw: { compilerOptions: { experimentalDecorators: true } } });
@@ -50,8 +50,8 @@ it('renders Cloudflare queue bindings, independent D1 job state, migration and p
   const recipe = resolveRecipe({ adapter: 'cloudflare', preset: 'minimal', features: 'jobs' });
   expect(recipe.resolvedFeatures).not.toContain('database');
   expect(JSON.stringify(recipeCapabilityRequirements(recipe))).toContain('JOB_STATE');
-  const manifest = await readManifest(root);
-  for (const file of ['src/jobs/index.ts', 'src/config/jobs.ts', 'src/jobs/migrations/0001_job_state.sql']) expect(manifest.files[file].capability).toBe('jobs');
+  const capabilities = await recipeCapabilities(root);
+  for (const file of ['src/jobs/index.ts', 'src/config/jobs.ts', 'src/jobs/migrations/0001_job_state.sql']) expect(capabilities[file]).toBe('jobs');
   for (const file of ['src/index.ts', 'src/jobs/index.ts']) await expect(transform(await read(root, file), { loader: 'ts' })).resolves.toBeDefined();
   const { DatabaseSync } = await import('node:sqlite');
   const database = new DatabaseSync(':memory:');

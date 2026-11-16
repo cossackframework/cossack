@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/core",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "type": "module",
   "sideEffects": [
     "./src/shared/metadata.ts",
@@ -66,6 +66,10 @@
       "types": "./dist/shared/static-assets.d.ts",
       "import": "./dist/shared/static-assets.js"
     },
+    "./prebundle-dependencies": {
+      "types": "./dist/shared/prebundle-dependencies.d.ts",
+      "import": "./dist/shared/prebundle-dependencies.js"
+    },
     "./transport-routes": {
       "types": "./dist/shared/transport-routes.d.ts",
       "import": "./dist/shared/transport-routes.js"
@@ -85,6 +89,10 @@
     "./storage": {
       "types": "./dist/storage/index.d.ts",
       "import": "./dist/storage/index.js"
+    },
+    "./hooks": {
+      "types": "./dist/hooks/index.d.ts",
+      "import": "./dist/hooks/index.js"
     },
     "./workflows": {
       "types": "./dist/workflows/index.d.ts",
@@ -113,8 +121,8 @@
     "jsdom": "^29.1.1",
     "reflect-metadata": "^0.2.2",
     "typescript": "^7.0.2",
-    "vite": "^8.1.4",
-    "vitest": "^4.1.11"
+    "vite": "^8.1.6",
+    "vitest": "^4.1.12"
   },
   "peerDependencies": {
     "hono": "^4.13.7"

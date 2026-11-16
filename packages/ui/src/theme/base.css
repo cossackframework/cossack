@@ -492,3 +492,34 @@ a:active {
 @media (prefers-reduced-motion: reduce) {
     .cs-toast { animation: none; }
 }
+
+/*
+ * Sidebar navigation (components/Sidebar.ts). The sidebar stays in view at the height of the
+ * screen and its menu scrolls on its own. The scrollbar keeps its room but shows only while the
+ * pointer or focus is in the menu, so nothing shifts; an edge with more menu beyond it fades,
+ * where the browser can tie an animation to the scroll position.
+ */
+.cs-sidebar__nav {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+    overscroll-behavior: contain;
+}
+.cs-sidebar__nav:hover,
+.cs-sidebar__nav:focus-within {
+    scrollbar-color: var(--border) transparent;
+}
+@property --cs-sidebar-fade-top { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@property --cs-sidebar-fade-bottom { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@supports (animation-timeline: scroll()) {
+    .cs-sidebar__nav {
+        mask-image: linear-gradient(to bottom, transparent 0, #000 var(--cs-sidebar-fade-top), #000 calc(100% - var(--cs-sidebar-fade-bottom)), transparent 100%);
+        animation: cs-sidebar-fade linear both;
+        animation-timeline: scroll(self);
+    }
+}
+@keyframes cs-sidebar-fade {
+    0% { --cs-sidebar-fade-top: 0px; --cs-sidebar-fade-bottom: 2rem; }
+    8% { --cs-sidebar-fade-top: 2rem; }
+    92% { --cs-sidebar-fade-bottom: 2rem; }
+    100% { --cs-sidebar-fade-top: 2rem; --cs-sidebar-fade-bottom: 0px; }
+}

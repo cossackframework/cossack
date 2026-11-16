@@ -1,6 +1,6 @@
 import './metadata';
 import { ActionValidationError } from './errors';
-import { isInputSchema, type InputParseOptions } from './input-schema';
+import { isArgsSchema, isInputSchema, type InputParseOptions } from './input-schema';
 import { RpcError } from './rpc-stream';
 
 /**
@@ -21,6 +21,14 @@ export async function enforceActionInput(
     }
     const registration = findServerMethodRegistration(constructor, action);
     if (!registration || !Object.hasOwn(registration, 'input')) return payload;
+    // `input.args(...)` parses the whole argument list; any other schema parses the one argument.
+    if (isArgsSchema(registration.input)) {
+        try { return await registration.input.parse(payload, options); }
+        catch (error) {
+            if (options.signal?.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
+            throw error;
+        }
+    }
     if (isInputSchema(registration.input)) {
         if (payload.length > 1) throw new ActionValidationError({ _: 'This action accepts one input argument.' });
         try { return [await registration.input.parse(payload[0], options)]; }

@@ -1,0 +1,5 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": { "types": ["vite/client", "node", "@cossackframework/framework/router"] },
+  "include": ["./**/*.ts", "../src/vite-env.d.ts", "../.cossack/config.d.ts"]
+}

@@ -25,6 +25,9 @@ export class ToggleGroup extends Cossack {
     private initialSelected?: readonly string[];
     private indicator?: HTMLSpanElement;
     private resize?: ResizeObserver;
+    /** The group and buttons the observer watches, and what the indicator was last placed for: a render that changes neither reads no layout. */
+    private observed: Element[] = [];
+    private placed = '';
     private repairFocus?: HTMLButtonElement;
     private generation = 0;
     private controlled = new ControlledValue<readonly string[]>();
@@ -70,22 +73,33 @@ export class ToggleGroup extends Cossack {
         queueMicrotask(() => {
             if (generation !== this.generation || !group.isConnected) return;
             this.resize ??= new ResizeObserver(() => this.updateIndicator());
-            this.resize.disconnect(); this.resize.observe(group);
-            const buttons = this.buttons(); for (const button of buttons) this.resize.observe(button);
+            // A resize of the group or a button moves the indicator, so they are watched again only when they changed.
+            const buttons = this.buttons(), elements = [group, ...buttons];
+            const watched = elements.length === this.observed.length && elements.every((element, index) => element === this.observed[index]);
+            if (!watched) {
+                this.resize.disconnect();
+                for (const element of elements) this.resize.observe(element);
+                this.observed = elements;
+            }
             const previous = this.repairFocus; this.repairFocus = undefined;
             if (previous && (group.ownerDocument.activeElement === previous || group.ownerDocument.activeElement === group.ownerDocument.body)) {
                 const enabled = buttons.filter(button => !button.matches(':disabled'));
                 (enabled.find(button => button === previous) ?? enabled.find(button => this.isSelected(button.dataset.value!)) ?? enabled[0] ?? group).focus({ preventScroll: true });
             }
-            this.updateIndicator();
+            // Placing it reads the button's offsets, which lays out the page: a render that changed neither skips it.
+            if (!watched || this.placed !== this.placement()) this.updateIndicator();
         });
     }
+    // Direction moves the buttons without resizing them, which the observer would not see.
+    private placement() { return this.indicator ? `${this.selection().join(' ')}|${this.props.orientation}|${String(this.props.dir)}` : ''; }
     private updateIndicator() {
         const group = this.groupRef.value, indicator = this.indicator;
+        this.placed = '';
         if (!group?.isConnected || !indicator?.isConnected) return;
         const active = this.buttons().find(button => this.isSelected(button.dataset.value!));
         indicator.hidden = !active;
         if (!active) return;
+        this.placed = this.placement();
         indicator.style.cssText = (this.props.orientation === 'vertical'
             ? `top:${active.offsetTop}px;height:${active.offsetHeight}px;left:4px;right:4px;`
             : `left:${active.offsetLeft}px;width:${active.offsetWidth}px;top:4px;bottom:4px;`)
@@ -129,5 +143,5 @@ export class ToggleGroup extends Cossack {
             ${type === 'single' ? html`<span ref=${(element: Element) => { this.indicator = element as HTMLSpanElement; }} aria-hidden="true" class="cs-toggle-group__indicator absolute z-0 rounded-sm transition-all duration-300 ease-in-out motion-reduce:transition-none"></span>` : null}
         </div>`;
     }
-    onCleanup() { this.generation++; this.resize?.disconnect(); this.resize = undefined; this.groupRef.value = undefined; this.indicator = undefined; this.repairFocus = undefined; }
+    onCleanup() { this.generation++; this.resize?.disconnect(); this.resize = undefined; this.observed = []; this.placed = ''; this.groupRef.value = undefined; this.indicator = undefined; this.repairFocus = undefined; }
 }

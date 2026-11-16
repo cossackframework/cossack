@@ -32,3 +32,8 @@ it.each([{id:''},{label:''},{commands:undefined},{onSelect:undefined},{open:true
     {commands:[{id:'a',label:'A'},{id:'a',label:'Duplicate'}]},{commands:[{id:'a',label:'A',shortcut:3}]}])('rejects invalid palette contracts %j', props=>{
     expect(()=>renderToString(fixture(props).render())).toThrow();
 });
+it('passes the application\'s matched commands through, hidden until there is text', () => {
+    const out = renderToString(fixture({ defaultOpen: true, commands: [...commands, { id: 'entry', label: 'Walrus facts', group: 'Posts', matched: true }], onSearchChange: () => {} }).render());
+    expect(out).toContain('aria-label="Home"');
+    expect(out).not.toContain('Walrus facts');
+});

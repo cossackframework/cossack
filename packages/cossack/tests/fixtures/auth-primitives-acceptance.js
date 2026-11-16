@@ -8,7 +8,7 @@ export async function writeAuthPrimitivesAcceptance(root) {
 import { input as schema } from '@cossackframework/core';
 import { defineApi } from '@cossackframework/framework/api';
 import { getCookie } from 'hono/cookie';
-import { auth, authSessions, registerUser, loginUser, logout } from '../../auth';
+import { auth, authSessions, registerUser, loginUser, logout } from '@cossackframework/dashboard/app/auth';
 import { User } from '../../models/User';
 import { Session } from '../../models/Session';
 

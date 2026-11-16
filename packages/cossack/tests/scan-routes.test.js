@@ -177,6 +177,16 @@ describe('effective route metadata (RT-07)', () => {
     }
   });
 
+  it('reads plugin pages from their plugin folder and handlers at any path', async () => {
+    write('src/pages/feed.xml/index.ts', "export async function GET(c) { return c.text('<rss/>'); }");
+    write('src/plugins/shop/pages/shop/index.ts', "@Page({ transport: 'sse' })\nexport default class Shop {}");
+    write('src/plugins/shop/pages/shop/layout.ts', "@Page({ services: [Cart] })\nexport default class ShopLayout {}");
+    const model = await buildEffectiveRouteModel(project());
+    expect(model.pages.find(page => page.route === '/feed.xml')).toMatchObject({ routeStyle: 'http-handlers', transport: 'http' });
+    expect(model.pages.find(page => page.route === '/shop')).toMatchObject({ routeStyle: 'component', transport: 'sse', extraction: { method: 'ast', reason: null } });
+    expect(model.layouts.find(layout => layout.filePath === '/src/pages/shop/layout.ts')).toMatchObject({ services: ['Cart'], extraction: { method: 'ast' } });
+  });
+
   it('uses runtime route precedence before assigning IDs', async () => {
     write('src/pages/(fallback)/home/index.ts', 'class Fallback {}');
     write('src/pages/home/index.ts', 'class Home {}');

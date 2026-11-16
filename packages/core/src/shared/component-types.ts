@@ -191,4 +191,8 @@ export const RESERVED_STATE_KEYS: ReadonlySet<string> = new Set([
     'loading',
     'isServer',
     'params',
+    // Never state: copied onto an instance, these would change its prototype.
+    '__proto__',
+    'constructor',
+    'prototype',
 ]);

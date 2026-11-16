@@ -333,7 +333,8 @@ export default {
     // Enumerate remaining package-owned guides so new families cannot silently
     // fall outside the installed CI gate's original curated runtime fixtures.
     const additional = Object.fromEntries(catalog.data.packages.filter(pkg => pkg.installed &&
-      !['cossack', '@cossackframework/desktop', '@cossackframework/solar-icons', '@cossackframework/auth'].includes(pkg.name))
+      // Auth, RomeDB and the CMS publish TypeScript source; romedb-cms-guide-coverage.test.js type-checks their examples.
+      !['cossack', '@cossackframework/desktop', '@cossackframework/solar-icons', '@cossackframework/auth', '@cossackframework/romedb', '@cossackframework/cms'].includes(pkg.name))
       .map(pkg => [pkg.name, pkg.guidance.guides.filter(guide => !testedGuides.has(pkg.name + ':' + guide.id)).map(guide => guide.id)])
       .filter(([, ids]) => ids.length));
     if (Object.keys(additional).length) await verifyAgentGuideBatch(projectDir, additional);
@@ -352,6 +353,8 @@ export default {
     assert.deepEqual(auth.exports, [
       ['.', '@cossackframework/auth', './src/index.ts'],
       ['./turnstile', '@cossackframework/auth/turnstile', './src/turnstile.ts'],
+      ['./two-factor', '@cossackframework/auth/two-factor', './src/two-factor.ts'],
+      ['./passkeys', '@cossackframework/auth/passkeys', './src/passkeys.ts'],
       ['./package.json', '@cossackframework/auth/package.json', './package.json'],
     ].map(([subpath, specifier, target]) => ({
       import: specifier, subpath,

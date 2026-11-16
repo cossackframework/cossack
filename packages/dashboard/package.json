@@ -1,0 +1,74 @@
+{
+  "name": "@cossackframework/dashboard",
+  "version": "0.9.1",
+  "type": "module",
+  "description": "Cossack sign-in pages and dashboard on the database ORM, served from the package",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cossackframework/cossack",
+    "directory": "packages/dashboard"
+  },
+  "main": "src/index.ts",
+  "files": [
+    "src",
+    "app",
+    "agent-docs.json"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "dev": "pnpm --dir app run dev",
+    "sync": "pnpm --dir app run sync",
+    "test": "pnpm sync && vitest --run"
+  },
+  "dependencies": {
+    "@cossackframework/auth": "workspace:*",
+    "@cossackframework/core": "workspace:*",
+    "@cossackframework/renderer": "workspace:*",
+    "@cossackframework/solar-icons": "0.7.1"
+  },
+  "peerDependencies": {
+    "@cossackframework/database": "workspace:*",
+    "@cossackframework/framework": "workspace:*",
+    "@cossackframework/ui": "workspace:*",
+    "hono": "^4.13.7"
+  },
+  "devDependencies": {
+    "@cossackframework/database": "workspace:*",
+    "@cossackframework/framework": "workspace:*",
+    "@cossackframework/ui": "workspace:*",
+    "hono": "^4.13.7",
+    "vitest": "^4.1.12"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./app/*": "./app/src/*.ts",
+    "./package.json": "./package.json"
+  },
+  "imports": {
+    "#app/*": "./app/src/*.ts"
+  },
+  "cossack": {
+    "root": "app/src",
+    "alias": "dashboard",
+    "pages": [
+      "pages/auth/",
+      "pages/dashboard/"
+    ],
+    "config": [
+      "config/auth.ts"
+    ],
+    "host": [
+      "dashboard.config.ts",
+      "stores.client.ts",
+      "models/User.ts",
+      "models/Session.ts",
+      "models/Role.ts",
+      "models/UserRole.ts",
+      "models/OAuthAccount.ts"
+    ],
+    "hostTemplate": "0.9.0"
+  }
+}

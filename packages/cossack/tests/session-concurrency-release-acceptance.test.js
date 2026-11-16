@@ -25,7 +25,7 @@ async function project(adapter) {
     await fs.writeFile(path.join(root,'pnpm-workspace.yaml'),'overrides:\n'+Object.entries(overrides).map(([name,value])=>`  ${JSON.stringify(name)}: ${JSON.stringify(value)}`).join('\n')+'\n');
     await execute('pnpm',['install','--ignore-scripts','--config.strict-dep-builds=false'],{cwd:root,timeout:120000,maxBuffer:8*1024*1024});
     for(const name of ['core','renderer','framework'])expect((await fs.realpath(path.join(root,'node_modules/@cossackframework',name))).startsWith(root+path.sep)).toBe(true);
-  }else root=await scaffoldLinkedApp(parent,{adapter,features:['auth'],packages:['framework','core','renderer','node-adapter','auth','database','ui']});
+  }else root=await scaffoldLinkedApp(parent,{adapter,features:['auth'],packages:['framework','core','renderer','node-adapter','auth','database','ui','dashboard']});
   await writeSessionConcurrencyAcceptance(root);return {root,parent};
 }
 function tool(root,name,file){const require=createRequire(path.join(root,'package.json'));return path.join(path.dirname(require.resolve(name+'/package.json')),file);}

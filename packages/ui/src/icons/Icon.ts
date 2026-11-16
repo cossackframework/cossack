@@ -17,6 +17,19 @@ export function normalizeStyle(style: string): IconStyle {
     }
 }
 
+/**
+ * An icon drawn from a sprite: `href` is the sprite's URL with the symbol's fragment, such as
+ * `/api/cms/icons/line?v=1a2b#home-2`. Assignable to `IconEntry`, so maps and props that hold
+ * inline artwork hold these too; `variant` does not apply (a style is another sprite).
+ */
+export interface SpriteIconEntry extends IconEntry {
+    readonly href: string;
+}
+
+export function isSpriteEntry(entry: Readonly<IconEntry>): entry is SpriteIconEntry {
+    return typeof (entry as SpriteIconEntry).href === 'string';
+}
+
 export type IconProps = Omit<SvgAttributes, 'width' | 'height' | 'viewBox' | 'role' | 'aria-label' | 'aria-labelledby' | 'aria-hidden' | 'tabindex' | 'focusable'> & {
     /** Trusted SVG artwork imported from Solar or authored locally. This is not sanitized. */
     entry: Readonly<IconEntry>;
@@ -38,11 +51,19 @@ export class Icon extends Cossack {
         if (!Number.isFinite(size) || size <= 0) throw new Error('Icon size must be positive and finite.');
         if (label !== undefined && typeof label !== 'string') throw new Error('Icon label must be a string.');
         if (this.children != null && this.children !== false && this.children !== '') throw new Error('Icon uses entry and label, not component children.');
+        const name = label?.trim();
+        if (isSpriteEntry(entry)) {
+            if (!entry.href.trim() || /[\s<>"']/.test(entry.href)) throw new Error('Icon sprite href must be a URL with the symbol fragment.');
+            return html`<svg xmlns="http://www.w3.org/2000/svg" class="cs-icon" ...=${rest} fill=${fill}
+                width=${size} height=${size} viewBox="0 0 24 24" focusable="false"
+                role=${ifDefined(name ? 'img' : undefined)} aria-label=${ifDefined(name || undefined)} aria-hidden=${ifDefined(name ? undefined : 'true')}>
+                ${name ? svg`<title>${name}</title>` : null}<use href=${entry.href}></use>
+            </svg>`;
+        }
         const normalized = normalizeStyle(variant);
         const requested = Object.hasOwn(entry, normalized) ? entry[normalized] : undefined;
         const artwork = requested === undefined && Object.hasOwn(entry, 'line') ? entry.line : requested;
         if (typeof artwork !== 'string' || !artwork.trim()) throw new Error(`Icon entry needs nonempty ${normalized} artwork or a line fallback.`);
-        const name = label?.trim();
         return html`<svg xmlns="http://www.w3.org/2000/svg" class="cs-icon" ...=${rest} fill=${fill}
             width=${size} height=${size} viewBox="0 0 24 24" focusable="false"
             role=${ifDefined(name ? 'img' : undefined)} aria-label=${ifDefined(name || undefined)} aria-hidden=${ifDefined(name ? undefined : 'true')}>

@@ -23,7 +23,7 @@ it('generated production Node entry drains accepted requests and bounds uncooper
   }else{
    root=await scaffoldLinkedApp(parent,{adapter:'node',packages:['core','renderer','framework','node-adapter']});
   }
-  const entry=await fs.readFile(path.join(root,'src/index.ts'),'utf8');expect(entry).toContain('installNodeShutdown(server');
+  const entry=await fs.readFile(path.join(root,'src/index.ts'),'utf8');expect(entry).toContain('await nodeApplication({');
   await fs.mkdir(path.join(root,'src/pages/api'),{recursive:true});
   await fs.writeFile(path.join(root,'src/pages/api/drain.ts'),`
 import {writeFileSync,existsSync} from 'node:fs';

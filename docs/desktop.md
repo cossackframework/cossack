@@ -21,6 +21,12 @@ and page policies first. A missing file reaches the framework's 404 handling.
 answers its client and source modules first. See
 [Desktop static files](./adapters.md#desktop-static-files).
 
+Windows may copy to the clipboard and go fullscreen. They get no other
+Chromium permissions (camera and microphone, location, notifications, opening
+other apps' links and the rest) unless `createDesktopApp({ permissions: [...] })`
+names them, for example `['notifications']`. Permissions apply only to the
+app's own windows on `cossack://app` pages.
+
 Use `pnpm desktop:dev`, `pnpm desktop:package`, and `pnpm desktop:make`.
 Development runs Vite inside Electron and retains the private origin. Source
 edits reload managed windows. Changes to the native bootstrap, the Vite
@@ -36,7 +42,7 @@ variables, and uses its result in place of the `env` export.
 Generated projects export a `createEnv` that passes every variable through,
 and build `env` from it only in production. Narrow it to the variables the
 application needs.
-Enable `developmentTraces: true` in `cossackPages()` for the shared
+Enable `developmentTraces: true` in `cossackPages()` (`cossackApp({ pages: { developmentTraces: true } })`) for the shared
 [inspector and CLI/MCP trace readers](./development-traces.md).
 Electron Forge creates the host installer only: DEB on Linux, MSI on Windows,
 and DMG on macOS. See the package [guide](../packages/desktop/docs/guide.md).

@@ -1,0 +1,116 @@
+import { ClientVisibleError, Cossack, Page, State, Store, Validate, Client, Server, storeRules } from '@cossackframework/core';
+import { input } from '@cossackframework/core/input';
+import { Card, CardBody, CardHeader, Field, Input, Button, Checkbox, Form } from '@cossackframework/ui';
+import { linkButton, notice, pageHeader } from '@cossackframework/ui/blocks';
+import { html, component, bind } from '@cossackframework/renderer';
+import { requireRoleManager } from '#app/services/rbac';
+import { getRole, updateRole, type RoleDetail } from '#app/services/roles';
+import { PERMISSIONS, permissionLabel, type Permission } from '#app/lib/permissions';
+
+@Page({ transport: 'http', middlewares: [requireRoleManager] })
+export default class EditRolePage extends Cossack {
+    @Store()
+    @Validate({
+        rules: storeRules<RoleDetail>({
+            name: { required: true, message: 'Name is required' },
+        }),
+        config: { trigger: 'all', runOn: 'both' }
+    })
+    role: RoleDetail | null = null;
+
+    @State() selected: Permission[] = [];
+    @State() saved = false;
+    @State() error = '';
+
+    @Server()
+    async init() {
+        const id = this.c.req.param('id')!;
+        const role = await getRole(id);
+        if (!role) {
+            this.error = __('Role not found');
+            return;
+        }
+        this.role = role;
+        this.selected = role.permissions as Permission[];
+    }
+
+    @Client()
+    togglePermission(perm: Permission, checked: boolean) {
+        this.selected = checked
+            ? [...this.selected, perm]
+            : this.selected.filter((p) => p !== perm);
+    }
+
+    @Client()
+    async handleSubmit(event: Event) {
+        event.preventDefault();
+        this.error = '';
+        this.saved = false;
+        const ok = await this.validateAll();
+        if (!ok) return;
+
+        if (!this.role) return;
+        try {
+            await this.save(this.role.name, this.selected);
+            this.saved = true;
+        } catch (e: any) {
+            this.error = e?.message || __('Could not save role');
+        }
+    }
+
+    @Server({ input: input.args(input.string({ minLength: 1, maxLength: 200 }), input.array(input.string({ maxLength: 200 }), { maxItems: 1000 })) })
+    async save(name: string, permissions: string[]) {
+        // The role the URL names, never one the client's state names.
+        const role = await getRole(this.c.req.param('id') ?? '');
+        if (!role) throw new ClientVisibleError(__('Role not found'));
+        // The roles service checks each permission (and that the actor holds it) before saving.
+        await updateRole(role.id, { name, permissions: permissions as Permission[] });
+    }
+
+    render() {
+        if (!this.role && !this.error) return html`<div class="text-sm text-muted-foreground">${__('Loading…')}</div>`;
+        if (!this.role) return notice(this.error, 'error');
+
+        return html`
+            <div class="max-w-2xl space-y-6">
+                ${pageHeader(this.role.name, { description: __('Edit the role and its permissions.') })}
+                ${this.saved && !this.error ? notice(__('Saved.'), 'success') : null}
+                ${this.error ? notice(this.error, 'error') : null}
+
+                ${component(Card, {}, html`
+                    ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Details')}</h2>`)}
+                    ${component(CardBody, {}, html`
+                        ${component(Form, {
+                            submit: (e: Event) => this.handleSubmit(e),
+                        }, html`
+                            <div class="flex flex-col space-y-4">
+                            ${component(Field, { label: __('Name'), for: 'name', error: this.getError('name'),
+                                control: attributes => component(Input, { ...attributes, type: 'text', '.value': bind(this.role, 'name') }) })}
+
+                            <div>
+                                <p class="text-sm font-medium text-foreground mb-2">${__('Permissions')}</p>
+                                <div class="space-y-2">
+                                    ${PERMISSIONS.map((perm) => html`
+                                        <div class="[&_.cs-checkbox]:items-start [&_.cs-checkbox>input]:mt-0.5">${component(Checkbox, {
+                                            checked: this.selected.includes(perm),
+                                            '@change': (e: any) => this.togglePermission(perm, e.target.checked),
+                                        }, html`<span>
+                                            <span class="block text-sm text-foreground">${__(permissionLabel(perm))}</span>
+                                            <span class="block text-xs text-muted-foreground font-mono">${perm}</span>
+                                        </span>`)}</div>
+                                    `)}
+                                </div>
+                            </div>
+
+                            <div class="flex items-center gap-2">
+                                ${component(Button, { type: 'submit' }, __('Save changes'))}
+                                ${linkButton(__('Back'), '/dashboard/roles', 'outline')}
+                            </div>
+                            </div>
+                        `)}
+                    `)}
+                `)}
+            </div>
+        `;
+    }
+}

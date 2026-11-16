@@ -100,7 +100,12 @@ it('does not reuse a worker after a thrown inspection, a crash or a timeout', as
   const canceled = runner.run({ hang: true }, controller.signal);
   setTimeout(() => controller.abort(), 20);
   await expect(canceled).rejects.toMatchObject({ code: 'COSSACK_MCP_CANCELED' });
-  expect(await runner.run({})).toMatchObject({ ok: true, calls: 1 });
+  // The cancellation lands while a worker holds the call, which retires that worker (a new
+  // one answers), or before any worker took it, which leaves the idle worker to answer its
+  // second call. Which one depends on the machine; a worker that hung never answers again.
+  const afterCancel = await runner.run({});
+  expect(afterCancel.ok).toBe(true);
+  expect(afterCancel.calls).toBe(afterCancel.threadId === afterTimeout.threadId ? 2 : 1);
   expect(runner.workerCount).toBe(1);
   expect(runner.activeCount).toBe(0);
 });

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "guides": [
+    {
+      "id": "dashboard-project-config",
+      "title": "Configure sign-in and the dashboard of a project on the database ORM",
+      "summary": "A project with the auth or dashboard feature mounts the sign-in pages, the dashboard, the auth module and the services from @cossackframework/dashboard and holds no copy. It states its choices in src/dashboard.config.ts (DashboardConfig: authMethods, oauth, modules, dashboard, redirectAfterLogin) and keeps its schema: models, migrations and seeders.",
+      "imports": [
+        "@cossackframework/dashboard",
+        "@cossackframework/dashboard/app/auth",
+        "@cossackframework/dashboard/app/middlewares/auth"
+      ],
+      "markdown": "The sign-in pages (`/auth/login`, `/auth/register`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/two-factor`), the OAuth routes (`/auth/<provider>/redirect` and `/callback`), the dashboard (`/dashboard`, users, roles, sessions, profile), the auth module and the services are served from `@cossackframework/dashboard`. The project names the package in `package.json` (`\"cossack\": { \"packages\": [\"@cossackframework/dashboard\"] }`). Do not look for `src/auth.ts`, `src/pages/auth/`, `src/pages/dashboard/`, `src/dashboard/`, `src/services/users.ts` or `src/middlewares/auth.ts` in the project, and do not create them to change behaviour.\n\nThe project holds:\n\n- `src/dashboard.config.ts`, which exports `dashboard: DashboardConfig`. `authMethods` is `['credentials']`, `['oauth']` or both (`AuthMethod`). `oauth` lists the providers (`OAuthProviderName`: `github`, `google`, `gitlab`, `facebook`, `microsoft`); each reads `<PROVIDER>_CLIENT_ID` and `<PROVIDER>_CLIENT_SECRET`, and `OAUTH_SECRET` signs the state. `modules` lists the dashboard's modules (`DashboardModuleName`: `users`, `sessions`, `settings`, `roles`). `dashboard: false` is sign-in without a dashboard. `redirectAfterLogin` is where a completed sign-in goes; the `AUTH_REDIRECT_AFTER_LOGIN` variable replaces it. A page of something that is off answers 404.\n- its schema: `src/models/` (`User`, `Session`, `Role`, `UserRole`, `OAuthAccount`), `src/migrations/` and `src/seeders/`. The served code reads the models as `@/models/<Name>`, so keep their names and fields; add fields and models of your own beside them.\n- `src/bootstrap/middlewares.ts`, which spreads `authMiddlewares` from `@cossackframework/dashboard/app/middlewares/auth` after the ORM's request middleware.\n\nIn server code, import the auth module by package name: `import { auth, registerUser } from '@cossackframework/dashboard/app/auth'`. `cossack add auth`, `cossack add dashboard` and `cossack remove` change `src/dashboard.config.ts` with the recipe. To restyle or change one page, copy it into the project with `cossack eject dashboard /auth/login`; the copy overrides the package's page and `cossack upgrade` merges the package's later changes into it. Update with `pnpm cossack upgrade`: it changes dependencies only, and never the project's own files.",
+      "examples": [
+        {
+          "id": "dashboard-project-config",
+          "language": "typescript",
+          "source": "// src/dashboard.config.ts: the project's choices for sign-in and the dashboard.\nimport type { AuthMethod, DashboardConfig, DashboardModuleName, OAuthProviderName } from '@cossackframework/dashboard';\n\nconst methods: AuthMethod[] = ['credentials', 'oauth'];\nconst providers: OAuthProviderName[] = ['github', 'google'];\nconst modules: DashboardModuleName[] = ['users', 'sessions', 'settings'];\n\nexport const dashboard: DashboardConfig = {\n    authMethods: methods,\n    oauth: providers,\n    // The roles pages answer 404: the module is not listed.\n    modules,\n    redirectAfterLogin: '/dashboard',\n};\n"
+        }
+      ]
+    }
+  ]
+}

@@ -33,7 +33,7 @@ import { checkSameUrlHistory } from './fixtures/same-url-history-acceptance.js';
 import { writeUrlStateAcceptance, checkUrlStateBrowser, createUrlStateBackend } from './fixtures/url-state-acceptance.js';
 import { createRuntimeProxy, checkRuntimeOwnership } from './fixtures/runtime-owner-acceptance.js';
 import { writeNavigationOwnershipAcceptance, checkNavigationOwnershipBrowser } from './fixtures/navigation-ownership-acceptance.js';
-import { cleanupRoots, project, sharedApps, run, cossack, typecheck, vite, assertPortableChunks, productionServer, repository } from './fixtures/generated-app.js';
+import { cleanupRoots, project, sharedApps, run, cossack, typecheck, vite, assertPortableChunks, productionServer, repository, routeId as servedRouteId } from './fixtures/generated-app.js';
 
 afterEach(cleanupRoots);
 
@@ -193,6 +193,8 @@ it('runs the scoped-service recipe across sibling navigation, nested injection, 
 }, 120000);
 it('runs the protected-route recipe with real sessions, nested guards, forged state, and expiry', async () => {
   const root = await project('node', ['protected-route']);
+  // Served configuration (auth) is typed by .cossack/config.d.ts, as `cossack typecheck` writes it.
+  await cossack(root, ['config', '--generate']);
   try { await promisify(execFile)('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 }); }
   catch (error) { throw new Error(`Generated protected route types: ${error.stdout}\n${error.stderr}`); }
   let migrated;
@@ -234,7 +236,7 @@ it('runs the protected-route recipe with real sessions, nested guards, forged st
     const guest = await call(routeId, 'verifyIdentity');
     expect(guest.status).toBe(401);
     expect(await guest.json()).toMatchObject({ code: 'COSSACK_RPC_UNAUTHENTICATED' });
-    const registerId = manifest.filePathToId['/src/pages/auth/register/index.ts'];
+    const registerId = servedRouteId(manifest, '/src/pages/auth/register/index.ts');
     const registered = await call(registerId, 'register', [{ name: 'Agent', email: 'agent@example.test', password: 'test-password-123' }]);
     expect(registered.status).toBe(200);
     expect(await registered.json()).toMatchObject({ _cossack_redirect: '/protected-route' });
@@ -380,6 +382,7 @@ it.each(['node', 'cloudflare'])('serves generated authentication primitives and 
   await writeOAuthReplayAcceptance(root, fixtureProvider.origin);
   if (adapter === 'cloudflare') await promisify(execFile)('pnpm', ['exec', 'wrangler', 'types', '--env-interface', 'CloudflareBindings'],
     { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 });
+  await cossack(root, ['config', '--generate']);
   try { await promisify(execFile)('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 }); }
   catch (error) { throw new Error(`Generated OAuth types: ${error.stdout}\n${error.stderr}`); }
   let migrationPlan;
@@ -404,7 +407,7 @@ it.each(['node', 'cloudflare'])('serves generated authentication primitives and 
   await vite(root, []);
   if (adapter === 'node') await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
   const manifest = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8'));
-  const sessionsRouteId = manifest.filePathToId['/src/pages/dashboard/sessions/index.ts'];
+  const sessionsRouteId = servedRouteId(manifest, '/src/pages/dashboard/sessions/index.ts');
   expect(sessionsRouteId).toBeTruthy();
   const privateValue = 'PRIVATE_OAUTH_CREDENTIAL_CODE_DESCRIPTION';
   for (const configured of [true, false]) {

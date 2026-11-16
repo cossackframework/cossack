@@ -3,6 +3,9 @@
 @import "@cossackframework/ui/theme/theme.css";
 @source "../node_modules/@cossackframework/ui/dist";
 
+/* Dark mode follows the `dark` class on <html>, which App.ts sets from the theme store, so `dark:` utilities match the theme tokens. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /*
  * View Transition animations.
  *

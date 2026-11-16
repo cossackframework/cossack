@@ -30,6 +30,7 @@ const LOADERS = {
   delete: [() => import('./commands/delete.js'), 'deleteCommand', 'deleteHelp'],
   add: [() => import('./commands/add.js'), 'addCommand', 'addHelp'],
   remove: [() => import('./commands/remove.js'), 'removeCommand', 'removeHelp'],
+  plugins: [() => import('./commands/plugins.js'), 'pluginsCommand', 'pluginsHelp'],
   adapter: [() => import('./commands/adapter.js'), 'adapterCommand', 'adapterHelp'],
   lang: [() => import('./commands/lang.js'), 'langCommand', 'langHelp'],
   migration: [() => import('./commands/migration.js'), 'migrationCommand', 'migrationHelp'],
@@ -39,17 +40,20 @@ const LOADERS = {
   docs: [() => import('./commands/docs.js'), 'docsCommand', 'docsHelp'],
   traces: [() => import('./commands/traces.js'), 'tracesCommand', 'tracesHelp'],
   'test-results': [() => import('./commands/test-results.js'), 'testResultsCommand', 'testResultsHelp'],
+  cms: [() => import('./commands/cms.js'), 'cmsCommand', 'cmsHelp'],
   // introspection
   inspect: [() => import('./commands/inspect.js'), 'inspectCommand', 'inspectHelp'],
   check: [() => import('./commands/inspect.js'), 'checkCommand', 'checkHelp'],
   routes: [() => import('./commands/routes.js'), 'routesCommand', 'routesHelp'],
   config: [() => import('./commands/config.js'), 'configCommand', 'configHelp'],
+  typecheck: [() => import('./commands/typecheck.js'), 'typecheckCommand', 'typecheckHelp'],
   specs: [() => import('./commands/specs.js'), 'specsCommand', 'specsHelp'],
   info: [() => import('./commands/info.js'), 'infoCommand', 'infoHelp'],
   version: [() => import('./commands/version.js'), 'versionCommand', 'versionHelp'],
   // engine / maintenance
   ssg: [() => import('./commands/ssg.js'), 'ssgCommand', 'ssgHelp'],
   upgrade: [() => import('./commands/upgrade.js'), 'upgradeCommand', 'upgradeHelp'],
+  eject: [() => import('./commands/eject.js'), 'ejectCommand', 'ejectHelp'],
   image: [() => import('./commands/image.js'), 'imageCommand', 'imageHelp'],
 };
 
@@ -103,6 +107,12 @@ export async function dispatch(argv) {
   }
 
   const command = resolveCommand(raw);
+  if (!command && raw?.includes(':')) {
+    // `cossack <plugin>:<command>`: declared by a rendered plugin manifest.
+    const { findPluginCommand, runPluginCommand } = await import('./plugin-commands.js');
+    const found = await findPluginCommand(raw);
+    if (found) return runPluginCommand(raw, rest, found);
+  }
   if (!command) {
     if (requestsJSON(rest)) {
       return commandFailure({ flags: { json: true } }, raw ?? 'cossack', 'COSSACK_COMMAND_UNKNOWN',
@@ -226,12 +236,16 @@ ${wrapList(FEATURES, 31)}
   studio                       Inspect the configured database in a local browser.
   routes                       List all routes in the project.
   config                       List configuration factory type origins; --generate emits types.
-  upgrade [dir]                Upgrade Cossack deps + report template drift.
+  typecheck                    Write the generated types, then run tsc --noEmit.
+  upgrade [dir]                Update Cossack dependencies; merge ejected copies and plugins.
+  eject <package> <path>       Copy a served page, config or plugin into the project.
   ssg                          Pre-render pages marked ssg:true to static HTML.
   image <subcommand>           Image tooling. Subcommands: optimize.
   docs                         Read offline installed-version API export and command catalogs.
   traces                       Read recorded development snapshots and timelines.
   test-results                 Read recorded test evidence and source freshness.
+  cms <command>                Manage a CMS site through its API: login, entries, notes,
+                               users, settings, terms, media, sites and MCP client setup.
   info                         Print system/environment info for bug reports.
   version (v)                  Print the CLI version.
 

@@ -22,8 +22,8 @@ export async function verifyAuxiliaryBuildBudgets(projectDir) {
     await fs.mkdir(path.join(projectDir, directory), { recursive: true });
     await fs.writeFile(path.join(projectDir, directory, 'worker.ts'), 'export default {fetch(){return new Response("jobs")}};');
     await fs.writeFile(path.join(projectDir, configPath), JSON.stringify({ name: `cossack-budget-jobs-${randomUUID().slice(0, 8)}`, main: 'worker.ts', compatibility_date: '2026-01-01', vars: { PRIVATE: 'PRIVATE_AUXILIARY_SENTINEL' } }));
-    assert.ok(saved[2].includes('cloudflare({'));
-    await fs.writeFile(path.join(projectDir, files[2]), saved[2].replace('cloudflare({', `cloudflare({ auxiliaryWorkers: [{ configPath: ${JSON.stringify(configPath)} }],`));
+    assert.ok(saved[2].includes('cossackApp({'));
+    await fs.writeFile(path.join(projectDir, files[2]), saved[2].replace('cossackApp({', `cossackApp({ cloudflare: { auxiliaryWorkers: [{ configPath: ${JSON.stringify(configPath)} }] },`));
     const cli = await fs.realpath(path.join(projectDir, 'node_modules/cossack'));
     assert.ok(cli.startsWith(projectDir + path.sep), 'Use the installed CLI.');
     const options = { cwd: projectDir, timeout: 120000, maxBuffer: 16 * 1024 * 1024,

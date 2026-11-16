@@ -42,6 +42,21 @@ async save(data: SaveInput) {
 }
 ```
 
+A method that takes several arguments declares them with `input.args(...)`, one schema per
+argument in order. A missing argument is `undefined`, so mark it `.optional()` when the method
+allows that. Extra arguments are refused, and errors are keyed by the argument's position
+(`{ 0: 'Expected a string.' }`). `input.record<T>()` accepts any plain object and leaves its
+values to the method; use it for an editor's own JSON, such as field values or a document.
+
+```typescript
+@Server({ input: input.args(input.string({ maxLength: 200 }), input.boolean(), input.record<Draft>()) })
+async rename(id: string, notify: boolean, draft: Draft) { /* ... */ }
+```
+
+Every `@Server` method that a browser can call should declare its input. Without a schema, a
+call with missing or malformed arguments reaches the method as it is, and a `TypeError` there
+answers 500 instead of `COSSACK_VALIDATION_FAILED`.
+
 Noncoercing schemas keep the same raw and parsed types. String fields accept
 strings, enums accept their declared choices, and file arrays accept files.
 Optional fields add `undefined`. Nullable fields add `null`. Coercing schemas

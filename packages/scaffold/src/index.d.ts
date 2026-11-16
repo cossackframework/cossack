@@ -85,6 +85,7 @@ export declare function planDependencyChanges(current: DependencyBaseline, desir
   preserved: Array<{ name: string; reason: string; sections: string[] }>;
   conflicts: Array<{ name: string; reason: string; resolution: 'preserve' }>;
 };
+export declare function upgradedPnpmWorkspace(projectDir: string, content: Buffer): Promise<Buffer>;
 export declare function migratePnpmBuildSettings(
   projectDir: string,
   recipe: ScaffoldRecipe,
@@ -97,6 +98,10 @@ export declare function migratePnpmBuildSettings(
 export declare function planChanges(projectDir: string, recipe: ScaffoldRecipe, manifest?: unknown): Promise<ChangeSet>;
 export declare function resolveManifestRecipe(manifest: unknown): ScaffoldRecipe;
 export declare function readManifest(projectDir: string): Promise<any | null>;
+/** The recipe as package.json#cossack records it for a project without file records. */
+export declare function recipeRecord(recipe: any): { features: string[]; template: string; options?: Record<string, unknown> };
+/** Remove a project's file records; returns the path of the file that holds its recipe. */
+export declare function dropFileRecords(projectDir: string, previousManifest?: any): Promise<string>;
 export declare function detectProjectRuntime(projectDir: string, manifest?: unknown): Promise<Adapter | undefined>;
 export declare function writeManifest(
   projectDir: string,
@@ -108,3 +113,27 @@ export declare function writeManifest(
 export declare class PromptAbortedError extends Error {
   code: 'COSSACK_PROMPT_ABORTED';
 }
+
+/** Manifest schema written by this release. Schema 3 manifests are read as manifests without bases. */
+export declare const MANIFEST_SCHEMA_VERSION: 4;
+/** Project-relative directory of stored upstream texts, named by sha256. */
+export declare const BASE_DIRECTORY: '.cossack/base';
+export declare const MERGE_SIZE_LIMIT: number;
+export type MergeResult =
+  | { status: 'clean'; text: string }
+  | { status: 'conflict'; text: string; conflicts: number }
+  | { status: 'unmergeable'; reason: 'binary' | 'too-large' };
+/** Three-way line merge: `base` is the stored upstream text, `ours` the file on disk, `theirs` the new upstream text. */
+export declare function mergeText(base: string | Uint8Array, ours: string | Uint8Array, theirs: string | Uint8Array,
+  options?: { labels?: { ours?: string; base?: string; theirs?: string } }): MergeResult;
+export declare function hasConflictMarkers(text: string): boolean;
+export declare function putBase(projectDir: string, content: string | Uint8Array): Promise<string>;
+export declare function readBase(projectDir: string, name: unknown): Promise<Buffer | null>;
+export declare function pruneBases(projectDir: string): Promise<string[]>;
+/** A line diff with ` `, `-` and `+` prefixes and `...` between distant changes; '' when equal, null for binary content. */
+export declare function diffLines(before: string | Uint8Array, after: string | Uint8Array, context?: number): string | null;
+/** The package a project with ORM sign-in mounts. */
+export declare const DASHBOARD_PACKAGE: string;
+/** What that package serves, as application paths (a trailing slash names a directory). */
+export declare const SERVED_DASHBOARD_PATHS: readonly string[];
+export declare function isServedDashboardPath(rel: string): boolean;

@@ -23,6 +23,14 @@ export interface InputSchema<Output = unknown, Raw = Output> {
     refine(check: (value: Output, options: InputParseOptions) => boolean | Promise<boolean>, message?: string): InputSchema<Output, Raw>;
 }
 export type InputOf<S extends InputSchema<any, any>> = S extends InputSchema<infer T, any> ? T : never;
+/** A server method's whole argument list, one schema per argument (`input.args`). */
+declare const ARGS_BRAND: unique symbol;
+export interface ArgsSchema<Output extends unknown[] = unknown[], Raw extends unknown[] = Output> extends InputSchema<Output, Raw> {
+    /** Type-only: tells an argument list from a schema of one array argument. */
+    readonly [ARGS_BRAND]: true;
+}
+type ArgsOutput<S extends readonly InputSchema<any, any>[]> = { -readonly [K in keyof S]: S[K] extends InputSchema<infer T, any> ? T : never };
+type ArgsRaw<S extends readonly InputSchema<any, any>[]> = { -readonly [K in keyof S]: S[K] extends InputSchema<any, infer T> ? T : never };
 export type RawInputOf<S extends InputSchema<any, any>> = S extends InputSchema<any, infer T> ? T : never;
 type Shape = Record<string, InputSchema<any, any>>;
 type OptionalKeys<S extends Shape> = { [K in keyof S]: undefined extends InputOf<S[K]> ? K : never }[keyof S];
@@ -169,6 +177,11 @@ function enter(value: unknown, state: State, path: Path, array: boolean): boolea
     if (state.ancestors.has(value)) { error(state, path, 'Cyclic input is not supported.'); return false; }
     state.ancestors.add(value); return true;
 }
+const argsSchemas = new WeakSet<object>();
+/** Whether a server method's input contract parses its whole argument list. */
+export function isArgsSchema(value: unknown): value is ArgsSchema<any, any> {
+    return !!value && typeof value === 'object' && argsSchemas.has(value);
+}
 export function isInputSchema(value: unknown): value is InputSchema<any, any> {
     return !!value && typeof value === 'object' && (value as InputSchema)[BRAND] === true && typeof (value as InputSchema).parse === 'function';
 }
@@ -283,6 +296,32 @@ export const input = /* @__PURE__ */ Object.freeze({
                 return output;
             } finally { state.ancestors.delete(value as object); }
         });
+    },
+    /**
+     * Any plain object, its values unchecked: for an editor's own JSON (field values, documents)
+     * that the method validates itself. It stops `undefined`, arrays and class instances. `T`
+     * names the shape the method expects; only "a plain object" is checked.
+     */
+    record<T extends object = Record<string, unknown>>(): InputSchema<T> {
+        return schema(async (value, state, path) => value && typeof value === 'object' && !Array.isArray(value)
+            && [Object.prototype, null].includes(Object.getPrototypeOf(value)) ? value : error(state, path, 'Expected an object.'));
+    },
+    /**
+     * A server method's argument list, one schema per argument, for `@Server({ input })` on a
+     * method that takes several: a missing argument is `undefined` (use `.optional()`), extra
+     * arguments are refused, and errors are keyed by the argument's position.
+     */
+    args<const S extends readonly InputSchema<any, any>[]>(...items: S): ArgsSchema<ArgsOutput<S>, ArgsRaw<S>> {
+        if (items.length > 32 || items.some(item => !readers.has(item))) configuration();
+        const result = schema<ArgsOutput<S>, ArgsRaw<S>>(async (value, state, path, depth) => {
+            if (!Array.isArray(value)) return error(state, path, 'Expected the arguments as an array.');
+            if (value.length > items.length) return error(state, path, `This action accepts at most ${items.length} argument${items.length === 1 ? '' : 's'}.`);
+            const output: unknown[] = [];
+            for (let index = 0; index < items.length; index++) output.push(await visit(items[index]!, value[index], state, [...path, String(index)], depth + 1));
+            return output;
+        });
+        argsSchemas.add(result);
+        return result as ArgsSchema<ArgsOutput<S>, ArgsRaw<S>>;
     },
     file(options: { maxBytes?: number; mediaTypes?: readonly string[] } = {}): InputSchema<File> {
         options = optionsRecord(options, ['maxBytes', 'mediaTypes']) as typeof options;

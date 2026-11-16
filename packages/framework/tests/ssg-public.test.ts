@@ -132,6 +132,24 @@ describe('public-only SSG requests', () => {
     ])).toEqual(['/src/pages/layout.ts', '/src/pages/(private)/layout.ts', '/src/pages/(private)/users/[id]/layout.ts']);
   });
 
+  it('leaves out plugin pages and pages under a layout that renders per request', () => {
+    @Page({ ssg: true })
+    class Static extends Cossack { render() { return html`static`; } }
+    @Page({ transport: 'http', ssg: false })
+    class SiteLayout extends Cossack { render() { return html`${this.children}`; } }
+    @Page({ transport: 'http' })
+    class PlainLayout extends Cossack { render() { return html`${this.children}`; } }
+    const pages = {
+      '/src/pages/about/index.ts': { default: Static },
+      '/src/pages/(site)/guide/index.ts': { default: Static },
+      '/src/pages/docs/guide/index.ts': { default: Static },
+      '/src/pages/plain/index.ts': { default: Static },
+    };
+    const layouts = { '/src/pages/(site)/layout.ts': { default: SiteLayout }, '/src/pages/plain/layout.ts': { default: PlainLayout } };
+    const routes = collectSsgRoutes(pages, layouts, { '/src/pages/docs/guide/index.ts': 'docs' });
+    expect(routes.map(route => route.filePath)).toEqual(['/src/pages/about/index.ts', '/src/pages/plain/index.ts']);
+  });
+
   it('renders a catch-all route with real parameters and rejects missing parameters', async () => {
     @Page({ ssg: true })
     class DocsPage extends Cossack {

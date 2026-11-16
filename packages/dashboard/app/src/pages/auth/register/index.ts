@@ -1,0 +1,117 @@
+import { Cossack, Page, State, ClientStore, Validate, Client, Server, storeRules, isClientVisibleError } from '@cossackframework/core';
+import { Field, Input, PasswordInput, Button, Alert, Turnstile } from '@cossackframework/ui';
+import { html, component, bind } from '@cossackframework/renderer';
+import { authSessions, registerUser, registrationOpen } from '#app/auth';
+import { registerInput, returnPath, type RegisterInput } from '#app/auth-input';
+import { botCheckKey, passesBotCheck } from '#app/auth-bot-check';
+import { BOT_CHECK_FAILED, botCheckToken } from '#app/auth-bot-token';
+
+const REGISTRATION_MESSAGES = new Set(['An account with this email already exists.', 'Registration is closed on this site.']);
+
+interface RegisterForm {
+    name: string;
+    email: string;
+    password: string;
+}
+
+@Page({ transport: 'http' })
+export default class RegisterPage extends Cossack {
+    @ClientStore()
+    @Validate({
+        rules: storeRules<RegisterForm>({
+            email: { required: true, email: true, message: 'Enter a valid email' },
+            password: { required: true, minLength: 8, message: 'Password must be at least 8 characters' },
+        }),
+        config: { trigger: 'all', runOn: 'client' }
+    })
+    form: RegisterForm = { name: '', email: '', password: '' };
+
+    @State() error = '';
+    /** The confirmation email went out; no session yet. */
+    @State() sent = false;
+    /** The account waits for an administrator's approval; no session yet. */
+    @State() pending = false;
+    @State() closed = false;
+    /** The Turnstile site key while the bot check is on. */
+    @State() botKey: string | null = null;
+    /** Where to go once the account is made: the `redirect` query. Checked again on use. */
+    @State() returnTo = '';
+
+    async init() {
+        this.closed = !(await registrationOpen());
+        this.botKey = botCheckKey();
+        this.returnTo = returnPath(this.c.req.query('redirect')) ?? '';
+    }
+
+    @Client()
+    async handleSubmit(event: Event) {
+        event.preventDefault();
+        this.error = '';
+        const ok = await this.validateAll();
+        if (!ok) return;
+        try {
+            await this.register({ name: this.form.name, email: this.form.email, password: this.form.password, turnstile: botCheckToken(event.target) });
+        } catch {
+            this.error = 'Could not create the account. Check your details and try again.';
+        }
+    }
+
+    @Server({ input: registerInput })
+    async register(submitted: RegisterInput) {
+        const { name, email, password, turnstile } = await registerInput.parse(submitted);
+        this.error = '';
+        if (!(await passesBotCheck(turnstile, 'register'))) { this.error = BOT_CHECK_FAILED; return; }
+        try {
+            const user = await registerUser(email, password, name || undefined);
+            if (user.verification === 'sent') { this.sent = true; return; }
+            if (user.approval === 'pending') { this.pending = true; return; }
+            const { headers } = await authSessions.create(user.id, this.c);
+            headers.forEach((value, key) => this.c.header(key, value));
+            this.redirect(returnPath(this.returnTo) ?? config('auth.redirectAfterLogin'));
+        } catch (error) {
+            // Only known, safe messages reach the page; anything else stays generic.
+            this.error = isClientVisibleError(error) && REGISTRATION_MESSAGES.has(error.message)
+                ? error.message
+                : 'Could not create the account. Try again or sign in.';
+        }
+    }
+
+    render() {
+        if (this.sent) return html`
+            <h3 class="mb-3 text-xl font-semibold text-foreground">${__('Check your email')}</h3>
+            ${component(Alert, {}, __('We sent you a link to confirm your email address. Open it to finish creating your account; it works for two days.'))}
+            <p class="mt-6 text-center text-sm text-muted-foreground"><a href="/auth/login" class="text-primary font-medium hover:underline">${__('Back to sign in')}</a></p>
+        `;
+        if (this.pending) return html`
+            <h3 class="mb-3 text-xl font-semibold text-foreground">${__('Thanks for registering')}</h3>
+            ${component(Alert, {}, __('An administrator approves new accounts on this site. We will email you when yours is ready.'))}
+            <p class="mt-6 text-center text-sm text-muted-foreground"><a href="/auth/login" class="text-primary font-medium hover:underline">${__('Back to sign in')}</a></p>
+        `;
+        if (this.closed) return html`
+            <h3 class="mb-3 text-xl font-semibold text-foreground">${__('Register')}</h3>
+            ${component(Alert, {}, __('Registration is closed on this site.'))}
+            <p class="mt-6 text-center text-sm text-muted-foreground">
+                ${__('Already have an account?')}
+                <a href="/auth/login" class="text-primary font-medium hover:underline">${__('Login')}</a>
+            </p>
+        `;
+        return html`
+            <h3 class="mb-6 text-xl font-semibold text-foreground">${__('Register')}</h3>
+            <form @submit="${(e: Event) => this.handleSubmit(e)}" class="space-y-4">
+                ${component(Field, { label: __('Name'), for: 'name',
+                    control: attributes => component(Input, { ...attributes, type: 'text', '.value': bind(this.form, 'name') }) })}
+                ${component(Field, { label: __('Email'), for: 'email', error: this.getError('form.email'),
+                    control: attributes => component(Input, { ...attributes, type: 'email', placeholder: 'user@example.com', variant: this.hasError('form.email') ? 'error' : 'default', '.value': bind(this.form, 'email') }) })}
+                ${component(Field, { label: __('Password'), for: 'password', error: this.getError('form.password'),
+                    control: attributes => component(PasswordInput, { ...attributes, value: this.form.password, onValueChange: (v: string) => this.form.password = v }) })}
+                ${this.botKey ? component(Turnstile, { id: 'register-verify', siteKey: this.botKey, action: 'register', label: __('Bot protection') }) : null}
+                ${this.error ? component(Alert, { variant: 'destructive' }, this.error) : null}
+                ${component(Button, { type: 'submit', block: true }, __('Create Account'))}
+            </form>
+            <p class="mt-6 text-center text-sm text-muted-foreground">
+                ${__('Already have an account?')}
+                <a href="/auth/login" class="text-primary font-medium hover:underline">${__('Login')}</a>
+            </p>
+        `;
+    }
+}

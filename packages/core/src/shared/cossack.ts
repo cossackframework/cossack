@@ -2433,8 +2433,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private _shallowMutationProxies = new Map<string, WeakMap<object, object>>();
     private _shallowMutationRaw = new WeakMap<object, object>();
     private _diagnoseShallowMutation<T extends Record<PropertyKey, unknown>>(key: string, raw: T, path = String(key), clientOnly = false): T {
-        let cache = this._shallowMutationProxies.get(key);
-        if (!cache) this._shallowMutationProxies.set(key, cache = new WeakMap());
+        let proxies = this._shallowMutationProxies.get(key);
+        if (!proxies) this._shallowMutationProxies.set(key, proxies = new WeakMap());
+        const cache = proxies;
         const cached = cache.get(raw);
         if (cached) return cached as T;
         const component = this;
@@ -2448,12 +2449,20 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 `Assign a new value to this.${String(key)} or declare the field with @${store}().`);
         };
         const proxy = new Proxy(raw, {
+            // Every read of the state in a render comes through here: text, numbers and
+            // proxies already made return before any other work.
             get(target, property, receiver) {
                 const value = Reflect.get(target, property, receiver);
+                if (value === null || typeof value !== 'object') return value;
                 const descriptor = Reflect.getOwnPropertyDescriptor(target, property);
                 // Proxy invariants require returning the exact value of frozen properties.
                 if (descriptor && !descriptor.configurable && 'value' in descriptor && !descriptor.writable) return value;
-                return value !== null && typeof value === 'object' && isPlainObjectOrArray(value)
+                const known = cache.get(value);
+                if (known) return known;
+                // A copy made through a proxy (`{ ...this.values, title }`) holds the nested
+                // proxies: wrapping them again would add a layer on every assignment.
+                if (component._shallowMutationRaw.has(value)) return value;
+                return isPlainObjectOrArray(value)
                     ? component._diagnoseShallowMutation(key, value as Record<PropertyKey, unknown>, `${path}.${String(property)}`, clientOnly) : value;
             },
             set(target, property, value) {

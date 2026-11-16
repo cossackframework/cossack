@@ -128,8 +128,10 @@ cossack create my-app --adapter node --preset full-stack
 cossack create my-app --adapter cloudflare --preset minimal --features desktop
 ```
 
-`cossack create` writes a `.cossack/scaffold.json` manifest used by
-`cossack add`, `cossack remove`, `cossack adapter`, and `cossack upgrade`.
+`cossack create` records the project's recipe in `package.json#cossack` (`features`,
+`template`, and `options` that are not the defaults) for `cossack add`,
+`cossack remove`, `cossack adapter` and `cossack upgrade`. It records nothing about
+the files it wrote: they are yours (see [Upgrading](./upgrading.md)).
 
 Use `--dry-run` to inspect planned files without creating the project or its
 manifest. It does not prompt and does not test for CLI updates. Use `--json` for scripts
@@ -422,7 +424,7 @@ cossack d component UserCard
 
 ### `cossack add <feature>`
 
-Add an opinionated, working feature to the current project. Each feature adds its package dependencies and files, and wires them into the application (for example, middleware in `src/bootstrap/middlewares.ts`). Missing prerequisites are added first. The result is recorded in `.cossack/scaffold.json`.
+Add an opinionated, working feature to the current project. Each feature adds its package dependencies and files, and wires them into the application (for example, middleware in `src/bootstrap/middlewares.ts`). Missing prerequisites are added first. The result is recorded in `package.json#cossack`. A file you edited is merged with the feature's change; the command stops when both changed the same lines.
 
 ```bash
 cossack add <feature> [options]
@@ -447,10 +449,83 @@ cossack add <feature> [options]
 | `schedules` | `jobs` |
 | `notifications` | `jobs` |
 | `workflows` | |
+| `cms` | `ui`, `auth`, `dashboard`, `markdown` |
 
 Prerequisites are resolved transitively: `dashboard` also adds `ui` and
-`database` through `auth`. Files you changed are reported as conflicts and are
-not overwritten unless you pass `--force`. Run `pnpm install` afterwards.
+`database` through `auth`. With `cms`, `auth` keeps users in RomeDB and does not
+add `database`. Files you changed are reported as conflicts and are not
+overwritten unless you pass `--force`. Run `pnpm install` afterwards.
+
+#### `cossack add cms`
+
+Adds the RomeDB CMS to the `auth` and `dashboard` pages: users, roles and
+sessions stored in RomeDB, posts and pages written in a rich text editor that
+saves JSON, collections you define in the dashboard (fields and blocks, each in
+its own document table), categories, tags and other taxonomies, a media library,
+site settings, themes, menus with drag and drop, plugins and the plugin policy
+lints. The CMS's pages and modules are not copied into the project: the project mounts them
+from the `@cossackframework/cms` package (`package.json#cossack.packages`) and gets
+`src/cms.config.ts` (its configuration, which also names the storage for its runtime) and a
+workflow for the dashboard's Update button. The sign-in pages and the dashboard are served from
+the package too, so the project holds no `src/pages/auth/` or `src/dashboard/` folder (see [CMS](/docs/cms/index.md#what-the-project-holds)). The public site is drawn by the
+active theme, a plugin; the default one is served from the package. It serves
+collections, term archives, nested pages, `/search`, `/feed`, `/sitemap.xml`,
+`/robots.txt` and a content API (`/api/cms/content/<collection>`,
+`/api/cms/menus/<location>`, `/api/cms/comments`) that apps write to with
+application passwords. Editors schedule entries, share preview links, compare and
+restore revisions and recover autosaves; published URLs that change redirect
+automatically, and Tools manages redirects and signed webhooks. Comments are
+moderated under Comments (Turnstile when `TURNSTILE_SITE_KEY` and
+`TURNSTILE_SECRET_KEY` are set), patterns are reusable content, and Settings →
+Languages publishes translations under `/<code>/`. Staff can sign in with an
+authenticator app or a passkey, and General settings can require it. It needs a
+RomeDB database, named by `ROMEDB_URL`. On Node the default is a file,
+`storage/romedb/app.romedb`, opened in the server's process: no service, port or
+token, and one process at a time. A URL with `ROMEDB_TOKEN` reaches `romedb serve`
+(to share a live database with Studio) or a RomeDB Cloud database. Workers reach
+RomeDB over HTTP: `pnpm dev` starts `romedb serve` for the loopback URL in
+`.dev.vars` and passes its token, and production uses RomeDB Cloud. To look into a
+file while its app runs, run the app on `romedb serve` instead; a plain copy of a
+live file can miss committed writes. The first visit to `/auth/setup` applies the
+schema and creates the administrator; it asks for `CMS_SETUP_CODE`. Media goes to
+R2 (`MEDIA` binding) on Workers, and to S3 (`S3_BUCKET`) or `MEDIA_DIR` on Node;
+images are resized with the Images binding (`IMAGES`) on Workers and `sharp` on
+Node. Maintenance runs every minute, publishing scheduled entries and delivering
+webhooks.
+
+A project whose `auth` already keeps users in the `database` feature cannot add
+`cms`; create a new project with `--features cms`. OAuth sign-in is not
+available with `cms` yet.
+
+```bash
+cossack add cms
+pnpm dev   # Node: creates storage/romedb/app.romedb; Workers: starts romedb serve
+```
+
+#### `cossack add plugin`
+
+Renders a plugin package (a directory, an `npm pack` tarball or an npm package)
+into `src/plugins/<name>/`. The package is read as data and never executed;
+npm installs run with `--ignore-scripts`. `cossack plugins list|check|upgrade|remove`
+manage rendered plugins, and `cossack <plugin>:<command>` runs a command a
+plugin manifest declares. A plugin that asks for unrestricted access can do
+anything in the application, so rendering it stops with a danger message until
+you accept it: a terminal asks, and anything else needs `--allow-unrestricted`.
+
+Each render says where the plugin's server code runs. On Cloudflare a plugin
+with only server code runs isolated in a Worker of its own, and the first one
+adds the Worker Loader binding (`LOADER`, Workers Paid) to `wrangler.jsonc`.
+`--in-app`, on `add plugin` and `plugins upgrade`, keeps a plugin in the
+application instead, and upgrades keep the choice. `cossack plugins list`
+shows `isolated` or `in app` for each plugin. See
+[Where server code runs](/docs/cms/plugins.md#where-server-code-runs).
+
+```bash
+cossack add plugin ./support-desk-1.0.0.tgz
+cossack plugins check
+cossack plugins upgrade support-desk --source ./support-desk-1.1.0.tgz
+CMS_PASSWORD=… cossack support-desk:close-all --email admin@example.com
+```
 
 #### `cossack add database`
 
@@ -468,7 +543,13 @@ cossack add database --database turso
 
 #### `cossack add auth`
 
-Adds full working session authentication: `@cossackframework/auth` plus the `database` support it depends on. Generates a `createAuth`-backed `src/auth.ts` (PBKDF2 password hashing, session create/validate/resolve, password-reset helpers), a `Session` model, a real auth guard middleware, and functional login/register/forgot-password/reset-password pages using `@Server` methods and `@Validate` form fields. Registers `auth.middleware` and `authGuard` in `src/bootstrap/middlewares.ts` and wires the Cloudflare `send_email` binding for password-reset emails.
+Adds full working session authentication: `@cossackframework/auth` plus the `database` support it depends on. The sign-in pages (login, register, forgot and reset password, two-step sign-in), the `createAuth`-backed auth module (PBKDF2 password hashing, sessions, password reset) and the guard are served from the `@cossackframework/dashboard` package, which the project mounts (`package.json#cossack.packages`). The project gets:
+
+- `src/dashboard.config.ts`: its choices (`authMethods`, `oauth`, the dashboard's `modules`), which the served code reads. A page of something that is off answers 404.
+- its schema: the `User`, `Session`, `Role`, `UserRole` and `OAuthAccount` models and their migrations.
+- `...authMiddlewares` in `src/bootstrap/middlewares.ts`, and the Cloudflare `send_email` binding for password-reset emails.
+
+To restyle or change one page, copy it into the project with `cossack eject dashboard /auth/login`.
 
 ```bash
 cossack add auth
@@ -504,6 +585,41 @@ cossack remove database --dry-run
 ```
 
 See [Authentication](/docs/authentication.md) and [Social Login](/docs/oauth.md) for the concepts these files implement.
+
+---
+
+## CMS management
+
+### `cossack cms <command>`
+
+Manage a running CMS site through its management API, as a signed-in user:
+
+```bash
+cossack cms login --url https://example.com        # email from --email or CMS_EMAIL, password from CMS_PASSWORD or a prompt
+cossack cms whoami
+cossack cms entries list posts --status draft --json
+cossack cms entries search walrus facts --per-page 5
+cossack cms entries create posts --set title="Hello" --data @body.json
+cossack cms entries publish posts <id> --at 2026-12-01T09:00:00Z
+cossack cms notes add posts <id> --body "Shorter title?" --target field:title
+cossack cms users create --email grace@example.com --password … --role editor
+cossack cms settings set general --set siteTitle="My site"
+cossack cms sites create Blog --host blog.example.com
+cossack cms mcp                                    # the MCP client configuration for the same site
+cossack cms password reset --email you@example.com # recovery mode: a reset link with the site's CMS_RECOVERY_CODE, no login
+```
+
+`login` creates an application password through a session and keeps it in
+`~/.config/cossack/cms-logins.json` (0600). The address comes from `--url`, `COSSACK_CMS_URL`,
+the project's `APP_URL`, then the current login; `COSSACK_CMS_TOKEN` and `COSSACK_CMS_SITE`
+override the login for CI. `--site <id>` acts on one site of a network through the network
+host. Writes take `--data '{…}'` (`@file`, `@-` for stdin) and `--set field=value`; deletes need
+`--yes`; nothing prompts under `--json`, whose `data` is the API's answer. Commands: `login`,
+`logout`, `whoami`, `mcp`, `collections`, `taxonomies`, `terms`, `entries`, `notes`, `users`,
+`roles`, `settings`, `media`, `sites`. Failures use `COSSACK_CMS_*` codes
+(`COSSACK_CMS_LOGIN_REQUIRED`, `COSSACK_CMS_FORBIDDEN`, `COSSACK_CMS_CONFLICT`,
+`COSSACK_CMS_INVALID`, …). The API, every command and the MCP tools are described in
+[Management API, CLI and MCP](./cms/api.md).
 
 ---
 
@@ -643,9 +759,22 @@ TypeScript compile. Use `--generate --dry-run --json` to preview generation with
 writes. Plain route inspection stays read-only. JSON output includes the shared
 structural manifest and the effective inspection facts.
 
+Routes that a mounted package serves are listed with the package's name after the file, and JSON entries carry a `package` field. The generated `.cossack/routes.ts` imports a package's API modules by package specifier (`@cossackframework/cms/app/pages/api/cms/…`), so the file does not change with the package's version or install path.
+
 Markdown requires a recorded scaffold feature or explicit `--markdown` selection.
 For a custom processor, configure the same feature in Vite.
 See [typed URLs](./routing.md#typed-urls) for imports, parameters, and existing-project setup.
+
+### `cossack typecheck`
+
+Write the generated types, then run the project's TypeScript compiler with `--noEmit`. A project's `typecheck` script is this command.
+
+1. Cloudflare projects: `wrangler types`, which writes `worker-configuration.d.ts` from `wrangler.jsonc`.
+2. `.cossack/routes.ts`: the typed URLs of the project's pages and of the pages a mounted package serves.
+3. `.cossack/config.d.ts`: the keys and types of `config()`.
+4. `tsc --noEmit`.
+
+A clean checkout has none of the generated files, and the command needs no build to write them. When a release adds a generated file, the command writes it: the project's script does not change.
 
 ### `cossack specs`
 
@@ -677,58 +806,79 @@ Print the installed CLI version.
 
 ### `cossack upgrade [dir]`
 
-Upgrade Cossack dependencies in the current project and report template drift. The command is non-destructive by default. It updates `package.json`, reinstalls, and prints which scaffolded files have upstream changes. It never overwrites source files unless you opt in.
+Update a project to a release with one command. It moves the Cossack dependencies to the release and reinstalls. It does not compare or change the project's own files: the packages a project mounts (the CMS, the sign-in pages and dashboard) serve what a release changes.
 
 ```bash
-cossack upgrade                       # bump deps + print drift report
-cossack upgrade --apply-template      # also update files you have NOT edited
-cossack upgrade --force               # apply safe updates + restore deleted files
-cossack upgrade --force-file <path>   # surgically overwrite one file, even if edited
+cossack upgrade                       # update dependencies, install, merge ejected copies and plugins
+cossack upgrade --dry-run             # show the plan and write nothing
+cossack upgrade --conflicts=markers   # write both versions into a conflicting copy
 ```
-
-Options:
 
 | Option | Description |
 | --- | --- |
 | `--tag <latest\|canary\|<version>>` | Version to upgrade to (default: `latest`). |
-| `--apply-template` | Update scaffolded files you have not modified. Modified files are always skipped. |
-| `--force` | Apply safe updates and restore deleted scaffold files. Locally modified files remain protected. |
-| `--force-file <path>` | Force-update one specific file even if you modified it. You can use this option more than once. |
 | `--dry-run` | Show planned changes without writing them. |
+| `--conflicts=markers` | Write git-style conflict markers into an ejected copy or a plugin file whose merge conflicts. Without it the file is not changed. |
 
-Drift detection uses the `.cossack/scaffold.json` manifest written at project-creation time, which records a SHA-256 of every scaffolded file. `upgrade` classifies each file as `upToDate`, `canUpdate` (unchanged locally, changed upstream), `canDelete` (unchanged locally and removed upstream), `modified` (you edited it), or `missing` (deleted). You decide which changes the command applies.
+What it does, in order:
 
-Use `cossack upgrade --dry-run --json` to inspect the complete current plan.
-It includes dependency updates, additions and removals, selected file writes and
-deletions, preserved edits, conflicts, manifest changes, build-setting migration,
-installation requirements, and follow-up actions. `--tag` resolves the scaffold
-release used for both templates and recipe dependencies. `templateVersion` is
-that exact version. Foreign releases are installed into temporary storage with
-pnpm and lifecycle scripts disabled, then removed. Dry runs leave all application
-files unchanged. pnpm can populate its package cache.
+1. **Dependencies.** The versions the recipe owns follow the release, with additions, removals and moves between dependency sections. What the recipe owns is what the release your project declares renders for it; local pins, dependencies you deleted and packages you added stay, and the plan lists them. A project without a recipe (`package.json#cossack.features`) gets only its Cossack packages moved.
+2. **`pnpm-workspace.yaml`.** The release's keys (build approvals, overrides) go over the file; your own stay. A file with nothing to add keeps its text.
+3. **The install.**
+4. **Host modules.** A module a mounted package needs and the project lacks (`cossack.host`) is written. An existing file is never replaced.
+5. **Host steps.** When a package needs a change in one of your files, the upgrade lists it (`cossack.hostSteps`). The build then stops with `COSSACK_PACKAGE_HOST_OUTDATED` and the same list until you make the change and set `cossack.template` in `package.json` to the version the message names.
+6. **Ejected copies and plugins.** The package's new text is merged into each file copied with `cossack eject`, and each plugin that came from an npm package is rendered again from its installed version. A plugin rendered from a folder or a tarball is skipped: run `cossack plugins upgrade <name> --source <new source>` for it.
 
-The manifest records `dependencyBaseline` separately from the merged package.
-Unchanged owned versions follow the target recipe, including additions, removals,
-and moves between dependency sections. Local pins, intentionally deleted
-dependencies, and user-added packages remain intact. Existing schema-v3 manifests
-without this field reconstruct it from their recorded exact scaffold release.
-The plan labels this ownership source as `reconstructed`. An unavailable baseline
-or target release fails before project writes. Custom URL/path specifiers are
-redacted from JSON plans.
+A copy whose merge conflicts is kept as it is and listed. To resolve it, edit the file by hand, or run `cossack upgrade --conflicts=markers` and edit between the markers:
 
-`--apply-template` also deletes unchanged owned files removed by the target
-recipe. Edited obsolete files remain preserved conflicts. `--force-file` cannot
-replace package/runtime configuration or local secret files. Symbolic links in
-owned paths are rejected before effects.
+```
+<<<<<<< yours
+...
+||||||| base
+...
+=======
+...
+>>>>>>> <package> <version>
+```
 
-An unknown `--force-file` or an unresolved package version fails before writes.
-If an owned file, package, workspace configuration, or ownership manifest changes
-during target resolution, the plan fails as stale.
-An installation failure returns `status: "partial-failure"`, the changes already
-applied, and a retry command. It does not report a successful upgrade. Raw package
-manager output stays outside the machine-readable protocol.
+While a copy still contains marker lines, `cossack upgrade` stops with `COSSACK_UPGRADE_UNRESOLVED_CONFLICT`. The command exits with 0 when it lists conflicts, so a pipeline can open a pull request with the plan.
+
+Use `cossack upgrade --dry-run --json` to inspect the complete plan: dependency updates, additions and removals, preserved edits, the build-setting migration, the ejected copies with what a merge does to each, whether the recipe moves into `package.json`, installation requirements and follow-up actions. `--tag` resolves the release; `templateVersion` is that exact version. Foreign releases are installed into temporary storage with pnpm and lifecycle scripts disabled, then removed. Dry runs leave all application files unchanged. pnpm can populate its package cache.
+
+An unresolved package version or an unavailable release fails before writes. If `package.json`, `pnpm-workspace.yaml` or `.cossack/scaffold.json` changes during target resolution, the plan fails as stale. Symbolic links in those paths are rejected before effects. Custom URL and path specifiers are redacted from JSON plans. An installation failure returns `status: "partial-failure"`, the changes already applied, and a retry command. It does not report a successful upgrade. Raw package manager output stays outside the machine-readable protocol.
+
+A project from an earlier release that still has file records in `.cossack/scaffold.json` loses them on its first upgrade: the recipe moves into `package.json#cossack`, and the manifest stays only for `cossack eject` copies.
 
 ---
+
+### `cossack eject <package> <path>`
+
+Copy a file that a mounted package serves into the project, where it overrides the package's file (see [Routes from a package](routing.md#routes-from-a-package)). Use it when a plugin, the project's configuration or a child theme cannot make the change.
+
+```bash
+cossack eject cms /search                              # by route
+cossack eject cms "src/pages/(site)/search/index.ts"   # by application path
+cossack eject cms plugins/default-theme                # a served plugin, as a whole
+cossack eject --diff "src/pages/(site)/search/index.ts"
+cossack eject --restore "src/pages/(site)/search/index.ts"
+```
+
+`<package>` is the package's name or the short name it declares (`cms` for `@cossackframework/cms`).
+
+| Option | Description |
+| --- | --- |
+| `--force` | Replace a file that already exists at the path. With `--restore`, delete a copy that you edited. |
+| `--dry-run` | Show what would be copied or deleted. |
+| `--diff` | Show what the package changed since the copy was made, and what the project changed in the copy. |
+| `--restore` | Delete the copy and its record. The package's file is served again. |
+
+Rules:
+
+- Only pages, layouts, loading states, configuration files and whole plugins can be ejected. A shared module such as `cms/site.ts` cannot: the package's own code imports it by its path in the package and would never use a copy. The command stops with `COSSACK_EJECT_NOT_OVERRIDABLE`.
+- In the copy, an import that stays in the package is rewritten to the package's name (`'#app/cms/site'` or `'../site'` becomes `'@cossackframework/cms/app/cms/site'`). The copy and the package then share one instance of each module.
+- The copy is recorded in `.cossack/scaffold.json` under `ejected`, with the package text it was made from.
+- `cossack upgrade` merges the package's later changes into every ejected copy, after it installs the new version. A copy you did not edit takes the package's new text. A copy whose merge conflicts is kept and listed, or gets conflict markers with `--conflicts=markers`.
+- If you update the package with `pnpm up` alone, nothing is merged. The dev server and the build then name each override that fell behind: `src/pages/(site)/search/index.ts overrides @cossackframework/cms 0.10.0; the package changed it since 0.9.0: run cossack upgrade`.
 
 ## Exit codes
 

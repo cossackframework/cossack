@@ -1,0 +1,19 @@
+{
+  "name": "@fixture/page-package",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A package that serves pages, a plugin and configuration to the application that mounts it (specs/package-routes.md).",
+  "exports": {
+    "./app/*": "./app/src/*.ts",
+    "./package.json": "./package.json"
+  },
+  "cossack": {
+    "root": "app/src",
+    "alias": "kit",
+    "pages": ["pages/kit/", "pages/api/kit/"],
+    "plugins": ["plugins/kit-plugin/"],
+    "config": ["config/kit.ts"],
+    "host": ["kit/host.ts"]
+  }
+}

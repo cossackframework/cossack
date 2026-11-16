@@ -1,0 +1,151 @@
+/**
+ * A site's database as one JSON document, streamed table by table, for the site to keep or
+ * move. Values use RomeDB's portable encoding (`encodeValue`), so integers, record IDs and
+ * binary values come back exactly with `decodeValue`. Media files are not included: `cms_files`
+ * rows name their storage keys.
+ */
+import { ClientError, encodeValue, type DatabaseFile, type RecordId, type RomeDB, type Statement, type Value } from '@cossackframework/romedb';
+import { HOST_TABLES } from './host-schema';
+
+/**
+ * Tables left out: credentials and sign-in state (sessions, second factors, passkeys, reset
+ * tokens, application passwords, preview links, handoffs), the cache, and the network's own
+ * tables, which hold accounts and the site registry on the main site.
+ */
+export const EXPORT_SKIPPED_TABLES: ReadonlySet<string> = new Set([
+    'cms_auth_sessions', 'cms_sessions', 'cms_session_values', 'cms_session_sites', 'cms_oauth_states', 'cms_password_resets', 'cms_auth_challenges',
+    'cms_user_security', 'cms_passkeys', 'cms_api_tokens', 'cms_preview_tokens', 'cms_handoffs', 'cms_cache', 'cms_attempts', 'cms_schedules',
+    'cms_accounts', 'cms_sites', 'cms_site_domains', 'cms_memberships', 'cms_network',
+    // The search index is built from the entries; an import rebuilds it.
+    'cms_search',
+    // Resized copies are made again on request; an imported row could name any stored object.
+    'cms_file_variants',
+    // Each database counts its own schema changes.
+    'cms_schema_generations',
+]);
+
+/** Columns exported as null: webhook signing secrets. */
+export const EXPORT_REDACTED_COLUMNS: Readonly<Record<string, readonly string[]>> = Object.freeze({ cms_webhooks: ['secret'] });
+
+/**
+ * Tables a `.romedb` file leaves empty: sign-in state (sessions are keyed by their tokens, so a
+ * copy would sign in on the live site), authenticator apps and recovery codes (the secrets are
+ * stored as they are, so a copy would make valid codes), the cache, pending work, which would
+ * run again where the file is opened, webhooks, whose secrets are the live site's, and
+ * application passwords, which would sign scripts in to the copy. Accounts stay with their
+ * password hashes and passkeys (public keys), so a site's own accounts keep signing in; they
+ * set up an authenticator app and application passwords again.
+ */
+export const FILE_EXPORT_EMPTIED_TABLES: readonly string[] = [
+    'cms_user_security', 'cms_api_tokens',
+    'cms_auth_sessions', 'cms_sessions', 'cms_session_values', 'cms_session_sites', 'cms_oauth_states', 'cms_password_resets', 'cms_auth_challenges',
+    'cms_preview_tokens', 'cms_handoffs', 'cms_cache', 'cms_attempts', 'cms_outbox', 'cms_webhooks', 'cms_webhook_deliveries', 'cossack_jobs', 'cms_schedules',
+    'cms_file_variants',
+];
+
+/** RomeDB's longest wait for a copy to start arriving. On Cloud a job builds it first. */
+const FILE_EXPORT_TIMEOUT = 120_000;
+
+/**
+ * A site's database as a `.romedb` file, which a new install opens directly: one snapshot while
+ * the site keeps running, on every runtime. RomeDB never reads the tables above into the copy,
+ * so no part of the file holds their rows, and the file is a new database.
+ */
+export async function siteFile(db: RomeDB, options: { signal?: AbortSignal } = {}): Promise<DatabaseFile> {
+    const signal = options.signal ? { signal: options.signal } : {};
+    // Every site's database has every host table, so each named table exists.
+    return db.exportFile({ ...signal, timeoutMs: FILE_EXPORT_TIMEOUT, emptyTables: [...FILE_EXPORT_EMPTIED_TABLES] });
+}
+
+/** A new webhook secret, for one that comes from a copy or an export. */
+export function newSecret(): string {
+    return [...crypto.getRandomValues(new Uint8Array(32))].map(byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+export interface SiteExportOptions {
+    /** What the document says it is: the site's ID, name and address. */
+    readonly site: { readonly id: string; readonly name: string; readonly host: string | null };
+    readonly now?: () => number;
+    /** Rows per read. Default 200. */
+    readonly pageSize?: number;
+    readonly signal?: AbortSignal;
+}
+
+/**
+ * The export as text chunks: `{ format: 'cossack-site-export', version: 1, exportedAt, site,
+ * skipped, redacted, tables: [{ name, model, columns?, rows }] }`. Relational rows are arrays in
+ * `columns` order; document rows are whole documents. The CMS's own tables come first, by name,
+ * so an import has the collections' definitions before their records; then the rest, by name.
+ * Each table is read in key order, a page at a time, at least as fresh as the first read.
+ */
+export async function* siteExport(db: RomeDB, options: SiteExportOptions): AsyncGenerator<string> {
+    const read = (statements: Statement[], after?: number) => db.read(statements, { ...(after === undefined ? {} : { afterSequence: after }), ...(options.signal ? { signal: options.signal } : {}) });
+    const first = await read([{ rql: 'INFO FOR DB' }]);
+    const sequence = first.sequence;
+    const info = first.results[0]!.rows[0]![0] as unknown as { tables?: { name: string; model: string }[] };
+    const tables = (info.tables ?? []).filter(table => !EXPORT_SKIPPED_TABLES.has(table.name) && (table.model === 'relational' || table.model === 'document'))
+        .sort((a, b) => Number(!HOST.has(a.name)) - Number(!HOST.has(b.name)) || a.name.localeCompare(b.name));
+    const json = (value: unknown) => JSON.stringify(value);
+    const pageSize = Math.min(Math.max(options.pageSize ?? 200, 1), 1000);
+    yield `{"format":"cossack-site-export","version":1,"exportedAt":${json(new Date((options.now ?? Date.now)()).toISOString())},"site":${json(options.site)},`
+        + `"skipped":${json([...EXPORT_SKIPPED_TABLES].sort())},"redacted":${json(EXPORT_REDACTED_COLUMNS)},"tables":[`;
+    for (const [index, table] of tables.entries()) {
+        const name = quote(table.name);
+        let columns: string[] = [];
+        // Pages follow the key, each read after the last row's key, so a row a write moves or
+        // removes meanwhile neither repeats nor pushes another row past a page boundary.
+        let keys: string[] = [];
+        if (table.model === 'relational') {
+            const described = (await read([{ rql: `INFO FOR TABLE ${name}` }], sequence)).results[0]!.rows[0]![0] as unknown as { columns: { name: string; pk: bigint | number }[] };
+            columns = described.columns.map(column => column.name);
+            keys = described.columns.filter(column => Number(column.pk) > 0).sort((a, b) => Number(a.pk) - Number(b.pk)).map(column => column.name);
+        }
+        const redacted = new Set(EXPORT_REDACTED_COLUMNS[table.name] ?? []);
+        yield `${index ? ',' : ''}{"name":${json(table.name)},"model":${json(table.model)},${table.model === 'relational' ? `"columns":${json(columns)},` : ''}"rows":[`;
+        let count = 0;
+        let size = pageSize;
+        const rowid = table.model === 'relational' && !keys.length;
+        const order = table.model === 'document' ? 'id' : rowid ? 'rowid' : keys.map(quote).join(', ');
+        let last: Value[] | null = null;
+        for (;;) {
+            const select = table.model === 'relational' ? [...columns.map(quote), ...(rowid ? ['rowid'] : [])].join(', ') : '*';
+            const params: { [key: string]: Value } = { $limit: size };
+            let after = '';
+            if (last) {
+                if (table.model === 'document') after = `WHERE id > type::record('${table.name.replaceAll("'", "''")}', $k0)`;
+                else if (rowid) after = 'WHERE rowid > $k0';
+                // (a > $k0) OR (a = $k0 AND b > $k1) …: after the last row in key order.
+                else after = `WHERE ${keys.map((_, i) => `(${[...keys.slice(0, i).map((key, j) => `${quote(key)} = $k${j}`), `${quote(keys[i]!)} > $k${i}`].join(' AND ')})`).join(' OR ')}`;
+                last.forEach((value, i) => { params[`$k${i}`] = value; });
+            }
+            let page;
+            try { page = (await read([{ rql: `SELECT ${select} FROM ${name} ${after} ORDER BY ${order} LIMIT $limit`, params }], sequence)).results[0]!; }
+            catch (error) {
+                // A page of large rows can pass the limit on one response: read fewer.
+                if (error instanceof ClientError && (error.code === 'RDB_LIMIT' || error.code === 'RDB_RESULT_TOO_LARGE') && size > 1) { size = Math.max(1, Math.floor(size / 2)); continue; }
+                throw error;
+            }
+            const rows = page.rows.map(row => table.model === 'relational'
+                ? json(row.slice(0, columns.length).map((value, column) => encodeValue(redacted.has(columns[column]!) ? null : value as Value)))
+                : json(encodeValue(row[0] as Value)));
+            if (rows.length) yield `${count ? ',' : ''}${rows.join(',')}`;
+            count += rows.length;
+            const end = page.rows.at(-1);
+            if (end) {
+                if (table.model === 'document') last = [((end[0] as { id: RecordId }).id).key as Value];
+                else if (rowid) last = [end[columns.length] as Value];
+                else last = keys.map(key => end[columns.indexOf(key)] as Value);
+            }
+            if (page.rows.length < size) break;
+        }
+        yield ']}';
+    }
+    yield ']}\n';
+}
+
+const HOST: ReadonlySet<string> = new Set(HOST_TABLES);
+
+/** A RomeQL identifier, quoted when it is not a plain lowercase name. */
+export function quote(name: string): string {
+    return /^[a-z_][a-z0-9_]*$/.test(name) ? name : `"${name.replaceAll('"', '""')}"`;
+}

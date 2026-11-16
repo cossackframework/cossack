@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Component, Cossack, Page, State, type Middleware } from '@cossackframework/core';
 import { component, html } from '@cossackframework/renderer';
 import { computeRouteIds } from '../src/route-ids';
+import { transportTargetPath } from '../src/transport-routes';
 
 /**
  * Realtime layouts and realtime child components on Cloudflare: SSR emits the
@@ -40,7 +41,8 @@ const deny = (name: string, value: string): Middleware => async (c, next) => {
   await next();
 };
 
-@Component({ transport: 'durable-object', scope: perUser, middlewares: [async (c, next) => { guardLog.push('cart'); await next(); }] })
+const targets: (string | undefined)[] = [];
+@Component({ transport: 'durable-object', scope: perUser, middlewares: [async (c, next) => { guardLog.push('cart'); targets.push(transportTargetPath(c)); await next(); }] })
 class CartBadge extends Cossack {
   @State() count = 0;
   render() { return html`<span>${this.count}</span>`; }
@@ -134,7 +136,10 @@ describe('Cloudflare realtime layout and component targets', () => {
 
   it("forwards a component upgrade with its hosting page's guards and rejects forged ids", async () => {
     const target = scoped('component', cartId, 'user:alice');
+    targets.length = 0;
     const result = await upgrade(target, { component: cartId }, ids.get(itemPath)!, { item: 'one' }, 'alice');
+    // The page the client names selects guards only; the code that runs is the component's.
+    expect(targets).toEqual([cartId]);
     expect(result.status).toBe(200);
     expect(result.header('X-Component-Path')).toBe(cartId);
     expect(result.header('X-Cossack-Realtime-Owner')).toBe('component');
@@ -168,8 +173,12 @@ describe('Durable Object authorization of layout and component peers', () => {
   it("runs a component peer's page guards, own guards and scope for each operation", async () => {
     const operation = vi.fn(async () => {});
     const componentPeer = peer({ componentPath: cartId, owner: 'component', guardPath: itemPath });
+    targets.length = 0;
     expect(await object().authorizeWebSocketPeer(undefined, componentPeer, operation)).toBe(true);
     expect(guardLog).toEqual(['layout:one', 'page:one', 'cart']);
+    // Guards see the component itself as the code that runs, as the upgrade and Node record it,
+    // never the page the client names.
+    expect(targets).toEqual([cartId]);
     session.userId = 'bob';
     expect(await object().authorizeWebSocketPeer(undefined, componentPeer, operation)).toBe(false);
     expect(operation).toHaveBeenCalledOnce();

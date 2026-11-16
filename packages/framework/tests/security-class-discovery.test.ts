@@ -92,6 +92,13 @@ describe('imported base classes', () => {
     expect(client(rooted, file('src/pages/b.ts', rooted))).not.toContain('SECRET_REPORT');
   });
 
+  it("resolves a package's own imports (#app/)", () => {
+    file('package.json', JSON.stringify({ imports: { '#app/*': './src/*.ts' } }));
+    file('src/lib/base-page.ts', frameworkBase);
+    const source = subclass(`import { BasePage } from '#app/lib/base-page';`);
+    expect(client(source, file('src/pages/deep/down/report.ts', source))).not.toContain('SECRET_REPORT');
+  });
+
   it('treats UI package components and CossackService as framework bases', () => {
     const ui = subclass(`import { Card } from '@cossackframework/ui';\nimport { html } from '@cossackframework/core';`, 'Card');
     expect(client(ui, '/src/components/card.ts')).not.toContain('SECRET_REPORT');

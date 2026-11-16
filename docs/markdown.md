@@ -7,6 +7,17 @@ description: "Create pages from Markdown and MDX files with frontmatter metadata
 
 Use `.md` and `.mdx` files as page components. Cossack turns files in `src/pages` into components. Add frontmatter to set metadata. Cossack renders the Markdown content as the page output.
 
+Turn Markdown pages on with `cossack add markdown` (the CMS and the examples include it). The feature adds no file and no dependency to your project: the Vite preset uses the framework's processor, `processMarkdown` from `@cossackframework/framework/markdown-processor`. It handles GitHub-flavoured Markdown, a table of contents, heading IDs, highlighted code with line highlights, and frontmatter. To change the pipeline, write your own processor and give it to the preset in `vite.config.ts`:
+
+```ts
+import { cossackApp } from 'cossack/vite';
+import { processMarkdown } from './src/markdown-processor.ts';
+
+export default cossackApp({ markdownProcessor: processMarkdown });
+```
+
+A processor takes the source text and returns `{ html, frontmatter }`. Its own packages (`unified`, remark and rehype plugins) are then your project's dependencies.
+
 ### Metadata via Frontmatter
 
 Use frontmatter to set metadata for an MDX component. Cossack adds these values to the `head()` merge.
@@ -27,7 +38,19 @@ The framework maps `title`, `description`, and `image` to the matching propertie
 
 ### Layout Support
 
-MDX components support nested layouts. If an MDX file is in a folder with `layout.ts`, that layout wraps the page, as it does for a TypeScript component.
+Markdown pages get layouts the way TypeScript pages do. Each `layout.ts` in the folders above
+the file wraps the page, route groups included: `src/pages/(public)/blog/hello-world.md` is
+wrapped by `(public)/layout.ts`, then `(public)/blog/layout.ts`. A plugin's Markdown page
+follows its path in the page tree, so `src/plugins/<name>/pages/(public)/guide.md` gets the
+`(public)` layout of the application.
+
+The framework renders the content inside `<div class="mdx-content">`. Style that class, or
+the layout around it, to give Markdown pages their typography.
+
+A Markdown page is static by default (`ssg` below). Two kinds are never rendered at build
+time: a plugin's pages, because the application decides per request whether the plugin is
+active, and pages under a layout with `@Page({ ssg: false })`, whose frame comes from the
+request. See [Pages that render per request](./static-site-generation.md#pages-that-render-per-request).
 
 
 ### Typed metadata
@@ -88,7 +111,8 @@ const markdownProcessor = createMarkdownProcessor<GuideMetadata>({
   },
 });
 
-// Use this processor in your existing Vite plugin configuration.
+// Give this processor to the preset in vite.config.ts: cossackApp({ markdownProcessor }).
+// A configuration written by hand passes it to the plugin:
 const pages = cossackPages({ markdownProcessor });
 ```
 

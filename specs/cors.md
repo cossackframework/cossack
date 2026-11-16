@@ -3,8 +3,11 @@
 ## Scope and lifecycle
 
 The framework registers CORS after request context and configuration are
-initialized, and before project middleware. It applies only to `/api` and
-`/api/*`. A valid API preflight ends with `204`. Project authentication and
+initialized, and before project middleware. It applies to `/api` and `/api/*`,
+and to the configured `paths`: each entry covers that exact path and everything
+below it, for functional endpoints outside `/api` such as `/webhooks` or
+`/feed.xml`. An entry without a leading slash never matches. A valid API
+preflight ends with `204`. Project authentication and
 database work do not run for it. Ordinary downstream API responses, including
 handled errors, retain the applicable CORS response headers.
 
@@ -14,7 +17,8 @@ are outside its scope.
 ## Configuration
 
 `src/config/cors.ts` implements `CorsConfig`: `enabled`, `origins`, `methods`,
-`headers`, `exposeHeaders`, `credentials`, and `maxAge`. If the file is absent,
+`headers`, `exposeHeaders`, `credentials`, `maxAge`, and the optional `paths`
+(`CORS_PATHS`). If the file is absent,
 the framework uses built-in defaults: enabled with an empty origin list.
 
 Origin entries support exact HTTP(S) origins, global `*`, scheme-specific

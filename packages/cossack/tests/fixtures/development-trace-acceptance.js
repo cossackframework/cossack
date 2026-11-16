@@ -8,6 +8,7 @@ import {createRequire} from 'node:module';
 import {once} from 'node:events';
 import {promisify} from 'node:util';
 import {chromium,expect} from '@playwright/test';
+import {useAppDurableObject} from './generated-app.js';
 
 const browserExpect=expect;
 
@@ -32,19 +33,16 @@ export async function verifyDevelopmentTraceApplication(root,{onRecorded,additio
     tls={key:await fs.readFile(key,'utf8'),cert:await fs.readFile(cert,'utf8')};
   }
   if(transport==='durable-object'&&runtime==='cloudflare') {
-    const configPath=path.join(root,'wrangler.jsonc'), config=JSON.parse(await fs.readFile(configPath,'utf8'));
-    config.durable_objects.bindings.push({name:'COSSACK_OBJECT',class_name:'TraceAcceptanceObject'});
-    config.migrations.push({tag:'trace-acceptance-v2',new_sqlite_classes:['TraceAcceptanceObject']});
-    await fs.writeFile(configPath,JSON.stringify(config));
+    // The generated COSSACK_OBJECT binding points at this fixture's class instead of adding a second binding.
+    await useAppDurableObject(root,'TraceAcceptanceObject');
     await fs.appendFile(path.join(root,'src/index.ts'), "\nexport { AppDurableObject as TraceAcceptanceObject } from '@cossackframework/framework';\n");
   }
   const configFile=path.join(root,'vite.config.ts');
   const generatedConfig=await fs.readFile(configFile,'utf8');
-  expect(generatedConfig).toContain('cossackPages({');
-  let traceConfig=generatedConfig.replace('cossackPages({','cossackPages({ developmentTraces: true,');
+  expect(generatedConfig).toContain('cossackApp({');
+  let traceConfig=generatedConfig.replace('cossackApp({','cossackApp({ pages: { developmentTraces: true },');
   if(launcher){
-    expect(traceConfig).toContain('plugins: [');
-    traceConfig=traceConfig.replace('plugins: [',`plugins: [{name:'trace-server-options',config:()=>({server:${JSON.stringify({https:tls,fs:{allow:[root,...additionalAllowedPaths]}})}})},`);
+    traceConfig=traceConfig.replace('cossackApp({',`cossackApp({ plugins: [{name:'trace-server-options',config:()=>({server:${JSON.stringify({https:tls,fs:{allow:[root,...additionalAllowedPaths]}})}})}],`);
   }
   await fs.writeFile(configFile,traceConfig);
   await fs.mkdir(path.join(root,'src/pages/api'),{recursive:true});

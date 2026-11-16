@@ -18,7 +18,7 @@ Run the Wrangler type generation script first:
 pnpm run cf-typegen
 ```
 
-This creates or updates `worker-configuration.d.ts` in your project root.
+This creates or updates `worker-configuration.d.ts` in your project root. `pnpm run typecheck` runs it first.
 
 ### 2. Use in Components
 

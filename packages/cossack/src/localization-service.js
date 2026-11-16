@@ -1,6 +1,7 @@
 /** Read-only localization analysis. Never imports or executes application code. */
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { mountedPackages } from '@cossackframework/framework/package-mounts';
 import ts from 'typescript-api';
 
 const LOCALE = /^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$/;
@@ -52,6 +53,9 @@ export async function inspectLocalization(root, { locale = 'en' } = {}) {
     if (stat.isSymbolicLink() || !stat.isDirectory()) diagnostics.push(diagnostic('SOURCE_UNSAFE', 'error', 'The source directory must be a regular directory.', { file: 'src' }));
     else await walk(src);
   } catch (error) { if (error.code !== 'ENOENT') diagnostics.push(diagnostic('SOURCE_READ_FAILED', 'error', 'Cannot read localization sources.')); }
+  // A mounted package's served files are application source: their __() keys belong to this project's catalogs.
+  try { for (const mounted of mountedPackages(root)) await walk(mounted.root); }
+  catch { diagnostics.push(diagnostic('SOURCE_READ_FAILED', 'error', 'Cannot read the served files of a mounted package.')); }
   const catalogs = new Map();
   for (const [file, text] of files) if (path.dirname(file) === path.join(root, 'src/lang') && file.endsWith('.json')) {
     const code = path.basename(file, '.json');

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getLocale, getRequestContext, RESPONSE_HEADER_STATE_KEY } from '@cossackframework/core';
 import { captureRealtimeIdentity, revalidateRealtimeIdentity, snapshotRealtimeRequest, withRealtimeAuthorization } from '../src/realtime-context';
 import { binding, config, requireEnv, requireConfigVariable } from '../src/config';
+import { TRANSPORT_GUARD_PATH, TRANSPORT_TARGET_PATH, transportGuardPath, transportTargetPath } from '../src/transport-routes';
 
 const { globalMiddlewares, requirements, factories } = vi.hoisted(() => ({ requirements: {} as Record<string, any>, factories: {} as Record<string, any>, globalMiddlewares: [] as MiddlewareHandler[] }));
 factories.realtime = ({ env }: { env: (key: string) => string }) => ({ marker: env('marker') });
@@ -29,6 +30,17 @@ describe('realtime authorization context', () => {
             c.set('cossack.captureRealtimeIdentity', async () => ({ ...identity, data }));
             await expect(captureRealtimeIdentity(c)).rejects.toThrow();
         }
+    });
+
+    it('restores the transport guard and target paths on every revalidation', async () => {
+        const original = context();
+        original.set(TRANSPORT_GUARD_PATH as never, '/src/pages/dashboard/profile/security/index.ts' as never);
+        original.set(TRANSPORT_TARGET_PATH as never, '/src/pages/dashboard/layout.ts' as never);
+        const snapshot = snapshotRealtimeRequest(original, {}, 'en');
+        const seen: string[] = [];
+        const guard: MiddlewareHandler = async (c, next) => { seen.push(`${transportGuardPath(c)}|${transportTargetPath(c)}`); await next(); };
+        expect(await revalidateRealtimeIdentity(snapshot, {}, null, [guard], () => true, 'en')).toBe(true);
+        expect(seen).toEqual(['/src/pages/dashboard/profile/security/index.ts|/src/pages/dashboard/layout.ts']);
     });
 
     it('requires a provider and a stable user ID for authenticated subscriptions', async () => {

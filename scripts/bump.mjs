@@ -16,6 +16,8 @@
  *   3. Sets `version` in every examples/* package.json to the target and
  *      rewrites their in-monorepo ranges the same way, so examples never drift
  *      behind the packages they demonstrate.
+ *   4. Sets `CMS_VERSION` in packages/cms/src/version.ts, which the CMS sends
+ *      to the update server.
  *
  * What it deliberately does NOT do:
  *   - Touch `workspace:*` specifiers. pnpm rewrites those to real ranges at
@@ -23,6 +25,9 @@
  *   - Touch external packages (e.g. @cossackframework/solar-icons) that live
  *     outside this repo. Only packages found in the packages folder are bumped.
  *   - Touch git. Commit and tag are left to you.
+ *   - Tell sites about the release. The CMS's update server is a separate, private
+ *     repository: add the version to its release list and deploy it after the
+ *     packages are on npm.
  */
 import { readFile, writeFile, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -32,6 +37,7 @@ import { fileURLToPath } from 'node:url';
 const PACKAGES_DIR = fileURLToPath(new URL('../packages/', import.meta.url));
 const EXAMPLES_DIR = fileURLToPath(new URL('../examples/', import.meta.url));
 const ROOT_PACKAGE = fileURLToPath(new URL('../package.json', import.meta.url));
+const CMS_VERSION_FILE = fileURLToPath(new URL('../packages/cms/src/version.ts', import.meta.url));
 const KEYWORDS = new Set(['patch', 'minor', 'major']);
 
 function log(...args) {
@@ -217,6 +223,15 @@ async function main() {
     await writeFile(ROOT_PACKAGE, stringify({ ...workspace, version: newVersion }), 'utf8');
   }
 
+  // The CMS reports this constant to the update server; a test keeps it equal to package.json.
+  log(`  ${'(cms) src/version.ts'.padEnd(32)} ${newVersion}`);
+  if (!dryRun) {
+    const source = await readFile(CMS_VERSION_FILE, 'utf8');
+    const next = source.replace(/(export const CMS_VERSION = ')[^']*(';)/, `$1${newVersion}$2`);
+    if (next === source && !source.includes(`'${newVersion}'`)) throw new Error('packages/cms/src/version.ts has no CMS_VERSION to set.');
+    await writeFile(CMS_VERSION_FILE, next, 'utf8');
+  }
+
   log(`\nDone. ${totalRangeBumps} scoped range(s) rewritten across ${packages.length} packages.`);
   if (dryRun) {
     log('(dry-run: no files written)');
@@ -224,6 +239,8 @@ async function main() {
     log('Next: review with `git diff`, commit, merge to master, then publish a');
     log(`GitHub release with tag ${newVersion} targeting master. publish.yml checks`);
     log('that the tag matches every package version and publishes to npm.');
+    log('Then add the version to the update server\'s release list (its own');
+    log('repository) and deploy it, so sites learn about the release.');
   }
 }
 

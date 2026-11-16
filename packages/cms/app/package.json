@@ -1,0 +1,56 @@
+{
+  "name": "@cossackframework/cms-app",
+  "version": "0.9.0",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#app/*": "./src/*.ts"
+  },
+  "description": "The Cossack CMS as an application: the source of the files `cossack add cms` renders, run from the workspace",
+  "cossack": {
+    "runtime": "node",
+    "features": [
+      "cms"
+    ],
+    "template": "0.9.0"
+  },
+  "scripts": {
+    "sync": "node scripts/sync.mjs",
+    "dev": "node scripts/start.mjs",
+    "build": "node scripts/sync.mjs && vite build && vite build --ssr src/index.ts --outDir dist/server",
+    "start": "node --env-file-if-exists=.env dist/server/index.js",
+    "typecheck": "node scripts/sync.mjs && cossack typecheck"
+  },
+  "devDependencies": {
+    "@cossackframework/typescript-plugin": "workspace:*",
+    "@types/node": "^22.0.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "prettier": "^3.4.0",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.0",
+    "typescript": "^7.0.2",
+    "vite": "~8.1.6",
+    "vitest": "^4.1.12",
+    "@types/ws": "^8.18.0",
+    "@cossackframework/scaffold": "workspace:*"
+  },
+  "dependencies": {
+    "@cossackframework/core": "workspace:*",
+    "@cossackframework/framework": "workspace:*",
+    "@cossackframework/renderer": "workspace:*",
+    "cossack": "workspace:*",
+    "hono": "^4.13.7",
+    "@cossackframework/ui": "workspace:*",
+    "@cossackframework/solar-icons": "0.7.1",
+    "@cossackframework/cms": "workspace:*",
+    "@cossackframework/romedb": "workspace:*",
+    "@cossackframework/auth": "workspace:*",
+    "@aws-sdk/client-s3": "^3.1156.0",
+    "sharp": "^0.35.5",
+    "@romedb/client": "0.2.24",
+    "@romedb/node": "0.2.24",
+    "@cossackframework/node-adapter": "workspace:*",
+    "@hono/node-server": "^2.1.6",
+    "ws": "^8.18.0"
+  }
+}

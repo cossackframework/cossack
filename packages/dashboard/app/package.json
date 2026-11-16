@@ -1,0 +1,54 @@
+{
+  "name": "@cossackframework/dashboard-app",
+  "version": "0.9.0",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#app/*": "./src/*.ts"
+  },
+  "description": "The sign-in pages and the dashboard as an application: the served source of @cossackframework/dashboard, run from the workspace",
+  "cossack": {
+    "runtime": "node",
+    "features": [
+      "dashboard"
+    ],
+    "template": "0.9.0"
+  },
+  "scripts": {
+    "sync": "node scripts/sync.mjs",
+    "dev": "node scripts/sync.mjs && node --env-file-if-exists=.env scripts/dev.js",
+    "build": "node scripts/sync.mjs && vite build && vite build --ssr src/index.ts --outDir dist/server",
+    "start": "node --env-file-if-exists=.env dist/server/index.js",
+    "migrate": "cossack migrate up",
+    "typecheck": "node scripts/sync.mjs && cossack typecheck"
+  },
+  "dependencies": {
+    "@cossackframework/core": "workspace:*",
+    "@cossackframework/framework": "workspace:*",
+    "@cossackframework/renderer": "workspace:*",
+    "cossack": "workspace:*",
+    "hono": "^4.13.7",
+    "@cossackframework/ui": "workspace:*",
+    "@cossackframework/solar-icons": "0.7.1",
+    "@cossackframework/database": "workspace:*",
+    "reflect-metadata": "^0.2.2",
+    "@cossackframework/auth": "workspace:*",
+    "@cossackframework/dashboard": "workspace:*",
+    "@cossackframework/node-adapter": "workspace:*",
+    "@hono/node-server": "^2.1.6",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@cossackframework/typescript-plugin": "workspace:*",
+    "@types/node": "^22.0.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "prettier": "^3.4.0",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.0",
+    "typescript": "^7.0.2",
+    "vite": "~8.1.6",
+    "vitest": "^4.1.12",
+    "@types/ws": "^8.18.0",
+    "@cossackframework/scaffold": "workspace:*"
+  }
+}

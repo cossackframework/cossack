@@ -53,7 +53,7 @@ export class CommandPalette extends Cossack {
         const records = new Map(commands.map(command => [command.id, command]));
         const items = commands.map(command => {
             if (command.shortcut !== undefined && typeof command.shortcut !== 'string') throw new Error('CommandPalette shortcut hints must be text.');
-            return { id: command.id, label: command.label, group: command.group, disabled: command.disabled, description: command.description ?? command.shortcut };
+            return { id: command.id, label: command.label, group: command.group, disabled: command.disabled, description: command.description ?? command.shortcut, matched: command.matched };
         });
         return html`<div class="cs-command-palette">${component(Command, {
             ...dialog, items, grouped: true, open: this.isOpen, onOpenChange: value => this.setOpen(value), onSelect,

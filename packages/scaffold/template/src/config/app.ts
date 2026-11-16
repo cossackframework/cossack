@@ -6,7 +6,7 @@
 // with `config('app.name')` (dotted: file name + nested path).
 //
 //   import { config } from '@cossackframework/framework/config';
-//   const appName = config('app.name'); // 'My App'
+//   const appName = config('app.name'); // 'Cossack'
 import type { EnvFunction } from '@cossackframework/framework/config';
 
 export interface AppConfig {
@@ -30,7 +30,7 @@ declare module '@cossackframework/framework/config' {
 }
 
 export default ({ env }: { env: EnvFunction }): AppConfig => ({
-    name: env('APP_NAME', 'My App'),
+    name: env('APP_NAME', 'Cossack'),
     env: env('APP_ENV', 'production'),
     debug: env('APP_DEBUG', 'false') === 'true' || env('APP_DEBUG') === '1',
     url: env('APP_URL', 'http://localhost'),

@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "name": "example",
+  "version": "1.0.0",
+  "description": "A working tour of what a plugin can add: a dashboard screen and menu link, records of its own, a query across posts, dashboard notices and taskbar counts, a quick action, a block, a Markdown page, a note on every entry's Markdown, settings and a command. For development only: it is never published or rendered into applications.",
+  "author": { "name": "Cossack", "url": "https://github.com/cossackframework/cossack" },
+  "compatibility": { "@cossackframework/cms": ">=0.9.0" },
+  "logo": "assets/logo.svg",
+  "resources": [
+    {
+      "name": "bookmarks",
+      "label": "Reading list",
+      "titleField": "title",
+      "ownership": true,
+      "fields": {
+        "title": { "kind": "string", "required": true, "max": 120, "search": true, "label": "Title" },
+        "url": { "kind": "string", "required": true, "max": 2000, "label": "Address" },
+        "note": { "kind": "text", "max": 2000, "label": "Note" },
+        "done": { "kind": "boolean", "default": false, "index": true, "label": "Read" }
+      },
+      "access": {
+        "read": "authenticated",
+        "create": "authenticated",
+        "update": { "any": ["owner", { "permission": "example/bookmarks:update" }] },
+        "delete": { "any": ["owner", { "permission": "example/bookmarks:delete" }] }
+      }
+    }
+  ],
+  "blocks": [
+    {
+      "name": "example/callout",
+      "label": "Callout",
+      "description": "A short message in a colored box, drawn by the example plugin.",
+      "icon": "lightbulb",
+      "category": "design",
+      "keywords": ["note", "tip", "warning"],
+      "fields": {
+        "title": { "kind": "string", "max": 120, "label": "Title" },
+        "text": { "kind": "text", "required": true, "max": 2000, "label": "Text" },
+        "tone": { "kind": "enum", "values": ["info", "success", "warning"], "default": "info", "label": "Tone" }
+      }
+    }
+  ],
+  "hooks": [
+    { "point": "cms.resource.before-write", "version": 1 },
+    { "point": "cms.dashboard.entry-actions", "version": 1 },
+    { "point": "cms.dashboard.notices", "version": 1 },
+    { "point": "cms.dashboard.taskbar", "version": 1 },
+    { "point": "cms.site.markdown", "version": 1 }
+  ],
+  "permissions": {
+    "resources": { "cms/posts": ["read"] },
+    "define": ["example:reports"],
+    "cache": true
+  },
+  "ui": {
+    "slots": {
+      "dashboard.nav": [{ "label": "Example", "href": "/dashboard/example", "icon": "lightbulb" }],
+      "site.taskbar": [{ "label": "Reading list", "href": "/dashboard/example" }]
+    }
+  },
+  "settings": {
+    "label": "Example plugin",
+    "description": "What the example plugin adds to the dashboard and to entries as Markdown.",
+    "fields": {
+      "welcome": { "kind": "boolean", "default": true, "label": "Show the welcome notice", "description": "A notice above every dashboard screen that links to the plugin's screen." },
+      "markdownNote": { "kind": "text", "max": 500, "default": "Served with a note from the example plugin, through the cms.site.markdown hook.", "label": "Note under every entry's Markdown", "description": "Empty adds nothing." }
+    }
+  },
+  "commands": [
+    { "name": "stats", "description": "Count posts by status and the reading list.", "permission": "example:reports" }
+  ]
+}

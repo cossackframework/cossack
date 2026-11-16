@@ -10,7 +10,7 @@ import { getModuleDefault } from '../module-default.js';
  * guards run with the params SSR of that URL would give them.
  */
 
-type TargetContext = Pick<RouterContext, 'routeIdMap' | 'pages' | 'layouts'>;
+type TargetContext = Pick<RouterContext, 'routeIdMap' | 'pages' | 'layouts' | 'owners'>;
 
 /** A layout-service call, checked against the page the browser is on. */
 export interface ServiceRpcTarget {
@@ -62,7 +62,7 @@ export function resolveServiceRpcTarget(ctx: TargetContext, body: Record<string,
     if (typeof body.componentRouteId !== 'string') return undefined;
     const pagePath = ctx.routeIdMap.get(body.componentRouteId);
     if (!pagePath || !isPage(ctx, pagePath)) return undefined;
-    if (!resolveLayoutPaths(pagePath, Object.keys(ctx.layouts)).includes(ownerPath)) return undefined;
+    if (!resolveLayoutPaths(pagePath, Object.keys(ctx.layouts), ctx.owners).includes(ownerPath)) return undefined;
     const params = checkPageRouteParams(ctx, pagePath, body.pageParams);
     return params && { ownerPath, slot: service.slot, pagePath, params };
 }
@@ -85,7 +85,7 @@ export function resolveComponentRpcTarget(ctx: TargetContext, body: Record<strin
     let pagePath = componentPath;
     if (Object.hasOwn(ctx.layouts, componentPath)) {
         const page = typeof body.pageRouteId === 'string' ? ctx.routeIdMap.get(body.pageRouteId) : undefined;
-        if (!page || !isPage(ctx, page) || !resolveLayoutPaths(page, Object.keys(ctx.layouts)).includes(componentPath)) {
+        if (!page || !isPage(ctx, page) || !resolveLayoutPaths(page, Object.keys(ctx.layouts), ctx.owners).includes(componentPath)) {
             return { error: 'params' };
         }
         pagePath = page;

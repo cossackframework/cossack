@@ -12,7 +12,7 @@ import { input as schema } from '@cossackframework/core';
 import { defineApi } from '@cossackframework/framework/api';
 import { getCookie } from 'hono/cookie';
 import { sql } from '@cossackframework/database';
-import { authSessions, registerUser } from '../../auth';
+import { authSessions, registerUser } from '@cossackframework/dashboard/app/auth';
 import { User } from '../../models/User';
 import { Session } from '../../models/Session';
 

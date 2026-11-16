@@ -171,6 +171,7 @@ All components use one naming rule, taken from shadcn/ui and Radix:
 | `mode` | `onModeChange` | AuthForm |
 | `values` | `onValuesChange` | SettingsPanel |
 | `token` (reported only) | `onTokenChange` | Turnstile |
+| `search` (reported only) | `onSearchChange` | Command, CommandPalette |
 | hover timing | `openDelay`, `closeDelay` | Tooltip, HoverCard, NavigationMenu |
 
 A controlled component calls `onXChange` and keeps showing `x` until the
@@ -244,6 +245,22 @@ cossack add ui --theme=zinc     # wires themes/zinc.css into src/style.css
 | `blue` | accent | Blue primary (the pre-shadcn default) |
 | `green` | accent | Green primary |
 | `red` | accent | Red primary |
+
+To let a page choose at runtime instead, import `palettes.css` after `theme.css` and name a
+neutral and an accent palette on `<html>`, with a meta tag in the head or an attribute:
+
+```css
+@import "@cossackframework/ui/theme/theme.css";
+@import "@cossackframework/ui/theme/palettes.css";
+```
+
+```html
+<meta name="ui-palette" content="zinc blue">  <!-- or <html data-palette="zinc blue"> -->
+```
+
+`UI_PALETTES` lists them with four light and four dark colors each, for a picker (the CMS's
+Settings → Interface shows them as swatches). `palettes.css` and `palettes.ts` are generated from
+`src/theme/themes/*.css` by `pnpm --filter @cossackframework/ui palettes`; a test keeps them in step.
 
 ### Radius
 

@@ -958,7 +958,7 @@ export class ComponentsDemo extends Cossack {
                                     variant: 'sent',
                                     time: '10:33 AM',
                                     reactions: [{ emoji: '❤️', label: 'Love', count: 3 }],
-                                }, html`<img src="https://picsum.photos/200/120" class="rounded-lg" alt="" />`)}
+                                }, html`<img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='120' viewBox='0 0 200 120'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%236366f1'/%3E%3Cstop offset='1' stop-color='%23ec4899'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='200' height='120' fill='url(%23g)'/%3E%3Ccircle cx='150' cy='40' r='18' fill='%23fff' fill-opacity='.7'/%3E%3Cpath d='M0 120 60 60l40 36 30-24 70 48z' fill='%23fff' fill-opacity='.35'/%3E%3C/svg%3E" width="200" height="120" class="rounded-lg" alt="" />`)}
                                 ${component(Message, {
                                     name: 'Alice',
                                     time: '10:34 AM',

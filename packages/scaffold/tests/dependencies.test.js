@@ -49,63 +49,38 @@ describe('dependency ownership', () => {
     expect(plan.baseline.dependencies).toEqual({ requested: '^2' });
   });
 
-  it('records generated dependencies through composition without adopting user dependencies', async () => {
+  it('adds and removes a feature\'s dependencies without adopting the project\'s own', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-owned-dependencies-'));
     try {
       const app = await createApp('app', { cwd: root, adapter: 'node', preset: 'minimal', interactive: false });
       const file = path.join(app.projectDir, 'package.json');
-      const legacy = await readManifest(app.projectDir);
-      delete legacy.dependencyBaseline;
-      await fs.writeFile(path.join(app.projectDir, '.cossack/scaffold.json'), JSON.stringify(legacy));
       const pkg = JSON.parse(await fs.readFile(file, 'utf8'));
-      const originalHono = pkg.dependencies.hono;
+      // A pin and a package of the project's own. What the recipe renders now is the baseline.
       pkg.dependencies.hono = '^999.0.0';
       pkg.dependencies['user-package'] = '^1.0.0';
       await fs.writeFile(file, JSON.stringify(pkg));
-      await addFeature(app.projectDir, 'markdown', { interactive: false });
-      const manifest = await readManifest(app.projectDir);
-      expect(manifest.dependencyBaseline.dependencies.hono).toBe(originalHono);
-      expect(manifest.dependencyBaseline.devDependencies).toHaveProperty('unified');
-      expect(manifest.dependencyBaseline.dependencies).not.toHaveProperty('user-package');
-      await removeFeatureFromProject(app.projectDir, 'markdown', { interactive: false });
+      await addFeature(app.projectDir, 'database', { interactive: false });
+      expect(JSON.parse(await fs.readFile(file, 'utf8')).dependencies).toHaveProperty('@cossackframework/database');
+      await removeFeatureFromProject(app.projectDir, 'database', { interactive: false });
       const next = JSON.parse(await fs.readFile(file, 'utf8'));
       expect(next.dependencies).toMatchObject({ hono: '^999.0.0', 'user-package': '^1.0.0' });
-      expect(next.devDependencies).not.toHaveProperty('unified');
-      expect((await readManifest(app.projectDir)).dependencyBaseline.devDependencies).not.toHaveProperty('unified');
+      expect(next.dependencies).not.toHaveProperty('@cossackframework/database');
+      expect((await readManifest(app.projectDir)).dependencyBaseline).toBeUndefined();
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
 
-  it('requires ownership migration before composing a different legacy template version', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-legacy-dependencies-'));
-    try {
-      const app = await createApp('app', { cwd: root, adapter: 'node', preset: 'minimal', interactive: false });
-      const file = path.join(app.projectDir, 'package.json');
-      const before = await fs.readFile(file, 'utf8');
-      const manifest = await readManifest(app.projectDir);
-      delete manifest.dependencyBaseline;
-      manifest.templateVersion = '0.0.1';
-      await fs.writeFile(path.join(app.projectDir, '.cossack/scaffold.json'), JSON.stringify(manifest));
-      await expect(addFeature(app.projectDir, 'markdown', { interactive: false })).rejects.toMatchObject({
-        code: 'COSSACK_SCAFFOLD_DEPENDENCY_BASELINE_MISSING',
-      });
-      expect(await fs.readFile(file, 'utf8')).toBe(before);
-    } finally { await fs.rm(root, { recursive: true, force: true }); }
-  });
-
-  it('retains reconstructed dependency ownership when composition only changes source files', async () => {
+  it('leaves package.json as it is when composition only changes source files', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-source-only-composition-'));
     try {
       const app = await createApp('app', { cwd: root, adapter: 'node', preset: 'minimal', features: ['ui'], interactive: false });
       const file = path.join(app.projectDir, 'package.json');
-      const before = await fs.readFile(file, 'utf8');
-      const manifest = await readManifest(app.projectDir);
-      const baseline = manifest.dependencyBaseline;
-      delete manifest.dependencyBaseline;
-      await fs.writeFile(path.join(app.projectDir, '.cossack/scaffold.json'), JSON.stringify(manifest));
-      const result = await addFeature(app.projectDir, 'ui', { theme: 'blue', interactive: false });
-      expect(result.changes.writes.some(change => change.path === 'package.json')).toBe(false);
-      expect(await fs.readFile(file, 'utf8')).toBe(before);
-      expect((await readManifest(app.projectDir)).dependencyBaseline).toEqual(baseline);
+      const before = JSON.parse(await fs.readFile(file, 'utf8'));
+      await addFeature(app.projectDir, 'ui', { theme: 'blue', interactive: false });
+      const after = JSON.parse(await fs.readFile(file, 'utf8'));
+      expect(after.dependencies).toEqual(before.dependencies);
+      expect(after.devDependencies).toEqual(before.devDependencies);
+      // The recipe's option is the only change.
+      expect(after.cossack.options).toEqual({ theme: 'blue' });
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
 });

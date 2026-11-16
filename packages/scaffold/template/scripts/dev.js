@@ -17,15 +17,22 @@ async function main() {
   const server = await createServer(mergeConfig(overlay, {
     server: { port: Number(process.env.PORT ?? 3000) },
   }));
-  let shutdown;
-  const stop = () => shutdown ??= server.close().catch(error => {
+  const close = () => server.close().catch(error => {
     console.error('[cossack dev] shutdown failed:', error);
     process.exitCode = 1;
   });
+  // Exit once the server is closed: database connections, timers and background work the
+  // application still holds would otherwise keep the process alive after Ctrl-C, and a leaked
+  // dev server keeps running against a database that was stopped with it.
+  let shutdown;
+  const stop = () => shutdown ??= (() => {
+    setTimeout(() => process.exit(process.exitCode ?? 0), 5000).unref();
+    return close().then(() => process.exit(process.exitCode ?? 0));
+  })();
   process.once('SIGINT', stop);
   process.once('SIGTERM', stop);
   try { await server.listen(); }
-  catch (error) { await stop(); throw error; }
+  catch (error) { await close(); throw error; }
   console.log(`\n  Cossack (Node) dev server → http://localhost:${server.httpServer.address().port}\n`);
 }
 

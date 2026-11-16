@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { expect } from 'vitest';
+import { routeId } from './route-id.js';
 import { expect as browserExpect } from '@playwright/test';
 
 const privateValue = 'PRIVATE_AUTH_FORM_STORAGE';
@@ -13,7 +14,7 @@ export async function writeAuthFormsAcceptance(root) {
 import type { Context } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { sql } from '@cossackframework/database';
-import { authSessions } from '../../auth';
+import { authSessions } from '@cossackframework/dashboard/app/auth';
 import { User } from '../../models/User';
 import { Session } from '../../models/Session';
 export const POST = async (c: Context) => {
@@ -55,9 +56,9 @@ export const POST = async (c: Context) => {
 
 export async function checkAuthFormsAcceptance(request, manifest, browser, browserOrigin) {
   const ids = Object.fromEntries(['login', 'register', 'forgot-password', 'reset-password'].map(name =>
-    [name, manifest.filePathToId[`/src/pages/auth/${name}/index.ts`]]));
-  ids.sessions = manifest.filePathToId['/src/pages/dashboard/sessions/index.ts'];
-  ids.layout = manifest.filePathToId['/src/pages/dashboard/layout.ts'];
+    [name, routeId(manifest, `/src/pages/auth/${name}/index.ts`)]));
+  ids.sessions = routeId(manifest, '/src/pages/dashboard/sessions/index.ts');
+  ids.layout = routeId(manifest, '/src/pages/dashboard/layout.ts');
   for (const id of Object.values(ids)) expect(id).toBeTruthy();
   const secrets = [privateValue, password];
   const fixture = async (operation, email = '', cookie = '', fault = '') => {
@@ -174,15 +175,15 @@ export async function checkAuthFormsAcceptance(request, manifest, browser, brows
   const { token: expired } = await fixture('expired-reset', email);
   secrets.push(expired);
   for (const token of ['invalid-token', expired]) {
-    expect((await rpc('reset-password', 'doReset', [{ token, password }])).body.error).toBe('Invalid or expired reset link');
+    expect((await rpc('reset-password', 'doReset', [{ token, password, confirm: password }])).body.error).toBe('Invalid or expired reset link');
   }
   const { token } = await fixture('reset', email); secrets.push(token);
   await fault('delete', async () => {
-    expect((await rpc('reset-password', 'doReset', [{ token, password }])).body.error)
+    expect((await rpc('reset-password', 'doReset', [{ token, password, confirm: password }])).body.error)
       .toBe('Could not reset the password. Request a new reset link.');
   });
-  const races = await Promise.all([rpc('reset-password', 'doReset', [{ token, password }]),
-    rpc('reset-password', 'doReset', [{ token, password }])]);
+  const races = await Promise.all([rpc('reset-password', 'doReset', [{ token, password, confirm: password }]),
+    rpc('reset-password', 'doReset', [{ token, password, confirm: password }])]);
   expect(races.filter(result => result.body._cossack_redirect === '/auth/login')).toHaveLength(1);
   expect(races.filter(result => result.body.error === 'Invalid or expired reset link')).toHaveLength(1);
 
@@ -246,6 +247,11 @@ export async function checkAuthFormsAcceptance(request, manifest, browser, brows
     await page.waitForFunction(() => window.__cossackReady === true);
     const replacement = 'PRIVATE_FORM_REPLACEMENT_123';
     await page.getByLabel('New Password', { exact: true }).fill(replacement);
+    // A different confirmation stays on the page with its message; the matching one resets.
+    await page.getByLabel('Confirm New Password', { exact: true }).fill(`${replacement}x`);
+    await page.getByRole('button', { name: 'Reset Password', exact: true }).click();
+    await browserExpect(page.getByText('The passwords do not match', { exact: true })).toBeVisible();
+    await page.getByLabel('Confirm New Password', { exact: true }).fill(replacement);
     await page.getByRole('button', { name: 'Reset Password', exact: true }).click();
     await browserExpect(page).toHaveURL(browserOrigin + '/auth/login');
     await page.getByLabel('Email', { exact: true }).fill(email);
@@ -269,7 +275,7 @@ export async function checkAuthFormsAcceptance(request, manifest, browser, brows
       expect(call.action).not.toMatch(/validate/i);
     }
     const resetCall = calls.find(call => call.action === 'doReset');
-    expect(resetCall.payload).toEqual([{ token: browserToken, password: replacement }]);
+    expect(resetCall.payload).toEqual([{ token: browserToken, password: replacement, confirm: replacement }]);
     expect(calls.filter(call => call.action === 'login')).toHaveLength(4);
     expect(errors).toEqual([]);
   } catch (error) { throw new Error(`${error.stack ?? error}`); } finally { await context.close(); }

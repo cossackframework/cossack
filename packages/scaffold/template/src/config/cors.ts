@@ -24,4 +24,6 @@ export default ({ env }: { env: EnvFunction }): CorsConfig => ({
     exposeHeaders: csv(env('CORS_EXPOSE_HEADERS')),
     credentials: ['true', '1'].includes(env('CORS_CREDENTIALS', 'false').toLowerCase()),
     maxAge: Number(env('CORS_MAX_AGE', '86400')),
+    // Endpoints outside /api that browsers on other origins may call, such as /webhooks or /feed.xml.
+    paths: csv(env('CORS_PATHS')),
 });

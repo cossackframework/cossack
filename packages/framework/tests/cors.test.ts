@@ -12,6 +12,7 @@ const base: CorsConfig = {
   exposeHeaders: [],
   credentials: false,
   maxAge: 600,
+  paths: [],
 };
 
 function appWith(overrides: Partial<CorsConfig> = {}, downstream = vi.fn()) {
@@ -153,6 +154,21 @@ describe('built-in API CORS middleware', () => {
     });
     expect(res.status).toBe(204);
     expect(res.headers.has('access-control-allow-origin')).toBe(false);
+  });
+
+  it('covers configured paths outside /api and their descendants, nothing else', async () => {
+    const { app } = appWith({ origins: ['https://app.example.com'], paths: ['/webhooks/', '/feed.xml', 'media'] });
+    const origin = { Origin: 'https://app.example.com' };
+    for (const path of ['/webhooks', '/webhooks/crm', '/feed.xml', '/api/items']) {
+      const res = await app.request(path, { headers: origin });
+      expect(res.headers.get('access-control-allow-origin'), path).toBe('https://app.example.com');
+    }
+    for (const path of ['/', '/webhooksx', '/feed.xml.bak', '/media', '/media/logo.png']) {
+      const res = await app.request(path, { headers: origin });
+      expect(res.headers.has('access-control-allow-origin'), path).toBe(false);
+    }
+    const preflight = await app.request('/webhooks/crm', { method: 'OPTIONS', headers: { ...origin, 'Access-Control-Request-Method': 'POST' } });
+    expect(preflight.status).toBe(204);
   });
 
   it('does not intercept OPTIONS for a real page route', async () => {

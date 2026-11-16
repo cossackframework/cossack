@@ -30,6 +30,10 @@ auth, UI, adapters, database, Studio, scaffold, CLI, and framework. The
 is included. For watch mode or a
 focused test, use `pnpm --filter <package-name> exec vitest <test-file>`.
 
+It builds `ui`, `typescript-plugin` and the framework's types first, then runs the
+suites without their `pretest` builds: rebuilding a package's `dist` while other
+packages import it makes their suites fail to load.
+
 See [Test utilities](./test-utils.md) for internal browser hydration and awaitable
 cleanup helpers, production fetch/RPC dispatch, credential fixtures, and
 controlled asynchronous work.

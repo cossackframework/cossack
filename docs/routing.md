@@ -138,9 +138,10 @@ application, add this mapping:
 Preserve your other path mappings. Before a standalone TypeScript check, run:
 
 ```sh
-pnpm exec cossack routes --generate
-pnpm exec tsc --noEmit
+pnpm exec cossack typecheck
 ```
+
+It writes `.cossack/routes.ts` (`cossack routes --generate` does that step alone) and runs `tsc --noEmit`.
 
 CLI generation does not execute your Vite configuration. It includes Markdown
 when the recorded scaffold recipe selects that feature. For a custom
@@ -162,6 +163,12 @@ ancestry and nearest source boundaries.
 Functional API handlers do not execute component layouts. Method and middleware
 facts remain in `cossack routes --json` inspection. See
 [declared API contracts and generated types](./api-routes.md#declared-input-and-output).
+
+A route's `kind` is `api` for every module under `/api`, and for a functional
+handler module at any other path: a default function, `defineApi()` or
+`GET`/`POST`/… exports, decided from the file's syntax without running it. Such
+a module is an endpoint at `/webhooks/crm` or `/feed.xml` as much as under
+`/api`. Typed URLs and API types include it; the browser receives only stubs.
 
 ### Unknown URLs and boundary identity
 
@@ -264,6 +271,70 @@ export default class MyLayout extends Cossack {
   }
 }
 ```
+
+### Routes from a package
+
+A package can serve pages, layouts, API routes, plugins and configuration to the application that installs it. The CMS works this way: its pages are in `@cossackframework/cms`, not in your project, so a package update replaces them whole.
+
+The application names the packages it mounts in `package.json`. Installing a package mounts nothing by itself.
+
+```json
+{
+  "cossack": { "packages": ["@cossackframework/cms"] }
+}
+```
+
+The package states what it serves in its own `package.json`. Paths are relative to `root`, and a trailing slash names a directory.
+
+```json
+{
+  "exports": { "./app/*": "./app/src/*.ts" },
+  "cossack": {
+    "root": "app/src",
+    "pages": ["pages/"],
+    "plugins": ["plugins/default-theme/"],
+    "config": ["config/cms.ts"],
+    "middlewares": "cms/middleware.ts",
+    "host": ["cms.config.ts"],
+    "hostTemplate": "0.10.0",
+    "hostSteps": { "0.10.0": ["wrangler.jsonc: add the SEARCH binding."] },
+    "vite": "src/vite.js"
+  }
+}
+```
+
+A served file at `<root>/pages/blog/index.ts` behaves like `src/pages/blog/index.ts` in the application:
+
+- It takes the same route, and it renders in the application's layouts.
+- Server code is removed from the browser bundle, as for your own files.
+- A plugin the package serves is a plugin like any other. Its pages answer only while the plugin is active.
+- Package middleware runs after the application's list and before plugin middleware.
+
+#### Overriding a package file
+
+A file in the application replaces the package's file at the same path. The package's file is then left out of the build.
+
+- A page, layout or loading state: put a file at the same path under `src/pages/`. A page at another path that answers the same URL also replaces the package's page.
+- A configuration file: put a file with the same name in `src/config/`.
+- A plugin: a plugin with the same name under `src/plugins/` replaces the package's plugin as a whole, never file by file.
+
+The dev server and the build print each override once:
+
+```
+[cossack] src/pages/(site)/search/index.ts overrides @cossackframework/cms
+```
+
+An override means the whole file. It stops receiving the package's fixes for that file, so prefer a plugin or a configuration value where one exists. Two packages, or a package and a plugin, that define the same route are an error (`COSSACK_PLUGIN_ROUTE_CONFLICT`).
+
+#### What the package needs from the application
+
+Inside a served file, a relative import and a `#app/…` import stay inside the package, and an `@/…` import is a module the application provides. `#app/` is the package's name for its served root (`imports` in its `package.json`: `#app/cms/site` is `app/src/cms/site.ts`). It means nothing in the application's own files, which import a served module by the package's name (`@cossackframework/cms/app/cms/site`). The package lists these modules in `cossack.host`. The build stops when one is missing (`COSSACK_PACKAGE_HOST_MISSING`), or when the project's template is older than `cossack.hostTemplate` (`COSSACK_PACKAGE_HOST_OUTDATED`).
+
+- A missing module: run `cossack upgrade`, which writes it.
+- An older template, in a project whose files `cossack upgrade` updates: run `cossack upgrade`.
+- An older template, in a CMS project: its files are its own, so the message lists the changes to make (`cossack.hostSteps`, by the template that needs each). Make them, then set `cossack.template` in the project's `package.json` to the version the message names.
+
+A package raises `hostTemplate` only when a project file must change. Prefer a function the project already calls: a project's `vite.config.ts` is `cossackApp()` from `cossack/vite`, and a package adds its own Vite plugins and options through `cossack.vite` (see [Vite plugins](./vite-plugins.md#the-preset)).
 
 ### Global App Component
 

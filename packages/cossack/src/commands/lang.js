@@ -121,8 +121,11 @@ async function addLocale(args, ctx) {
 
 /**
  * Build empty-value entries for a new locale, mirroring the keys of an
- * existing catalog. Prefers the default (`en`) catalog if present; falls
- * back to the built-in starter catalog so the file is never empty.
+ * existing catalog. Prefers the default (`en`) catalog if present. Without
+ * one the source text is the default language, so the new catalog starts
+ * from every literal `__()` key under `src` (plugin keys, `name::key`,
+ * excluded: their plugins translate them). Falls back to the built-in
+ * starter catalog so the file is never empty.
  */
 async function seedEntries(root, locale) {
   const defaultPath = path.resolve(root, 'src', 'lang', `${DEFAULT_LOCALE}.json`);
@@ -139,6 +142,10 @@ async function seedEntries(root, locale) {
     } catch {
       // fall through to default catalog
     }
+  } else {
+    const report = await inspectLocalization(root).catch(() => null);
+    const keys = [...new Set((report?.calls ?? []).map((call) => call.key).filter((key) => typeof key === 'string' && key && !key.includes('::')))].sort();
+    if (keys.length) return Object.fromEntries(keys.map((key) => [key, '']));
   }
   const starter = defaultLangCatalog();
   const seed = {};
@@ -262,7 +269,8 @@ Subcommands:
                          starter catalog, and wire root.ts and APP_LOCALE.
                          It does not scan your sources; use extract.
   add <locale>           Create src/lang/<locale>.json with empty values,
-                         mirroring the keys of an existing en.json.
+                         mirroring the keys of an existing en.json, or
+                         every literal __() key in src without one.
   extract                List static translation calls and unresolved keys.
   check                  Validate catalogs, placeholders and source calls.
   types                  Generate .cossack/translations.d.ts after checks.`);

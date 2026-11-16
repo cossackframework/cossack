@@ -22,7 +22,7 @@ import { checkPageRouteParams, isPage } from './rpc-target.js';
  * `params` are always the route params of the page the browser is on.
  */
 
-export type RealtimeTargetContext = Pick<RouterContext, 'routeIdMap' | 'routePathToFilePathMap' | 'pages' | 'layouts' | 'realtimeComponents'>;
+export type RealtimeTargetContext = Pick<RouterContext, 'routeIdMap' | 'routePathToFilePathMap' | 'pages' | 'layouts' | 'owners' | 'realtimeComponents'>;
 
 export interface RealtimeConnectionTarget {
     owner: RealtimeOwner;
@@ -99,7 +99,7 @@ export function resolveRealtimeConnection(ctx: RealtimeTargetContext, query: (na
         const layoutPath = ctx.routeIdMap.get(layoutRouteId);
         if (!layoutPath || !Object.hasOwn(ctx.layouts, layoutPath)) return ownerError('Layout not found');
         // The page must be below the layout: its params are the layout's too.
-        if (!resolveLayoutPaths(pagePath, Object.keys(ctx.layouts)).includes(layoutPath)) return paramsError;
+        if (!resolveLayoutPaths(pagePath, Object.keys(ctx.layouts), ctx.owners).includes(layoutPath)) return paramsError;
         const Component = componentClass(ctx.layouts[layoutPath]);
         if (!Component) return ownerError('Layout not found');
         const options = optionsOf(Component);

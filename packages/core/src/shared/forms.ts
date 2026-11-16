@@ -20,13 +20,12 @@
  *   consecutive `contacts[][email]` + `contacts[][name]` keys fill the SAME
  *   array element (merged object); a repeated inner key
  *   (`contacts[][email]` twice) opens a new element.
- * - Prototype-pollution safe by construction: intermediate containers are
- *   created with `Object.create(null)`, which has no `__proto__` setter, so a
- *   crafted field name like `__proto__[polluted]` just creates a normal own
- *   property instead of reaching `Object.prototype`. This is the exact CVE
- *   class that pushed Express 5 and Fastify away from auto-nesting form bodies;
- *   Cossack keeps the convenience but closes the hole structurally (and exact
- *   key names are preserved, not mangled).
+ * - Prototype-pollution safe: containers are created with
+ *   `Object.create(null)`, the parser descends only into containers it made
+ *   itself (never into a repeated key's values, a string or a File), and a key
+ *   with a `__proto__`, `constructor` or `prototype` segment is dropped, so the
+ *   result is also safe to spread or `Object.assign` into another object. A key
+ *   that conflicts with an earlier one (`a=1` then `a[x]=2`) is dropped too.
  */
 
 /**
@@ -47,9 +46,18 @@ export const ARRAY_NEXT: unique symbol = Symbol('array-next');
  * is no prototype chain — assigning to `obj['__proto__']` is a normal own
  * property write, not a prototype-pollution vector. Keys are preserved exactly.
  */
-function createContainer(): Record<string, unknown> {
-  return Object.create(null);
+function createContainer(made?: WeakSet<object>): Record<string, unknown> {
+  const container = Object.create(null) as Record<string, unknown>;
+  made?.add(container);
+  return container;
 }
+
+/**
+ * Key segments refused outright. Containers are null-prototype, but a key can
+ * still reach a value the parser did not create (an array of repeated values,
+ * a string, a File), whose prototype chain these names walk.
+ */
+const FORBIDDEN_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype']);
 
 /**
  * Tokenize a flat key into path segments.
@@ -112,7 +120,11 @@ export function parseKeyPath(key: string): PathSegment[] {
 export function parseFormData(
   input: FormData | Record<string, unknown>,
 ): Record<string, unknown> {
-  const root = createContainer();
+  // Every object or array this parse created. The parser descends only into
+  // these: a key whose path meets anything else (a repeated value's array, a
+  // string, a File) conflicts with an earlier key and is dropped.
+  const made = new WeakSet<object>();
+  const root = createContainer(made);
 
   // Normalize to [key, value] pairs. We collect first to handle both FormData
   // and plain records uniformly (and sidestep the Workers vs DOM FormData type
@@ -131,9 +143,10 @@ export function parseFormData(
   for (const [rawKey, rawValue] of pairs) {
     const segments = parseKeyPath(rawKey);
     if (segments.length === 0) continue; // ignore values with an empty key
+    if (segments.some(segment => typeof segment === 'string' && FORBIDDEN_SEGMENTS.has(segment))) continue;
     const values = Array.isArray(rawValue) ? rawValue : [rawValue];
     for (const value of values) {
-      assignPath(root, segments, value);
+      assignPath(root, segments, value, made);
     }
   }
 
@@ -164,6 +177,7 @@ function assignPath(
   root: Record<string, unknown>,
   segments: PathSegment[],
   value: unknown,
+  made: WeakSet<object>,
 ): void {
   // `container` is the object-or-array we're currently writing into. The root
   // is always an object; arrays only appear as nested children. We treat it as
@@ -177,6 +191,8 @@ function assignPath(
     const nextSeg: PathSegment | undefined = segments[depth + 1];
 
     if (seg === ARRAY_NEXT) {
+      // A positional slot needs an array this parse made (see `made`).
+      if (!Array.isArray(container)) return;
       const arr = container as unknown[];
       if (isLast) {
         // Leaf positional slot: always append (the author asked for an array).
@@ -191,20 +207,24 @@ function assignPath(
       const canMerge =
         last !== undefined &&
         typeof last === 'object' &&
+        last !== null &&
+        made.has(last) &&
         !Array.isArray(last) &&
         nextKey !== undefined &&
         !(nextKey in (last as Record<string, unknown>));
       if (canMerge) {
         container = last as AnyContainer;
       } else {
-        const slot: unknown = childIsArray ? [] : createContainer();
+        const slot: unknown = childIsArray ? madeArray(made) : createContainer(made);
         arr.push(slot);
         container = slot as AnyContainer;
       }
       continue;
     }
 
-    // String segment: object property access.
+    // String segment: a property of an object this parse made; a named key on
+    // an array conflicts with the earlier positional keys and is dropped.
+    if (Array.isArray(container)) return;
     const obj = container as Record<string, unknown>;
     if (isLast) {
       const existing = obj[seg];
@@ -224,11 +244,21 @@ function assignPath(
     const childIsArray = nextSeg === ARRAY_NEXT;
     let child = obj[seg];
     if (child === undefined || child === null) {
-      child = childIsArray ? [] : createContainer();
+      child = childIsArray ? madeArray(made) : createContainer(made);
       obj[seg] = child;
     }
+    // Descend only into a container this parse made, of the shape the next
+    // segment needs. Anything else (`a=1` then `a[x]=2`, or a repeated key's
+    // values then `a[x]`) is a conflicting key: the later one is dropped.
+    if (typeof child !== 'object' || child === null || !made.has(child) || Array.isArray(child) !== childIsArray) return;
     container = child as AnyContainer;
   }
+}
+
+function madeArray(made: WeakSet<object>): unknown[] {
+  const array: unknown[] = [];
+  made.add(array);
+  return array;
 }
 
 /** Internal mutable container — an object or array we're writing into. */

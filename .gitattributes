@@ -1,0 +1,5 @@
+# Development-only sources that never ship: source archives (`git archive`, GitHub's tarballs)
+# leave them out. The npm package leaves them out through its `files`, and `cossack add cms`
+# renders only what packages/cms/app/cossack-recipe.json lists.
+packages/cms/app/src/plugins/example export-ignore
+packages/cms/app/src/plugins/example/** export-ignore

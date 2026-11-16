@@ -5,7 +5,11 @@ import { ControlledValue } from '../native-attributes';
 
 const shortcutOwners = new WeakMap<Document, Map<HTMLDialogElement, Command>>();
 
-export type CommandItem = { readonly id: string; readonly label: string; readonly group?: string; readonly disabled?: boolean; readonly description?: string };
+export type CommandItem = {
+    readonly id: string; readonly label: string; readonly group?: string; readonly disabled?: boolean; readonly description?: string;
+    /** Found by the application for the search text (`onSearchChange`): shown while there is text, whatever its label. */
+    readonly matched?: boolean;
+};
 export type CommandProps = Omit<DialogControlProps, 'id' | 'aria-label' | 'aria-labelledby' | 'onOpenChange'> & {
     id: string;
     /** Accessible name of the modal palette. */
@@ -13,6 +17,8 @@ export type CommandProps = Omit<DialogControlProps, 'id' | 'aria-label' | 'aria-
     items?: readonly CommandItem[];
     onSelect?: (id: string) => unknown;
     onOpenChange?: (open: boolean) => unknown;
+    /** The search text as it changes, and '' as the palette opens or closes: for applications that add `matched` items for it. Reported only; the palette keeps the text. */
+    onSearchChange?: (search: string) => unknown;
     /** Opt in to Ctrl/Meta+K. The first eligible owner in document order handles the event. */
     shortcut?: boolean;
     /** Allow the global shortcut in unrelated editable controls. Default false. */
@@ -45,7 +51,7 @@ export class Command extends Cossack {
     get isOpen() { return this.props.open ?? this.localOpened ?? this.initialOpened ?? !!this.props.defaultOpen; }
     getFiltered() {
         const query = this.searchText.trim().toLowerCase();
-        const items = (this.props.items ?? []).filter(item => item.label.toLowerCase().includes(query));
+        const items = (this.props.items ?? []).filter(item => item.matched ? query !== '' : item.label.toLowerCase().includes(query));
         return this.props.grouped ? this.groups(items).flatMap(group => group.items) : items;
     }
     private groups(items: readonly CommandItem[]) {
@@ -93,6 +99,7 @@ export class Command extends Cossack {
         if (!this.controlled.changed(this.props, this.isOpen, open)) return;
         if (this.props.open === undefined) this.localOpened = open;
         this.props.onOpenChange?.(this.controlled.emit(this.props, open));
+        this.props.onSearchChange?.('');
         void this.requestUpdate();
     }
     @Client() private selectItem(id: string) {
@@ -111,7 +118,7 @@ export class Command extends Cossack {
         } else if (event.key === 'Enter' && active) { event.preventDefault(); this.selectItem(active.id); }
     }
     render() {
-        const { id, label, items = [], onSelect: _select, onOpenChange: _change, shortcut: _shortcut, shortcutInEditable: _editable, grouped = false, renderItem,
+        const { id, label, items = [], onSelect: _select, onOpenChange: _change, onSearchChange: _search, shortcut: _shortcut, shortcutInEditable: _editable, grouped = false, renderItem,
             open: _open, defaultOpen: _default, closeOnEscape: _escape, closeOnBackdrop: _backdrop,
             placeholder = 'Search...', searchLabel = 'Search commands', emptyLabel = 'No results found.', closeLabel = 'Close commands', ...rest } = this.props;
         if (typeof id !== 'string' || !id || /\s/.test(id)) throw new Error('Command requires a nonempty, whitespace-free id.');
@@ -122,6 +129,7 @@ export class Command extends Cossack {
         for (const item of items) {
             if (typeof item.id !== 'string' || !item.id || ids.has(item.id) || typeof item.label !== 'string' || !item.label.trim()) throw new Error('Command items require unique nonempty IDs and labels.');
             if ((item.group !== undefined && typeof item.group !== 'string') || (item.description !== undefined && typeof item.description !== 'string')) throw new Error('Command group and description must be text.');
+            if (item.matched !== undefined && typeof item.matched !== 'boolean') throw new Error('Command matched must be a boolean.');
             ids.add(item.id);
         }
         this.initialOpened ??= !!this.props.defaultOpen;
@@ -142,7 +150,7 @@ export class Command extends Cossack {
                         type="text" role="combobox" aria-label=${searchLabel} aria-autocomplete="list" aria-haspopup="listbox"
                         aria-expanded=${this.isOpen} aria-controls=${`${id}-list`} aria-activedescendant=${active ? this.optionId(active.id) : undefined}
                         autocomplete="off" placeholder=${placeholder} .value=${live(this.searchText)} autofocus
-                        @input=${(event: Event) => { this.searchText = (event.target as HTMLInputElement).value; this.activeId = undefined; }}
+                        @input=${(event: Event) => { this.searchText = (event.target as HTMLInputElement).value; this.activeId = undefined; this.props.onSearchChange?.(this.searchText); }}
                         @keydown=${(event: KeyboardEvent) => this.keydown(event)}>
                     <button type="button" class="px-3 py-2" aria-label=${closeLabel} @click=${() => this.setOpen(false)}>×</button>
                 </div>

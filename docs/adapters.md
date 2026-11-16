@@ -153,7 +153,7 @@ runtime. See [Reserved paths](./routing.md#reserved-paths).
 Projects generated before this layout mount `serveStatic` for every path, so
 page and global policies do not protect their `public/` files. Change that
 mount to `app.use('/assets/*', ...)` as in a newly generated `src/index.ts`.
-`cossack upgrade --apply-template` updates the entry if you have not edited it.
+`cossack upgrade` updates the entry, and merges the change if you edited it.
 Node does not read `public/_headers`. The entry sets the `/assets/*` cache
 header itself. Set headers for `public/` files in middleware.
 
@@ -219,3 +219,10 @@ If a trusted reverse proxy terminates HTTPS before a Node server, configure
 requests. The default compares Origin against the request URL seen by the
 framework. The proxy must control any forwarded headers used to reconstruct
 that URL.
+
+Set it even when sign-in already works behind the proxy. The `@cossackframework/auth`
+sign-in check also accepts `https://<request host>` when the request carries
+`X-Forwarded-Proto: https`, since that only changes the scheme of the same host.
+The `/crpc` server-method route, uploads, WebSocket and SSE do not read forwarded
+headers. Without `allowedOrigins`, a proxied site signs users in, then answers 403
+to their server methods and sockets.

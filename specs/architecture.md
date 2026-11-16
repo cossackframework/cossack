@@ -2,6 +2,12 @@
 
 This document outlines the architecture of the Cossack Framework, how its packages interact, and the lifecycle of a request.
 
+Two plans extend these packages: the [renderer improvements](plan-renderer-improvements.md)
+add template diagnostics, component tags, and a JSON app model to the renderer, and
+the [CMS and app-builder plan](cms-app-builder.md) adds `romedb`, `cms`, core hooks
+and `src/plugins/*/` composition. The app builder itself (Platform) is a separate
+private repository.
+
 ## Core Principle: Separation of Concerns
 
 The framework is built on a strict separation between the library (`core`, `renderer`) and the application (`framework`).
@@ -201,6 +207,22 @@ references to actual module exports and the portable framework `/api` type helpe
 Default function precedence matches native routing. Component modules and plain
 handlers do not invent validated contracts. Source layout ancestry in the manifest
 does not assert that functional API modules execute component layouts.
+
+A route's kind comes from its pattern and its module shape. Every module under
+`/api` is an endpoint. A functional handler module elsewhere, recognized by the
+same Oxc parse the client security plugin uses, is an endpoint too, at paths such
+as `/webhooks/crm` or `/feed.xml`. The router registers the same module shapes at
+runtime; a default export that is neither a component nor a function registers
+nothing. Unknown paths keep the `/api` prefix rules for JSON 404s, and the
+built-in CORS covers other endpoints only through configured `paths`.
+
+The page registry records which rendered plugin owns each page and layout key.
+`createApp({ isPluginActive })` lets a host decide per request whether a plugin's
+routes answer. An inactive plugin's pages, layouts and handlers, and RPC, SSE and
+WebSocket requests addressed to its components, receive the unknown-URL response
+before any of the plugin's guards run, and its 404 boundaries are excluded from
+unknown-URL selection. Without the option plugin routes are always live; the CMS
+supplies its activation state.
 
 404 and error components retain source identities rather than competing public
 URLs. Unknown-path selection compiles effective source prefixes at application

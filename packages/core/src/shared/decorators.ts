@@ -7,7 +7,7 @@ import { CossackOptions } from './cossack';
 import { createRef } from './ref';
 import { ValidationRule, ValidationConfig, ValidationRulesStore, StoreRuleMap, setValidationRules, flattenRuleTree } from './validation';
 import type { ServiceClass } from './container';
-import type { InputSchema, InputOf } from './input-schema';
+import type { ArgsSchema, InputSchema, InputOf } from './input-schema';
 import type { ServerActionAuthorizer } from './action-authorization';
 
 export type Middleware = MiddlewareHandler;
@@ -170,6 +170,13 @@ export interface ServerInputDecorator<S extends InputSchema<any, any>> {
   <Key extends string | symbol>(target: Record<Key, (value: InputOf<S>) => any>, propertyKey: Key): void;
 }
 
+/** A method whose `input` is `input.args(...)`: its parameters are the schemas' outputs, in order. */
+export interface ServerArgsDecorator<S extends ArgsSchema<any, any>> {
+  (target: object, propertyKey: string | symbol, descriptor: TypedPropertyDescriptor<(...args: InputOf<S>) => any>): void;
+  <Key extends string | symbol>(target: Record<Key, (...args: InputOf<S>) => any>, propertyKey: Key): void;
+}
+
+export function Server<S extends ArgsSchema<any, any>>(options: Omit<ServerOptions, 'input' | 'authorize'> & { input: S; authorize?: ServerActionAuthorizer<InputOf<S>> }): ServerArgsDecorator<S>;
 export function Server<S extends InputSchema<any, any>>(options: Omit<ServerOptions, 'input' | 'authorize'> & { input: S; authorize?: ServerActionAuthorizer<InputOf<S>> }): ServerInputDecorator<S>;
 export function Server(options?: Omit<ServerOptions, 'input'> & { input?: never }): any;
 export function Server(options: ServerOptions = {}): any {

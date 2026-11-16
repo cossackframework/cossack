@@ -13,6 +13,18 @@ import {
   switchAdapter,
 } from '../src/index.js';
 
+import { recipeFiles } from './recipe-files.js';
+
+/** The text of every file the recipe renders, except package.json's own name and the secrets. */
+async function projectTexts(root) {
+  const texts = {};
+  for (const rel of await recipeFiles(root)) {
+    if (/\.(?:png|ico|icns|svg)$/.test(rel) || rel === '.env.example' || rel === '.dev.vars.example') continue;
+    texts[rel] = await fs.readFile(path.join(root, rel), 'utf8').catch(() => null);
+  }
+  return texts;
+}
+
 const temporaryDirectories = [];
 
 async function temporaryDirectory() {
@@ -125,8 +137,9 @@ describe('adapter switching', () => {
       });
 
       expect(result.status).toBe('changed');
-      expect((await readManifest(source.projectDir)).files)
-        .toEqual((await readManifest(direct.projectDir)).files);
+      // The switched project is the project a direct creation gives: the same recipe, the same files.
+      expect(await recipeFiles(source.projectDir)).toEqual(await recipeFiles(direct.projectDir));
+      expect(await projectTexts(source.projectDir)).toEqual(await projectTexts(direct.projectDir));
     },
   );
 
@@ -141,8 +154,9 @@ describe('adapter switching', () => {
       });
 
       expect(result.status).toBe('changed');
-      expect((await readManifest(source.projectDir)).files)
-        .toEqual((await readManifest(direct.projectDir)).files);
+      // The switched project is the project a direct creation gives: the same recipe, the same files.
+      expect(await recipeFiles(source.projectDir)).toEqual(await recipeFiles(direct.projectDir));
+      expect(await projectTexts(source.projectDir)).toEqual(await projectTexts(direct.projectDir));
     },
   );
 
@@ -175,7 +189,7 @@ describe('adapter switching', () => {
   it('returns present for the active adapter without writing', async () => {
     const project = await create('node');
     const before = await fs.readFile(
-      path.join(project.projectDir, '.cossack/scaffold.json'),
+      path.join(project.projectDir, 'package.json'),
       'utf8',
     );
     const result = await switchAdapter(project.projectDir, 'node', {
@@ -184,7 +198,7 @@ describe('adapter switching', () => {
     });
     expect(result.status).toBe('present');
     expect(await fs.readFile(
-      path.join(project.projectDir, '.cossack/scaffold.json'),
+      path.join(project.projectDir, 'package.json'),
       'utf8',
     )).toBe(before);
   });
@@ -192,7 +206,7 @@ describe('adapter switching', () => {
   it('keeps dry runs completely read-only', async () => {
     const project = await create('cloudflare', 'database');
     const before = await fs.readFile(
-      path.join(project.projectDir, '.cossack/scaffold.json'),
+      path.join(project.projectDir, 'package.json'),
       'utf8',
     );
     const result = await switchAdapter(project.projectDir, 'node', {
@@ -202,7 +216,7 @@ describe('adapter switching', () => {
     expect(result.status).toBe('dry-run');
     expect(result.changes.writes.length).toBeGreaterThan(0);
     expect(await fs.readFile(
-      path.join(project.projectDir, '.cossack/scaffold.json'),
+      path.join(project.projectDir, 'package.json'),
       'utf8',
     )).toBe(before);
     await expect(fs.access(path.join(project.projectDir, '.env'))).rejects.toThrow();
@@ -237,7 +251,6 @@ describe('adapter switching', () => {
     expect(target).toContain('CUSTOM_TARGET=value');
     expect(target).not.toContain('SOURCE_ONLY=');
     expect(source).toContain('SOURCE_ONLY=keep-at-source');
-    expect((await readManifest(project.projectDir)).files).not.toHaveProperty('.env');
   });
 
   it('targets force at runtime files while preserving application edits and migrations', async () => {
@@ -316,7 +329,7 @@ describe('adapter switching', () => {
     expect((await readManifest(aborted.projectDir)).runtime).toBe('cloudflare');
   });
 
-  it('rejects invalid targets and projects without schema-v3 manifests', async () => {
+  it('rejects invalid targets and projects without manifests', async () => {
     const project = await create('node');
     await expect(switchAdapter(project.projectDir, 'bun', {
       interactive: false,
@@ -325,6 +338,6 @@ describe('adapter switching', () => {
     await fs.writeFile(path.join(root, 'package.json'), '{}\n');
     await expect(switchAdapter(root, 'node', {
       interactive: false,
-    })).rejects.toThrow('requires a schema-v3');
+    })).rejects.toThrow('requires a recipe in package.json#cossack');
   });
 });

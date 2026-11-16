@@ -57,6 +57,7 @@ Run `cossack --help` to list all commands, or `cossack <command> --help` for com
 | `delete <type> <name>` (`d`) | Delete a generated file/folder. |
 | `add <feature>` | Add a feature and its prerequisites (see the feature list below). |
 | `remove <feature>` | Remove a feature and anything that depends on it. |
+| `plugins <list\|check\|upgrade\|remove>` | Manage plugins rendered into `src/plugins/<name>/`. Render one with `add plugin <directory\|tarball\|npm package>`; packages are read as data and never executed. |
 | `adapter <node\|cloudflare>` | Switch the active runtime adapter. |
 | `lang <sub>` | Manage localization catalogs (`publish`, `add <locale>`, `extract`, `check`, `types`). |
 | `migration <sub>` (`migrate`) | Manage model-first ORM migrations (`generate`, `snapshot`, `squash`, `up`, `down`, `status`, `rehash`, `check`, `baseline`, `plan`). |
@@ -64,13 +65,16 @@ Run `cossack --help` to list all commands, or `cossack <command> --help` for com
 | `seeder <sub>` (`seed`) | Run registered seeders (`list`, `run`). |
 | `studio` | Inspect the configured database in a local browser. |
 | `routes` | List all routes in the project. |
+| `typecheck` | Write the generated types (bindings, typed URLs, `config()` keys), then run `tsc --noEmit`. |
 | `config` | List configuration factory type origins. Use `--generate` before standalone type checking. |
 | `ssg` | Pre-render pages marked `ssg:true` to static HTML. |
 | `image optimize` | Generate optimized image variants from `<Image>` usages (requires ImageMagick). |
 | `docs` | Read offline catalogs of installed package exports, declarations and guides. |
 | `traces` | Read recorded development snapshots and timelines. |
 | `test-results` | Read recorded test evidence and source freshness. |
-| `upgrade [dir]` | Upgrade Cossack deps and report template drift. |
+| `cms <command>` | Manage a running CMS site through its management API: `login`, `whoami`, `entries`, `notes`, `users`, `roles`, `settings`, `terms`, `media`, `sites` and `mcp` (MCP client setup). `--site <id>` acts on one site of a network. |
+| `upgrade [dir]` | Update a project in one command: Cossack dependencies and the files the scaffold wrote, with your edits merged. |
+| `eject <package> <path>` | Copy a page, configuration file or plugin that a mounted package serves into the project, where it overrides the package's. `upgrade` merges later changes into the copy. |
 | `info` | Print system/environment info for bug reports. |
 | `version` (`v`) | Print the CLI version. |
 
@@ -120,7 +124,7 @@ cossack seeder run
 cossack image optimize --format webp --quality 80
 
 # Stay current
-cossack upgrade --apply-template
+cossack upgrade
 ```
 
 ## How it works
@@ -137,8 +141,8 @@ re-renders only the installed capabilities.
 Available presets are `minimal`, `database`, `auth`, and `full-stack`.
 Composable features are `ui`, `database`, `studio`, `auth`, `dashboard`,
 `markdown`, `examples`, `desktop`, `resource`, `mutation`, `scoped-service`,
-`protected-route`, `jobs`, `turnstile`, `schedules`, `notifications`, and
-`workflows`. `cossack add` installs missing prerequisites first: for example,
+`protected-route`, `jobs`, `turnstile`, `schedules`, `notifications`,
+`workflows`, and `cms`. `cossack add` installs missing prerequisites first: for example,
 `studio` requires `database`, `auth` requires `ui` and `database`, and
 `examples` requires both `ui` and `markdown`. `cossack --help` and
 `cossack add --help` print the list from the scaffold registry.

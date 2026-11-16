@@ -80,6 +80,23 @@
           "source": "import { createTurnstileVerifier } from '@cossackframework/auth/turnstile';\nlet mutations = 0;\nconst verifier = createTurnstileVerifier({\n  secret: 'fixture-secret', expectedHostname: 'forms.example.test', expectedAction: 'contact',\n  fetch: async () => Response.json({ success: false, 'error-codes': ['timeout-or-duplicate'] }),\n});\nconst result = await verifier.verify({ token: 'fixture-token' });\nif (result.success) mutations++;\nif (mutations !== 0 || result.success || result.code !== 'COSSACK_TURNSTILE_EXPIRED_OR_REUSED') {\n  throw Error('Rejected verification must prevent the mutation');\n}\nif (JSON.stringify(result).includes('fixture-token')) throw Error('Verification output must omit credentials');\n"
         }
       ]
+    },
+    {
+      "id": "second-factors-and-passkeys",
+      "title": "Add authenticator codes, recovery codes and passkeys",
+      "summary": "TOTP (RFC 6238) and recovery codes on Web Crypto from @cossackframework/auth; passkey ceremonies through SimpleWebAuthn from @cossackframework/auth/passkeys. Storage belongs to the application.",
+      "imports": [
+        "@cossackframework/auth",
+        "@cossackframework/auth/passkeys"
+      ],
+      "markdown": "`generateTotpSecret()` makes a base32 secret and `totpUri({ secret, issuer, account })` the `otpauth://` URI authenticator apps scan. `verifyTotp(secret, code, { now, afterStep })` accepts the current step and one step each way and returns the matching step: store it and pass it back as `afterStep`, so a code cannot be used twice. `generateRecoveryCodes()` makes ten single-use codes; store only `hashRecoveryCode(code)` and remove a hash when it is used. Checks run in constant time and work on Workers and Node.\n\nA password with a second factor should only start the sign-in: keep a short-lived pending sign-in (the CMS uses 5 minutes and 5 tries) and create the session after the code. A login handler's `validateCredentials` may answer with its own `Response`, such as `401 { twoFactorRequired: true }`.\n\nPasskeys: `passkeyRegistrationOptions(site, user, existing)` and `passkeyAuthenticationOptions(site)` make the options the browser passes to `@simplewebauthn/browser`; keep the options' `challenge` server-side. `verifyPasskeyRegistration(site, response, challenge)` returns the credential to store (ID, base64url public key, counter, transports, device type and backup state) and `verifyPasskeyAuthentication(site, response, challenge, stored)` the new counter, or null. `site` is `{ rpName, rpID, origin }`: the host name and the origins the browser may report. Registration requires a discoverable credential and user verification, so a passkey signs in alone.",
+      "examples": [
+        {
+          "id": "second-factors-and-passkeys",
+          "language": "typescript",
+          "source": "import { generateTotpSecret, totpUri, verifyTotp, generateRecoveryCodes, hashRecoveryCode } from '@cossackframework/auth';\nimport { passkeyAuthenticationOptions, verifyPasskeyAuthentication, type AuthenticationResponseJSON, type StoredPasskey } from '@cossackframework/auth/passkeys';\n\nexport async function enroll(email: string) {\n    const secret = generateTotpSecret();\n    const codes = generateRecoveryCodes();\n    return { secret, uri: totpUri({ secret, issuer: 'My Site', account: email }), codes, stored: await Promise.all(codes.map(hashRecoveryCode)) };\n}\n\n/** The step to store as the last one used, or null for a wrong or reused code. */\nexport function checkCode(secret: string, code: string, lastStep: number | null): Promise<number | null> {\n    return verifyTotp(secret, code, { afterStep: lastStep });\n}\n\nconst site = { rpName: 'My Site', rpID: 'example.com', origin: 'https://example.com' };\n\nexport async function passkeyChallenge() {\n    const options = await passkeyAuthenticationOptions(site);\n    return { options, challenge: options.challenge };\n}\n\nexport async function passkeySignIn(response: AuthenticationResponseJSON, challenge: string, stored: StoredPasskey): Promise<number | null> {\n    return (await verifyPasskeyAuthentication(site, response, challenge, stored))?.counter ?? null;\n}\n"
+        }
+      ]
     }
   ]
 }

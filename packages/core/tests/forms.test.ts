@@ -7,7 +7,7 @@ import {
 } from '../src/shared/forms';
 
 /** Build a FormData from [key, value] pairs (repeated keys allowed). */
-function fd(...pairs: [string, string][]): FormData {
+function fd(...pairs: [string, string | File][]): FormData {
   const data = new FormData();
   for (const [k, v] of pairs) data.append(k, v);
   return data;
@@ -172,28 +172,38 @@ describe('parseFormData — input shapes', () => {
   });
 });
 
-describe('parseFormData — prototype pollution safety (null-proto containers)', () => {
-  it('preserves __proto__ as an exact own key without touching Object.prototype', () => {
-    const proto = Object.prototype as any;
-    const before = proto.polluted;
-    const data = parseFormData(fd(['__proto__[polluted]', 'yes'])) as Record<string, any>;
-    // Object.prototype must NOT have been modified.
+describe('parseFormData — prototype pollution safety', () => {
+  const proto = Object.prototype as any;
+
+  it('drops keys with __proto__, constructor or prototype segments', () => {
+    const data = parseFormData(fd(
+      ['__proto__[polluted]', 'yes'], ['constructor[prototype][x]', '1'], ['a[prototype]', '2'], ['kept', 'ok'],
+    )) as Record<string, any>;
     expect(proto.polluted).toBeUndefined();
-    expect(before).toBeUndefined();
-    // Data is preserved under the EXACT key '__proto__' (null-proto containers
-    // have no __proto__ setter, so it's a normal own property).
-    expect(Object.prototype.hasOwnProperty.call(data, '__proto__')).toBe(true);
-    expect(data['__proto__'].polluted).toBe('yes');
+    expect(proto.x).toBeUndefined();
+    expect(Object.keys(data)).toEqual(['kept']);
+    // Safe to spread into a plain object: no own __proto__ key to set its prototype.
+    expect(Object.getPrototypeOf({ ...data })).toBe(Object.prototype);
   });
 
-  it('preserves constructor keys without touching Object.prototype', () => {
-    const proto = Object.prototype as any;
-    const data = parseFormData(
-      fd(['constructor[prototype][x]', '1']),
-    ) as Record<string, any>;
-    expect(proto.x).toBeUndefined();
-    // The value survives under the exact key 'constructor'.
-    expect(Object.prototype.hasOwnProperty.call(data, 'constructor')).toBe(true);
+  it('never walks a repeated key\'s values or a string to reach a prototype', () => {
+    parseFormData(fd(['a', '1'], ['a', '2'], ['a[__proto__][__proto__][polluted]', 'yes']));
+    parseFormData(fd(['b', 'x'], ['b[length][polluted]', 'yes'], ['b[x]', 'y']));
+    parseFormData(fd(['c[]', '1'], ['c[length]', '5'], ['c[push][polluted]', 'yes']));
+    expect(proto.polluted).toBeUndefined();
+    expect(([] as any).polluted).toBeUndefined();
+    expect(('' as any).polluted).toBeUndefined();
+  });
+
+  it('keeps the first of two conflicting shapes, without throwing', () => {
+    expect(parseFormData(fd(['a', '1'], ['a[x]', '2']))).toEqual({ a: '1' });
+    expect(parseFormData(fd(['a[x]', '1'], ['a[]', '2']))).toEqual({ a: { x: '1' } });
+    expect(parseFormData(fd(['t[]', '1'], ['t[name]', '2']))).toEqual({ t: ['1'] });
+    // A File is a value, never a container.
+    const file = new File(['x'], 'f.txt');
+    const data = parseFormData(fd(['f', file], ['f[name]', 'evil'])) as Record<string, any>;
+    expect(data.f).toBe(file);
+    expect(file.name).toBe('f.txt');
   });
 
   it('produces containers with a null prototype', () => {

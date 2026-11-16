@@ -24,7 +24,7 @@ import { session } from '@cossackframework/framework/session';
 import { input as schema, flash, flashed } from '@cossackframework/core';
 import { sql } from '@cossackframework/database';
 import { getCookie } from 'hono/cookie';
-import { authSessions, registerUser } from '../../auth';
+import { authSessions, registerUser } from '@cossackframework/dashboard/app/auth';
 export const POST = defineApi({input:{body:schema.object({op:schema.string(),id:schema.string(),value:schema.string()})},handler:async({input,c})=>{
  const {op,id,value}=input.body; const token=getCookie(c,authSessions.cookieName)??'';
  if(op==='setup') { await sql\`\${sql.unsafe('CREATE TABLE IF NOT EXISTS concurrency_barriers (id TEXT PRIMARY KEY, released INTEGER NOT NULL DEFAULT 0)')}\`; return c.json(await session().getAll()); }

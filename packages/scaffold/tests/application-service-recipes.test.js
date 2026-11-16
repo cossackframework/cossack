@@ -5,12 +5,13 @@ import path from 'node:path';
 import { transform } from 'esbuild';
 import vm from 'node:vm';
 import { createApp, addFeature, readManifest, resolveRecipe, recipeCapabilityRequirements } from '../src/index.js';
+import { recipeCapabilities, recipeFiles } from './recipe-files.js';
 
 const roots = [];
 async function directory() { const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-application-services-')); roots.push(root); return root; }
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });
 async function read(root, file) { return fs.readFile(path.join(root, file), 'utf8'); }
-async function snapshot(root) { const manifest = await readManifest(root); return Object.fromEntries(await Promise.all(Object.keys(manifest.files).sort().map(async file => [file, await read(root, file)]))); }
+async function snapshot(root) { return Object.fromEntries(await Promise.all((await recipeFiles(root)).map(async file => [file, await read(root, file)]))); }
 async function moduleFrom(source, modules = {}) {
   const output = await transform(source, { loader: 'ts', format: 'cjs' }); const module = { exports: {} };
   vm.runInNewContext(output.code, { module, exports: module.exports, require(name) { if (!Object.hasOwn(modules, name)) throw Error(`Unexpected generated dependency ${name}`); return modules[name]; } }); return module.exports;
@@ -30,14 +31,13 @@ it('schedules compose jobs and render validated registry, provider entry, Cron c
   const { projectDir: root } = await createApp('service', { cwd: await directory(), adapter: 'cloudflare', preset: 'minimal', features: 'schedules', interactive: false });
   const recipe = resolveRecipe({ adapter: 'cloudflare', preset: 'minimal', features: 'schedules' }); expect(recipe.resolvedFeatures).toContain('jobs');
   expect(JSON.stringify(recipeCapabilityRequirements(recipe))).toContain('schedules/cloudflare-cron');
-  const manifest = await readManifest(root); expect(manifest.files['src/schedules.json'].capability).toBe('schedules'); expect(manifest.files['src/schedules/index.ts'].capability).toBe('schedules');
+  const capabilities = await recipeCapabilities(root); expect(capabilities['src/schedules.json']).toBe('schedules'); expect(capabilities['src/schedules/index.ts']).toBe('schedules');
   const definitions = JSON.parse(await read(root, 'src/schedules.json')); const config = JSON.parse((await read(root, 'wrangler.jsonc')).replace(/^\s*\/\/.*$/gm, ''));
   expect(config.triggers.crons).toEqual([...new Set(definitions.map(item => item.cron))]); expect(config.queues.producers[0].binding).toBe('JOBS'); expect(config.d1_databases[0].binding).toBe('JOB_STATE');
   expect(await read(root, 'src/schedules/index.ts')).toContain('validateScheduleDefinitions(definitions)');
   expect(await read(root, 'src/index.ts')).toContain('await createSchedules(env).scheduled(controller)');
   expect(await read(root, 'src/index.ts')).toContain("from './schedules/index'");
   expect(await read(root, 'src/index.ts')).toContain('await createJobs(env).queue(batch)');
-  expect(await read(root, 'vite.config.ts')).toContain('cossackSchedules()');
   for (const file of ['src/index.ts', 'src/schedules/index.ts', 'vite.config.ts']) await expect(transform(await read(root, file), { loader: 'ts' })).resolves.toBeDefined();
 });
 it.each(['node'])('schedules require an explicit supported scheduler before any %s project writes', async adapter => {
@@ -57,12 +57,12 @@ it('notifications render the actual ledger schema, EMAIL binding, explicit scope
   const { projectDir: root } = await createApp('service', { cwd: await directory(), adapter: 'cloudflare', preset: 'minimal', features: 'notifications', interactive: false });
   const config = JSON.parse((await read(root, 'wrangler.jsonc')).replace(/^\s*\/\/.*$/gm, '')); expect(config.send_email).toEqual([{ name: 'EMAIL' }]); expect(config.vars.MAIL_FROM).toBe('no-reply@example.com');
   const recipe = resolveRecipe({ adapter: 'cloudflare', preset: 'minimal', features: 'notifications' }); expect(recipe.resolvedFeatures).toContain('jobs');
-  const manifest = await readManifest(root); expect(manifest.files['src/jobs/migrations/0002_notifications.sql'].capability).toBe('notifications');
+  expect((await recipeCapabilities(root))['src/jobs/migrations/0002_notifications.sql']).toBe('notifications');
   for (const file of ['src/index.ts', 'src/jobs/index.ts', 'src/notifications/index.ts', 'src/config/notifications.ts']) await expect(transform(await read(root, file), { loader: 'ts' })).resolves.toBeDefined();
   expect(await read(root, 'src/jobs/index.ts')).toContain("createNotifications(env).deliver(payload.id)");
   const { DatabaseSync } = await import('node:sqlite'); const actual = new DatabaseSync(':memory:'); const generated = new DatabaseSync(':memory:');
   try {
-    const source = await fs.readFile(new URL('../../framework/src/notifications/d1-store.ts', import.meta.url), 'utf8'); const { notificationStateSchema } = await moduleFrom(source);
+    const source = await fs.readFile(new URL('../../core/src/notifications/sql-store.ts', import.meta.url), 'utf8'); const { notificationStateSchema } = await moduleFrom(source);
     actual.exec(notificationStateSchema); generated.exec(await read(root, 'src/jobs/migrations/0002_notifications.sql'));
     for (const pragma of ['table_info(cossack_notifications)', 'index_list(cossack_notifications)', 'index_info(cossack_notifications_inbox)']) expect(generated.prepare(`PRAGMA ${pragma}`).all()).toEqual(actual.prepare(`PRAGMA ${pragma}`).all());
     expect(generated.prepare("SELECT sql FROM sqlite_master WHERE name='cossack_notifications'").get().sql.replace(/\s/g, '')).toBe(actual.prepare("SELECT sql FROM sqlite_master WHERE name='cossack_notifications'").get().sql.replace(/\s/g, ''));

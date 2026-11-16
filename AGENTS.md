@@ -30,8 +30,11 @@ The project is a `pnpm` workspace. All packages are located in the `packages` di
 -   **`database`**: Active Record entities, migrations, seeders, and D1/Turso/PostgreSQL/MySQL adapters. The framework remains ORM-agnostic; use `cossack add database`.
 -   **`test-utils`**: Test helpers
 -   **`scaffold`**: Node-only recipe engine for creation and feature composition. Use this repository as example/template for new projects.
--   **`cossack`**: The Cossack CLI. It consumes `scaffold` directly.
+-   **`cossack`**: The Cossack CLI. It consumes `scaffold` directly. `cossack/vite` is the Vite preset: a project's `vite.config.ts` is `cossackApp()`, and a mounted package adds its part through `cossack.vite` (`docs/vite-plugins.md`).
 -   **`ui`**: UI components package. shadcn-ui inspired components.
+-   **`romedb`**: RomeDB request bindings with exact write recovery, on RomeDB's own `@romedb/client` (Workers and Node), with `@romedb/node` to open files on Node.
+-   **`dashboard`**: The sign-in pages and the dashboard on the database ORM, served from the package like the CMS (`specs/dashboard-package.md`). A project with `auth` or `dashboard` mounts it and keeps `src/dashboard.config.ts` (sign-in methods, OAuth providers, modules) and its schema (`src/models`, `src/migrations`, `src/seeders`). The served sources are tracked in `packages/dashboard/app/src` (pages, dashboard kit, `auth.ts`, services): edit them there. The rest of `packages/dashboard/app` is a development application that `pnpm sync` writes; `pnpm dev:dashboard` runs it. The CMS ships a copy of the shell, which its own `pnpm sync` takes from the dashboard package.
+-   **`cms`**: The open-source CMS on RomeDB: collections (schemaless, defined in the dashboard), blocks, rich text (ProseMirror JSON), taxonomies, media with resized variants, settings, themes (plugins), menus, scheduling, previews, revisions, redirects, SEO, comments, patterns, translations, API tokens, webhooks, two-step sign-in and passkeys, multisite (one database per site, shared accounts, a network dashboard), a management API with `cossack cms` and an MCP server per site (`docs/cms/api.md`), resources and schema planner, repositories, auth storage, stores, outbox, plugin hosting. `cossack add cms` adds it to the shared `auth` and `dashboard` pages. A project does not hold a copy of the CMS: it mounts the CMS's pages, the sign-in pages, the dashboard, their modules and the default theme from the package (`package.json#cossack.packages`, `specs/package-routes.md`, `specs/cms-served-app.md`) and keeps `src/cms.config.ts` (which names the runtime's storage, `@cossackframework/cms/storage/cloudflare` or `/node`), the entry files and its plugins. The package is also an application: `packages/cms/app` holds the CMS pages, components and API routes that every project runs (listed in its `cossack-recipe.json` and in the `cossack` field of `packages/cms/package.json`), and `pnpm dev:cms` runs it against workspace sources; its sign-in and dashboard shell is synced from `packages/dashboard/app/src` and shipped with the package (`cossack-recipe.json`: `shell`; `specs/cms-package-app.md`). Served code reaches a project only through `@/` imports listed in `cossack.host` (`packages/cms/tests/host-contract.test.ts`). Inside `packages/cms/app/src` and `packages/dashboard/app/src`, import a file two or more directories away as `#app/<path>` (`#app/cms/content-api`), not `../../…`. Projects update with `cossack upgrade`. No project records its scaffold files (the recipe is in `package.json#cossack`): the upgrade changes dependencies and merges only ejected copies and plugins (`docs/upgrading.md`). The app builder (Platform) is a separate private repository that uses it.
 
 ## 4. Development Workflow
 
@@ -50,6 +53,9 @@ pnpm run test:unit
 ### E2E Tests
 pnpm run test:e2e
 
+### Packed CMS Apps
+`pnpm test:cms:packed` builds a CMS app from packed tarballs on both adapters, which the linked test apps cannot show: strict dependency resolution, a second copy of a package, and dependency pre-bundling. Run it after changing a package's dependencies or entry points. It also runs inside `pnpm test:scaffold:local`.
+
 ### CLI Integration Tests
 Run them through pnpm, for example `pnpm --filter cossack run test:integration tests/deploy-integration.test.js`.
 Never run them with vitest directly: outside `pnpm run`, generated test apps can install packages through their linked folders and corrupt the repository's `node_modules`.
@@ -57,10 +63,10 @@ Never run them with vitest directly: outside `pnpm run`, generated test apps can
 ### Slow Suites: Run Locally Before a Release
 CI skips these suites because they are slow or need Docker or a display. Run both locally before every release, and report the results in the release PR:
 
-- `pnpm test:databases`: live PostgreSQL and MySQL suites, plus Studio introspection against both. Needs Docker, or set `COSSACK_TEST_POSTGRES_URL` and `COSSACK_TEST_MYSQL_URL`.
+- `pnpm test:databases`: live PostgreSQL and MySQL suites, plus Studio introspection against both, and the RomeDB client and CMS suites. Needs Docker, or set `COSSACK_TEST_POSTGRES_URL` and `COSSACK_TEST_MYSQL_URL`; the RomeDB suites need a RomeDB 0.2.14+ executable through `COSSACK_TEST_ROMEDB_BIN` or `PATH`.
 - `pnpm test:desktop`: packages and runs the Desktop app, including its dev restart check.
 
-Also run them after changing `packages/database`, `packages/studio` or `packages/desktop`.
+Also run them after changing `packages/database`, `packages/studio`, `packages/desktop`, `packages/romedb` or `packages/cms`.
 
 ## Docs References
 Use Cloudflare skills and MCP server, however, if you still need to find docs for solutions, you can use the following links:

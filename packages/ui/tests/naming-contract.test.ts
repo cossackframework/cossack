@@ -17,7 +17,7 @@ const files = ['components', 'blocks', 'internal'].flatMap(folder => sources(joi
 const events = new Set(['onSelect', 'onAction', 'onSubmit', 'onSocial', 'onComplete', 'onNavigate', 'onRetry', 'onRemove',
     'onImageLoad', 'onImageError', 'onSuccess', 'onExpired', 'onError', 'onClick']);
 // State that a component reports but never accepts as a prop.
-const reportedOnly: Record<string, string[]> = { 'components/Turnstile.ts': ['token'] };
+const reportedOnly: Record<string, string[]> = { 'components/Turnstile.ts': ['token'], 'components/Command.ts': ['search'] };
 
 it('scans every component, block and internal helper', () => {
     expect(files.length).toBeGreaterThan(60);

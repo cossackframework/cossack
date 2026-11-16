@@ -32,8 +32,11 @@ export function buildRouteModel(projectRoot, options = {}) {
     name: descriptor.name, routeId: descriptor.routeId, params: descriptor.parameters,
     layoutPaths: descriptor.layoutPaths, errorBoundary: descriptor.errorBoundary,
     notFoundBoundary: descriptor.notFoundBoundary, addressable: descriptor.addressable,
+    // The mounted package that serves the route, when the application does not.
+    ...(manifest.packages?.[descriptor.filePath] ? { package: manifest.packages[descriptor.filePath] } : {}),
   }));
-  const layouts = manifest.layoutKeys.map(filePath => ({ filePath, scope: dirScope(filePath), routeId: manifest.filePathToId[filePath] }));
+  const layouts = manifest.layoutKeys.map(filePath => ({ filePath, scope: dirScope(filePath), routeId: manifest.filePathToId[filePath],
+    ...(manifest.packages?.[filePath] ? { package: manifest.packages[filePath] } : {}) }));
   return { pages, layouts, manifest };
 }
 
@@ -117,9 +120,11 @@ export async function buildEffectiveRouteModel(projectRoot, options = {}) {
     let routeStyle = 'component';
     let apiContracts = null;
     try {
-      const absolute = path.join(projectRoot, page.filePath.replace('/src/pages/', 'src/pages/'));
+      // Plugin pages are keyed under /src/pages/ but live in src/plugins/<name>/pages/.
+      const absolute = path.join(projectRoot, (model.manifest.sources?.[page.filePath] ?? page.filePath).slice(1));
       const source = await fs.promises.readFile(absolute, 'utf8');
-      if (page.kind === 'api' && await isHttpHandlerModule(source)) {
+      // Functional handlers serve any path (/feed.xml, /webhooks/x), not only /api.
+      if (await isHttpHandlerModule(source)) {
         routeStyle = 'http-handlers';
         apiContracts = await inspectApiContractsFromAst(source, page.filePath);
       }
@@ -188,7 +193,7 @@ export async function buildEffectiveRouteModel(projectRoot, options = {}) {
     let method = 'unknown';
     let reason = null;
     try {
-      const absolute = path.join(projectRoot, layout.filePath.replace('/src/pages/', 'src/pages/'));
+      const absolute = path.join(projectRoot, (model.manifest.sources?.[layout.filePath] ?? layout.filePath).slice(1));
       const source = await fs.promises.readFile(absolute, 'utf8');
       moduleExport = await inspectDefaultClassExport(source);
       const ast = await extractPageOptionsFromAst(source);

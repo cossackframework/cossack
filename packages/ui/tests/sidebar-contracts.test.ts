@@ -9,6 +9,19 @@ it('renders named navigation, stable groups, current links and independent nativ
  expect(out).toMatch(/<details[^>]*\sopen/);expect(out).toContain('<summary');expect(out).not.toContain('role="menu"');
  expect(out).not.toMatch(/\s(?:items|collapsed|collapsible|navProps|onCollapsedChange)=/);
 });
+it('stays in view at the height of the screen, its menu scrolling on its own',()=>{
+ const out=renderToString(component(Sidebar,props));
+ const aside=out.match(/<aside[^>]*class="([^"]*)"/)?.[1]?.split(/\s+/)??[];
+ for(const name of ['sticky','top-0','h-dvh','flex-col'])expect(aside).toContain(name);
+ expect(aside).not.toContain('min-h-screen');
+ expect(out).toMatch(/<nav[^>]*class="[^"]*cs-sidebar__nav[^"]*overflow-y-auto/);
+});
+it('gives items without an icon no empty icon slot, except an initial in the rail',()=>{
+ const out=renderToString(component(Sidebar,props));
+ expect(out).not.toContain('cs-sidebar__icon');
+ const rail=renderToString(component(Sidebar,{...props,collapsed:true}));
+ expect(rail).toMatch(/cs-sidebar__icon[^>]*>(?:<!--[^>]*-->)*H/);
+});
 it('keeps group destinations and child links in the icon rail with readable names',()=>{
  const out=renderToString(component(Sidebar,{...props,collapsed:true}));
  expect(out).toContain('width:72px');expect(out).toContain('is-collapsed');expect(out).toContain('href="/projects/one"');expect(out).toContain('Current project');expect(out).toContain('sr-only');expect(out).not.toContain('cs-sidebar__toggle');

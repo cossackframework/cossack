@@ -58,6 +58,8 @@
     "src/vite-security-plugin.ts",
     "src/vite-ssg-plugin.ts",
     "src/vite-env.d.ts",
+    "src/plugin-registry.ts",
+    "src/plugin-sources.ts",
     ".cossack/library-worker-configuration.d.ts"
   ],
   "exclude": [
@@ -70,6 +72,7 @@
     "src/lang/**",
     "src/models/**",
     "src/pages/**",
+    "src/plugins/**",
     "src/services/**"
   ]
 }

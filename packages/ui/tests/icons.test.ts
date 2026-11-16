@@ -1,16 +1,26 @@
 import { describe, it, expect } from 'vitest';
 import { renderToString } from '@cossackframework/renderer';
-import { Icon, normalizeStyle } from '../src/icons/Icon';
+import { Icon, normalizeStyle, type SpriteIconEntry } from '../src/icons/Icon';
 import type { IconEntry } from '@cossackframework/solar-icons/types';
 import { ArrowRightIcon } from '@cossackframework/solar-icons/arrow-right';
 
-function renderEntry(entry: IconEntry | undefined, props: Record<string, unknown> = {}): string {
+function renderEntry(entry: IconEntry | SpriteIconEntry | undefined, props: Record<string, unknown> = {}): string {
     const instance = new Icon();
     instance.props = { entry, ...props } as Icon['props'];
     return renderToString(instance.render());
 }
 
 describe('Icon native SVG contract', () => {
+    it('draws a sprite entry as <use>, keeping the svg contract', () => {
+        const out = renderEntry({ href: '/api/cms/icons/line?v=abc#home-2' }, { size: 16, class: 'x' });
+        expect(out).toContain('<use href="/api/cms/icons/line?v=abc#home-2"></use>');
+        expect(out).toContain('width="16"');
+        expect(out).toContain('aria-hidden="true"');
+        expect(out).not.toContain('<path');
+        expect(renderEntry({ href: '/api/cms/icons/line#x' }, { label: 'Home' })).toContain('<title>Home</title>');
+        expect(() => renderEntry({ href: 'bad href' })).toThrow('Icon sprite href');
+    });
+
     it('renders real imported artwork with owned geometry and decorative defaults', () => {
         const out = renderEntry(ArrowRightIcon);
         expect(out).toContain('<svg');
