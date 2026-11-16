@@ -75,7 +75,8 @@ lifecycle events:
 - Exit codes: `0` success, `1` failure, `130` an interactive prompt was
   canceled, or a supervised command was interrupted before completion.
   JSON/non-TTY execution never prompts. Supply required choices or use documented
-  defaults. Scaffold creation defaults to Cloudflare/full-stack. Adding a feature
+  defaults. Scaffold creation defaults to Cloudflare/full-stack, and to the
+  minimal preset with `--features cms`. Adding a feature
   to an unrecognized legacy project requires an explicit runtime.
 - `dev --json` and `start --json` emit newline-delimited JSON. `data.event:
   "started"` confirms child process creation and includes its PID and tool.
@@ -494,8 +495,10 @@ Node. Maintenance runs every minute, publishing scheduled entries and delivering
 webhooks.
 
 A project whose `auth` already keeps users in the `database` feature cannot add
-`cms`; create a new project with `--features cms`. OAuth sign-in is not
-available with `cms` yet.
+`cms`; create a new project with `--features cms`. The CMS serves the site's
+pages, so it cannot be combined with `examples`: `cossack create --features cms`
+starts from the minimal preset, and a project with the examples runs
+`cossack remove examples` first. OAuth sign-in is not available with `cms` yet.
 
 ```bash
 cossack add cms

@@ -2052,7 +2052,8 @@ async function promptCreationOptions(options, previous = {}, startAtLast = false
         { title: 'Node.js', value: 'node' },
       ],
     },
-    !options.preset && {
+    // A CMS project starts from the CMS alone: the other presets' examples conflict with it.
+    !options.preset && !parseList(options.features).includes('cms') && {
       type: 'select', name: 'preset', message: 'Project preset', initial: 3,
       choices: Object.keys(PRESET_REGISTRY).map((value) => ({ title: value, value })),
     },

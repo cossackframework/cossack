@@ -94,7 +94,7 @@ describe('projects that record no files', () => {
     await fs.mkdir(path.dirname(manifestFile), { recursive: true });
     await fs.writeFile(manifestFile, JSON.stringify({ schemaVersion: 4, tool: '@cossackframework/scaffold', ejected }));
     expect((await readManifest(root)).ejected).toEqual(ejected);
-    await addFeature(root, 'examples', { interactive: false });
+    await addFeature(root, 'resource', { interactive: false });
     expect(await json(manifestFile)).toEqual({ schemaVersion: 4, tool: '@cossackframework/scaffold', ejected });
   });
 
@@ -113,9 +113,9 @@ describe('projects that record no files', () => {
     expect(manifest.files).toBeUndefined();
     expect(manifest.dependencyBaseline).toBeUndefined();
     // The next change writes the recipe to package.json and removes the old records.
-    await addFeature(root, 'examples', { interactive: false });
+    await addFeature(root, 'resource', { interactive: false });
     expect(await exists(path.join(root, '.cossack/scaffold.json'))).toBe(false);
-    expect((await json(path.join(root, 'package.json'))).cossack.features).toEqual(expect.arrayContaining(['examples', 'cms']));
+    expect((await json(path.join(root, 'package.json'))).cossack.features).toEqual(expect.arrayContaining(['resource', 'cms']));
   });
 
   it('records no files for a project without the CMS either', async () => {

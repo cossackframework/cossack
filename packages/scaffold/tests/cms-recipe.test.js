@@ -127,14 +127,24 @@ describe('cms recipe', () => {
     expect(dependencies).not.toHaveProperty('@romedb/node');
   });
 
-  it('binds R2 media on Workers and keeps the examples home page', async () => {
-    const files = await renderRecipe(resolveRecipe({ adapter: 'cloudflare', preset: 'minimal', features: ['cms', 'examples'] }));
+  it('binds R2 media on Workers', async () => {
+    const files = await renderRecipe(resolveRecipe({ adapter: 'cloudflare', preset: 'minimal', features: ['cms'] }));
     const config = JSON.parse(text(files, 'wrangler.jsonc').replace(/^\s*\/\/.*$/gm, ''));
     expect(config.r2_buckets).toEqual([expect.objectContaining({ binding: 'MEDIA' })]);
-    expect(files.has('src/pages/(public)/index.ts')).toBe(true);
-    // The package's home page gives way to the application's: an application page overrides a package page of the same URL.
-    expect(files.has('src/pages/(site)/index.ts')).toBe(false);
     expect(JSON.parse(text(files, 'package.json')).dependencies).not.toHaveProperty('@aws-sdk/client-s3');
+  });
+
+  it('starts a CMS project from the minimal preset and refuses the examples', async () => {
+    // `cossack create my-site --features cms` names no preset: the full-stack one would add the
+    // examples, whose home page and static blog replace the CMS's home page and sitemap.
+    const recipe = resolveRecipe({ adapter: 'cloudflare', features: ['cms'] });
+    expect(recipe.preset).toBe('minimal');
+    expect(recipe.resolvedFeatures).not.toContain('examples');
+    const files = await renderRecipe(recipe);
+    expect([...files.keys()].filter(file => file.startsWith('src/pages/'))).toEqual([]);
+    expect(resolveRecipe({ adapter: 'node' }).preset).toBe('full-stack');
+    expect(() => resolveRecipe({ adapter: 'node', preset: 'full-stack', features: ['cms'] })).toThrow(/cannot be combined with examples/);
+    expect(() => resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms', 'examples'] })).toThrow(/cannot be combined with examples/);
   });
 
   it('lists the OAuth providers in src/cms.config.ts and serves their routes from the package', async () => {

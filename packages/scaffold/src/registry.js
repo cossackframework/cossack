@@ -50,7 +50,16 @@ export const FEATURE_REGISTRY = {
 };
 
 /** Features that cannot be selected together, with the reason. */
-export const FEATURE_CONFLICTS = [];
+export const FEATURE_CONFLICTS = [
+  // The examples' home page and static blog replace the CMS's home page and sitemap, and on
+  // Workers their static rendering fails with the CMS mounted.
+  { features: ['cms', 'examples'], reason: 'The CMS serves the site\'s pages, so it cannot be combined with examples. Leave out examples (with cossack create, use --preset minimal, the default with cms; in a project, run cossack remove examples first).' },
+];
+
+/** The preset `cossack create` uses: a CMS project starts from the CMS alone, not the framework's examples. */
+export function defaultPreset(features) {
+  return features.includes('cms') ? 'minimal' : 'full-stack';
+}
 
 /** Where auth keeps users, roles and sessions: the CMS (RomeDB) or the ORM (`database`). */
 export function authStore(features) {
@@ -140,13 +149,13 @@ export function resolveRecipe(options = {}) {
     throw new Error(`Unknown adapter "${adapter}". Supported values: ${ADAPTERS.join(', ')}`);
   }
 
-  const preset = options.preset ?? 'full-stack';
+  const optionFeatures = options.features === undefined ? [] : parseList(options.features);
+  const preset = options.preset ?? defaultPreset(optionFeatures);
   if (!PRESET_REGISTRY[preset]) {
     throw new Error(`Unknown preset "${preset}". Supported values: ${Object.keys(PRESET_REGISTRY).join(', ')}`);
   }
 
   const presetFeatures = PRESET_REGISTRY[preset].features;
-  const optionFeatures = options.features === undefined ? [] : parseList(options.features);
   const explicitFeatures = FEATURES.filter((feature) =>
     [...presetFeatures, ...optionFeatures].includes(feature),
   );
