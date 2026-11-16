@@ -6,6 +6,13 @@
         "published": "2026-10-10T06:55:11.210Z",
         "notes": "https://github.com/cossackframework/cossack/releases/tag/0.9.0",
         "security": false
+      },
+      {
+        "version": "0.9.1",
+        "published": "2026-11-16T10:50:50.691Z",
+        "notes": "https://github.com/cossackframework/cossack/releases/tag/0.9.1",
+        "security": false,
+        "hostTemplate": "0.9.0"
       }
     ]
   }

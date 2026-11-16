@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/desktop",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "type": "module",
   "description": "Secure Electron desktop runtime for Cossack applications",
   "license": "MIT",

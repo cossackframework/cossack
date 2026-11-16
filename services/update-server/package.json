@@ -1,6 +1,6 @@
 {
   "name": "cossack-update-server",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "private": true,
   "type": "module",
   "description": "The update server of the Cossack CMS: answers which version is the latest (cms.cossack.dev/update)",

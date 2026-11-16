@@ -23,6 +23,9 @@
  *      for a release that fixes a security problem, and `--minimum-from <v>`
  *      when older sites must update in two steps.
  *
+ *   5. Sets `CMS_VERSION` in packages/cms/src/version.ts, which the CMS sends
+ *      to the update server.
+ *
  * What it deliberately does NOT do:
  *   - Touch `workspace:*` specifiers. pnpm rewrites those to real ranges at
  *     `pnpm publish` time, so they must stay literal in source.
@@ -41,6 +44,7 @@ const EXAMPLES_DIR = fileURLToPath(new URL('../examples/', import.meta.url));
 const ROOT_PACKAGE = fileURLToPath(new URL('../package.json', import.meta.url));
 const UPDATE_SERVER_PACKAGE = fileURLToPath(new URL('../services/update-server/package.json', import.meta.url));
 const ADD_RELEASE = fileURLToPath(new URL('../services/update-server/scripts/add-release.mjs', import.meta.url));
+const CMS_VERSION_FILE = fileURLToPath(new URL('../packages/cms/src/version.ts', import.meta.url));
 const KEYWORDS = new Set(['patch', 'minor', 'major']);
 /** Flags that take a value: the value is not the version argument. */
 const VALUE_FLAGS = new Set(['--minimum-from']);
@@ -227,6 +231,15 @@ async function main() {
   log(`  ${'(root) ' + workspace.name}`.padEnd(34) + ` ${workspace.version} -> ${newVersion}`);
   if (!dryRun) {
     await writeFile(ROOT_PACKAGE, stringify({ ...workspace, version: newVersion }), 'utf8');
+  }
+
+  // The CMS reports this constant to the update server; a test keeps it equal to package.json.
+  log(`  ${'(cms) src/version.ts'.padEnd(32)} ${newVersion}`);
+  if (!dryRun) {
+    const source = await readFile(CMS_VERSION_FILE, 'utf8');
+    const next = source.replace(/(export const CMS_VERSION = ')[^']*(';)/, `$1${newVersion}$2`);
+    if (next === source && !source.includes(`'${newVersion}'`)) throw new Error('packages/cms/src/version.ts has no CMS_VERSION to set.');
+    await writeFile(CMS_VERSION_FILE, next, 'utf8');
   }
 
   // The CMS's update server answers "which version is the latest" from this list.
