@@ -6,6 +6,7 @@ import { nodeSQLite } from '../src/runtime/node.js';
 import { MemoryDriver } from '../src/adapter/memory.js';
 import type { LoggerEvent } from '../src/adapter/types.js';
 import { SchemaBuilder } from '../src/schema/builder.js';
+import { sql } from '../src/sql/tag.js';
 import { redactSqlStructure } from '../src/query/diagnostics.js';
 
 @Entity()
@@ -100,7 +101,10 @@ it('keeps tied offset pages in primary-key order, handles offset without limit a
     expect(await query.count()).toBe(6); expect(await query.sum('id')).toBe(21);
     expect((await query.getMany()).map(record => record.id)).toEqual([3, 4]);
     expect(() => OrderedRecord.query().orderBy('rank', 'desc;DROP' as 'desc')).toThrow('direction');
-    expect(() => OrderedRecord.query().select('rank').limit(2).toSQL()).toThrow('explicit unique ordering');
+    // A column projection without the primary key still pages (ordered by the key).
+    expect(await OrderedRecord.query().select('rank').offset(4).limit(2).getMany()).toEqual([{ rank: 1 }, { rank: 1 }]);
+    expect(await OrderedRecord.findOne({ where: { id: 3 }, select: ['name'] })).toMatchObject({ name: 'record' });
+    expect(() => OrderedRecord.query().selectRaw(sql`rank`).limit(2).toSQL()).toThrow('explicit unique ordering');
   }); } finally { await orm.close(); }
 });
 

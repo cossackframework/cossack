@@ -30,19 +30,21 @@ const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
 // recipe's anonymous state records. Session listings show only auth rows.
 type SessionMeta = { type: 'auth' } | { type: 'password_reset' } | { type: 'oauth_state'; provider: string };
 
-let warnedAboutSessionDatabase = false;
+const warnedSessionErrors = new Set<string>();
 
 /**
  * Session lookup must never make a public request fail just because the
  * database binding or auth migrations are not ready yet. The auth middleware
- * treats the request as a guest and emits one actionable warning per isolate.
+ * treats the request as a guest and warns once per isolate for each distinct
+ * error, naming it, so a query bug is not mistaken for a missing database.
  */
-function warnAboutSessionDatabase(): void {
-  if (warnedAboutSessionDatabase) return;
-  warnedAboutSessionDatabase = true;
+function warnAboutSessionDatabase(error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  if (warnedSessionErrors.has(message)) return;
+  warnedSessionErrors.add(message);
   console.warn(
-    '[Cossack Auth] Session database is unavailable; continuing as guest. ' +
-    'Configure the DB binding and run `pnpm migrate` before using auth.',
+    `[Cossack Auth] Session lookup failed; continuing as guest: ${message}\n` +
+    'If the database is not set up, configure the DB binding and run `pnpm migrate` before using auth.',
   );
 }
 
@@ -167,8 +169,8 @@ export const auth = createAuth<PublicUser>({
   validateSessionId: async (sessionId, c) => {
     try {
       return (await authSessions.validate(sessionId, c))?.userId ?? null;
-    } catch {
-      warnAboutSessionDatabase();
+    } catch (error) {
+      warnAboutSessionDatabase(error);
       return null;
     }
   },
@@ -178,8 +180,8 @@ export const auth = createAuth<PublicUser>({
       if (!row) return null;
       const roles = await loadUserRoles(userId);
       return publicUser(row, roles);
-    } catch {
-      warnAboutSessionDatabase();
+    } catch (error) {
+      warnAboutSessionDatabase(error);
       return null;
     }
   },
