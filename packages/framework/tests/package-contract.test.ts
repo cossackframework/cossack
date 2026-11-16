@@ -28,7 +28,7 @@ describe('Hono package contract', () => {
       'utf8',
     ));
 
-    expect(packageJson.peerDependencies?.hono).toBe('^4.13.7');
+    expect(packageJson.peerDependencies?.hono).toBe('^4.13.18');
     expect(packageJson.dependencies?.hono).toBeUndefined();
     expect(packageJson.devDependencies?.hono).toMatch(/^\^4\.13\./);
   });
@@ -138,7 +138,7 @@ describe('framework publication contract', () => {
       expect(frameworkPackage.devDependencies).toHaveProperty(name);
     }
     expect(frameworkPackage.peerDependencies).toMatchObject({
-      hono: '^4.13.7',
+      hono: '^4.13.18',
       vite: '^8.1.6',
     });
   });

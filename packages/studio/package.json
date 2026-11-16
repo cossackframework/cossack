@@ -37,7 +37,7 @@
     "@cossackframework/renderer": "workspace:*",
     "@cossackframework/solar-icons": "^0.7.1",
     "@cossackframework/ui": "workspace:*",
-    "hono": "^4.13.7",
+    "hono": "^4.13.18",
     "prompts": "^2.4.2",
     "reflect-metadata": "^0.2.2"
   },

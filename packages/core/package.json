@@ -117,7 +117,7 @@
   "devDependencies": {
     "@types/jsdom": "^28.0.3",
     "@types/node": "^22.19.0",
-    "hono": "^4.13.7",
+    "hono": "^4.13.18",
     "jsdom": "^29.1.1",
     "reflect-metadata": "^0.2.2",
     "typescript": "^7.0.2",
@@ -125,6 +125,6 @@
     "vitest": "^4.1.12"
   },
   "peerDependencies": {
-    "hono": "^4.13.7"
+    "hono": "^4.13.18"
   }
 }

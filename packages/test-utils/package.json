@@ -12,7 +12,7 @@
     "@cossackframework/core": "workspace:*"
   },
   "peerDependencies": {
-    "hono": "^4.13.7",
+    "hono": "^4.13.18",
     "vitest": "^4.1.0"
   },
   "devDependencies": {

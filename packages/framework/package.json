@@ -266,8 +266,7 @@
     "@cossackframework/ui": "workspace:*",
     "@playwright/test": "^1.61.1",
     "@tailwindcss/vite": "^4.3.3",
-    "cossack": "workspace:*",
-    "hono": "^4.13.7",
+    "hono": "^4.13.18",
     "miniflare": "4.20260722.0",
     "reflect-metadata": "^0.2.2",
     "tailwindcss": "^4.3.3",
@@ -277,7 +276,7 @@
     "wrangler": "^4.114.0"
   },
   "peerDependencies": {
-    "hono": "^4.13.7",
+    "hono": "^4.13.18",
     "vite": "^8.1.6"
   },
   "engines": {
