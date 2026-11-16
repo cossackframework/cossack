@@ -53,6 +53,7 @@ description: 'Documentation for getting started with Cossack and learning its fe
 - [Plugin Manifest](/docs/cms/manifest.md)
 - [Hooks](/docs/cms/hooks.md)
 - [Themes](/docs/cms/themes.md)
+- [Your Own Pages](/docs/cms/custom-pages.md)
 - [Settings](/docs/cms/settings.md)
 - [Languages](/docs/cms/languages.md)
 - [Block References](/docs/cms/block-references.md)

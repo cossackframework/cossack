@@ -27,7 +27,9 @@ See [`cossack add cms`](/docs/cossack-cli.md#cossack-add-cms) for what the recip
 | `src/plugins/<name>/` | Your plugins and themes. |
 
 There is no `src/pages/`, `src/dashboard/` or `src/services/` folder unless you add your own
-pages: `/auth/*`, `/dashboard/*` and the site are served from the package.
+pages: `/auth/*`, `/dashboard/*` and the site are served from the package. A file you add
+under `src/pages/` is a route and reads the CMS from the request
+([Your own pages](/docs/cms/custom-pages.md)).
 
 `src/cms.config.ts` exports `storage`, `resources`, `modules` and `options`.
 
@@ -77,6 +79,8 @@ dashboard shows when a version is available and can ask your pipeline to run the
   defines points of its own.
 - [Themes](/docs/cms/themes.md): templates, helpers, loaders, options, presets, child
   themes and widget areas.
+- [Your own pages](/docs/cms/custom-pages.md): pages and API routes under `src/pages`, and
+  how they read the user, collections, settings and the database.
 - [Menus](/docs/cms/menus.md): the menu builder, headings and descriptions, field groups on
   items, mega menu panels, the Navigation block, `helpers.menu()` and the menus API. The
   dashboard's own sidebar is arranged under Appearance → Dashboard menu (see
