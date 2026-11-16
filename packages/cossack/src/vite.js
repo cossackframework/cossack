@@ -29,6 +29,25 @@ function exportTarget(exports, subpath) {
   return subpath === '.' ? conditional(exports) : undefined;
 }
 
+/** The directory of a package the project has, or null. */
+function packageDirectory(root, name) {
+  for (let current = root; ; current = path.dirname(current)) {
+    const candidate = path.join(current, 'node_modules', name);
+    if (fs.existsSync(path.join(candidate, 'package.json'))) return fs.realpathSync(candidate);
+    if (path.dirname(current) === current) return null;
+  }
+}
+
+/** Every import a package exports (`name`, `name/subpath`), without patterns; none when the project lacks it. */
+export function packageEntries(root, name) {
+  const directory = packageDirectory(root, name);
+  if (!directory) return [];
+  const exported = JSON.parse(fs.readFileSync(path.join(directory, 'package.json'), 'utf8')).exports;
+  if (!exported || typeof exported !== 'object' || !Object.keys(exported).some(key => key.startsWith('.'))) return [name];
+  return Object.keys(exported).filter(key => key.startsWith('.') && !key.includes('*') && !/\.(?:json|css)$/.test(key))
+    .map(key => name + key.slice(1));
+}
+
 /**
  * The file an import of `specifier` from the project resolves to, or null when the project
  * does not have the package. This module is in the CLI's package, which cannot resolve the
@@ -37,12 +56,7 @@ function exportTarget(exports, subpath) {
  */
 export function projectModule(root, specifier) {
   const name = packageOf(specifier);
-  let directory = null;
-  for (let current = root; ; current = path.dirname(current)) {
-    const candidate = path.join(current, 'node_modules', name);
-    if (fs.existsSync(path.join(candidate, 'package.json'))) { directory = fs.realpathSync(candidate); break; }
-    if (path.dirname(current) === current) break;
-  }
+  const directory = packageDirectory(root, name);
   if (!directory) return null;
   const manifest = JSON.parse(fs.readFileSync(path.join(directory, 'package.json'), 'utf8'));
   const subpath = `.${specifier.slice(name.length)}`;
@@ -169,6 +183,14 @@ export function cossackApp(options = {}) {
     plugins.push(...(options.plugins ?? []));
 
     const optional = ['@cossackframework/ui', '@cossackframework/solar-icons', '@cossackframework/auth', '@cossackframework/database'].filter(has);
+    // The development server bundles core and the renderer with the packages that import them:
+    // unbundled they are over a hundred modules, each a round trip between the Worker and Vite
+    // on every start. Every entry is listed, so all of their users (the bundled packages, the
+    // application's files and the served ones) share the one copy in the bundle: an entry left
+    // out would load from its files beside it, and a second renderer prints repeat() as text.
+    // A build and Desktop keep them out of the bundle, as before.
+    const sharedEntries = command === 'serve' && !desktop
+      ? ['@cossackframework/core', '@cossackframework/renderer'].flatMap(name => packageEntries(root, name)) : [];
     const base = {
       // Runtime files are not source code and must never reach Vite's watcher: local D1
       // updates its WAL/SHM files under .wrangler, RomeDB and media land in storage/, and
@@ -231,9 +253,14 @@ export function cossackApp(options = {}) {
           // after the initial scan; include them here so late discovery does not replace the
           // SSR cache under the worker. The framework's plugin adds the dependencies that the
           // application's and the mounted packages' files import.
+          // Vite transforms a module's imports while the server evaluates the module, not one
+          // request at a time as the server reaches each. Desktop keeps Vite's default: its
+          // window reports a startup error from the request that met it.
+          ...(desktop ? {} : { dev: { preTransformRequests: true } }),
           optimizeDeps: {
             include: [
               '@cossackframework/renderer > parse5',
+              ...sharedEntries,
               ...optional.filter(name => name !== '@cossackframework/solar-icons'),
               // The blocks entry with the root one: left out, its components load unbundled
               // beside the bundled ones and their icons are found late, one reload per wave.
@@ -243,10 +270,10 @@ export function cossackApp(options = {}) {
               '@cossackframework/framework/client/devtools',
               'hono/cookie',
             ],
-            // Pre-bundled packages import these rather than embedding copies: one renderer and
-            // one core keep directive classes and request state shared with application code
-            // (a copied renderer prints repeat() as text).
-            exclude: ['@cossackframework/core', '@cossackframework/renderer'],
+            // Without their bundle (a build, Desktop), pre-bundled packages import core and the
+            // renderer rather than embedding copies: one of each keeps directive classes and
+            // request state shared with application code.
+            ...(sharedEntries.length ? {} : { exclude: ['@cossackframework/core', '@cossackframework/renderer'] }),
           },
         },
       },

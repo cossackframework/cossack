@@ -13,7 +13,9 @@
  * TypeScript; the package's TypeScript modules it needs are loaded through Vite's `runnerImport`.
  */
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { isAbsolute, join } from 'node:path';
 import { runnerImport } from 'vite';
 
 /**
@@ -134,6 +136,31 @@ export function cossackCmsIcons() {
     };
 }
 
+/** The Worker entrypoint classes of `cms/worker` that a project's entry exports and no binding names. */
+const WORKER_ENTRYPOINTS = ['PluginBridge', 'PluginTail'];
+
+/**
+ * Development only: names the CMS's Worker entrypoints in the Worker's configuration, as
+ * service bindings to itself. The Cloudflare plugin starts the local runtime from the exports
+ * the configuration declares, loads the Worker to see what it does export, and starts the
+ * runtime again when the two differ: without this, every start loads the Worker twice (the
+ * second time with the first request). Only the classes the project's entry exports are named.
+ * @param {string} root
+ * @param {string} command
+ * @param {{ name?: string, main?: string, services?: { entrypoint?: string }[] }} workerConfig
+ */
+function developmentExports(root, command, workerConfig) {
+    if (command !== 'serve' || !workerConfig?.name) return {};
+    let entry = '';
+    try { entry = readFileSync(workerConfig.main && isAbsolute(workerConfig.main) ? workerConfig.main : join(root, workerConfig.main ?? 'src/index.ts'), 'utf8'); }
+    catch { return {}; }
+    const declared = new Set((workerConfig.services ?? []).map(service => service.entrypoint));
+    const services = WORKER_ENTRYPOINTS
+        .filter(name => new RegExp(`\\b${name}\\b`).test(entry) && !declared.has(name))
+        .map(name => ({ binding: `COSSACK_DEV_${name.replace(/(?<=[a-z])(?=[A-Z])/g, '_').toUpperCase()}`, service: workerConfig.name, entrypoint: name }));
+    return services.length ? { services } : {};
+}
+
 /** Every entry of the CMS library and its database bindings that server code imports on Workers. */
 const SERVER_ENTRIES = [
     '@cossackframework/cms', '@cossackframework/cms/server', '@cossackframework/cms/cloudflare',
@@ -145,7 +172,7 @@ const SERVER_ENTRIES = [
  * The CMS's part of a project's Vite configuration; the `cossack/vite` preset calls it
  * (`cossack.vite` in this package's package.json).
  */
-export async function cossackVite({ runtime, mode, command }) {
+export async function cossackVite({ root, runtime, mode, command }) {
     const { romedbDev, romedbDevVars } = await import('@cossackframework/romedb/dev');
     return {
         // Starts `romedb serve` in development when ROMEDB_URL is a loopback URL.
@@ -158,7 +185,7 @@ export async function cossackVite({ runtime, mode, command }) {
         // Plugins with only server code run in Workers of their own on Cloudflare (specs/cms-plugin-isolation.md).
         pages: { pluginIsolation: { runtime: '@cossackframework/cms/isolate' } },
         // The token of the local romedb serve that romedbDev started.
-        cloudflare: { config: romedbDevVars },
+        cloudflare: { config: workerConfig => ({ ...romedbDevVars(), ...developmentExports(root, command, workerConfig) }) },
         // RomeDB's native addon loads with Node, not through Vite, and shares @romedb/client's classes.
         config: runtime === 'node' && !(mode === 'desktop' && command === 'build')
             ? { environments: { ssr: { resolve: { external: ['@romedb/client', '@romedb/node'] } } } }

@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createApp } from '@cossackframework/scaffold';
-import { cossackApp, projectModule } from '../src/vite.js';
+import { cossackApp, projectModule, packageEntries } from '../src/vite.js';
 
 const roots = [];
 afterEach(async () => { for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true }); });
@@ -103,6 +103,28 @@ describe('cossack/vite preset', () => {
     const config = await configOf(await project({ adapter: 'cloudflare', features: ['workflows', 'schedules'] }));
     expect(names(config)).toEqual(expect.arrayContaining(['cossackWorkflows', 'cossackSchedules']));
     expect(names(await configOf(await project({ adapter: 'cloudflare' })))).not.toContain('cossackWorkflows');
+  });
+
+  it('bundles every entry of core and the renderer for the development server, and neither for a build or Desktop', async () => {
+    const root = await project({ adapter: 'cloudflare' });
+    await install(root, '@cossackframework/core', { 'package.json': { name: '@cossackframework/core', exports: {
+      '.': './dist/index.js', './hooks': './dist/hooks/index.js', './package.json': './package.json', './theme/*': './dist/theme/*.css' } } });
+    await install(root, '@cossackframework/renderer', { 'package.json': { name: '@cossackframework/renderer', exports: { '.': './dist/index.js', './server': './dist/server.js' } } });
+    expect(packageEntries(root, '@cossackframework/core')).toEqual(['@cossackframework/core', '@cossackframework/core/hooks']);
+    expect(packageEntries(root, 'not-installed')).toEqual([]);
+    const entries = ['@cossackframework/core', '@cossackframework/core/hooks', '@cossackframework/renderer', '@cossackframework/renderer/server'];
+    const serve = (await configOf(root, {}, { mode: 'development', command: 'serve' })).environments.ssr;
+    // Every entry, or one left out loads from its files beside the bundle: two copies.
+    expect(serve.optimizeDeps.include).toEqual(expect.arrayContaining(entries));
+    expect(serve.optimizeDeps.exclude).toBeUndefined();
+    expect(serve.dev).toEqual({ preTransformRequests: true });
+    for (const env of [{ mode: 'production', command: 'build' }, { mode: 'desktop', command: 'serve' }]) {
+      const environment = (await configOf(root, {}, env)).environments.ssr;
+      if (env.mode === 'desktop') expect(environment.dev).toBeUndefined();
+      const other = environment.optimizeDeps;
+      expect(other.exclude).toEqual(['@cossackframework/core', '@cossackframework/renderer']);
+      for (const entry of entries) expect(other.include).not.toContain(entry);
+    }
   });
 
   it('adds the part of a mounted package: its plugins, its options and its configuration', async () => {

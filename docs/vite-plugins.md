@@ -67,6 +67,24 @@ A page with an error therefore fails when it is first opened, not when the serve
 that page answers 500, the terminal prints the error, and the other pages keep working.
 `cossackApp({ pages: { deferPages: false } })` imports every page at the start again.
 
+### What the development server bundles up front
+
+On Workers, the development server fetches the server's modules from Vite one at a time, so
+the preset keeps their number low:
+
+- Core and the renderer are bundled with the packages that import them, every entry in one
+  pass, so the application and the packages share one copy. A build and the Desktop target
+  keep them as separate modules.
+- Vite transforms a module's imports ahead of the server asking for them.
+- The CMS bundles its library and the RomeDB bindings, and names the Worker classes its
+  entry exports (`PluginBridge`, `PluginTail`) as service bindings of the local Worker. The
+  Cloudflare plugin compares the exports the configuration declares with the ones the Worker
+  has, and starts the local runtime a second time when they differ. The bindings exist in
+  development only.
+
+A project that exports its own `WorkerEntrypoint` class without a binding that names it
+pays for that second start; a service binding to the class in `wrangler.jsonc` avoids it.
+
 ## The security plugin
 
 Cossack includes a security plugin named `vite-security-plugin`. It removes server code from client bundles.
