@@ -16,14 +16,7 @@
  *   3. Sets `version` in every examples/* package.json to the target and
  *      rewrites their in-monorepo ranges the same way, so examples never drift
  *      behind the packages they demonstrate.
- *   4. Adds the target to the CMS update server's release list
- *      (services/update-server/releases.json) and sets that service's version,
- *      so the release commit carries the entry. publish.yml checks that the
- *      entry exists and deploys the server after publishing. Pass `--security`
- *      for a release that fixes a security problem, and `--minimum-from <v>`
- *      when older sites must update in two steps.
- *
- *   5. Sets `CMS_VERSION` in packages/cms/src/version.ts, which the CMS sends
+ *   4. Sets `CMS_VERSION` in packages/cms/src/version.ts, which the CMS sends
  *      to the update server.
  *
  * What it deliberately does NOT do:
@@ -32,8 +25,10 @@
  *   - Touch external packages (e.g. @cossackframework/solar-icons) that live
  *     outside this repo. Only packages found in the packages folder are bumped.
  *   - Touch git. Commit and tag are left to you.
+ *   - Tell sites about the release. The CMS's update server is a separate, private
+ *     repository: add the version to its release list and deploy it after the
+ *     packages are on npm.
  */
-import { execFileSync } from 'node:child_process';
 import { readFile, writeFile, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -42,12 +37,8 @@ import { fileURLToPath } from 'node:url';
 const PACKAGES_DIR = fileURLToPath(new URL('../packages/', import.meta.url));
 const EXAMPLES_DIR = fileURLToPath(new URL('../examples/', import.meta.url));
 const ROOT_PACKAGE = fileURLToPath(new URL('../package.json', import.meta.url));
-const UPDATE_SERVER_PACKAGE = fileURLToPath(new URL('../services/update-server/package.json', import.meta.url));
-const ADD_RELEASE = fileURLToPath(new URL('../services/update-server/scripts/add-release.mjs', import.meta.url));
 const CMS_VERSION_FILE = fileURLToPath(new URL('../packages/cms/src/version.ts', import.meta.url));
 const KEYWORDS = new Set(['patch', 'minor', 'major']);
-/** Flags that take a value: the value is not the version argument. */
-const VALUE_FLAGS = new Set(['--minimum-from']);
 
 function log(...args) {
   console.log(...args);
@@ -160,9 +151,8 @@ async function main() {
     process.exit(1);
   }
 
-  const target = argv.find((a, index) => !a.startsWith('--') && !VALUE_FLAGS.has(argv[index - 1]));
+  const target = argv.find((a) => !a.startsWith('--'));
   const dryRun = argv.includes('--dry-run');
-  const minimumFrom = argv.includes('--minimum-from') ? argv[argv.indexOf('--minimum-from') + 1] : undefined;
   if (!target) {
     console.error('Error: missing version/keyword argument.');
     process.exit(1);
@@ -242,29 +232,15 @@ async function main() {
     await writeFile(CMS_VERSION_FILE, next, 'utf8');
   }
 
-  // The CMS's update server answers "which version is the latest" from this list.
-  const cms = packages.find((p) => p.json.name === '@cossackframework/cms');
-  const hostTemplate = cms?.json.cossack?.hostTemplate;
-  log(`  ${'(update server) releases.json'.padEnd(32)} + ${newVersion}`);
-  if (!dryRun) {
-    const server = await readJson(UPDATE_SERVER_PACKAGE);
-    await writeFile(UPDATE_SERVER_PACKAGE, stringify({ ...server, version: newVersion }), 'utf8');
-    execFileSync(process.execPath, [
-      ADD_RELEASE, '--version', newVersion,
-      ...(hostTemplate ? ['--host-template', hostTemplate] : []),
-      ...(minimumFrom ? ['--minimum-from', minimumFrom] : []),
-      ...(argv.includes('--security') ? ['--security'] : []),
-    ], { stdio: 'inherit' });
-  }
-
   log(`\nDone. ${totalRangeBumps} scoped range(s) rewritten across ${packages.length} packages.`);
   if (dryRun) {
     log('(dry-run: no files written)');
   } else {
     log('Next: review with `git diff`, commit, merge to master, then publish a');
     log(`GitHub release with tag ${newVersion} targeting master. publish.yml checks`);
-    log('that the tag matches every package version and the update server\'s');
-    log('release list, publishes to npm, then deploys the update server.');
+    log('that the tag matches every package version and publishes to npm.');
+    log('Then add the version to the update server\'s release list (its own');
+    log('repository) and deploy it, so sites learn about the release.');
   }
 }
 

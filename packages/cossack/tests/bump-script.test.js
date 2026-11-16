@@ -7,7 +7,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 // Run a copy inside each fixture: the script resolves the repository from its own location.
 const source = fileURLToPath(new URL('../../../scripts/bump.mjs', import.meta.url));
-const addRelease = fileURLToPath(new URL('../../../services/update-server/scripts/add-release.mjs', import.meta.url));
 const roots = [];
 afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
@@ -31,11 +30,6 @@ function fixture() {
   // Examples are private and historically drifted behind the packages.
   fs.mkdirSync(path.join(root, 'scripts'));
   fs.copyFileSync(source, path.join(root, 'scripts', 'bump.mjs'));
-  // The update server answers Tools → Updates from this list; a bump adds the release to it.
-  write(root, 'services/update-server/package.json', { name: 'update-server', private: true, version: '1.0.0' });
-  write(root, 'services/update-server/releases.json', { channels: { latest: [{ version: '1.0.0', published: '2026-01-01T00:00:00.000Z', notes: 'https://example.test/1.0.0', security: false }] } });
-  fs.mkdirSync(path.join(root, 'services/update-server/scripts'));
-  fs.copyFileSync(addRelease, path.join(root, 'services/update-server/scripts/add-release.mjs'));
   write(root, 'examples/demo/package.json', { name: 'demo', private: true, version: '0.8.3', dependencies: { '@scope/core': 'workspace:*', cli: '^1.0.0' } });
   return root;
 }
@@ -51,9 +45,7 @@ describe('scripts/bump.mjs', () => {
       version: '1.1.0',
       dependencies: { '@scope/core': 'workspace:*', cli: '^1.1.0' },
     });
-    expect(read(root, 'services/update-server/package.json').version).toBe('1.1.0');
     expect(fs.readFileSync(path.join(root, 'packages/cms/src/version.ts'), 'utf8')).toBe("export const CMS_VERSION = '1.1.0';\n");
-    expect(read(root, 'services/update-server/releases.json').channels.latest.map(release => release.version)).toContain('1.1.0');
   });
 
   it('writes nothing on --dry-run', () => {
@@ -62,6 +54,5 @@ describe('scripts/bump.mjs', () => {
     expect(read(root, 'examples/demo/package.json').version).toBe('0.8.3');
     expect(read(root, 'packages/core/package.json').version).toBe('1.0.0');
     expect(fs.readFileSync(path.join(root, 'packages/cms/src/version.ts'), 'utf8')).toContain("'1.0.0'");
-    expect(read(root, 'services/update-server/releases.json').channels.latest).toHaveLength(1);
   });
 });

@@ -129,9 +129,6 @@ jobs:
       - name: Run all unit tests
         run: pnpm run test:unit
 
-      - name: Test the CMS update server
-        run: pnpm run test:update-server
-
       - name: Test generated app with local package tarballs
         if: steps.changes.outputs.generated_app == 'true'
         run: pnpm run test:scaffold:local
