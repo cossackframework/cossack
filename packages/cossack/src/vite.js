@@ -232,6 +232,9 @@ export function cossackApp(options = {}) {
             include: [
               '@cossackframework/renderer > parse5',
               ...optional.filter(name => name !== '@cossackframework/solar-icons'),
+              // The blocks entry with the root one: left out, its components load unbundled
+              // beside the bundled ones and their icons are found late, one reload per wave.
+              ...(has('@cossackframework/ui') ? ['@cossackframework/ui/blocks'] : []),
               '@cossackframework/framework/cache',
               '@cossackframework/framework/api',
               '@cossackframework/framework/client/devtools',

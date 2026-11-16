@@ -89,10 +89,14 @@ describe('cossack/vite preset', () => {
     const minimal = await configOf(await project({ adapter: 'node' }));
     expect(minimal.resolve.dedupe).toEqual(['@cossackframework/core', '@cossackframework/renderer', '@cossackframework/framework', 'hono', 'reflect-metadata']);
     expect(minimal.environments.ssr.optimizeDeps.include).not.toContain('@cossackframework/ui');
+    expect(minimal.environments.ssr.optimizeDeps.include).not.toContain('@cossackframework/ui/blocks');
     const full = await configOf(await project({ adapter: 'node', preset: 'full-stack' }));
     expect(full.resolve.dedupe).toEqual(expect.arrayContaining(['@cossackframework/ui', '@cossackframework/solar-icons', '@cossackframework/auth']));
     expect(full.environments.ssr.resolve.noExternal).toEqual(expect.arrayContaining(['@cossackframework/ui', '@cossackframework/solar-icons']));
     expect(full.environments.ssr.optimizeDeps.include).toEqual(expect.arrayContaining(['@cossackframework/ui', '@cossackframework/auth', '@cossackframework/database']));
+    // The sign-in pages import the blocks entry: bundled with the root entry, its components
+    // and their icons are not found one reload at a time after the server starts.
+    expect(full.environments.ssr.optimizeDeps.include).toContain('@cossackframework/ui/blocks');
   });
 
   it('adds the plugins of the workflow and schedule features', async () => {
