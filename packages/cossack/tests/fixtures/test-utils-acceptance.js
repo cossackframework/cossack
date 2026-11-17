@@ -45,7 +45,8 @@ export async function checkTestUtilitiesAcceptance(browser,origin,root) {
   const accepted=await app.componentRpc({componentRouteId:id,action:'increment',state:hydration.public},credentials('alice'));
   expect(accepted.status,await accepted.clone().text()).toBe(200);
   expect((await accepted.json())._cossack_return).toEqual({count:3,viewer:'alice'});
-  const manifest=await(await app.request('/cossack-routes.json')).json();
+  // The route manifest is a build file the server does not serve.
+  const manifest=JSON.parse(await fs.readFile(path.join(root,'dist/client/cossack-routes.json'),'utf8'));
   const ownerRouteId=manifest.filePathToId['/src/pages/helper/layout.ts'];
   const snapshots=await Promise.all(['alice','bob'].map(async viewer=>{
     const response=await app.serviceRpc({ownerRouteId,slot:'0',componentRouteId:id,pageParams:hydration.metadata.params,action:'snapshot'},credentials(viewer));

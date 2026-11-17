@@ -11,9 +11,9 @@ import { promisify } from 'node:util';
 import { renderSsgPage } from '../src/ssg-renderer';
 // CLI is a JavaScript package; these integration-only imports have no declarations.
 // @ts-expect-error JS CLI entry point
-import { buildEffectiveRouteModel } from 'cossack/src/scan-routes.js';
+import { buildEffectiveRouteModel } from '../../cossack/src/scan-routes.js';
 // @ts-expect-error JS CLI entry point
-import { inspectCommand, checkCommand } from 'cossack/src/commands/inspect.js';
+import { inspectCommand, checkCommand } from '../../cossack/src/commands/inspect.js';
 
 const roots: string[] = [];
 afterEach(async () => {

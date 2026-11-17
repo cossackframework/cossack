@@ -167,7 +167,7 @@ export class Tabs extends Cossack {
             </div>
             ${repeat(items, item => item.value, item => html`<div role="tabpanel" id=${this.panelId(item.value)} aria-labelledby=${this.tabId(item.value)}
                 class=${classMap({ 'cs-tabs__panel focus:outline-none': true, 'flex-1': vertical && current === item.value })}
-                tabindex=${current === item.value ? 0 : null} hidden=${current === item.value ? null : item.disabled ? '' : 'until-found'}
+                tabindex=${current === item.value ? 0 : null} hidden=${current === item.value ? false : item.disabled ? true : 'until-found'}
                 @beforematch=${() => this.select(item.value)}>
                 <div class=${classMap({ 'cs-tabs__panel-content': true, 'mt-4': !vertical, 'ms-4': vertical })}>${item.content ?? this.children}</div>
             </div>`)}

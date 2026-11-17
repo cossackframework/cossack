@@ -19,7 +19,7 @@ it('renders a native collapsible button without an interactive wrapper', () => {
     expect(output).toContain('aria-controls="more-panel"');
     expect(output).toContain('aria-expanded="false"');
     // Disabled: plain hidden, so find-in-page cannot open what the trigger cannot.
-    expect(output).toMatch(/id="more-panel"[^>]*hidden=""/);
+    expect(output).toMatch(/id="more-panel"[^>]*hidden(="")?>/);
     expect(output).not.toContain('inert');
 });
 it.each([

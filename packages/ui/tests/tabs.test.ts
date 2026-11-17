@@ -36,5 +36,5 @@ it('keeps inactive panels findable and only the selected one focusable', () => {
     expect(panel('last')).not.toContain('tabindex');
     expect(panel('last')).not.toContain('aria-hidden');
     // A disabled tab cannot be selected, so find-in-page must not reveal its panel either.
-    expect(panel('disabled')).toContain('hidden=""');
+    expect(panel('disabled')).toMatch(/ hidden(="")?>/);
 });

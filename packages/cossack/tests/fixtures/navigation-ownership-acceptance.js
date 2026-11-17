@@ -179,7 +179,7 @@ export async function writeNavigationOwnershipAcceptance(root) {
   `);
 }
 
-export async function checkNavigationOwnershipBrowser(browser, origin) {
+export async function checkNavigationOwnershipBrowser(browser, origin, root) {
   const page = await browser.newPage();
   await page.addInitScript(() => {
     window.__navigationDiagnostics = [];
@@ -222,9 +222,9 @@ export async function checkNavigationOwnershipBrowser(browser, origin) {
     }
     expect(probes[0].result.snapshot.before.request).not.toBe(probes[1].result.snapshot.before.request);
     expect(probes[0].owners.some(marker=>probes[1].owners.includes(marker))).toBe(false);
-    const manifestResponse=await page.request.get(origin+'/cossack-routes.json');
-    expect(manifestResponse.status()).toBe(200);
-    const manifest=await manifestResponse.json();
+    // The server does not serve the route manifest; read the build file.
+    expect((await page.request.get(origin+'/cossack-routes.json')).status()).toBe(404);
+    const manifest=JSON.parse(await fs.readFile(path.join(root,'dist/client/cossack-routes.json'),'utf8'));
     const ownerRouteId=manifest.filePathToId['/src/pages/probe/nested/layout.ts'];
     const pageRouteId=manifest.filePathToId['/src/pages/probe/nested/index.ts'];
     expect(ownerRouteId).toBeTruthy();expect(pageRouteId).toBeTruthy();

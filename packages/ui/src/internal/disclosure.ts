@@ -38,8 +38,8 @@ export function disclosureStyle(open: boolean): string {
  * The closed panel's hidden attribute: find-in-page can still reveal it (the panel then fires
  * beforematch), except while disabled. Browsers without until-found treat it as plain hidden.
  */
-export function disclosureHidden(open: boolean, disabled?: boolean): string | null {
-    return open ? null : disabled ? "" : "until-found";
+export function disclosureHidden(open: boolean, disabled?: boolean): boolean | "until-found" {
+    return open ? false : disabled ? true : "until-found";
 }
 
 /** Share height animation without retaining a height clamp on open content. */
