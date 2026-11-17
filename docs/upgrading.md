@@ -147,7 +147,7 @@ check needs one of these changes:
 | HoverCard | Give `id`, `label` and `content`, and a focusable trigger. |
 | AlertDialog | Give an `id` and a `title`. Set `open=false` in `onClose`. `onAction` does not close it. |
 | Command | Give an `id` and a `label`. Ctrl/Meta+K needs `shortcut: true`, on one palette only. |
-| Accordion, Collapsible | Give an `id`. Collapsible's `trigger` is text; style the button with `triggerProps`. |
+| Accordion, Collapsible | Give an `id`. `summary` (Accordion) and `trigger` (Collapsible) are text or a template; style the button with `triggerProps`. |
 | Tabs | Give an `id` and a `label`. Use `value` with `onChange`, not the `active` field. Item labels that are not text need `ariaLabel`. |
 | Toggle, ToggleGroup | ToggleGroup needs a `label`. Use `value` with `onChange`, not the `selected` field. |
 | Menubar | Give an `id` and a `label`, and each menu a `value`. Do not write `openMenu`. |

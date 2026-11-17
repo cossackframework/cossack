@@ -9,14 +9,15 @@
  * folder lists each kind.
  */
 import fs from 'node:fs/promises';
-import path from 'node:path';
-import { createRequire } from 'node:module';
 
 /** The package a CMS project mounts. */
 export const CMS_PACKAGE = '@cossackframework/cms';
-/** The CMS application inside @cossackframework/cms. */
-export const cmsAppDir = path.join(path.dirname(createRequire(import.meta.url).resolve(`${CMS_PACKAGE}/package.json`)), 'app');
-const manifest = JSON.parse(await fs.readFile(path.join(cmsAppDir, 'cossack-recipe.json'), 'utf8'));
+/**
+ * A copy of `packages/cms/app/cossack-recipe.json`, so the scaffold (and the `cossack` CLI,
+ * which a project may keep in production for migrations) does not depend on the CMS package.
+ * `tests/cms-recipe.test.js` fails when the two differ.
+ */
+const manifest = JSON.parse(await fs.readFile(new URL('./cms-recipe.json', import.meta.url), 'utf8'));
 /** Everything the package serves: its own sources, and the shell `pnpm sync` writes into it. */
 const served = [...manifest.served, ...manifest.shell];
 const servedDirectories = served.filter(entry => entry.endsWith('/'));

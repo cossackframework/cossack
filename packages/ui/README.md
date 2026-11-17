@@ -339,13 +339,24 @@ back to `line`:
 
 Both components accept `open` for parent-controlled state, or `defaultOpen`
 for local state, and call `onOpenChange(open)` when the trigger is used.
-`Accordion` uses a button summary. `Collapsible` accepts custom trigger content.
+`Accordion` takes its header as `summary` and `Collapsible` as `trigger`: text,
+or a template for a rich header (an avatar, badges, counts). The component keeps
+the button, `aria-expanded` and the animation. The template becomes the button's
+content, so it must give the button a name (text, or `aria-label` in
+`triggerProps`) and must not hold links, buttons or other controls.
+
+```ts
+component(Accordion, {
+    id: 'lead-42',
+    summary: html`<img src=${lead.photo} alt="" class="size-6 rounded-full"> <span>${lead.name}</span> ${component(Badge, {}, lead.status)}`,
+}, details)
+```
 
 Open content has automatic height and visible overflow, including during SSR.
 Async rows, validation messages, and absolutely positioned dropdowns can grow
 or extend beyond the panel. Height is measured on each toggle and clipped only
-while animating or closed. Closed panels are inert and hidden from assistive
-technology. Reduced-motion preferences disable the height animation.
+while animating or closed. Closed panels use `hidden="until-found"`, so
+find-in-page opens them, and are hidden from assistive technology. Reduced-motion preferences disable the height animation.
 
 ## Progress values
 

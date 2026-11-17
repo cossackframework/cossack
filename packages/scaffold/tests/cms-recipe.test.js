@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 import { afterEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -183,8 +184,12 @@ describe('cms recipe', () => {
     await expect(addFeature(projectDir, 'cms', { interactive: false })).rejects.toThrow(/keeps its users in the database feature/);
   });
   it('reads the recipe from the CMS application: what is served and rendered', async () => {
-    const { cmsAppDir, isCmsPath, isServedCmsPath } = await import('../src/cms-recipe.js');
+    const { isCmsPath, isServedCmsPath } = await import('../src/cms-recipe.js');
+    const cmsAppDir = path.join(path.dirname(createRequire(import.meta.url).resolve('@cossackframework/cms/package.json')), 'app');
     const manifest = JSON.parse(await fs.readFile(path.join(cmsAppDir, 'cossack-recipe.json'), 'utf8'));
+    // The scaffold ships a copy, so the CLI does not depend on the CMS package.
+    const copy = JSON.parse(await fs.readFile(new URL('../src/cms-recipe.json', import.meta.url), 'utf8'));
+    expect(copy, 'copy packages/cms/app/cossack-recipe.json to packages/scaffold/src/cms-recipe.json').toEqual(manifest);
     for (const rel of manifest.served) await expect(fs.access(path.join(cmsAppDir, rel)), rel).resolves.toBeUndefined();
     for (const rel of manifest.rendered) expect(isCmsPath(rel), rel).toBe(true);
     for (const rel of ['src/cms/site.ts', 'src/pages/dashboard/index.ts', 'src/pages/dashboard/layout.ts', 'src/pages/auth/login/index.ts', 'src/dashboard/list-table.ts', 'src/auth.ts'])

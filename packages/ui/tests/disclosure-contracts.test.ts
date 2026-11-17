@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { component, renderToString } from '@cossackframework/renderer';
+import { component, html, renderToString } from '@cossackframework/renderer';
 import { Accordion } from '../src/components/Accordion';
 import { Collapsible } from '../src/components/Collapsible';
 
@@ -31,6 +31,15 @@ it.each([
     expect(output).toContain('Findable');
     expect(output).not.toContain('inert');
     expect(output).not.toMatch(/id="panel-panel"[^>]*aria-hidden/);
+});
+it.each([
+    ['Accordion', () => component(Accordion, { id: 'lead', summary: html`<img src="/a.png" alt=""> <span>Ada</span> <span class="badge">3</span>` }, 'Body')],
+    ['Collapsible', () => component(Collapsible, { id: 'lead', trigger: html`<img src="/a.png" alt=""> <span>Ada</span> <span class="badge">3</span>` }, 'Body')],
+])('%s puts a template header inside its own trigger button', (_name, render) => {
+    const output = renderToString(render());
+    expect(output).toMatch(/<button[^>]*id="lead-trigger"[^>]*>[\s\S]*<img src="\/a.png" alt="">[\s\S]*<span>Ada<\/span>[\s\S]*<span class="badge">3<\/span>[\s\S]*<\/button>/);
+    expect(output).toContain('aria-expanded="false"');
+    expect(output).toContain('aria-controls="lead-panel"');
 });
 it('rejects unstable IDs, empty labels and invalid heading levels', () => {
     expect(() => renderToString(component(Accordion, { id: 'two words', summary: 'Details' }))).toThrow('id');

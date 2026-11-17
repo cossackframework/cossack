@@ -1,4 +1,4 @@
-import { PreventDefaultResult, preventDefault, type ReactiveControllerHost } from '@cossackframework/renderer';
+import { PreventDefaultResult, preventDefault, isTemplateResult, type ReactiveControllerHost, type TemplateResult } from '@cossackframework/renderer';
 import type { GlobalAttributes, ButtonAttributes, ControlEvent } from '../native-attributes';
 
 export type DisclosureTriggerProps = Omit<ButtonAttributes, 'id' | 'type' | 'role' | 'disabled' | '?disabled' | 'aria-expanded' | 'aria-controls' | 'popovertarget' | 'popovertargetaction'>;
@@ -13,9 +13,10 @@ export type DisclosureProps = Omit<GlobalAttributes<HTMLDivElement>, 'id'> & {
     triggerProps?: DisclosureTriggerProps;
     panelProps?: DisclosurePanelProps;
 };
-export function validateDisclosure(id: string, label: string) {
+export function validateDisclosure(id: string, label: string | TemplateResult) {
     if (typeof id !== 'string' || !id || /\s/.test(id)) throw new Error('Disclosure requires a nonempty, whitespace-free id.');
-    if (typeof label !== 'string' || !label.trim()) throw new Error('Disclosure requires nonempty trigger text.');
+    if (isTemplateResult(label)) return;
+    if (typeof label !== 'string' || !label.trim()) throw new Error('Disclosure requires nonempty trigger text or a template.');
 }
 export function disclosureClick(supplied: DisclosureTriggerProps['@click'], toggle: () => void) {
     const listener: EventListener = event => {
