@@ -36,14 +36,19 @@ const warnedSessionErrors = new Set<string>();
  * Session lookup must never make a public request fail just because the
  * database binding or auth migrations are not ready yet. The auth middleware
  * treats the request as a guest and warns once per isolate for each distinct
- * error, naming it, so a query bug is not mistaken for a missing database.
+ * kind of error, naming its type and code, so a query bug is not mistaken for
+ * a missing database.
  */
 function warnAboutSessionDatabase(error: unknown): void {
-  const message = error instanceof Error ? error.message : String(error);
-  if (warnedSessionErrors.has(message)) return;
-  warnedSessionErrors.add(message);
+  // The message can hold connection details or secrets, so only the error's
+  // type and code are printed.
+  const name = error instanceof Error ? error.name : typeof error;
+  const code = (error as { code?: unknown } | null)?.code;
+  const kind = typeof code === 'string' || typeof code === 'number' ? `${name} ${code}` : name;
+  if (warnedSessionErrors.has(kind)) return;
+  warnedSessionErrors.add(kind);
   console.warn(
-    `[Cossack Auth] Session lookup failed; continuing as guest: ${message}\n` +
+    `[Cossack Auth] Session lookup failed with ${kind}; continuing as guest.\n` +
     'If the database is not set up, configure the DB binding and run `pnpm migrate` before using auth.',
   );
 }

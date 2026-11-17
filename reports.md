@@ -165,8 +165,9 @@ Tests: `packages/framework/tests/package-mounts.test.ts`.
 query: the builder appends the primary key to `ORDER BY` without selecting
 it, so `findOne({ select })` and `find({ select, take })` work with any
 fields. Joined, grouped, distinct and `selectRaw()` pages still need an
-explicit unique order. The auth warning now names the error ("Session lookup
-failed; continuing as guest: …") once per distinct error, and mentions the
+explicit unique order. The auth warning now names the error's type and code
+("Session lookup failed with ConfigurationError; continuing as guest"), never
+its message, which can hold secrets, once per kind of error, and mentions the
 database setup only as a possible cause. Docs:
 `packages/database/docs/queries.md` (Stable pagination). Tests:
 `packages/database/test/rt15-runtime-dx.test.ts`.

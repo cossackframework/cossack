@@ -355,8 +355,12 @@ describe('generated auth security', () => {
       User.findOne.mockRejectedValue(new Error('PRIVATE_DATABASE_PASSWORD_TOKEN'));
       expect(await provider.validateSessionId('fixture')).toBeNull();
       expect(await provider.resolveUserById('fixture')).toBeNull();
-      expect(warn).toHaveBeenCalledOnce();
+      // One warning per kind of error: the session read wraps the database error.
+      expect(await provider.validateSessionId('fixture')).toBeNull();
+      expect(warn).toHaveBeenCalledTimes(2);
       expect(JSON.stringify(warn.mock.calls)).not.toContain('PRIVATE_DATABASE_PASSWORD_TOKEN');
+      expect(warn.mock.calls[0][0]).toContain('Session lookup failed with AuthError COSSACK_AUTH_SESSION_READ_FAILED;');
+      expect(warn.mock.calls[1][0]).toContain('Session lookup failed with Error;');
       expect(warn.mock.calls[0][0]).toContain('pnpm migrate');
     } finally { warn.mockRestore(); }
   });
