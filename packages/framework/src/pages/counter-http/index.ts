@@ -1,4 +1,4 @@
-import { Cossack, Page, Server, State, HeadContext, HeadValue } from "@cossackframework/core";
+import { Cossack, Page, Server, State, Client, Optimistic, input, HeadContext, HeadValue } from "@cossackframework/core";
 import { TemplateResult } from "@cossackframework/renderer";
 import { component, html } from "@cossackframework/renderer";
 import { Button, ButtonGroup } from "@cossackframework/ui";
@@ -20,9 +20,22 @@ export class CounterHttp extends Cossack {
         this.count = 0;
     }
 
-    @Server()
+    // Every request carries the page's state, and fast clicks overlap: a plain
+    // `this.count++` on the server would start each click from the same count.
+    // Each click sends the count it expects instead, and previews it at once.
+    @Optimistic('save')
+    preview(value: { count: number }) {
+        this.count = value.count;
+    }
+
+    @Server({ input: input.object({ count: input.number() }) })
+    save(value: { count: number }) {
+        this.count = value.count;
+    }
+
+    @Client()
     increment() {
-        this.count++;
+        void this.save({ count: this.count + 1 });
     }
 
     @Server()

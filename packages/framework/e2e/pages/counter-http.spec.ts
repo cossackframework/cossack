@@ -19,6 +19,19 @@ test.describe('Counter HTTP Page', () => {
     await expect(page.getByText(/^Count: -?\d+$/)).toHaveText('Count: 1');
   });
 
+  test('counts every click when clicks overlap their requests', async ({ page }) => {
+    // Playwright's own clicks are too slow to overlap the requests.
+    await page.getByRole('button', { name: 'Increment', exact: true }).evaluate(async button => {
+      for (let i = 0; i < 6; i++) {
+        (button as HTMLButtonElement).click();
+        await new Promise(resolve => setTimeout(resolve, 5));
+      }
+    });
+    await expect(page.getByText(/^Count: -?\d+$/)).toHaveText('Count: 6');
+    await page.waitForLoadState('networkidle');
+    await expect(page.getByText(/^Count: -?\d+$/)).toHaveText('Count: 6');
+  });
+
   test('should decrement counter and follow the server redirect to tasks', async ({ page }) => {
     await page.getByRole('button', { name: 'Decrement', exact: true }).click();
     await page.waitForURL(/\/tasks$/, { timeout: 10_000 });
