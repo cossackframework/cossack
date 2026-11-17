@@ -330,11 +330,11 @@ test.describe('Components demo: interactions', () => {
       await trigger.click();
       await expect(trigger).toHaveAttribute('aria-expanded', 'true');
       await expect(wrapper).toHaveCSS('overflow', 'visible');
-      await expect(wrapper).not.toHaveAttribute('inert');
+      await expect(wrapper).not.toHaveAttribute('hidden');
       await trigger.click();
       await expect(trigger).toHaveAttribute('aria-expanded', 'false');
       await expect(wrapper).toHaveCSS('height', '0px');
-      await expect(wrapper).toHaveAttribute('inert');
+      await expect(wrapper).toHaveAttribute('hidden', 'until-found');
     });
 
     for (const kind of ['accordion', 'collapsible']) {
@@ -343,7 +343,7 @@ test.describe('Components demo: interactions', () => {
         const wrapper = item.locator(`.cs-${kind}__content-wrapper`);
         const content = wrapper.locator(':scope > div');
         const trigger = item.locator(kind === 'accordion' ? '.cs-accordion__summary' : '.cs-collapsible__trigger');
-        if (await wrapper.getAttribute('aria-hidden') === 'true') await trigger.click();
+        if (await wrapper.getAttribute('hidden') !== null) await trigger.click();
         await expect(wrapper).toHaveCSS('overflow', 'visible');
 
         // Simulate asynchronous content and an absolutely positioned autocomplete.
