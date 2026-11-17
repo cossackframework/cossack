@@ -1,12 +1,12 @@
-import { html } from "@cossackframework/renderer";
+import { html, type TemplateResult } from "@cossackframework/renderer";
 import { Cossack, Component, ClientState, Client, createRef } from "@cossackframework/core";
 
 import { ControlledValue } from "../native-attributes";
 import { DisclosureController, disclosureStyle, disclosureHidden, disclosureClick, validateDisclosure, restoreDisclosureFocus, type DisclosureProps } from "../internal/disclosure";
 
 export type CollapsibleProps = DisclosureProps & {
-    /** Text inside the native trigger button. Style it with triggerProps. */
-    trigger: string;
+    /** Text or a template inside the native trigger button, with no controls in it. Style it with triggerProps. */
+    trigger: string | TemplateResult;
 };
 
 /** Native disclosure button with caller-owned content and optional controlled state. */

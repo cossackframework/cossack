@@ -1,4 +1,4 @@
-import { html, classMap, component } from "@cossackframework/renderer";
+import { html, classMap, component, type TemplateResult } from "@cossackframework/renderer";
 import {
     Cossack,
     Component,
@@ -13,7 +13,12 @@ import { Icon } from "../icons/Icon";
 import { AltArrowDownIcon as altArrowDownIcon } from "@cossackframework/solar-icons/alt-arrow-down";
 
 export type AccordionProps = DisclosureProps & {
-    summary: string;
+    /**
+     * The trigger button's content: text, or a template for a rich header (avatar, badges,
+     * counts). A template must hold text for the button's name, or set `aria-label` in
+     * `triggerProps`, and must not hold links, buttons or other controls.
+     */
+    summary: string | TemplateResult;
     headingLevel?: 2 | 3 | 4 | 5 | 6;
 };
 
@@ -75,7 +80,7 @@ export class Accordion extends Cossack {
                     aria-expanded=${open ? "true" : "false"}
                     ...=${{ ...triggerProps, '@click': disclosureClick(triggerProps['@click'], () => this.toggle()) }}
                 >
-                    <span>${summary}</span>
+                    <span class="cs-accordion__label min-w-0 flex-1">${summary}</span>
                     <span
                         aria-hidden="true" class="cs-accordion__chevron text-muted-foreground shrink-0 transition-transform duration-200 motion-reduce:transition-none"
                         style=${`transform: rotate(${open ? 180 : 0}deg);`}
