@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/example-desktop-counter",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "Cossack Framework Electron Desktop counter example",
   "private": true,
   "type": "module",
