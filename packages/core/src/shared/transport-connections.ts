@@ -98,6 +98,44 @@ function updateStatus(
     component.requestUpdate?.();
 }
 
+/** Calls waiting for a component's WebSocket to open; true once it opens, false if it closes for good. */
+const socketOpenWaiters = new WeakMap<object, Set<(open: boolean) => void>>();
+
+function settleSocketWaiters(component: object, open: boolean): void {
+    const waiters = socketOpenWaiters.get(component);
+    if (!waiters) return;
+    socketOpenWaiters.delete(component);
+    for (const settle of waiters) settle(open);
+}
+
+/** True while the component's WebSocket is being opened or reopened. */
+export function isSocketPending(component: any): boolean {
+    const state = component?.__realtimeStatus?.websocket?.state;
+    return state === 'connecting' || state === 'reconnecting';
+}
+
+/**
+ * Wait until the component's WebSocket opens. Resolves false when it closes
+ * for good, the wait exceeds `timeoutMs`, or `signal` aborts.
+ */
+export function whenSocketOpen(component: object, timeoutMs: number, signal: AbortSignal): Promise<boolean> {
+    return new Promise(resolve => {
+        let waiters = socketOpenWaiters.get(component);
+        if (!waiters) socketOpenWaiters.set(component, waiters = new Set());
+        const settle = (open: boolean) => {
+            clearTimeout(timer);
+            signal.removeEventListener('abort', aborted);
+            waiters!.delete(settle);
+            resolve(open);
+        };
+        const aborted = () => settle(false);
+        const timer = setTimeout(() => settle(false), timeoutMs);
+        if (signal.aborted) return settle(false);
+        signal.addEventListener('abort', aborted, { once: true });
+        waiters.add(settle);
+    });
+}
+
 /** Bounded exponential reconnect delay: 0.5s doubling to a 30s ceiling. */
 export function realtimeReconnectDelay(attempts: number): number {
     return Math.min(30_000, 500 * 2 ** Math.min(Math.max(attempts - 1, 0), 6));
@@ -200,6 +238,7 @@ export function connectWebSocket(component: any): void {
     if ('error' in first) {
         // Fail closed: without a server-computed target there is nothing to join.
         updateStatus(component, 'websocket', { state: 'closed', attempts: 0, lastError: first.error });
+        settleSocketWaiters(component, false);
         return;
     }
 
@@ -232,6 +271,7 @@ export function connectWebSocket(component: any): void {
             attempt = 0;
             resetOptimisticSnapshotHistory(component);
             updateStatus(component, 'websocket', { state: 'open', attempts: 0, lastError: undefined });
+            settleSocketWaiters(component, true);
         };
         ws.onmessage = (event: MessageEvent) => {
             if (!isCurrent()) return;
@@ -261,6 +301,7 @@ export function connectWebSocket(component: any): void {
                     state: 'closed', attempts: 0,
                     lastError: 'Realtime authorization changed. Reload the page to reconnect.',
                 });
+                settleSocketWaiters(component, false);
                 return;
             }
             // Request-scoped frames route to their waiting call; broadcasts
@@ -317,6 +358,7 @@ export function connectWebSocket(component: any): void {
             if (component.websocket !== ws) return;
             if ((ws as any).__cossack_intentional_close || component._phase === 'Destroyed') {
                 Object.assign(realtimeStatus(component).websocket, { state: 'closed', updatedAt: Date.now() });
+                settleSocketWaiters(component, false);
                 if (component._phase !== 'Destroyed') component.requestUpdate?.();
                 return;
             }
@@ -347,6 +389,7 @@ export function connectWebSocket(component: any): void {
             socketDisposers.delete(ws);
             ws.onopen = ws.onclose = ws.onerror = ws.onmessage = null;
             failPendingSocketCalls(ws);
+            settleSocketWaiters(component, false);
             ws.close();
         });
     };
