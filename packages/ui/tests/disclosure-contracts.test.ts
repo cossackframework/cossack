@@ -18,7 +18,19 @@ it('renders a native collapsible button without an interactive wrapper', () => {
     expect(output).toMatch(/<button[^>]*id="more-trigger"[^>]*disabled/);
     expect(output).toContain('aria-controls="more-panel"');
     expect(output).toContain('aria-expanded="false"');
-    expect(output).toContain('inert');
+    // Disabled: plain hidden, so find-in-page cannot open what the trigger cannot.
+    expect(output).toMatch(/id="more-panel"[^>]*hidden(="")?>/);
+    expect(output).not.toContain('inert');
+});
+it.each([
+    ['Accordion', () => component(Accordion, { id: 'panel', summary: 'Details' }, 'Findable')],
+    ['Collapsible', () => component(Collapsible, { id: 'panel', trigger: 'Details' }, 'Findable')],
+])('%s keeps closed content findable with until-found', (_name, render) => {
+    const output = renderToString(render());
+    expect(output).toMatch(/id="panel-panel"[^>]*hidden="until-found"/);
+    expect(output).toContain('Findable');
+    expect(output).not.toContain('inert');
+    expect(output).not.toMatch(/id="panel-panel"[^>]*aria-hidden/);
 });
 it('rejects unstable IDs, empty labels and invalid heading levels', () => {
     expect(() => renderToString(component(Accordion, { id: 'two words', summary: 'Details' }))).toThrow('id');

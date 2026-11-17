@@ -243,16 +243,16 @@ describe("Accordion", () => {
         expect(out).toContain("cs-accordion__content-wrapper");
     });
 
-    it("renders unclamped open content and inert closed content", () => {
+    it("renders unclamped open content and findable hidden closed content", () => {
         const open = renderComp(Accordion, { id: "section", open: true, summary: "X" });
         const closed = renderComp(Accordion, { id: "section", open: false, summary: "X" });
         expect(open).toContain("height: auto; overflow: visible");
         expect(open).toContain('aria-expanded="true"');
-        expect(open).not.toContain("inert");
+        expect(open).not.toMatch(/id="section-panel"[^>]*hidden/);
         expect(closed).toContain("height: 0; overflow: hidden");
         expect(closed).toContain('aria-expanded="false"');
-        expect(closed).toContain('aria-hidden="true"');
-        expect(closed).toContain("inert");
+        expect(closed).toContain('hidden="until-found"');
+        expect(closed).not.toContain("inert");
     });
 
     it("renders a chevron svg that rotates when open", () => {
@@ -413,8 +413,10 @@ describe("Tabs", () => {
         expect(out).toContain("Content A");
         expect(out).toContain("Content B");
         expect(out.match(/role="tabpanel"/g)).toHaveLength(2);
-        expect(out).toContain('aria-hidden="true"');
-        expect(out).toContain('aria-hidden="false"');
+        expect(out).toMatch(/id="tabs-panel-a"[^>]*tabindex="0"/);
+        expect(out).not.toMatch(/id="tabs-panel-a"[^>]*hidden/);
+        expect(out).toMatch(/id="tabs-panel-b"[^>]*hidden="until-found"/);
+        expect(out).not.toMatch(/id="tabs-panel-b"[^>]*tabindex/);
     });
 
     it("marks the active tab with aria-selected", () => {

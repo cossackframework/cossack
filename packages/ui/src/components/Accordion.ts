@@ -8,7 +8,7 @@ import {
     type RefObject,
 } from "@cossackframework/core";
 import { ControlledValue } from "../native-attributes";
-import { DisclosureController, disclosureStyle, disclosureClick, validateDisclosure, restoreDisclosureFocus, type DisclosureProps } from "../internal/disclosure";
+import { DisclosureController, disclosureStyle, disclosureHidden, disclosureClick, validateDisclosure, restoreDisclosureFocus, type DisclosureProps } from "../internal/disclosure";
 import { Icon } from "../icons/Icon";
 import { AltArrowDownIcon as altArrowDownIcon } from "@cossackframework/solar-icons/alt-arrow-down";
 
@@ -77,7 +77,7 @@ export class Accordion extends Cossack {
                 >
                     <span>${summary}</span>
                     <span
-                        aria-hidden="true" class="cs-accordion__chevron text-muted-foreground shrink-0 transition-transform duration-200"
+                        aria-hidden="true" class="cs-accordion__chevron text-muted-foreground shrink-0 transition-transform duration-200 motion-reduce:transition-none"
                         style=${`transform: rotate(${open ? 180 : 0}deg);`}
                     >
                         ${component(Icon, { entry: altArrowDownIcon, size: 16 })}
@@ -89,8 +89,8 @@ export class Accordion extends Cossack {
                     class="cs-accordion__content-wrapper"
                     ref=${this.wrapperRef}
                     style=${disclosureStyle(open)}
-                    ?inert=${!open}
-                    aria-hidden=${open ? "false" : "true"}
+                    hidden=${disclosureHidden(open, disabled)}
+                    @beforematch=${() => this.revealed()}
                 >
                     <div ref=${this.contentRef} class="cs-accordion__content px-4 py-3">
                         ${this.children}
@@ -103,15 +103,26 @@ export class Accordion extends Cossack {
     @Client()
     toggle() {
         if (this.props.disabled || this.trigger?.matches(':disabled')) return;
-        const currentOpen = this.controlled.base(this.props, this.isOpen);
+        this.propose(!this.controlled.base(this.props, this.isOpen));
+    }
 
+    /** Find-in-page revealed the closed panel: open it to match. */
+    @Client()
+    private revealed() {
+        if (this.controlled.base(this.props, this.isOpen)) return;
+        this.disclosure.revealed();
+        this.propose(true);
+    }
+
+    @Client()
+    private propose(open: boolean) {
         if (this.props.open !== undefined) {
-            this.props.onOpenChange?.(this.controlled.emit(this.props, !currentOpen));
+            this.props.onOpenChange?.(this.controlled.emit(this.props, open));
             return;
         }
         this.userInteracted = true;
-        this.internalOpen = !currentOpen;
-        this.props.onOpenChange?.(this.controlled.emit(this.props, this.internalOpen));
+        this.internalOpen = open;
+        this.props.onOpenChange?.(this.controlled.emit(this.props, open));
     }
 
     onMount() {

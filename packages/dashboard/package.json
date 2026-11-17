@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/dashboard",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "type": "module",
   "description": "Cossack sign-in pages and dashboard on the database ORM, served from the package",
   "license": "MIT",
@@ -33,13 +33,13 @@
     "@cossackframework/database": "workspace:*",
     "@cossackframework/framework": "workspace:*",
     "@cossackframework/ui": "workspace:*",
-    "hono": "^4.13.7"
+    "hono": "^4.13.18"
   },
   "devDependencies": {
     "@cossackframework/database": "workspace:*",
     "@cossackframework/framework": "workspace:*",
     "@cossackframework/ui": "workspace:*",
-    "hono": "^4.13.7",
+    "hono": "^4.13.18",
     "vitest": "^4.1.12"
   },
   "exports": {

@@ -41,7 +41,8 @@ export class Drawer extends Cossack {
         const style = `${SIDE_POS[side]};${dims.dim}:${size || dims.val};${dims.dim === 'width' ? 'max-width:90vw' : 'max-height:85vh'};`;
         const attrs = { ...rest, 'aria-label': rest['aria-label'] ?? (rest['aria-labelledby'] ? undefined : title), ...this.dialog.events() };
         return html`<dialog ref=${(element: Element) => { this.dialogRef.value = element as HTMLDialogElement; this.dialog.connect(element as HTMLDialogElement); }}
-            class="cs-drawer" ...=${attrs}>
+            closedby=${this.dialog.closedBy()}
+            class="cs-drawer overscroll-contain backdrop:overflow-hidden backdrop:overscroll-contain" ...=${attrs}>
             <div data-dialog-panel class=${classMap({ 'cs-drawer__panel fixed bg-popover text-popover-foreground shadow-lg flex flex-col z-[100]': true,
                 [`cs-drawer--${side}`]: true, 'rounded-t-2xl': side === 'bottom', 'rounded-b-2xl': side === 'top', 'rounded-r-2xl': side === 'left', 'rounded-l-2xl': side === 'right' })} style=${style}>
                 ${side === 'top' || side === 'bottom' ? html`<div aria-hidden="true" class="cs-drawer__handle pt-3 pb-2 flex justify-center"><span class="block w-10 h-1.5 rounded-full bg-muted-foreground/30"></span></div>` : null}

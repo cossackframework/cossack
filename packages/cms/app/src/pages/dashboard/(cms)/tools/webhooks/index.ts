@@ -1,6 +1,6 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
 import { input } from '@cossackframework/core/input';
-import { AlertDialog, Badge, Button, Card, CardBody, CardHeader, Checkbox, Field, Input } from '@cossackframework/ui';
+import { AlertDialog, Badge, Button, Card, CardBody, CardHeader, Checkbox, CopyField, Field, Input } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS, WEBHOOK_EVENTS, type Webhook, type WebhookDelivery, type WebhookEvent } from '@cossackframework/cms';
 import { requireAny } from '#app/cms/guards';
@@ -166,7 +166,8 @@ export default class WebhooksPage extends Cossack {
                                 ${component(Badge, { variant: entry.active ? 'success' : 'secondary' }, entry.active ? __('Active') : __('Off'))}</span>
                             <span class="block truncate text-xs text-muted-foreground">${entry.url}</span></a></li>`)}</ul>` : html`<p class="text-sm text-muted-foreground">${__('No webhooks yet.')}</p>`}`))}
                     ${hook ? component(Card, {}, component(CardBody, { class: 'space-y-2' }, html`<h2 class="text-base font-semibold text-foreground">${__('Signing secret')}</h2>
-                        <code class="block break-all rounded bg-muted px-2 py-1 text-xs">${this.revealed || `${hook.secretHint}${'•'.repeat(16)}`}</code>
+                        ${this.revealed ? component(CopyField, { label: __('Signing secret'), value: this.revealed, 'data-webhook-secret': '', copyLabel: __('Copy'), copiedLabel: __('Copied.'), copyFailedLabel: __('Copy it from the box.') })
+                            : html`<code class="block break-all rounded bg-muted px-2 py-1 text-xs">${`${hook.secretHint}${'•'.repeat(16)}`}</code>`}
                         ${this.revealed ? null : html`<button type="button" class="text-xs text-primary hover:underline bg-transparent border-none p-0 cursor-pointer" @click=${() => this.reveal()}>${__('Show')}</button>`}
                         <p class="text-xs text-muted-foreground">${__('Each delivery has X-Cossack-Signature: sha256= the HMAC-SHA256 of “timestamp.body” with this secret, and the timestamp in X-Cossack-Timestamp.')}</p>`)) : null}
                 </aside>

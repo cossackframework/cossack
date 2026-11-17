@@ -18,6 +18,18 @@ it.each([Modal, Sheet, Drawer])('keeps server dialogs closed and forwards native
     expect(opening).not.toMatch(/\sopen(?:\s|=|>)/);
     expect(output).not.toMatch(/defaultOpen=|closeOnEscape=/);
     expect(output).toContain('data-dialog-panel');
+    expect(opening).toContain('closedby="none"');
+});
+it.each([
+    [Modal, {}, 'any'], [Modal, { closeOnBackdrop: false }, undefined], [Modal, { closeOnEscape: false }, 'none'],
+    // Sheet and Drawer dialogs fill the viewport, so the script tests clicks outside the panel.
+    [Sheet, {}, undefined], [Drawer, {}, undefined], [Sheet, { closeOnEscape: false }, 'none'],
+] as const)('maps dismissal props to closedby', (Control, props, expected) => {
+    const output = renderToString(component<Cossack & { props: import('../src/internal/dialog').DialogControlProps }>(Control, { 'aria-label': 'Example', ...props }));
+    const opening = output.match(/<dialog\b[^>]*>/)![0];
+    if (expected) expect(opening).toContain(`closedby="${expected}"`);
+    else expect(opening).not.toContain('closedby');
+    expect(opening).toMatch(/overscroll-contain backdrop:overflow-hidden backdrop:overscroll-contain/);
 });
 it('uses Drawer title as a fallback accessible name and supports vertical size', () => {
     const output = renderToString(component(Drawer, { title: 'Details', side: 'bottom', size: '420px', closeLabel: 'Dismiss' }));

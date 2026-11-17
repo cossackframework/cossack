@@ -150,3 +150,40 @@ keeps its setting, and Desktop keeps Vite's default. A dev server written by
 hand gets the fix as long as it loads the project's Vite config (the plugin
 sets it), with or without middleware mode. Docs: `docs/config.md` (CORS).
 Tests: `packages/framework/tests/package-mounts.test.ts`.
+
+## 0.9.1: `findOne()` with a `select` that omits the primary key throws, even when `where` names the primary key
+
+**Found in:** storm-matching, upgrade from 0.8.3 to 0.9.1 (2026-11-16).
+
+**What happened:** `Session.findOne({ where: { id: sessionId, expiresAt: MoreThan(now) }, select: ['userId'] })` and `User.findOne({ where: { id }, select: ['meta'] })` now throw `ConfigurationError: Pagination of joined, grouped, distinct or projected results requires explicit unique ordering.` (`query/builder.ts`): `findOne` adds `LIMIT 1`, and a projection without the primary key no longer counts as "simple". The auth `validateSessionId` callback catches errors, so every signed-in request silently fell back to guest ("Session database is unavailable; continuing as guest … (Pagination of …)"): sign-in broke with no type error and no failing test.
+
+**Expected:** `findOne()` (and `find({ take })`) with an equality on every primary-key column cannot match more than one row, so it needs no ordering; or the builder adds the primary key to the `ORDER BY` without selecting it. At least the upgrade notes should call this out, and the auth warning should not describe a query error as "Session database is unavailable".
+
+**Workaround:** add `'id'` to every such `select`.
+
+**Status:** Fixed. A `select()` of model fields now pages like an entity
+query: the builder appends the primary key to `ORDER BY` without selecting
+it, so `findOne({ select })` and `find({ select, take })` work with any
+fields. Joined, grouped, distinct and `selectRaw()` pages still need an
+explicit unique order. The auth warning now names the error's type and code
+("Session lookup failed with ConfigurationError; continuing as guest"), never
+its message, which can hold secrets, once per kind of error, and mentions the
+database setup only as a possible cause. Docs:
+`packages/database/docs/queries.md` (Stable pagination). Tests:
+`packages/database/test/rt15-runtime-dx.test.ts`.
+
+## 0.9.1 dev: SSR without `import.meta.env.DEV` drops the source markers and every page fails hydration at `App`
+
+**Found in:** storm-matching after the 0.9.1 upgrade (2026-11-16). Its dev server is the 0.8-era `scripts/dev.js` (Vite in middleware mode, `ssrLoadModule`), not `cossackNode`.
+
+**What happened:** In development the core wraps each component that has a `__source` in `<!--cossack-start:{…}-->` / `<!--cossack-end:{…}-->` (`core/src/shared/cossack.ts`, guarded by `import.meta.env?.DEV`). The browser loads the core through Vite, so it expects the markers. On the server the core was loaded by Node directly (external), where `import.meta.env` is undefined, so SSR emitted none. Every page logged `cossack.hydration.mismatch` (`boundary: root`, `component: App`, `path: root/node[1]`, `expected: comment`, `actual: <div>`) and fell back to a full client render. Production is unaffected. `cossackNode` avoids it by adding `@cossackframework/core` to the SSR `noExternal`, but nothing tells a project with its own dev server, and the `__source` statics come from the framework's Vite plugin, which such projects do use.
+
+**Expected:** The marker decision doesn't depend on how the core module happens to be loaded: e.g. the framework's Vite plugin (which adds `__source`) also keeps the core in the SSR graph in `serve`, or SSR decides from a flag the plugin sets, or the hydrator skips missing `cossack-start` markers.
+
+**Workaround:** `environments.ssr.resolve.noExternal: ['@cossackframework/core']` while serving (`vite.config.ts`).
+
+**Status:** Fixed. The framework's Vite plugin, which adds `__source`, now
+keeps `@cossackframework/core` in the SSR graph while serving, so the server's
+core sees `import.meta.env.DEV` like the browser's. A dev server written by
+hand gets it as long as it loads the project's Vite config; builds are
+unchanged. Tests: `packages/framework/tests/package-contract.test.ts`.

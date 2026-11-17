@@ -15,7 +15,7 @@ import { awaitRpcResponse } from './rpc-response';
 import { sendRpcUpload } from './rpc-upload';
 import { rpcFormData } from './rpc-files';
 import { TRANSPORT_ROUTES } from './transport-routes';
-import { wsPendingCalls } from './transport-connections';
+import { isSocketPending, whenSocketOpen, wsPendingCalls } from './transport-connections';
 import { isRealtimeComponent, isRealtimeHost, RealtimeHostContext } from './realtime-owner';
 
 /** Install one transport proxy as the component's method. */
@@ -41,13 +41,60 @@ function transportHost(component: any): any {
  * connection with its id relative to the host, because the host's server
  * instance numbers its children from `root`.
  */
-function socketRoute(component: any): { ws: WebSocket | undefined; target: string } {
-    if (component._frameworkBootstrapped || isRealtimeComponent(component)) return { ws: component.websocket, target: 'root' };
+function socketRoute(component: any): { ws: WebSocket | undefined; target: string; owner: any } {
+    if (component._frameworkBootstrapped || isRealtimeComponent(component)) return { ws: component.websocket, target: 'root', owner: component };
     const host = transportHost(component);
     const id: string = component._id;
     const hostId: string | undefined = host?._id;
     const target = hostId && hostId !== 'root' && id.startsWith(`${hostId}:`) ? `root${id.slice(hostId.length)}` : id;
-    return { ws: component.websocket ?? host?.websocket, target };
+    return component.websocket ? { ws: component.websocket, target, owner: component } : { ws: host?.websocket, target, owner: host };
+}
+
+/** How long a call waits for a connecting or reconnecting socket before failing undispatched. */
+const SOCKET_OPEN_WAIT_MS = 10_000;
+
+/**
+ * A call made while its socket is connecting or reconnecting: it waits for
+ * the socket to open, then dispatches. Nothing is sent before then, so
+ * waiting never runs a call twice. Cancelling it, or an rpc$ timeout, covers
+ * both the wait and the dispatched call.
+ */
+function deferredSocketCall(owner: object, name: string, waitMs: number, dispatch: () => ReturnType<typeof createRpcCall>): ReturnType<typeof createRpcCall> {
+    const controller = new AbortController();
+    let inner: ReturnType<typeof createRpcCall> | undefined;
+    let interruption: RpcError | undefined;
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    const operation = async function* (): AsyncGenerator<unknown, unknown> {
+        try {
+            const open = await whenSocketOpen(owner, waitMs, controller.signal);
+            if (controller.signal.aborted) throw interruption ?? new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
+            if (!open) throw new RpcError('COSSACK_RPC_TRANSPORT_UNAVAILABLE',
+                `The realtime connection did not open, so '${name}' was not dispatched.`);
+            inner = dispatch();
+            const iterator = inner[Symbol.asyncIterator]();
+            while (true) {
+                const next = await iterator.next();
+                if (next.done) return next.value;
+                yield next.value;
+            }
+        } finally { clearTimeout(deadline); }
+    };
+    return createRpcCall(operation(), () => {
+        controller.abort();
+        void inner?.cancel().catch(() => {});
+    }, error => console.error(`Error calling server action '${name}':`, error), undefined, {
+        signal: controller.signal,
+        error: () => interruption ?? new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.'),
+        // rpc$(..., { timeout }) covers the wait and the dispatched call.
+        setTimeout: timeoutMs => {
+            clearTimeout(deadline);
+            deadline = setTimeout(() => {
+                interruption = new RpcError('COSSACK_RPC_TIMEOUT',
+                    `The call exceeded its ${timeoutMs}ms deadline. The server outcome is unknown and is never retried.`);
+                controller.abort();
+            }, timeoutMs);
+        },
+    });
 }
 
 interface ServerMethodBase {
@@ -438,17 +485,27 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
         const { name, channel } = method;
         if (isSharedMethod(component.constructor, name)) continue;
         const defaultTimeoutMs = serverMethodTimeout(component.constructor, name);
-        const proxy = (...args: any[]) => {
-            const requestId = crypto.randomUUID();
-            const trace = import.meta.env?.DEV ? beginDevelopmentRpcTrace(component, 'websocket', requestId) : undefined;
+        const proxy = (...args: any[]): ReturnType<typeof createRpcCall> => {
             // A child uses its host's connection (a realtime component, or its
             // page or layout); an owner uses its own.
-            const { ws, target } = socketRoute(component);
-            if (!ws || ws.readyState !== WebSocket.OPEN) {
-                trace?.finish('failed');
-                return rejectedRpcCall('COSSACK_RPC_TRANSPORT_UNAVAILABLE',
-                    `The realtime connection is not open, so '${name}' was not dispatched.`, name);
+            const { ws, target, owner } = socketRoute(component);
+            if (ws && ws.readyState === WebSocket.OPEN) return dispatch(ws, target, args);
+            // Calls made before the socket opens, or while it reconnects, wait for it.
+            if (owner && isSocketPending(owner)) {
+                return deferredSocketCall(owner, name, Math.min(defaultTimeoutMs ?? SOCKET_OPEN_WAIT_MS, SOCKET_OPEN_WAIT_MS), () => {
+                    const route = socketRoute(component);
+                    return route.ws && route.ws.readyState === WebSocket.OPEN ? dispatch(route.ws, route.target, args)
+                        : rejectedRpcCall('COSSACK_RPC_TRANSPORT_UNAVAILABLE',
+                            `The realtime connection is not open, so '${name}' was not dispatched.`, name);
+                });
             }
+            if (import.meta.env?.DEV) beginDevelopmentRpcTrace(component, 'websocket', crypto.randomUUID())?.finish('failed');
+            return rejectedRpcCall('COSSACK_RPC_TRANSPORT_UNAVAILABLE',
+                `The realtime connection is not open, so '${name}' was not dispatched.`, name);
+        };
+        const dispatch = (ws: WebSocket, target: string, args: any[]): ReturnType<typeof createRpcCall> => {
+            const requestId = crypto.randomUUID();
+            const trace = import.meta.env?.DEV ? beginDevelopmentRpcTrace(component, 'websocket', requestId) : undefined;
 
             const optimisticCall = runOptimisticHandler(component, name, args, optimisticHandlers[name], stateKeys);
             component.loading[name] = (component.loading[name] || 0) + 1;

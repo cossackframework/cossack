@@ -6,6 +6,15 @@ const privateValue = 'PRIVATE_DASHBOARD_DATABASE_PASSWORD_DATA';
 
 export async function writeSessionDashboardAcceptance(root) {
   await fs.mkdir(path.join(root, 'src/pages/api'), { recursive: true });
+  // A screen of the project in the dashboard's navigation (DashboardConfig.navigation): one any user sees, one for administrators.
+  const config = path.join(root, 'src/dashboard.config.ts');
+  await fs.writeFile(config, (await fs.readFile(config, 'utf8')).replace(/\n};\s*$/, `
+  navigation: [
+    { id: 'reports', label: 'Reports', href: '/dashboard/reports', children: [{ label: 'Weekly', href: '/dashboard/reports/weekly' }] },
+    { id: 'billing', label: 'Billing', href: '/dashboard/billing', authorization: 'admin' },
+  ],
+};
+`));
   // Fixture-only setup and inspection. The dashboard itself runs unmodified.
   await fs.writeFile(path.join(root, 'src/pages/api/session-dashboard-contract.ts'), `
 import { input as schema } from '@cossackframework/core';
@@ -97,6 +106,8 @@ export async function checkSessionDashboard(request, routeId) {
     const text = await safeText(response);
     const state = JSON.parse(text.match(/window\.__INITIAL_STATE__\s*=\s*(.*?)<\/script>/s)[1]);
     expect(state.public.error).toBe('');
+    expect(text).toContain('href="/dashboard/reports/weekly"');
+    expect(text).not.toContain('href="/dashboard/billing"');
     for (const row of state.public.sessions) {
       expect(row.reference).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
       expect(Object.keys(row).sort()).toEqual(['reference', 'current', 'createdAt', 'expiresAt', 'location', 'userAgent', 'ipAddress'].sort());

@@ -144,8 +144,11 @@ a:active {
    overflow:hidden prevents transient scrollbars during the animation. */
 .cs-modal::backdrop {
     background-color: rgba(0, 0, 0, 0.5);
-    transition: opacity 200ms ease, overlay 200ms ease allow-discrete,
-        display 200ms ease allow-discrete;
+    transition-property: opacity, overlay, display;
+    transition-duration: 200ms;
+    transition-timing-function: ease;
+    /* Its own declaration: inside the shorthand, older browsers drop the whole transition. */
+    transition-behavior: allow-discrete;
 }
 @starting-style {
     .cs-modal::backdrop {
@@ -156,8 +159,11 @@ a:active {
     opacity: 0;
 }
 .cs-modal {
-    transition: opacity 200ms ease, overlay 200ms ease allow-discrete,
-        display 200ms ease allow-discrete;
+    transition-property: opacity, overlay, display;
+    transition-duration: 200ms;
+    transition-timing-function: ease;
+    /* Its own declaration: inside the shorthand, older browsers drop the whole transition. */
+    transition-behavior: allow-discrete;
     opacity: 1;
 }
 .cs-modal[open] {
@@ -200,14 +206,20 @@ a:active {
 /* --- AlertDialog (<dialog>): same scale/fade as Modal --- */
 .cs-alert-dialog::backdrop {
     background-color: rgba(0, 0, 0, 0.5);
-    transition: opacity 200ms ease, overlay 200ms ease allow-discrete,
-        display 200ms ease allow-discrete;
+    transition-property: opacity, overlay, display;
+    transition-duration: 200ms;
+    transition-timing-function: ease;
+    /* Its own declaration: inside the shorthand, older browsers drop the whole transition. */
+    transition-behavior: allow-discrete;
 }
 @starting-style { .cs-alert-dialog::backdrop { opacity: 0; } }
 .cs-alert-dialog:not([open])::backdrop { opacity: 0; }
 .cs-alert-dialog {
-    transition: opacity 200ms ease, overlay 200ms ease allow-discrete,
-        display 200ms ease allow-discrete;
+    transition-property: opacity, overlay, display;
+    transition-duration: 200ms;
+    transition-timing-function: ease;
+    /* Its own declaration: inside the shorthand, older browsers drop the whole transition. */
+    transition-behavior: allow-discrete;
 }
 .cs-alert-dialog:not([open]) { opacity: 0; }
 @starting-style { .cs-alert-dialog[open] { opacity: 0; } }
@@ -230,8 +242,11 @@ a:active {
 
 /* --- HoverCard: fade + slight slide-up --- */
 .cs-hover-card {
-    transition: opacity 180ms ease, transform 180ms ease, overlay 180ms ease allow-discrete,
-        display 180ms ease allow-discrete;
+    transition-property: opacity, transform, overlay, display;
+    transition-duration: 180ms;
+    transition-timing-function: ease;
+    /* Its own declaration: inside the shorthand, older browsers drop the whole transition. */
+    transition-behavior: allow-discrete;
     transform-origin: bottom center;
 }
 @starting-style {
@@ -248,8 +263,11 @@ a:active {
 /* --- NavigationMenu + Menubar dropdowns: fade + slide-down --- */
 .cs-nav-popover,
 .cs-menu-popover {
-    transition: opacity 180ms ease, transform 180ms ease, overlay 180ms ease allow-discrete,
-        display 180ms ease allow-discrete;
+    transition-property: opacity, transform, overlay, display;
+    transition-duration: 180ms;
+    transition-timing-function: ease;
+    /* Its own declaration: inside the shorthand, older browsers drop the whole transition. */
+    transition-behavior: allow-discrete;
     transform-origin: top center;
 }
 @starting-style {
@@ -286,13 +304,19 @@ a:active {
     height: 100%;
     overflow: hidden;
     /* allow-discrete lets the exit transition run before display:none kicks in */
-    transition: display 300ms allow-discrete, overlay 300ms allow-discrete;
+    transition-property: display, overlay;
+    transition-duration: 300ms;
+    /* Its own declaration: inside the shorthand, older browsers drop the whole transition. */
+    transition-behavior: allow-discrete;
 }
 /* Backdrop fade */
 .cs-sheet::backdrop {
     background-color: rgba(0, 0, 0, 0.5);
-    transition: opacity 300ms ease, overlay 300ms ease allow-discrete,
-        display 300ms ease allow-discrete;
+    transition-property: opacity, overlay, display;
+    transition-duration: 300ms;
+    transition-timing-function: ease;
+    /* Its own declaration: inside the shorthand, older browsers drop the whole transition. */
+    transition-behavior: allow-discrete;
 }
 @starting-style {
     .cs-sheet::backdrop { opacity: 0; }
@@ -329,12 +353,18 @@ a:active {
     max-width: none;
     max-height: none;
     overflow: hidden;
-    transition: display 300ms allow-discrete, overlay 300ms allow-discrete;
+    transition-property: display, overlay;
+    transition-duration: 300ms;
+    /* Its own declaration: inside the shorthand, older browsers drop the whole transition. */
+    transition-behavior: allow-discrete;
 }
 .cs-drawer::backdrop {
     background-color: rgba(0, 0, 0, 0.4);
-    transition: opacity 300ms ease, overlay 300ms ease allow-discrete,
-        display 300ms ease allow-discrete;
+    transition-property: opacity, overlay, display;
+    transition-duration: 300ms;
+    transition-timing-function: ease;
+    /* Its own declaration: inside the shorthand, older browsers drop the whole transition. */
+    transition-behavior: allow-discrete;
 }
 @starting-style {
     .cs-drawer::backdrop { opacity: 0; }
@@ -362,8 +392,11 @@ a:active {
 /* --- Popover + DropdownMenu: scale + fade enter/exit --- */
 .cs-popover,
 .cs-dropdown-menu {
-    transition: opacity 180ms ease, transform 180ms ease, overlay 180ms ease allow-discrete,
-        display 180ms ease allow-discrete;
+    transition-property: opacity, transform, overlay, display;
+    transition-duration: 180ms;
+    transition-timing-function: ease;
+    /* Its own declaration: inside the shorthand, older browsers drop the whole transition. */
+    transition-behavior: allow-discrete;
     transform-origin: top center;
     opacity: 1;
     transform: scale(1);
@@ -495,18 +528,13 @@ a:active {
 
 /*
  * Sidebar navigation (components/Sidebar.ts). The sidebar stays in view at the height of the
- * screen and its menu scrolls on its own. The scrollbar keeps its room but shows only while the
- * pointer or focus is in the menu, so nothing shifts; an edge with more menu beyond it fades,
- * where the browser can tie an animation to the scroll position.
+ * screen and its menu scrolls on its own, with a scrollbar of the usual width whose thumb stands
+ * out from the sidebar; an edge with more menu beyond it fades, where the browser can tie an
+ * animation to the scroll position.
  */
 .cs-sidebar__nav {
-    scrollbar-width: thin;
-    scrollbar-color: transparent transparent;
+    scrollbar-color: var(--muted-foreground) transparent;
     overscroll-behavior: contain;
-}
-.cs-sidebar__nav:hover,
-.cs-sidebar__nav:focus-within {
-    scrollbar-color: var(--border) transparent;
 }
 @property --cs-sidebar-fade-top { syntax: "<length>"; inherits: false; initial-value: 0px; }
 @property --cs-sidebar-fade-bottom { syntax: "<length>"; inherits: false; initial-value: 0px; }

@@ -70,6 +70,19 @@ describe('parseTemplate', () => {
     expect(parseTemplate(strings`<a href=/x/>`).nodes[0]).toMatchObject({ selfClosing: false, attributes: [{ name: 'href', segments: ['/x/'] }] });
   });
 
+  it('warns about a script the browser would run, which runs on a full page load only', () => {
+    const warned = ['<script>run()</script>', '<div><script type="module">run()</script></div>', '<script type="text/javascript" src="/a.js"></script>',
+      '<script src=${1}></script>'];
+    for (const markup of warned) {
+      const parsed = parseTemplate(markup.split('${1}'));
+      expect(parsed.problems.map(({ code, severity }) => ({ code, severity })), markup).toEqual([{ code: 'COSSACK_TEMPLATE_INLINE_SCRIPT', severity: 'warning' }]);
+    }
+    for (const markup of ['<script type="application/ld+json">${1}</script>', '<script type="importmap">{}</script>', '<script type=${1}></script>', '<noscript><p>Off</p></noscript>']) {
+      expect(codes(markup.split('${1}')), markup).toEqual([]);
+    }
+    expect(codes(['<svg><script>run()</script></svg>'], {})).toEqual([]);
+  });
+
   it('reports structural problems', () => {
     expect(codes(strings`<div><span></div>`)).toEqual(['COSSACK_TEMPLATE_UNCLOSED_ELEMENT']);
     expect(codes(strings`<div></span></div>`)).toEqual(['COSSACK_TEMPLATE_UNEXPECTED_END_TAG']);

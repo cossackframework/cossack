@@ -283,6 +283,12 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
       include.push(...served.client.filter(name => !include.includes(name)));
       const serverInclude = [...ssrOptimizedDependencies(), ...served.server];
       const inlined = ['@cossackframework/framework', '@cossackframework/ui', '@cossackframework/solar-icons', ...mounted.map(entry => entry.name)];
+      // While serving, the core decides from `import.meta.env.DEV` whether SSR writes the
+      // components' source markers, which the browser's core (always served by Vite)
+      // expects. Loaded by Node directly, the server's core has no `import.meta.env`, so
+      // every page failed hydration. Keeping it in Vite's graph makes both agree, for a
+      // project's own dev server (middleware mode, ssrLoadModule) as for cossackNode.
+      if (env.command === 'serve') inlined.push('@cossackframework/core');
       // A linked package's files are outside the project, where the dev server serves nothing by default.
       const linkedRoots = mounted.filter(entry => entry.linked).map(entry => entry.directory);
       const client = [...include, ...(userConfig.environments?.client?.optimizeDeps?.include ?? []), ...(userConfig.optimizeDeps?.include ?? [])];

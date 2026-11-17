@@ -27,7 +27,7 @@
     "@cossackframework/framework": "workspace:*",
     "@cossackframework/renderer": "workspace:*",
     "cossack": "workspace:*",
-    "hono": "^4.13.7",
+    "hono": "^4.13.18",
     "@cossackframework/ui": "workspace:*",
     "@cossackframework/solar-icons": "0.7.1",
     "@cossackframework/database": "workspace:*",

@@ -296,9 +296,11 @@ the model APIs.
 For an entity query with `limit()` or `offset()`, Cossack appends each primary
 key field to the order. An explicit primary key order keeps its direction.
 This makes ties in other sort fields deterministic. An entity without a primary
-key cannot use this automatic order.
+key cannot use this automatic order. A `select()` of model fields gets the same
+order, even when it leaves out the primary key, so `findOne({ select })` works
+with any fields.
 
-Joined, grouped, distinct, and projected pages require an explicit unique order.
+Joined, grouped, distinct, and `selectRaw()` pages require an explicit unique order.
 Include all fields needed to distinguish result rows. Cossack cannot infer their
 uniqueness. Offset pages can shift when concurrent writes insert or delete rows.
 Use a transaction when the provider supports the consistency your application needs.

@@ -82,6 +82,13 @@ export default class LoginPage extends Cossack {
         }
     }
 
+    /** A field marked wrong is checked again as it is edited, so its message goes once the value is fixed. A submit checks every field. */
+    @Client()
+    async recheck(field: keyof LoginForm, value: string) {
+        this.form[field] = value;
+        if (this.hasError(`form.${field}`)) await this.validateProperty(`form.${field}`, 'input');
+    }
+
     @Server({ input: loginInput })
     async login(submitted: LoginInput) {
         // Native server calls bypass decorator gates, so validate here too.
@@ -168,9 +175,9 @@ export default class LoginPage extends Cossack {
             <h3 class="mb-6 text-xl font-semibold text-foreground">${__('Login')}</h3>
             <form @submit="${(e: Event) => this.handleSubmit(e)}" class="space-y-4">
                 ${component(Field, { label: __('Email'), for: 'email', error: this.getError('form.email'),
-                    control: attributes => component(Input, { ...attributes, type: 'email', placeholder: 'user@example.com', variant: this.hasError('form.email') ? 'error' : 'default', '.value': bind(this.form, 'email') }) })}
+                    control: attributes => component(Input, { ...attributes, type: 'email', autocomplete: 'username', spellcheck: 'false', required: true, placeholder: 'user@example.com', variant: this.hasError('form.email') ? 'error' : 'default', '.value': bind(this.form, 'email'), '@input': (e: Event) => this.recheck('email', (e.target as HTMLInputElement).value) }) })}
                 ${component(Field, { label: __('Password'), for: 'password', error: this.getError('form.password'),
-                    control: attributes => component(PasswordInput, { ...attributes, value: this.form.password, onValueChange: (v: string) => this.form.password = v }) })}
+                    control: attributes => component(PasswordInput, { ...attributes, autocomplete: 'current-password', required: true, value: this.form.password, onValueChange: (v: string) => this.recheck('password', v) }) })}
                 <div class="flex items-center justify-between gap-3 text-sm">
                     <button type="button" class="text-primary hover:underline bg-transparent border-none p-0 cursor-pointer" @click=${(e: Event) => this.emailLink(e)}>${__('Email me a sign-in link')}</button>
                     <a href="/auth/forgot-password" class="text-primary hover:underline">${__('Forgot password?')}</a>

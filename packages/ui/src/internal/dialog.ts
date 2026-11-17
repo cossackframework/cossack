@@ -22,6 +22,16 @@ function compose<E extends Event>(own: (event: E) => void, supplied: Listener<E>
     return supplied instanceof PreventDefaultResult ? preventDefault(listener, { novalidate: supplied.novalidate }) : listener;
 }
 
+/** True where the browser implements `<dialog closedby>`; false on the server. */
+function supportsClosedBy() {
+    return typeof HTMLDialogElement !== 'undefined' && 'closedBy' in HTMLDialogElement.prototype;
+}
+
+export type DialogControllerOptions = {
+    /** The dialog box is the visible panel, so the browser's light dismiss (`closedby="any"`) can test backdrop clicks. */
+    nativeLightDismiss?: boolean;
+};
+
 /** Native top-layer and focus behavior shared by Modal, Sheet and Drawer. */
 export class DialogController {
     private element?: HTMLDialogElement;
@@ -30,7 +40,23 @@ export class DialogController {
     private programmaticCloses = 0;
     private generation = 0;
     private pointerOutside = false;
-    constructor(private read: () => DialogControlProps, private update: () => Promise<unknown>) {}
+    constructor(private read: () => DialogControlProps, private update: () => Promise<unknown>, private options: DialogControllerOptions = {}) {}
+
+    /**
+     * The `closedby` attribute for the dialog. `none` makes closeOnEscape={false} hold for repeated Esc presses and
+     * the back gesture; the cancel guard still covers browsers without `closedby`. Light dismiss also runs the cancel
+     * step, so a dialog that closes on backdrop but not on Esc keeps `none` and the script backdrop test.
+     */
+    closedBy(): 'any' | 'none' | undefined {
+        const props = this.read();
+        if (props.closeOnEscape === false) return 'none';
+        if (this.options.nativeLightDismiss && props.closeOnBackdrop !== false) return 'any';
+        return undefined;
+    }
+    /** The script backdrop test runs where the browser does not light-dismiss this dialog. */
+    private scriptLightDismiss() {
+        return this.read().closeOnBackdrop !== false && !(this.closedBy() === 'any' && supportsClosedBy());
+    }
 
     connect(element: HTMLDialogElement) {
         if (this.element !== element) { this.disconnect(); this.element = element; }
@@ -83,11 +109,11 @@ export class DialogController {
         return {
             '@close': nativeClose instanceof PreventDefaultResult ? preventDefault(closed, { novalidate: nativeClose.novalidate }) : closed,
             '@cancel': compose<ControlEvent<HTMLDialogElement>>(event => { if (this.read().closeOnEscape === false) event.preventDefault(); }, props['@cancel']),
-            '@pointerdown': compose<ControlEvent<HTMLDialogElement, PointerEvent>>(event => { this.pointerOutside = event.button === 0 && this.outside(event); }, props['@pointerdown']),
+            '@pointerdown': compose<ControlEvent<HTMLDialogElement, PointerEvent>>(event => { this.pointerOutside = event.button === 0 && this.scriptLightDismiss() && this.outside(event); }, props['@pointerdown']),
             '@click': compose<ControlEvent<HTMLDialogElement, PointerEvent>>(event => {
                 const outside = this.pointerOutside;
                 this.pointerOutside = false;
-                if (event.detail > 0 && outside && this.read().closeOnBackdrop !== false && this.outside(event)) this.close();
+                if (event.detail > 0 && outside && this.scriptLightDismiss() && this.outside(event)) this.close();
             }, props['@click']),
         };
     }

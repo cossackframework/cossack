@@ -138,7 +138,9 @@ capability ownership and baseline hashes. `cossack add` composes features,
 re-renders the recorded recipe for another runtime, and `cossack upgrade`
 re-renders only the installed capabilities.
 
-Available presets are `minimal`, `database`, `auth`, and `full-stack`.
+Available presets are `minimal`, `database`, `auth`, and `full-stack` (the
+default; with `--features cms` the default is `minimal`, because the CMS
+cannot be combined with `examples`).
 Composable features are `ui`, `database`, `studio`, `auth`, `dashboard`,
 `markdown`, `examples`, `desktop`, `resource`, `mutation`, `scoped-service`,
 `protected-route`, `jobs`, `turnstile`, `schedules`, `notifications`,

@@ -634,7 +634,8 @@ html:lang(ar), html:lang(he), html:lang(fa), html:lang(ur), html:lang(ps), html:
 /* The lightbox (cms/lightbox.client.ts): one dialog over the page for a gallery's image or a video. */
 .cms-lightbox { position: fixed; inset: 0; width: 100vw; max-width: none; height: 100vh; height: 100dvh; max-height: none; margin: 0; padding: 0; border: 0; background: rgb(0 0 0 / 0.92); color: white; }
 .cms-lightbox[open] { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: minmax(0, 1fr) auto; align-items: center; }
-.cms-lightbox::backdrop { background: rgb(0 0 0 / 0.6); }
+.cms-lightbox:modal { overscroll-behavior: contain; }
+.cms-lightbox::backdrop { background: rgb(0 0 0 / 0.6); overflow: hidden; overscroll-behavior: contain; }
 .cms-lightbox-stage { grid-column: 2; display: flex; align-items: center; justify-content: center; height: 100%; min-height: 0; padding: 3.5rem 0 1rem; }
 .cms-lightbox-media { max-width: 100%; max-height: 100%; border-radius: 0.5rem; object-fit: contain; background: black; }
 video.cms-lightbox-media { width: min(100%, 160vh); aspect-ratio: 16 / 9; }
@@ -664,7 +665,7 @@ video.cms-lightbox-media { width: min(100%, 160vh); aspect-ratio: 16 / 9; }
 .cms-carousel[data-per-view] .cms-carousel-slide { flex-basis: calc((100% - (var(--cms-per-view) - 1) * 1.5rem) / var(--cms-per-view)); overflow: hidden; border-radius: 0.75rem; }
 @container (width < 1024px) { .cms-carousel[data-per-view] .cms-carousel-slide { flex-basis: calc((100% - 1.5rem) / 2); } }
 @container (width < 640px) { .cms-carousel[data-per-view] .cms-carousel-slide { flex-basis: 100%; } }
-.cms-carousel-thumbs, .cms-compare-thumbs { display: flex; gap: 0.75rem; margin-top: 0.75rem; padding-bottom: 0.25rem; overflow-x: auto; scrollbar-width: thin; }
+.cms-carousel-thumbs, .cms-compare-thumbs { display: flex; gap: 0.75rem; margin-top: 0.75rem; padding-bottom: 0.25rem; overflow-x: auto; }
 .cms-carousel-thumbs { display: none; }
 .cms-carousel[data-enhanced] .cms-carousel-thumbs { display: flex; }
 :is(.cms-carousel-thumb, .cms-compare-thumb) { flex: 0 0 auto; width: 8rem; padding: 0; overflow: hidden; border: 2px solid transparent; border-radius: 0.5rem; background: none; opacity: 0.65; cursor: pointer; transition: opacity 0.2s ease, border-color 0.2s ease; }

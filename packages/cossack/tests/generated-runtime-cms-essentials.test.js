@@ -804,7 +804,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS essentials', () => {
       await page.getByRole('tab', { name: /^Application passwords/ }).click();
       await page.locator('#token-name').fill('Build server');
       await page.getByRole('button', { name: 'Add application password' }).click();
-      await browserExpect(page.locator('[data-new-token]')).toHaveValue(/^cms_/);
+      await browserExpect(page.locator('[data-new-token] input')).toHaveValue(/^cms_/);
       await browserExpect(page.locator('li[data-token="Build server"]')).toBeVisible();
       await browserExpect(page.locator('#token-name')).toHaveValue('');
       expect(new URL(page.url()).searchParams.get('tab')).toBe('passwords');

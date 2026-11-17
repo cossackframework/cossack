@@ -54,13 +54,13 @@ importers:
         version: link:../../packages/ui
       '@hono/node-server':
         specifier: ^2.1.6
-        version: 2.1.6(hono@4.13.11)
+        version: 2.1.6(hono@4.13.18)
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.1.6(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0))
       hono:
-        specifier: ^4.13.7
-        version: 4.13.11
+        specifier: ^4.13.18
+        version: 4.13.18
       tailwindcss:
         specifier: ^4.3.3
         version: 4.3.3
@@ -106,8 +106,8 @@ importers:
         version: 14.0.3
     devDependencies:
       hono:
-        specifier: ^4.13.7
-        version: 4.13.11
+        specifier: ^4.13.18
+        version: 4.13.18
       vitest:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@26.0.0)(happy-dom@21.0.4)(jsdom@29.1.1)(vite@8.1.6(@types/node@26.0.0)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0))
@@ -185,8 +185,8 @@ importers:
         specifier: ^22.19.0
         version: 22.20.1
       hono:
-        specifier: ^4.13.7
-        version: 4.13.11
+        specifier: ^4.13.18
+        version: 4.13.18
       miniflare:
         specifier: 4.20260722.0
         version: 4.20260722.0(@types/node@22.20.1)
@@ -240,7 +240,7 @@ importers:
         version: link:../../ui
       '@hono/node-server':
         specifier: ^2.1.6
-        version: 2.1.6(hono@4.13.11)
+        version: 2.1.6(hono@4.13.18)
       '@romedb/client':
         specifier: 0.2.24
         version: 0.2.24
@@ -251,8 +251,8 @@ importers:
         specifier: workspace:*
         version: link:../../cossack
       hono:
-        specifier: ^4.13.7
-        version: 4.13.11
+        specifier: ^4.13.18
+        version: 4.13.18
       sharp:
         specifier: ^0.35.5
         version: 0.35.5(@types/node@22.20.1)
@@ -307,8 +307,8 @@ importers:
         specifier: ^22.19.0
         version: 22.20.1
       hono:
-        specifier: ^4.13.7
-        version: 4.13.11
+        specifier: ^4.13.18
+        version: 4.13.18
       jsdom:
         specifier: ^29.1.1
         version: 29.1.1
@@ -399,8 +399,8 @@ importers:
         specifier: workspace:*
         version: link:../ui
       hono:
-        specifier: ^4.13.7
-        version: 4.13.11
+        specifier: ^4.13.18
+        version: 4.13.18
       vitest:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@26.0.0)(happy-dom@21.0.4)(jsdom@29.1.1)(vite@8.1.6(@types/node@26.0.0)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0))
@@ -436,13 +436,13 @@ importers:
         version: link:../../ui
       '@hono/node-server':
         specifier: ^2.1.6
-        version: 2.1.6(hono@4.13.11)
+        version: 2.1.6(hono@4.13.18)
       cossack:
         specifier: workspace:*
         version: link:../../cossack
       hono:
-        specifier: ^4.13.7
-        version: 4.13.11
+        specifier: ^4.13.18
+        version: 4.13.18
       reflect-metadata:
         specifier: ^0.2.2
         version: 0.2.2
@@ -509,8 +509,8 @@ importers:
         specifier: ^22.19.0
         version: 22.20.1
       hono:
-        specifier: ^4.13.7
-        version: 4.13.11
+        specifier: ^4.13.18
+        version: 4.13.18
       miniflare:
         specifier: 4.20260722.0
         version: 4.20260722.0(@types/node@22.20.1)
@@ -618,12 +618,9 @@ importers:
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.1.6(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0))
-      cossack:
-        specifier: workspace:*
-        version: link:../cossack
       hono:
-        specifier: ^4.13.7
-        version: 4.13.11
+        specifier: ^4.13.18
+        version: 4.13.18
       miniflare:
         specifier: 4.20260722.0
         version: 4.20260722.0(@types/node@26.0.0)
@@ -653,7 +650,7 @@ importers:
         version: link:../core
       '@hono/node-server':
         specifier: ^2.1.6
-        version: 2.1.6(hono@4.13.11)
+        version: 2.1.6(hono@4.13.18)
       nodemailer:
         specifier: ^10.4.0
         version: 10.4.0
@@ -668,8 +665,8 @@ importers:
         specifier: ^8.18.0
         version: 8.18.1
       hono:
-        specifier: ^4.13.7
-        version: 4.13.11
+        specifier: ^4.13.18
+        version: 4.13.18
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -794,8 +791,8 @@ importers:
         specifier: workspace:*
         version: link:../ui
       hono:
-        specifier: ^4.13.7
-        version: 4.13.11
+        specifier: ^4.13.18
+        version: 4.13.18
       prompts:
         specifier: ^2.4.2
         version: 2.4.2
@@ -843,8 +840,8 @@ importers:
         specifier: workspace:*
         version: link:../core
       hono:
-        specifier: ^4.13.7
-        version: 4.13.11
+        specifier: ^4.13.18
+        version: 4.13.18
     devDependencies:
       '@cossackframework/renderer':
         specifier: workspace:*
@@ -3299,8 +3296,8 @@ packages:
   hastscript@9.0.1:
     resolution: {integrity: sha512-g7df9rMFX/SPi34tyGCyUBREQoKkapwdY/T04Qn9TDWfHhAYt4/I0gMVirzK5wEzeUqIjEB+LXC/ypb7Aqno5w==}
 
-  hono@4.13.11:
-    resolution: {integrity: sha512-/SMX/RQNJn7oNmFwH6DtwDqcrzZU2otm1FD6OJe2cWF6cfy/F8hq0XVBv7xW3FTJshRQwuBnXHDq2kNsdZnshg==}
+  hono@4.13.18:
+    resolution: {integrity: sha512-H9q/E1XizaWstJxUW881dmLxEj+t/TrGGnyxINkm4+sK0qUwsMtFdo2BWI9Vs3cIS19MU6b6iCijoUoEf4f3DA==}
     engines: {node: '>=16.9.0'}
 
   html-encoding-sniffer@6.0.0:
@@ -5763,9 +5760,9 @@ snapshots:
 
   '@hexagon/base64@1.1.28': {}
 
-  '@hono/node-server@2.1.6(hono@4.13.11)':
+  '@hono/node-server@2.1.6(hono@4.13.18)':
     dependencies:
-      hono: 4.13.11
+      hono: 4.13.18
 
   '@img/colour@1.1.0': {}
 
@@ -7513,7 +7510,7 @@ snapshots:
       property-information: 7.2.0
       space-separated-tokens: 2.0.2
 
-  hono@4.13.11: {}
+  hono@4.13.18: {}
 
   html-encoding-sniffer@6.0.0:
     dependencies:

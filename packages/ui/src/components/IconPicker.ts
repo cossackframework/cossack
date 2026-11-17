@@ -174,7 +174,7 @@ export class IconPicker extends Cossack {
             <input type="search" aria-label=${`Search ${label.toLowerCase()}s`} placeholder="Search" .value=${this.search}
                 class="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 @input=${(event: Event) => this.query((event.target as HTMLInputElement).value)}>
-            ${catalog && !query ? html`<div role="tablist" aria-label="Categories" class="flex gap-0.5 overflow-x-auto pb-1 [scrollbar-width:thin]">
+            ${catalog && !query ? html`<div role="tablist" aria-label="Categories" class="flex gap-0.5 overflow-x-auto pb-1">
                 ${this.recent.length ? html`<button type="button" role="tab" aria-selected=${openCategory === RECENT ? "true" : "false"} title="Recent" class=${tab} @click=${() => this.open(RECENT)}><span class="text-xs" aria-hidden="true">★</span></button>` : null}
                 ${catalog.categories.map(category => html`<button type="button" role="tab" aria-selected=${openCategory === category.id ? "true" : "false"} title=${category.label} class=${tab} @click=${() => this.open(category.id)}>${component(Icon, { entry: catalog.entry(catalog.icon?.(category) ?? category.names[0]!), size: 16, variant: style })}</button>`)}
             </div>` : null}

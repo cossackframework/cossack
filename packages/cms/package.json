@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/cms",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "type": "module",
   "description": "Cossack CMS: resources, schema planning, repositories, auth and stores on RomeDB",
   "license": "MIT",
@@ -51,7 +51,7 @@
     "@cossackframework/framework": "workspace:*",
     "@cossackframework/node-adapter": "workspace:*",
     "@cossackframework/ui": "workspace:*",
-    "hono": "^4.13.7",
+    "hono": "^4.13.18",
     "sharp": "^0.35.5",
     "vite": "*"
   },
@@ -61,7 +61,7 @@
     "@cossackframework/node-adapter": "workspace:*",
     "@types/markdown-it": "^14.2.0",
     "@types/node": "^22.19.0",
-    "hono": "^4.13.7",
+    "hono": "^4.13.18",
     "miniflare": "4.20260722.0",
     "rolldown": "~1.1.5",
     "sharp": "^0.35.5",

@@ -123,3 +123,59 @@ Earlier releases copied the CMS's files into the project (`src/cms/`, `src/pages
 2. Copy your plugins (`src/plugins/<name>/`), `content/`, `public/` files and scripts.
 3. Copy your changes to `wrangler.jsonc` or `.env.example`, and your own dependencies in `package.json`.
 4. Point the new project at the same database. The content stays as it is.
+
+### UI components from 0.8 to 0.9
+
+In 0.9 most `@cossackframework/ui` components took native attributes and events on a
+named element, and gained stable IDs and controlled or uncontrolled state
+(`value` with `onChange`, or `defaultValue`). A component whose old props no longer type
+check needs one of these changes:
+
+| Component | What to change |
+| --- | --- |
+| Textarea, Select, NativeSelect | Bind `.value`, not `value`. For a multiple select, mark the selected options instead. |
+| InputGroup | Native input props go on the group; they reach the input. |
+| PasswordInput | Use `value`, `onChange` and `disabled` instead of `type`, `.value` or `?disabled`. `showLabel`, `hideLabel` localize the button. |
+| InputOTP | One native input with drawn slots: change selectors that expect one input per digit. `defaultValue` or `value` with `onChange`; `length` 1 to 32. |
+| Combobox | Give an `id` and a label (`for` or `aria-label`). `defaultValue` or `value` with `onChange`. |
+| MultiSelect | Give an `id` and a label. Read the tags with `FormData.getAll(name)`. |
+| Calendar, DatePicker | Give an `id`. Dates are `yyyy-mm-dd` (check with `isCalendarDate`). DatePicker is a native date input with a calendar button; `placeholder` is gone. |
+| Modal, Sheet, Drawer | `open` is controlled: set `open=false` in `onClose`, or use `defaultOpen`. Drawer's attributes reach the dialog, not the panel. Give `aria-label` or `aria-labelledby`. |
+| Popover | Give an `id`. Panel attributes go in `contentProps`. Use `data-side` instead of `cs-popover--<side>` classes. |
+| DropdownMenu, ContextMenu | Give an `id`; ContextMenu also `menuLabel`. Panel attributes go in `menuProps`. A separator is its own `{ separator: true }` entry. |
+| Tooltip | Give an `id` and a text `label` (not `content`); put `aria-describedby` with that ID on the trigger. |
+| HoverCard | Give `id`, `label` and `content`, and a focusable trigger. |
+| AlertDialog | Give an `id` and a `title`. Set `open=false` in `onClose`. `onAction` does not close it. |
+| Command | Give an `id` and a `label`. Ctrl/Meta+K needs `shortcut: true`, on one palette only. |
+| Accordion, Collapsible | Give an `id`. Collapsible's `trigger` is text; style the button with `triggerProps`. |
+| Tabs | Give an `id` and a `label`. Use `value` with `onChange`, not the `active` field. Item labels that are not text need `ariaLabel`. |
+| Toggle, ToggleGroup | ToggleGroup needs a `label`. Use `value` with `onChange`, not the `selected` field. |
+| Menubar | Give an `id` and a `label`, and each menu a `value`. Do not write `openMenu`. |
+| NavigationMenu | Give an `id` and a `label`, and each section and link a `value`. `activeSection` is gone. |
+| Pagination | Choose `onPageChange(page)` or `href(page)`, not both. |
+| Breadcrumb | Each item needs a `value`. The last item keeps its `href`. |
+| ButtonGroup | Give a `label`. |
+| AspectRatio | The ratio box is a CSS `aspect-ratio` element: change selectors that used the padding wrapper. |
+| Skeleton | A circle uses `circle: true` with `size`, not width and height. |
+| Card, Item | Rename `interactive` to `hoverable`. |
+| Alert | Choose `announcement` (`assertive`, `polite` or `off`). Icons are imported entries. |
+| Progress | Give a `label`. An omitted `value` means unknown progress; pass 0 for zero. |
+| Field | Give `label`, `for` and a `control(attributes)` callback that spreads the attributes onto the control, instead of a child. |
+| Avatar, AvatarGroup | Give `alt` (empty for decoration). Group items need a `value` and `alt`; `overlap` is a positive distance. |
+| Table | Attributes for the scrolling wrapper go in `wrapperProps`. |
+| ScrollArea | Give a `label`; there is no nested viewport element. |
+| Resizable | Use `primary` and `secondary` props, an `id` and a `label`; `defaultSize` is a percentage. |
+| Sidebar | Give an `id`, a `label` and a `value` per item. `onToggle` receives the next collapsed value. `cs-sidebar__sublink` is now `cs-sidebar__link`. Offcanvas needs `restoreFocusTo`. |
+| Toast | Call `toast` in the browser only. Use `show`, `dismiss`, `clear` instead of `toastStore.set` and `update`. |
+| Carousel | Give an `id`, a `label` and `slides: [{ value, label, content }]` instead of children. Use `scrollToSlide(value)`, not `viewportRef`. |
+| Attachment | Give a `name`. Choose the color with `statusVariant`, not the status text. |
+| Bubble | Each reaction needs a `label`. Message shows name, time and avatar for both variants. |
+| MessageScroller | Give an `id` and a `label`. Rename `newMessageLabel` to `jumpLabel`; use `scrollToBottom()`, not `scrollRef`. |
+| Icon | Use `variant` for the Solar style (`style` is CSS). Pass an imported `entry`; the name lookup is gone. |
+| AuthForm (blocks) | Give an `id` and `onSubmit(data, { signal })`. Replace `social: true` with `providers` and `onSocial`. |
+| CommandPalette (blocks) | Give an `id` and a `label`. Ctrl/Meta+K needs `shortcut: true`. |
+| DashboardStat (blocks) | Each metric needs an `id`. Set `tone` for good or bad; `trend` is only the direction. |
+| SettingsPanel (blocks) | Give an `id`. Use `defaultValues`, or `values` with `onChange`. Button rows need `action` text, and the panel `onAction`. |
+
+The browser entry of the renderer no longer has `renderToString`: import it from
+`@cossackframework/renderer/server`.

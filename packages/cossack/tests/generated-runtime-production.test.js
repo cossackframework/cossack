@@ -67,11 +67,11 @@ describe('navigation ownership in generated production Node and workerd apps', (
     try {
       if (adapter === 'node') {
         const runtime = await productionServer(root);
-        try { await checkNavigationOwnershipBrowser(browser, runtime.origin); }
+        try { await checkNavigationOwnershipBrowser(browser, runtime.origin, root); }
         finally { await runtime.close(); }
       } else {
         const harness = createTestHarness({ root, workers: [{ configPath: path.join(root, 'dist/ssr/wrangler.json') }] });
-        try { const { url } = await harness.listen(); await checkNavigationOwnershipBrowser(browser, new URL(url).origin); }
+        try { const { url } = await harness.listen(); await checkNavigationOwnershipBrowser(browser, new URL(url).origin, root); }
         finally { await harness.close(); }
       }
     } finally { await browser.close(); }

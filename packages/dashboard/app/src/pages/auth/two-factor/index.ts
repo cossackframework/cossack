@@ -25,6 +25,8 @@ export default class TwoFactorPage extends Cossack {
     @Client()
     async submit(event: Event) {
         event.preventDefault();
+        // The button stays enabled; `required` stops an empty submit, and blank space costs no try.
+        if (!this.code.trim()) return;
         await this.verify(this.code);
     }
 
@@ -49,13 +51,13 @@ export default class TwoFactorPage extends Cossack {
     render() {
         return html`
             <h3 class="mb-2 text-xl font-semibold text-foreground">${__('Two-step sign-in')}</h3>
-            <p class="mb-6 text-sm text-muted-foreground">${this.recovery ? __('Enter one of your recovery codes. Each works once.') : __('Enter the 6-digit code from your authenticator app.')}</p>
+            <p id="two-factor-hint" class="mb-6 text-sm text-muted-foreground">${this.recovery ? __('Enter one of your recovery codes. Each works once.') : __('Enter the 6-digit code from your authenticator app.')}</p>
             <form class="space-y-4" @submit=${(event: Event) => this.submit(event)}>
                 ${component(Field, { label: this.recovery ? __('Recovery code') : __('Code'), for: 'two-factor-code',
-                    control: attributes => component(Input, { ...attributes, autocomplete: 'one-time-code', inputmode: this.recovery ? 'text' : 'numeric', required: true, autofocus: true,
+                    control: attributes => component(Input, { ...attributes, 'aria-describedby': 'two-factor-hint', type: 'text', autocomplete: 'one-time-code', inputmode: this.recovery ? 'text' : 'numeric', required: true, autofocus: true,
                         maxlength: this.recovery ? 20 : 6, '.value': this.code, '@input': (event: Event) => { this.code = (event.target as HTMLInputElement).value; } }) })}
                 ${this.error ? component(Alert, { variant: 'destructive' }, this.error) : null}
-                ${component(Button, { type: 'submit', block: true, disabled: !this.code.trim() }, __('Verify'))}
+                ${component(Button, { type: 'submit', block: true }, __('Verify'))}
             </form>
             <div class="mt-6 flex justify-between text-sm">
                 <button type="button" class="text-primary hover:underline bg-transparent border-none p-0 cursor-pointer" @click=${() => { this.recovery = !this.recovery; this.code = ''; }}>

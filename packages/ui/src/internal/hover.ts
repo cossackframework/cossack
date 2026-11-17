@@ -13,6 +13,12 @@ export function validateHover(id: string, settings: HoverSettings) {
     }
     if (settings.side !== undefined && !['top','bottom','left','right'].includes(settings.side)) throw new Error('side must be top, bottom, left or right.');
 }
+/**
+ * Open hover content, across every Tooltip and HoverCard. It gives them the
+ * behavior of popover="hint" in every browser: opening one closes the others,
+ * and moving between triggers while one is open skips the open delay.
+ */
+const openControllers = new Set<HoverController>();
 /** Hover/focus ownership for a manual popover. No extra focusable wrapper is created. */
 export class HoverController {
     private wrapper?: HTMLElement;
@@ -36,7 +42,7 @@ export class HoverController {
             this.dismissed = false;
             if (this.panel?.matches(':popover-open')) this.timer = setTimeout(() => { this.timer = undefined; if (!this.interested()) this.hide(false); }, this.read().closeDelay ?? 150);
         } else if (!this.dismissed) {
-            if (immediate || this.focused()) this.show();
+            if (immediate || this.focused() || this.othersOpen()) this.show();
             else { this.opening = true; this.timer = setTimeout(() => { this.timer = undefined; this.opening = false; if (this.interested() && !this.dismissed) this.show(); }, this.read().openDelay ?? 300); }
         }
     }
@@ -102,6 +108,8 @@ export class HoverController {
             this.returnTo = Array.from(wrapper.querySelectorAll<HTMLElement>('button,a[href],input,textarea,select,[tabindex]')).find(element => !panel.contains(element) && !element.matches(':disabled,[hidden],[inert]'));
         }
         if (!panel.matches(':popover-open')) panel.showPopover();
+        openControllers.add(this);
+        this.closeOthers();
         // Passive hover/focus content must not steal focus through descendant autofocus.
         if (previous instanceof HTMLElement && panel.contains(panel.ownerDocument.activeElement) && !panel.contains(previous)) {
             if (previous === panel.ownerDocument.body) (panel.ownerDocument.activeElement as HTMLElement).blur();
@@ -113,8 +121,30 @@ export class HoverController {
         this.clear();
         if (dismiss) this.dismissed = this.interested();
         const ownsFocus = !!this.panel?.contains(this.panel.ownerDocument.activeElement);
+        openControllers.delete(this);
         if (this.panel?.isConnected && this.panel.matches(':popover-open')) this.panel.hidePopover();
         if (dismiss && ownsFocus && this.returnTo?.isConnected) this.returnTo.focus({ preventScroll: true });
+    }
+    private isOpen() { return !!this.panel?.isConnected && this.panel.matches(':popover-open'); }
+    private othersOpen() {
+        for (const other of openControllers) if (other !== this && other.isOpen()) return true;
+        return false;
+    }
+    /**
+     * Close other open hover content, as opening a hint popover does. Content
+     * that holds this trigger (a Tooltip inside a HoverCard) stays open, and so
+     * does content holding keyboard focus, so focus is never dropped.
+     */
+    private closeOthers() {
+        const wrapper = this.wrapper;
+        for (const other of [...openControllers]) {
+            if (other === this) continue;
+            const panel = other.panel;
+            if (!other.isOpen()) { openControllers.delete(other); continue; }
+            if (!panel || !wrapper || panel.contains(wrapper) || panel.contains(panel.ownerDocument.activeElement)) continue;
+            // Not a dismissal: the other trigger reopens when it shows interest again.
+            other.hide(false);
+        }
     }
     private position() {
         const panel = this.panel, wrapper = this.wrapper, window = panel?.ownerDocument.defaultView;
@@ -135,7 +165,7 @@ export class HoverController {
         panel.dataset.side = side;
     }
     disconnect() {
-        this.generation++; this.clear(); this.cleanup?.(); this.cleanup = undefined;
+        this.generation++; this.clear(); openControllers.delete(this); this.cleanup?.(); this.cleanup = undefined;
         this.panel = undefined; this.wrapper = undefined; this.overTrigger = false; this.overPanel = false; this.dismissed = false; this.returnTo = undefined;
     }
 }

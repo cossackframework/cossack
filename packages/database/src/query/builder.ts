@@ -192,8 +192,9 @@ export class SelectQueryBuilder<T extends BaseEntity, Row = T> {
     if (predicate) nodes.push({ kind: "text", value: " WHERE " }, { kind: "fragment", value: predicate });
     if (this.groups.length) nodes.push({ kind: "text", value: " GROUP BY " }, { kind: "fragment", value: sql.join(this.groups) });
     const paginated = this.limitValue !== undefined || this.offsetValue !== undefined;
-    const entityRows = !this.selections.length || Boolean(this.metadata.primaryColumns.length && this.selectedProperties
-      && this.metadata.primaryColumns.every((primary) => this.selectedProperties!.includes(primary.propertyName)));
+    // Plain column selections can be ordered by the primary key without
+    // selecting it (no DISTINCT or GROUP BY here), so they paginate like entities.
+    const entityRows = !this.selections.length || this.selectedProperties !== undefined;
     const simple = !this.joins.length && !this.groups.length && !this.distinctValue && entityRows;
     if (paginated && !simple && !this.aggregateMode && !this.orders.length) {
       throw new ConfigurationError("Pagination of joined, grouped, distinct or projected results requires explicit unique ordering.");

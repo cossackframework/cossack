@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/test-utils",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "Internal test helpers for the Cossack repository. Private: not published to npm.",
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -12,7 +12,7 @@
     "@cossackframework/core": "workspace:*"
   },
   "peerDependencies": {
-    "hono": "^4.13.7",
+    "hono": "^4.13.18",
     "vitest": "^4.1.0"
   },
   "devDependencies": {

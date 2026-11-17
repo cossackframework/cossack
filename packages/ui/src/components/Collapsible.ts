@@ -2,7 +2,7 @@ import { html } from "@cossackframework/renderer";
 import { Cossack, Component, ClientState, Client, createRef } from "@cossackframework/core";
 
 import { ControlledValue } from "../native-attributes";
-import { DisclosureController, disclosureStyle, disclosureClick, validateDisclosure, restoreDisclosureFocus, type DisclosureProps } from "../internal/disclosure";
+import { DisclosureController, disclosureStyle, disclosureHidden, disclosureClick, validateDisclosure, restoreDisclosureFocus, type DisclosureProps } from "../internal/disclosure";
 
 export type CollapsibleProps = DisclosureProps & {
     /** Text inside the native trigger button. Style it with triggerProps. */
@@ -48,7 +48,7 @@ export class Collapsible extends Cossack {
                     class="cs-collapsible__trigger inline-flex items-center rounded-md border px-3 py-2 text-sm focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:opacity-50 disabled:cursor-not-allowed"
                     ...=${{ ...triggerProps, '@click': disclosureClick(triggerProps['@click'], () => this.toggle()) }}>${trigger}</button>
                 <div id=${`${id}-panel`} ...=${panelProps} class="cs-collapsible__content-wrapper" ref=${this.wrapperRef}
-                    style=${disclosureStyle(open)} ?inert=${!open} aria-hidden=${open ? "false" : "true"}>
+                    style=${disclosureStyle(open)} hidden=${disclosureHidden(open, disabled)} @beforematch=${() => this.revealed()}>
                     <div class="cs-collapsible__content-wrapper-inner" ref=${this.contentRef} style="display: flow-root;">
                         ${this.children}
                     </div>
@@ -60,15 +60,26 @@ export class Collapsible extends Cossack {
     @Client()
     toggle() {
         if (this.props.disabled || this.triggerButton?.matches(':disabled')) return;
-        const currentOpen = this.controlled.base(this.props, this.isOpen);
+        this.propose(!this.controlled.base(this.props, this.isOpen));
+    }
 
+    /** Find-in-page revealed the closed panel: open it to match. */
+    @Client()
+    private revealed() {
+        if (this.controlled.base(this.props, this.isOpen)) return;
+        this.disclosure.revealed();
+        this.propose(true);
+    }
+
+    @Client()
+    private propose(open: boolean) {
         if (this.props.open !== undefined) {
-            this.props.onOpenChange?.(this.controlled.emit(this.props, !currentOpen));
+            this.props.onOpenChange?.(this.controlled.emit(this.props, open));
             return;
         }
         this.userInteracted = true;
-        this.internalOpen = !currentOpen;
-        this.props.onOpenChange?.(this.controlled.emit(this.props, this.internalOpen));
+        this.internalOpen = open;
+        this.props.onOpenChange?.(this.controlled.emit(this.props, open));
     }
 
     onMount() {

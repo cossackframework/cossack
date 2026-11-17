@@ -190,10 +190,9 @@ describe('recipe resolution', () => {
     if (recipe.resolvedFeatures.includes('dashboard')) {
       const served = await renderRecipe(recipe, { servedFiles: true });
       const layout = served.get('src/pages/dashboard/layout.ts').content.toString();
-      expect(layout).toContain('component(Sidebar');
-      expect(layout).toContain('component(DropdownMenu');
-      expect(layout).toContain('collapsible:');
-      expect(layout).toContain('accountModules.map');
+      expect(layout).toContain('component(DashboardShell');
+      expect(layout).toContain('accountLinks: accountModules.map');
+      expect(layout).toContain('onCollapsedChange:');
       expect(layout).toContain('await navigation(this.c)');
       expect(served.has('src/dashboard/access.ts')).toBe(true);
     }
@@ -666,7 +665,7 @@ describe('composition', () => {
 
     await expect(fs.access(path.join(project.projectDir, 'src/auth.ts'))).rejects.toThrow();
     const auth = (await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'full-stack' }), { servedFiles: true })).get('src/auth.ts').content.toString();
-    expect(auth).toContain('Session database is unavailable; continuing as guest.');
+    expect(auth).toContain('Session lookup failed with ${kind}; continuing as guest.');
     expect(auth).toContain('run `pnpm migrate`');
 
     const post = await fs.readFile(

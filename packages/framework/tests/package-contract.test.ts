@@ -28,7 +28,7 @@ describe('Hono package contract', () => {
       'utf8',
     ));
 
-    expect(packageJson.peerDependencies?.hono).toBe('^4.13.7');
+    expect(packageJson.peerDependencies?.hono).toBe('^4.13.18');
     expect(packageJson.dependencies?.hono).toBeUndefined();
     expect(packageJson.devDependencies?.hono).toMatch(/^\^4\.13\./);
   });
@@ -138,7 +138,7 @@ describe('framework publication contract', () => {
       expect(frameworkPackage.devDependencies).toHaveProperty(name);
     }
     expect(frameworkPackage.peerDependencies).toMatchObject({
-      hono: '^4.13.7',
+      hono: '^4.13.18',
       vite: '^8.1.6',
     });
   });
@@ -259,6 +259,7 @@ describe('external application SSR contract', () => {
           '@cossackframework/framework',
           '@cossackframework/ui',
           '@cossackframework/solar-icons',
+          '@cossackframework/core',
         ],
       },
       environments: {
@@ -268,11 +269,18 @@ describe('external application SSR contract', () => {
               '@cossackframework/framework',
               '@cossackframework/ui',
               '@cossackframework/solar-icons',
+              '@cossackframework/core',
             ],
           },
         },
       },
     });
+  });
+
+  it('keeps the core in Vite\'s SSR graph only while serving, so SSR and the browser agree on dev source markers', () => {
+    const configHook = cossackPages().config as Function;
+    expect(configHook({}, { command: 'serve', mode: 'development' }).ssr.noExternal).toContain('@cossackframework/core');
+    expect(configHook({}, { command: 'build', mode: 'production' }).ssr.noExternal).not.toContain('@cossackframework/core');
   });
 
   it('preserves user noExternal entries when Vite merges plugin config', () => {
@@ -287,6 +295,7 @@ describe('external application SSR contract', () => {
       '@cossackframework/framework',
       '@cossackframework/ui',
       '@cossackframework/solar-icons',
+      '@cossackframework/core',
     ]);
   });
 

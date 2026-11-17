@@ -56,6 +56,13 @@ export default class RegisterPage extends Cossack {
         }
     }
 
+    /** A field marked wrong is checked again as it is edited, so its message goes once the value is fixed. A submit checks every field. */
+    @Client()
+    async recheck(field: 'email' | 'password', value: string) {
+        this.form[field] = value;
+        if (this.hasError(`form.${field}`)) await this.validateProperty(`form.${field}`, 'input');
+    }
+
     @Server({ input: registerInput })
     async register(submitted: RegisterInput) {
         const { name, email, password, turnstile } = await registerInput.parse(submitted);
@@ -99,11 +106,11 @@ export default class RegisterPage extends Cossack {
             <h3 class="mb-6 text-xl font-semibold text-foreground">${__('Register')}</h3>
             <form @submit="${(e: Event) => this.handleSubmit(e)}" class="space-y-4">
                 ${component(Field, { label: __('Name'), for: 'name',
-                    control: attributes => component(Input, { ...attributes, type: 'text', '.value': bind(this.form, 'name') }) })}
+                    control: attributes => component(Input, { ...attributes, type: 'text', autocomplete: 'name', '.value': bind(this.form, 'name') }) })}
                 ${component(Field, { label: __('Email'), for: 'email', error: this.getError('form.email'),
-                    control: attributes => component(Input, { ...attributes, type: 'email', placeholder: 'user@example.com', variant: this.hasError('form.email') ? 'error' : 'default', '.value': bind(this.form, 'email') }) })}
+                    control: attributes => component(Input, { ...attributes, type: 'email', autocomplete: 'username', spellcheck: 'false', required: true, placeholder: 'user@example.com', variant: this.hasError('form.email') ? 'error' : 'default', '.value': bind(this.form, 'email'), '@input': (e: Event) => this.recheck('email', (e.target as HTMLInputElement).value) }) })}
                 ${component(Field, { label: __('Password'), for: 'password', error: this.getError('form.password'),
-                    control: attributes => component(PasswordInput, { ...attributes, value: this.form.password, onValueChange: (v: string) => this.form.password = v }) })}
+                    control: attributes => component(PasswordInput, { ...attributes, autocomplete: 'new-password', required: true, minlength: 8, value: this.form.password, onValueChange: (v: string) => this.recheck('password', v) }) })}
                 ${this.botKey ? component(Turnstile, { id: 'register-verify', siteKey: this.botKey, action: 'register', label: __('Bot protection') }) : null}
                 ${this.error ? component(Alert, { variant: 'destructive' }, this.error) : null}
                 ${component(Button, { type: 'submit', block: true }, __('Create Account'))}
