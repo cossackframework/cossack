@@ -30,7 +30,7 @@ beforeEach(async () => {
 });
 afterEach(() => { vi.unstubAllEnvs(); });
 
-async function render(css: string, manifestStatus = 200, cssStatus = 200, development = false) {
+async function render(css: string, manifestStatus = 200, cssStatus = 200, development = false, status = 200) {
   vi.stubEnv('DEV', development);
   const app = createApp();
   const fetch = vi.fn(async (request: Request) => {
@@ -45,7 +45,7 @@ async function render(css: string, manifestStatus = 200, cssStatus = 200, develo
     return new Response(null, { status: 404 });
   });
   const response = await app.request('/', undefined, { ASSETS: { fetch } });
-  expect(response.status).toBe(200);
+  expect(response.status).toBe(status);
   return { html: await response.text(), fetch };
 }
 
@@ -65,10 +65,14 @@ it.each([['large', 'x'.repeat(25601), 200], ['missing', '', 404]] as const)
     expect(html).not.toContain('<style>');
   });
 
-it('falls back when the manifest is missing', async () => {
-  const { html } = await render('', 404);
-  expect(html).toContain('/src/client/entry-client.ts');
-  expect(html).not.toContain('/assets/entry.abc12345.js');
+it('fails the page when the manifest is missing, instead of linking development paths', async () => {
+  const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const { html } = await render('', 404, 200, false, 500);
+    expect(html).not.toContain('/src/client/entry-client.ts');
+  } finally {
+    errors.mockRestore();
+  }
 });
 
 it('ignores stale built assets in development', async () => {
@@ -78,9 +82,16 @@ it('ignores stale built assets in development', async () => {
     .not.toContain('/cossack-manifest.json');
 });
 
-it('renders without an ASSETS binding', async () => {
-  vi.stubEnv('DEV', false);
-  const response = await createApp().request('/');
-  expect(response.status).toBe(200);
-  expect(await response.text()).toContain('/src/client/entry-client.ts');
+it('fails without an ASSETS binding and says how to pass one', async () => {
+  const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const response = await createApp().request('/');
+    expect(response.status).toBe(500);
+    expect(await response.text()).not.toContain('/src/client/entry-client.ts');
+    const logged = errors.mock.calls.flat().map(String).join('\n');
+    expect(logged).toContain('env.ASSETS is not set');
+    expect(logged).toContain('createStaticAssets');
+  } finally {
+    errors.mockRestore();
+  }
 });
