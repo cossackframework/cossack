@@ -54,6 +54,8 @@ createNodeAdapter({maxInstances:'wrong'});
   const compiler=path.join(path.dirname(require.resolve('typescript/package.json')),'bin/tsc');
   await execute(process.execPath,[compiler,'--ignoreConfig','--noEmit','--skipLibCheck','--strict','--types','node','--module','NodeNext','--moduleResolution','NodeNext','--target','ES2022','shutdown-types.ts'],{cwd:root,timeout:30000,maxBuffer:4*1024*1024});
 
+  // The client build too: production pages need its manifest (env.ASSETS reads dist/client).
+  await execute(process.execPath,[vite,'build'],{cwd:root,timeout:120000,maxBuffer:4*1024*1024,env:{...process.env,NODE_ENV:'production',VITEST:''}});
   await execute(process.execPath,[vite,'build','--ssr','src/index.ts','--outDir','dist/server'],{cwd:root,timeout:120000,maxBuffer:4*1024*1024,env:{...process.env,NODE_ENV:'production',VITEST:''}});
   for(const mode of ['finite','stuck']){
    const marker=path.join(parent,mode);await fs.mkdir(marker);

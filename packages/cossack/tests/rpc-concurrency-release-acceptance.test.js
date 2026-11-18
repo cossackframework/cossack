@@ -49,9 +49,12 @@ const durableObjects=Object.fromEntries((config.durable_objects?.bindings??[]).m
 const main=path.resolve(directory,config.main);const modules=[{type:'ESModule',path:main}];const collect=async folder=>{for(const entry of await fs.readdir(folder,{withFileTypes:true})){const file=path.join(folder,entry.name);if(entry.isDirectory())await collect(file);else if(file!==main&&entry.name.endsWith('.js'))modules.push({type:'ESModule',path:file});}};await collect(directory);
 // The direct socket targets the generated application service itself. Miniflare's
 // service-entry/Wrangler proxy lacks incoming-signal passthrough before headers.
-// Static assets are not requested by this RPC test. Registering Miniflare assets
-// replaces its default direct socket with another RPC proxy, losing the bypass.
-const worker=new module.Miniflare({name:config.name,modules,modulesRoot:directory,compatibilityDate:config.compatibility_date,compatibilityFlags:config.compatibility_flags,bindings:config.vars,durableObjects,unsafeDirectSockets:[{host:'127.0.0.1',port:0}]});
+// Registering Miniflare assets replaces its default direct socket with another RPC
+// proxy, losing the bypass. ASSETS is a service over dist/client instead: pages need
+// the client manifest, and this test requests no other static file.
+const client=path.join(root,'dist/client');
+const assets=async request=>{const file=path.join(client,new URL(request.url).pathname);if(!file.startsWith(client+path.sep))return new module.Response(null,{status:404});try{return new module.Response(await fs.readFile(file));}catch{return new module.Response(null,{status:404});}};
+const worker=new module.Miniflare({name:config.name,modules,modulesRoot:directory,compatibilityDate:config.compatibility_date,compatibilityFlags:config.compatibility_flags,bindings:config.vars,durableObjects,serviceBindings:{ASSETS:assets},unsafeDirectSockets:[{host:'127.0.0.1',port:0}]});
 try{const url=await worker.unsafeGetDirectURL(config.name);return{origin:url.origin,close:()=>worker.dispose()};}catch(error){await worker.dispose();throw error;}}
 function hydration(html){const match=/<script\b[^>]*>\s*window\.__INITIAL_STATE__\s*=\s*([\s\S]*?)<\/script>/i.exec(html);expect(match,'hydration JSON').toBeTruthy();return JSON.parse(match[1].trim().replace(/;$/,''));}
 async function preHeaderSocket(origin,body,key){const url=new URL(origin);const socket=net.connect({host:url.hostname,port:Number(url.port)});let bytes=0;socket.on('data',data=>bytes+=data.length);socket.on('error',()=>{});await once(socket,'connect');const json=JSON.stringify(body);socket.write(`POST /crpc HTTP/1.1\r\nHost: ${url.host}\r\nOrigin: ${url.origin}\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(json)}\r\nX-Disconnect-Case: ${key}\r\nConnection: keep-alive\r\n\r\n${json}`);return{socket,get bytes(){return bytes;}};}

@@ -155,39 +155,47 @@ import './config-globals.js';
 let _manifest: Record<string, any> | undefined;
 async function getManifest(env?: any): Promise<Record<string, any>> {
   if (_manifest !== undefined) return _manifest;
-  // In dev there is no client manifest — Vite serves source on demand, so
-  // return empty and let renderRoot emit dev paths. (On Cloudflare the ASSETS
-  // fetch 404s and the catch below yields the same empty result, but for the
-  // Node adapter the on-disk manifest lookup would otherwise pick up a stale
-  // built manifest from the framework package itself.) Short-circuit here so
-  // both runtimes behave identically in dev.
+  // In dev there is no client manifest: Vite serves source on demand, so
+  // return empty and let renderRoot emit dev paths.
   if (import.meta.env?.DEV) {
     _manifest = {};
     return _manifest;
   }
-  let resolved: Record<string, any> = {};
+  // A production page without the manifest links the development paths, which are a 404, so
+  // it would render with no styles or scripts and no error. Fail the request instead, and say why.
+  if (!env?.ASSETS?.fetch) throw missingManifest('env.ASSETS is not set');
+  let response: Response;
   try {
-    if (env?.ASSETS?.fetch) {
-      // Cloudflare Workers: fetch from the assets binding. The manifest is
-      // copied to SSR_MANIFEST_ASSET_PATH by the cossackPages plugin's
-      // writeBundle hook (the default .vite/ location is excluded by the
-      // Cloudflare plugin's .assetsignore).
-      const res = await env.ASSETS.fetch(new Request(`https://assets.local${SSR_MANIFEST_ASSET_PATH}`));
-      if (!res.ok) {
-        _manifest = resolved;
-        return _manifest;
-      }
-      resolved = JSON.parse(await res.text());
-    }
-  } catch (e) {
-    // Dev mode or manifest not yet generated: renderRoot falls back to
-    // un-hashed dev paths. Emit fixed metadata so a corrupt manifest is observable.
-    if (!import.meta.env?.DEV) {
-      logRuntimeFailure({ runtime: 'unknown', action: 'load-client-manifest' }, 'initialization');
-    }
+    // The manifest is copied to SSR_MANIFEST_ASSET_PATH by the cossackPages plugin's
+    // writeBundle hook (the default .vite/ location is excluded by the Cloudflare plugin's
+    // .assetsignore). The Node adapter's createStaticAssets reads dist/client the same way.
+    response = await env.ASSETS.fetch(new Request(`https://assets.local${SSR_MANIFEST_ASSET_PATH}`));
+  } catch {
+    throw missingManifest(`env.ASSETS.fetch failed for ${SSR_MANIFEST_ASSET_PATH}`);
   }
-  _manifest = resolved;
+  if (!response.ok) throw missingManifest(`env.ASSETS answered ${response.status} for ${SSR_MANIFEST_ASSET_PATH}`);
+  try {
+    _manifest = JSON.parse(await response.text()) as Record<string, any>;
+  } catch {
+    throw missingManifest(`${SSR_MANIFEST_ASSET_PATH} is not valid JSON`);
+  }
   return _manifest;
+}
+
+let missingManifestLogged = false;
+function missingManifest(reason: string): Error {
+  const error = new Error(
+    `[Cossack] The production client manifest could not be loaded: ${reason}. ` +
+    'Pages need it to link their styles and scripts. On Node, pass the built client as ' +
+    "env.ASSETS = createStaticAssets({ root: './dist/client' }) from @cossackframework/node-adapter, " +
+    'or build the entry with nodeApplication(), which passes it.',
+  );
+  (error as Error & { code?: string }).code = 'COSSACK_CLIENT_MANIFEST_MISSING';
+  if (!missingManifestLogged) {
+    missingManifestLogged = true;
+    console.error(error.message);
+  }
+  return error;
 }
 
 /**

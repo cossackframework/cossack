@@ -124,6 +124,16 @@ Earlier releases copied the CMS's files into the project (`src/cms/`, `src/pages
 3. Copy your changes to `wrangler.jsonc` or `.env.example`, and your own dependencies in `package.json`.
 4. Point the new project at the same database. The content stays as it is.
 
+### A hand-written Node entry from 0.8
+
+Since 0.9 the server reads the client build's manifest through `env.ASSETS`, not from disk. An entry built with `nodeApplication()` passes it. A hand-written one, such as `serve({ fetch: request => app.fetch(request, env) })`, must add it, or every production page fails with `COSSACK_CLIENT_MANIFEST_MISSING`:
+
+```ts
+import { createStaticAssets } from '@cossackframework/node-adapter';
+
+const env = { ...process.env, ASSETS: createStaticAssets({ root: './dist/client' }) };
+```
+
 ### UI components from 0.8 to 0.9
 
 In 0.9 most `@cossackframework/ui` components took native attributes and events on a

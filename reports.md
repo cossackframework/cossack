@@ -187,3 +187,20 @@ keeps `@cossackframework/core` in the SSR graph while serving, so the server's
 core sees `import.meta.env.DEV` like the browser's. A dev server written by
 hand gets it as long as it loads the project's Vite config; builds are
 unchanged. Tests: `packages/framework/tests/package-contract.test.ts`.
+
+## 0.9.2 Node production: without `env.ASSETS` every page links the dev asset paths, with no error
+
+**Found in:** storm-matching on the first 0.9.2 production deploy (2026-11-18). Its Node entry (`src/index.ts`) is hand-written from 0.8: `serve({ fetch: (request) => app.fetch(request, env) })` with `env = { ...process.env }`.
+
+**What happened:** `getManifest()` in `framework/router` reads the client manifest only through `env.ASSETS.fetch` since 0.9; 0.8 read `dist/client/.vite/manifest.json` from disk on Node. With no `ASSETS` in `env` it returns `{}` without logging (the `if (env?.ASSETS?.fetch)` branch is skipped, so `logRuntimeFailure` never runs), and `renderRoot` falls back to `/src/style.css` and `/src/client/entry-client.ts`. In production those are a `text/plain` 404, so every page rendered as plain HTML with no styles or scripts. The server started cleanly, pages answered 200 and the hashed assets were served, so nothing flagged it until a user opened the site.
+
+**Expected:** A production build (`import.meta.env.PROD`) that can't load the manifest says so: log an error at startup or on the first request (or throw), naming `env.ASSETS` / `createStaticAssets`. The 0.8 → 0.9 upgrade notes should list the binding as required for hand-written Node entries.
+
+**Workaround:** `env.ASSETS = createStaticAssets({ root: './dist/client' })` from `@cossackframework/node-adapter` in production (`src/index.ts`).
+
+**Status:** Fixed. In a production build, a page whose client manifest can't be loaded (no
+`env.ASSETS`, a failed fetch, a non-200 answer or invalid JSON) now fails with a 500 and
+`COSSACK_CLIENT_MANIFEST_MISSING`, instead of linking the development paths. The first
+failure logs why, and names `createStaticAssets` and `nodeApplication()`. `docs/upgrading.md`
+has a section "A hand-written Node entry from 0.8". Keep the workaround: it is the fix for a
+hand-written entry.
