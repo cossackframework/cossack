@@ -84,12 +84,18 @@ export async function verifyCloudflareDevelopmentFaults(root, { allowedPaths = [
     expect(events.find(event => event.kind === 'api')).toMatchObject({ requestId: apiId, route: '/api/fault/:id', action: 'POST', runtime: 'cloudflare', stage: 'handler', code: 'COSSACK_API_INTERNAL' });
     expect(events.find(event => event.kind === 'ssr')).toMatchObject({ requestId: ssrId, route: '/fault-ssr', action: 'render', runtime: 'cloudflare', stage: 'render', code: 'COSSACK_SSR_INTERNAL' });
     for (const event of events) { expect(Number.isFinite(event.durationMs)).toBe(true); expect(event.durationMs).toBeGreaterThanOrEqual(0); }
-    for (const text of [apiBody, ssrBody, failureLog]) {
+    // Responses and the structured event lines stay private. In development each event is
+    // followed by a `[cossack] caused by:` line with the thrown error and its stack.
+    const eventLines = starts.map((match, index) =>
+      failureLog.slice(match.index, starts[index + 1]?.index ?? failureLog.length).split('[cossack] caused by:')[0]);
+    for (const text of [apiBody, ssrBody, ...eventLines]) {
       expect(text).not.toContain(PRIVATE);
       expect(text).not.toContain(REQUEST_PRIVATE);
       expect(text).not.toContain('/private/customer/storage.ts');
       expect(text).not.toContain('private nested cause');
     }
+    expect(failureLog).toContain(`[cossack] caused by: Error: ${PRIVATE}`);
+    expect(failureLog).not.toContain(REQUEST_PRIVATE);
     await fs.writeFile(ssrFile, page('return html`<p>Native development recovered</p>`;'));
     await expect.poll(async () => {
       const response = await fetch(`${origin}/fault-ssr`, { signal: AbortSignal.timeout(5000) });

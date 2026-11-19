@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import path from 'node:path';
 import { cleanupRoots, project } from './fixtures/generated-app.js';
-import { findRomeDBBinary } from '../../romedb/src/testing.ts';
+import { findRomeDBBinary, liveRomeDBTests } from '../../romedb/src/testing.ts';
 
 afterEach(cleanupRoots);
 function freePort() {
@@ -19,7 +19,8 @@ function freePort() {
 // ran answered every request with 500 ("Cannot read properties of undefined (reading 'modules')")
 // until the server restarted. Not reproduced here (Workers, an unrestricted plugin whose new
 // middleware shares a module with its server code); this keeps the case covered.
-it('keeps answering when a plugin gains middlewares.ts while the Workers development server runs', async () => {
+// Needs a RomeDB executable, like the other live CMS suites; CI without one skips it.
+it.skipIf(!liveRomeDBTests())('keeps answering when a plugin gains middlewares.ts while the Workers development server runs', async () => {
   const root = await project('cloudflare', ['cms']);
   const devVars = await fs.readFile(path.join(root, '.dev.vars'), 'utf8');
   const port = await freePort();
