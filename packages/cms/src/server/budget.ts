@@ -73,6 +73,23 @@ export async function readPaged(db: RomeDB, statement: (limit: number, offset: n
 }
 
 /**
+ * {@link readPaged} for several lists at once: up to `count` rows of each in one request, one
+ * statement per list, so a request makes one read where it would make one per list. When the
+ * result is over the budget, the lists are read one after another in smaller pages.
+ */
+export async function readPagedTogether(db: RomeDB, statements: readonly ((limit: number, offset: number) => Statement)[], count: number, options: ReadOptions = {}): Promise<Row[][]> {
+    try {
+        const result = await db.read(statements.map(statement => statement(count, 0)), options);
+        return result.results.map(list => list.rows);
+    } catch (error) {
+        if (!isResultTooLarge(error)) throw error;
+    }
+    const lists: Row[][] = [];
+    for (const statement of statements) lists.push(await readPaged(db, statement, count, 0, options));
+    return lists;
+}
+
+/**
  * Read the rows for `ids` with one statement per slice of them, in as few reads as the result
  * budget allows: a slice whose result is too large is read again in halves. For `WHERE id IN`
  * reads of rows with large columns.

@@ -13,8 +13,8 @@ import {
     type AuthenticationResponseJSON, type PasskeyConfig, type PublicKeyCredentialCreationOptionsJSON, type PublicKeyCredentialRequestOptionsJSON, type RegistrationResponseJSON,
 } from '@cossackframework/auth/passkeys';
 import { ClientVisibleError, getClientIp, getRequestContext } from '@cossackframework/core';
-import { ANONYMOUS, hasPermission, holdsAll, isCmsError, isNetworkAdmin, PERMISSIONS, type Principal } from '@cossackframework/cms';
-import { MAIN_SITE, networkSite, randomToken, RESET_REQUESTS, sha256Hex, type ApiToken, type CmsHost, type CmsMember, type SecurityStatus as AccountSecurity } from '@cossackframework/cms/server';
+import { ANONYMOUS, hasPermission, holdsAll, isCmsError, isNetworkAdmin, PERMISSIONS, twoFactorRequired, userPrincipal, type Principal } from '@cossackframework/cms';
+import { MAIN_SITE, networkSite, randomToken, RESET_REQUESTS, sha256Hex, type ApiToken, type CmsHost, type CmsMember, type SecurityStatus as AccountSecurity, type SiteRegistration } from '@cossackframework/cms/server';
 import { renderSVG } from 'uqr';
 import { currentCms, networkFor, type CmsBindings } from './cms/index';
 import { handoffSite, pendingSite } from './cms/handoff';
@@ -437,9 +437,8 @@ export async function beginTwoFactor(userId: string): Promise<string | null> {
   const host = cms();
   const { security } = host.signIn;
   if (await security.requiresCode(userId)) return security.createChallenge('signin', userId, 'password');
-  if (!(await host.settings.get('general.requireTwoFactor').catch(() => false))) return null;
   const user = await member(userId);
-  if (user && hasPermission(user.principal, PERMISSIONS.dashboard) && await security.hasSecondFactor(userId)) throw new SignInPasskeyError();
+  if (user && await twoFactorAsked(user) && await security.hasSecondFactor(userId)) throw new SignInPasskeyError();
   return null;
 }
 
@@ -499,8 +498,15 @@ async function requireLocalPasskeys(userId: string): Promise<void> {
   if (elsewhere) throw new ClientVisibleError(`Add or remove this account's passkeys on ${elsewhere.name}.`);
 }
 
+/**
+ * Whether General settings ask this user for two-step sign-in: someone who can use the
+ * dashboard, while it is required, and holding one of the roles it names when it names any.
+ */
 async function twoFactorAsked(user: Pick<PublicUser, 'principal'>): Promise<boolean> {
-  return hasPermission(user.principal, PERMISSIONS.dashboard) && await cms().settings.get('general.requireTwoFactor').catch(() => false) === true;
+  if (!hasPermission(user.principal, PERMISSIONS.dashboard)) return false;
+  const settings = cms().settings;
+  const required = await settings.get('general.requireTwoFactor').catch(() => false);
+  return required === true && twoFactorRequired(user.principal, { required, roles: await settings.get('general.twoFactorRoles').catch(() => '') });
 }
 
 /**
@@ -897,11 +903,12 @@ export async function linkAccountEmail(kind: 'magic' | 'verify', token: string):
   return account?.email ?? null;
 }
 
-export async function verifyEmail(token: string): Promise<{ user: string; pending: boolean; site?: string } | null> {
+export async function verifyEmail(token: string): Promise<{ user: string; pending: boolean; site?: string; siteError?: string } | null> {
   if (!/^[A-Za-z0-9_-]{20,128}$/.test(token)) return null;
   const key = `verify:${await sha256Hex(token)}`;
-  const found = await cms().cache.take<{ user: string; site?: string }>(key);
+  const found = await cms().cache.take<{ user: string; site?: string; register?: SiteRegistration }>(key);
   if (!found?.user) return null;
+  if (found.register) return confirmSiteRegistration(found.user, found.register);
   // A network registration for another site waits on that site: its approval, its member.
   const c = getRequestContext();
   const record = found.site && c ? await networkFor(c.env as CmsBindings).sites.get(found.site).catch(() => null) : null;
@@ -912,6 +919,99 @@ export async function verifyEmail(token: string): Promise<{ user: string; pendin
   if (!account?.unconfirmed) return null;
   await host.users.setStatus(found.user, 'active');
   return { user: found.user, pending: false, ...(record ? { site: record.id } : {}) };
+}
+
+// --- Site registration -------------------------------------------------------
+// With Network → People can register a site, /auth/register-site on the network host makes an
+// account and a site, and the account becomes the site's first administrator.
+
+/** Registrations one address may send in a window, beside the network's limit per account. */
+const SITE_REGISTRATION_REQUESTS = Object.freeze({ perAddress: 10, windowMs: 60 * 60_000 });
+
+/** Whether this request's host offers site registration: the network host, with the setting on. */
+export async function siteRegistrationOpen(): Promise<boolean> {
+  const c = getRequestContext();
+  if (!c) return false;
+  const network = networkFor(c.env as CmsBindings);
+  if (cms() !== network.main || !network.canAddSites) return false;
+  try { return (await network.settings()).siteRegistration && await network.enabled(); }
+  catch { return false; }
+}
+
+/**
+ * Register a site from the network host's sign-up page. A signed-in visitor (`userId`) gives the
+ * site alone. Otherwise the visitor gives an email and a password too: the email of an existing
+ * account, with its password, makes the site at once; a new email gets an account that waits for
+ * the link sent to it, and the site is made when the link is opened (`verifyEmail`). Without a
+ * mail sender the account is active at once. Each address sends a few registrations an hour.
+ */
+export async function registerSite(input: { site: SiteRegistration; name?: string; email?: string; password?: string }, userId: string | null): Promise<{ site: string; user: string; signIn: boolean } | { verification: 'sent' }> {
+  const c = getRequestContext();
+  if (!c || !(await siteRegistrationOpen())) throw new ClientVisibleError('Site registration is closed on this network.');
+  const network = networkFor(c.env as CmsBindings);
+  const host = network.main;
+  const address = clientAddress();
+  if (!(await host.security.attempt('site-registration', `address:${address}`, SITE_REGISTRATION_REQUESTS.perAddress, SITE_REGISTRATION_REQUESTS.windowMs))) {
+    throw new ClientVisibleError('Too many sites were registered from here. Try again in an hour.');
+  }
+  const site = await siteError(() => network.checkSiteRegistration(input.site));
+  const create = async (accountId: string) => (await siteError(() => network.registerSite(site, { principal: userPrincipal(accountId, [], []) }))).id;
+  if (userId) return { site: await create(userId), user: userId, signIn: false };
+  const email = String(input.email ?? '').trim();
+  const password = String(input.password ?? '');
+  const existing = await host.accounts.findByEmail(email).catch(() => null);
+  if (existing && !existing.unconfirmed) {
+    // An account's own password makes its site, counted as a sign-in attempt.
+    const allowed = await host.security.signInBegin(email, address);
+    if (!allowed.ok) throw new SignInLockedError(allowed.retryAfterMs);
+    const account = await host.accounts.verifier.verify(email, password);
+    if (!account || account.status !== 'active') throw new ClientVisibleError('An account with this email exists. Enter its password, or sign in first.');
+    await host.security.signInSucceeded(email, address);
+    return { site: await create(account.id), user: account.id, signIn: true };
+  }
+  const origin = linkOrigin();
+  const verify = Boolean(host.mail) && origin !== null;
+  // A registration whose link was never opened gives way to this one.
+  if (existing) await host.accounts.delete(existing.id).catch(() => undefined);
+  let account;
+  try { account = await host.accounts.create({ email, password, name: input.name?.trim() || email.split('@')[0]!, ...(verify ? { status: 'disabled' as const } : {}) }); }
+  catch (error) {
+    if (isCmsError(error, 'CMS_CONFLICT')) throw new ClientVisibleError('An account with this email exists. Enter its password, or sign in first.');
+    throw error;
+  }
+  if (!verify) return { site: await create(account.id), user: account.id, signIn: true };
+  const token = randomToken(32);
+  await host.cache.set(`verify:${await sha256Hex(token)}`, { user: account.id, register: site }, VERIFICATION_TTL_MS);
+  const title = (await network.settings()).name || await host.settings.get('general.siteTitle').catch(() => '');
+  await host.mail!.send({ kind: 'verification', to: account.email, from: host.mailFrom, subject: `Confirm your email to create ${site.name}`,
+    text: `Hello ${account.name || account.email},\n\nConfirm your email address to create your site ${site.name} (${site.host})${title ? ` on ${title}` : ''}:\n${origin!.replace(/\/$/, '')}/auth/verify?token=${token}\n\nThe link works for two days. If you did not register, ignore this email.` });
+  return { verification: 'sent' };
+}
+
+/** The account the link confirms becomes active, and its site is made; a site that cannot be made any more is reported, the account stays. */
+async function confirmSiteRegistration(userId: string, site: SiteRegistration): Promise<{ user: string; pending: boolean; site?: string; siteError?: string } | null> {
+  const c = getRequestContext();
+  if (!c) return null;
+  const network = networkFor(c.env as CmsBindings);
+  const account = await network.main.accounts.get(userId).catch(() => null);
+  if (!account?.unconfirmed) return null;
+  await network.main.accounts.setStatus(userId, 'active');
+  try {
+    const record = await network.registerSite(site, { principal: userPrincipal(userId, [], []) });
+    return { user: userId, pending: false, site: record.id };
+  } catch (error) {
+    if (isCmsError(error)) return { user: userId, pending: false, siteError: error.message };
+    throw error;
+  }
+}
+
+/** A refusal of the network as text the page shows: its message, with the field it names. */
+async function siteError<T>(run: () => Promise<T>): Promise<T> {
+  try { return await run(); }
+  catch (error) {
+    if (isCmsError(error)) throw new ClientVisibleError(error.message);
+    throw error;
+  }
 }
 
 /**

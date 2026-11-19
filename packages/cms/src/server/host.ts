@@ -26,9 +26,10 @@ import { taxonomyProblems, type TaxonomyDeclaration, type TermShape } from '../t
 import { isPluginPoint, manifestProblems, providedPoints, requestedGrants, UNRESTRICTED_GRANT, type CmsPluginManifest, type PluginCommand, type SlotLink } from '../manifest';
 import { ANONYMOUS, evaluateRule, hasPermission, isNetworkAdmin, PERMISSIONS, principalId, systemPrincipal, type Principal } from '../permissions';
 import { AVATAR_TYPES, mediaUrl } from '../media';
-import { canonicalJson, declarationHash, resolveResource, type Resource, type ResourceAction, type ResourceDeclaration } from '../resource';
+import { canonicalJson, declarationHash, memberRuleProblems, ResourceDeclarationError, resolveResource, type Resource, type ResourceAction, type ResourceDeclaration } from '../resource';
 import { Outbox, type OutboxOptions } from './outbox';
-import { JOIN_GROUP, ResourceRepository, type FieldFilter, type ListOptions, type OperationContext } from './repository';
+import { JOIN_GROUP, ResourceRepository, type BatchGuard, type BatchWrite, type FieldFilter, type ListOptions, type OperationContext } from './repository';
+import { batchResource, writeBatch } from './batch';
 import { migrate, nextGenerationStatement, planSchema, readCatalog, type MigrationReport, type SchemaPlan } from './schema';
 import { FileService, type CmsFile, type FileServiceOptions, type ImageSettings, LIBRARY_KEYS } from './files';
 import { CmsCache } from './cache';
@@ -39,9 +40,10 @@ import { SiteSearch, SITE_SEARCH, searchRebuild } from './site-search';
 import { sharedFields } from './shared-fields';
 import { pathsMoved, pathsMovedStatement } from './path-moves';
 import { noteAnnounced, type NoteAnnouncedEvent } from './notes';
-import { readPaged } from './budget';
+import { readPaged, readPagedTogether } from './budget';
+import { sharedRead } from './shared-read';
 import { isLockedRecord, lockedView } from './locked';
-import { OPEN_POLICY, pluginState, readPolicy, type NetworkPluginState, type NetworkPolicy } from './network-policy';
+import { pluginState, readPolicy, type NetworkPluginState, type NetworkPolicy } from './network-policy';
 import { CmsSettings } from './site-settings';
 import { createAuthSessionStore, createJobStore, createNotificationStore, createOAuthStateStore, createSessionStore, type EndedSessions } from './stores';
 import { CmsMenus } from './menus';
@@ -306,6 +308,12 @@ export interface PluginUnrestricted {
 
 export interface PluginCms {
     resource(id: string): PluginResource;
+    /**
+     * Writes that commit together or not at all, under guards that count other records in the
+     * same request (`CmsHost.batch`). Each write needs what it would alone; each guard's resource,
+     * the plugin's own or one it may read.
+     */
+    batch(writes: readonly BatchWrite[], context: OperationContext & { readonly guards?: readonly BatchGuard[] }): Promise<(RecordShape | null)[]>;
 }
 
 /**
@@ -350,7 +358,10 @@ export type ThemeLoaderInput = { readonly site: SiteView } | { readonly entry: E
 export type ThemeLoader = { bivarianceHack(context: LayoutLoaderContext | EntryLoaderContext | ArchiveLoaderContext): unknown }['bivarianceHack'];
 export type ThemeLoaders = { readonly [template: string]: ThemeLoader };
 
-export type PluginResource = Pick<ResourceRepository, 'get' | 'list' | 'count' | 'search' | 'create' | 'update' | 'delete'>;
+export type PluginResource = Pick<ResourceRepository, 'get' | 'list' | 'count' | 'search' | 'create' | 'update' | 'delete'> & {
+    /** Throws unless the plugin may do this on the resource: its own, or requested and granted. */
+    checkGrant(action: ResourceAction): Promise<void>;
+};
 
 export interface PluginStatus {
     readonly name: string;
@@ -558,6 +569,11 @@ export class CmsHost {
         const modules = options.modules ?? [];
         for (const module of modules) for (const declaration of module.resources) this.#register(resolveResource(declaration, module.owner));
         for (const declaration of options.resources ?? []) this.#register(resolveResource(declaration, declaration.owner ?? 'app'));
+        // Membership rules name resources of the same owner; a plugin's are checked with its manifest.
+        for (const resource of this.#static.values()) {
+            const problems = memberRuleProblems(resource, resource.owner, id => this.#static.get(id));
+            if (problems.length) throw new ResourceDeclarationError(resource.id, problems);
+        }
         this.#runner = options.runner ?? null;
         for (const registration of options.plugins ?? []) this.#host(registration);
         this.#resolvePluginPoints();
@@ -796,6 +812,15 @@ export class CmsHost {
         return resource;
     }
 
+    /**
+     * Several writes that commit together, in one request, or not at all: each prepared as it
+     * would be alone, with `guards` (counts of other records) and each record's revision checked
+     * in the same request. See `writeBatch`.
+     */
+    batch(writes: readonly BatchWrite[], context: OperationContext & { readonly guards?: readonly BatchGuard[] }): Promise<(RecordShape | null)[]> {
+        return writeBatch(this, writes, context);
+    }
+
     resource(id: string): ResourceRepository {
         let repository = this.#repositories.get(id);
         if (!repository) {
@@ -811,6 +836,10 @@ export class CmsHost {
      * request middleware awaits this so `resource()` sees current collections.
      */
     ready(options: { force?: boolean } = {}): Promise<void> {
+        return sharedRead(() => this.#ready(options));
+    }
+
+    #ready(options: { force?: boolean }): Promise<void> {
         const now = this.#now();
         if (options.force || !this.#definitions || now - this.#definitions.at > this.#activationTtl) {
             // The activation state and the settings are read by the steps that need them, not started here
@@ -1905,7 +1934,22 @@ export class CmsHost {
         await this.#purgeSite('plugins');
         await this.#seedFieldGroups(plugin, principal);
         await this.#seedPatterns(plugin, principal);
+        await this.#seedRoles(plugin);
         return this.#pluginStatus(plugin, await this.#state());
+    }
+
+    /**
+     * Define the roles a plugin's manifest ships. A role the site has is left as it is, changed or
+     * not; with `onlyIfNone`, nothing is added while the site has any of them, so a role it
+     * deleted stays deleted, and comes back with the plugin's next grant.
+     */
+    async #seedRoles(plugin: HostedPlugin, options: { onlyIfNone?: boolean } = {}): Promise<void> {
+        const declared = plugin.manifest.roles ?? [];
+        if (!declared.length) return;
+        const existing = new Set<string>();
+        for (const role of declared) if (await this.users.role(role.id)) existing.add(role.id);
+        if (options.onlyIfNone && existing.size) return;
+        for (const role of declared) if (!existing.has(role.id)) await this.users.defineRole({ id: role.id, name: role.name, permissions: [...role.permissions] });
     }
 
     /**
@@ -2010,7 +2054,18 @@ export class CmsHost {
 
     /** Repositories limited to a plugin's own resources and its granted ones. */
     pluginCms(name: string): PluginCms {
-        return {
+        const cms: PluginCms = {
+            batch: async (writes, context) => {
+                // The same grant checks as each call alone: a write's action, a guard's read.
+                if (!Array.isArray(writes)) throw new CmsError('CMS_VALIDATION', 'A batch is a list of writes.');
+                for (const write of writes) {
+                    const id = write && typeof write === 'object' ? batchResource(write) : undefined;
+                    if (typeof id !== 'string') throw new CmsError('CMS_VALIDATION', 'A write creates, updates or deletes a record.');
+                    await cms.resource(id).checkGrant('create' in write ? 'create' : 'update' in write ? 'update' : 'delete');
+                }
+                for (const guard of context?.guards ?? []) await cms.resource(String(guard?.resource)).checkGrant('read');
+                return this.batch(writes, context);
+            },
             resource: id => {
                 const plugin = this.#plugins.get(name);
                 // Its own resources and the collections it ships.
@@ -2036,9 +2091,11 @@ export class CmsHost {
                     create: (input, context) => check('create').then(() => repository.create(input, context)),
                     update: (key, patch, context) => check('update').then(() => repository.update(key, patch, context)),
                     delete: (key, context) => check('delete').then(() => repository.delete(key, context)),
+                    checkGrant: async (action: ResourceAction) => { await check(action); },
                 };
             },
         };
+        return cms;
     }
 
     /** Called after each committed mutation. Menus link to entries, so their cache is dropped. */
@@ -2114,6 +2171,7 @@ export class CmsHost {
         for (const plugin of networkActive) {
             if (plugin.manifest.fieldGroups?.length && !this.#groups.some(group => group.plugin === plugin.manifest.name)) await this.#seedFieldGroups(plugin, systemPrincipal('network')).catch(error => console.error(`[cms] could not add the field groups of ${plugin.manifest.name}`, error));
             await this.#seedPatterns(plugin, systemPrincipal('network'), { onlyIfNone: true }).catch(error => console.error(`[cms] could not add the patterns of ${plugin.manifest.name}`, error));
+            await this.#seedRoles(plugin, { onlyIfNone: true }).catch(error => console.error(`[cms] could not add the roles of ${plugin.manifest.name}`, error));
         }
     }
 
@@ -2131,11 +2189,13 @@ export class CmsHost {
         // Awaited below; when the definitions fail first, its own failure is not left unhandled.
         groups.catch(() => undefined);
         try {
-            // Definitions are JSON of many fields: forty large collections may come in smaller reads. Collections, taxonomies and field groups are read side by side.
-            [collections, taxonomies] = await Promise.all([
-                readPaged(this.db, (size, at) => ({ rql: 'SELECT name, definition FROM cms_collections ORDER BY name LIMIT $limit OFFSET $offset', params: { $limit: size, $offset: at } }), 200, 0),
-                readPaged(this.db, (size, at) => ({ rql: 'SELECT name, definition FROM cms_taxonomies ORDER BY name LIMIT $limit OFFSET $offset', params: { $limit: size, $offset: at } }), 200, 0),
-            ]);
+            // Definitions are JSON of many fields: forty large collections may come in smaller reads. Collections and
+            // taxonomies come in one request, beside the field groups' own: each read in flight takes one of the
+            // database client's places, which every request of the isolate shares.
+            [collections = [], taxonomies = []] = await readPagedTogether(this.db, [
+                (size, at) => ({ rql: 'SELECT name, definition FROM cms_collections ORDER BY name LIMIT $limit OFFSET $offset', params: { $limit: size, $offset: at } }),
+                (size, at) => ({ rql: 'SELECT name, definition FROM cms_taxonomies ORDER BY name LIMIT $limit OFFSET $offset', params: { $limit: size, $offset: at } }),
+            ], 200);
         } catch (error) {
             // Before setup the tables do not exist; built-ins apply.
             if (!(error instanceof ClientError) || !/cms_collections|cms_taxonomies|no such table|not found/i.test(error.message)) throw error;
@@ -2760,9 +2820,16 @@ export class CmsHost {
     }
 
     #state(): Promise<Activation> {
+        return sharedRead(() => this.#readState());
+    }
+
+    #readState(): Promise<Activation> {
         const now = this.#now();
         if (!this.#activation || now - this.#activation.at > this.#activationTtl) {
-            const policy = readPolicy(this.network).catch(error => { console.error('[cms] could not read the network policy', error); return OPEN_POLICY; });
+            // A policy that cannot be read fails the state, which is not kept: an open policy in its
+            // place would show the network's hidden plugins and themes until the state expires.
+            const policy = readPolicy(this.network);
+            policy.catch(() => undefined);
             const state = this.db.read([
                 { rql: 'SELECT resource, declaration_hash FROM cms_schema_state ORDER BY resource LIMIT 1000' },
                 { rql: "SELECT subject, permission FROM cms_grants WHERE subject LIKE 'plugin:%' ORDER BY subject, permission LIMIT 1000" },

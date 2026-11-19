@@ -6,16 +6,17 @@ import { CACHE_HOLDS, type CacheHold } from './cache';
 import { field, type FieldDeclaration, type FieldMediaKind } from './fields';
 import { DEFAULT_ICON_STYLE, ICON_STYLE_LABELS, ICON_STYLES, type IconStyleName } from './icons';
 import { SEO_TEMPLATE_DEFAULTS } from './seo';
+import { hasPermission, PERMISSIONS, type Principal } from './permissions';
 
 /** Choices filled in by the host when a form renders, such as the list of roles. */
 /** Where a setting's choices come from; `media` lists the library's images by their URL. */
 export type SettingSource = 'roles' | 'pages' | 'categories' | 'timezones' | 'media';
 /** String settings keep their scalar value while offering a richer editor. */
-export type SettingControl = 'color' | 'file' | 'icon-style' | 'palette';
+export type SettingControl = 'color' | 'file' | 'icon-style' | 'palette' | 'checklist';
 
 export interface SettingDeclaration extends FieldDeclaration {
     readonly source?: SettingSource;
-    /** color: a hex color; file: an HTTP(S) or root-relative file URL; icon-style and palette: an enum shown with a preview. */
+    /** color: a hex color; file: an HTTP(S) or root-relative file URL; icon-style and palette: an enum shown with a preview; checklist: the source's choices as checkboxes, stored as their values joined by commas. */
     readonly control?: SettingControl;
     /** file control: the kinds the media chooser lists first; other kinds remain available. */
     readonly fileKinds?: readonly FieldMediaKind[];
@@ -50,6 +51,25 @@ export interface SettingsGroup {
     readonly sections?: readonly SettingsSection[];
 }
 
+/** Role IDs separated by commas, such as `admin,editor`, or nothing. */
+const ROLE_LIST = '(?:[A-Za-z0-9_-]{1,80}(?:,[A-Za-z0-9_-]{1,80}){0,19})?';
+
+/** The roles a comma-separated setting names, such as `general.twoFactorRoles`. */
+export function settingRoles(value: unknown): string[] {
+    return typeof value === 'string' ? [...new Set(value.split(',').map(role => role.trim()).filter(Boolean))] : [];
+}
+
+/**
+ * Whether General settings ask this principal for two-step sign-in: someone who can use the
+ * dashboard, while `general.requireTwoFactor` is on, holding one of the roles
+ * `general.twoFactorRoles` names when it names any.
+ */
+export function twoFactorRequired(principal: Principal, settings: { readonly required: unknown; readonly roles: unknown }): boolean {
+    if (settings.required !== true || principal.kind !== 'user' || !hasPermission(principal, PERMISSIONS.dashboard)) return false;
+    const roles = settingRoles(settings.roles);
+    return !roles.length || principal.roles.some(role => roles.includes(role));
+}
+
 export const DATE_FORMATS = Object.freeze({ long: 'October 16, 2026', medium: 'Oct 16, 2026', iso: '2026-10-16', us: '10/16/2026', eu: '16/10/2026' });
 export const TIME_FORMATS = Object.freeze({ '12h': '3:45 pm', '24h': '15:45' });
 
@@ -74,7 +94,8 @@ export const general: SettingsGroup = {
         maintenance: { ...field.enum(['off', 'maintenance', 'soon'], { default: 'off', label: 'Maintenance mode', description: 'Visitors see a holding page with status 503 while people who can use the dashboard see the site. Search engines keep the pages indexed.' }),
             choices: { off: 'Off: the site is public', maintenance: 'Maintenance: back soon', soon: 'Coming soon: not launched yet' } },
         maintenanceMessage: field.text({ max: 2000, default: '', label: 'Holding page message', description: 'Shown under the site title; empty uses a sentence for the mode.' }),
-        requireTwoFactor: field.boolean({ default: false, label: 'Require two-step sign-in for everyone who can use the dashboard', description: 'They add an authenticator app or a passkey before they can continue.' }),
+        requireTwoFactor: field.boolean({ default: false, label: 'Require two-step sign-in', description: 'Of everyone who can use the dashboard, or only of the roles chosen below. They add an authenticator app or a passkey before they can continue.' }),
+        twoFactorRoles: { ...field.string({ max: 800, default: '', pattern: ROLE_LIST, label: 'Only for these roles', description: 'Leave all unchecked to require it of everyone who can use the dashboard.' }), source: 'roles', control: 'checklist' },
         favicon: { ...field.string({ max: 2000, default: '', pattern: '(?:https?://[^\\s]+|/[^\\s]*)?', label: 'Site icon', description: 'Shown in browser tabs and bookmarks: an SVG or a square PNG from the library.' }), source: 'media' },
         appIcon: { ...field.string({ max: 2000, default: '', pattern: '(?:https?://[^\\s]+|/[^\\s]*)?', label: 'App icon', description: 'For home screens and the web app manifest: a square PNG of at least 512 pixels from the library; it is resized as needed.' }), source: 'media' },
         logo: { ...field.string({ max: 2000, default: '', pattern: '(?:https?://[^\\s]+|/[^\\s]*)?', label: 'Logo', description: 'The site\'s logo in any shape, shown in the site header, on sign-in pages and in the dashboard. Search results use the square SEO logo.' }), source: 'media' },
@@ -327,6 +348,8 @@ export interface SiteSettings {
     'general.timeFormat': keyof typeof TIME_FORMATS;
     'general.weekStartsOn': 'sunday' | 'monday' | 'saturday';
     'general.requireTwoFactor': boolean;
+    /** Role IDs separated by commas; empty for everyone who can use the dashboard. */
+    'general.twoFactorRoles': string;
     'general.maintenance': 'off' | 'maintenance' | 'soon';
     'general.maintenanceMessage': string;
     'general.favicon': string;

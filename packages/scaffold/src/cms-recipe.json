@@ -8,6 +8,7 @@
     "src/pages/auth/setup/",
     "src/pages/auth/verify/",
     "src/pages/auth/magic/",
+    "src/pages/auth/register-site/",
     "src/pages/api/cms/",
     "src/pages/api/auth/",
     "src/config/cms.ts",

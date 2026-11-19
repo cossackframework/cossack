@@ -101,8 +101,10 @@ export function recordTitle(record: RecordShape, titleField?: string): string {
 
 /** Same-origin check for form posts. Browsers send Sec-Fetch-Site and Origin on cross-site posts. */
 export function isSameOriginPost(request: Request): boolean {
-    const site = request.headers.get('sec-fetch-site');
-    if (site !== null && !['same-origin', 'same-site', 'none'].includes(site.toLowerCase())) return false;
+    // same-origin decides alone: under Referrer-Policy: no-referrer a same-origin post sends Origin: null.
+    const site = request.headers.get('sec-fetch-site')?.toLowerCase();
+    if (site === 'same-origin' || site === 'none') return true;
+    if (site !== undefined && site !== 'same-site') return false;
     const origin = request.headers.get('origin');
     if (origin === null) return true;
     try { return origin === new URL(request.url).origin; } catch { return false; }

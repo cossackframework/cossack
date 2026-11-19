@@ -25,7 +25,7 @@ export const EXTENSION_POINT_EXPORTS = Object.freeze({
   formConfirmation: 'cms.form.confirmation', formNotification: 'cms.form.notification', formSubmitted: 'cms.form.submitted',
   termBeforeSave: 'cms.term.before-save', commentBeforeSave: 'cms.comment.before-save', menuBeforeSave: 'cms.menu.before-save',
   entryActions: 'cms.dashboard.entry-actions', entryColumns: 'cms.dashboard.entry-columns', bulkActions: 'cms.dashboard.bulk-actions',
-  dashboardNotices: 'cms.dashboard.notices', dashboardTaskbar: 'cms.dashboard.taskbar', siteMarkdown: 'cms.site.markdown', siteEntryView: 'cms.site.entry-view',
+  dashboardNotices: 'cms.dashboard.notices', dashboardTaskbar: 'cms.dashboard.taskbar', siteMarkdown: 'cms.site.markdown', siteEntryView: 'cms.site.entry-view', siteCreated: 'cms.site.created',
   userBeforeRegister: 'cms.user.before-register', userRegistered: 'cms.user.registered', userSignedIn: 'cms.user.signed-in', mailBeforeSend: 'cms.mail.before-send',
 });
 /** Permissions the CMS host defines. */

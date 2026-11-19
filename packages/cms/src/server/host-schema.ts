@@ -26,6 +26,7 @@ export const HOST_TABLES = [
     'cms_comments', 'cms_user_security', 'cms_passkeys', 'cms_auth_challenges', 'cms_areas', 'cms_form_sends', 'cms_form_mail', 'cms_form_results', 'cms_crawler_visits', 'cms_not_found', 'cms_cache',
     'cms_accounts', 'cms_sites', 'cms_site_domains', 'cms_handoffs', 'cms_session_sites', 'cms_memberships', 'cms_network', 'cossack_jobs', 'cossack_notifications',
     'cms_drafts', 'cms_notes', 'cms_note_mentions', 'cms_schedules', 'cms_automations', 'cms_registrations', 'cms_search', 'cms_attempts', 'cms_schema_generations',
+    'cms_assertions',
 ] as const;
 
 export const HOST_STEPS: readonly HostStep[] = [{
@@ -294,6 +295,13 @@ export const HOST_STEPS: readonly HostStep[] = [{
     statements: [
         // 1 for an account created waiting for a site's approval: it is not an unconfirmed registration, so another registration of its email never replaces it.
         { rql: 'ALTER TABLE cms_accounts ADD COLUMN held INTEGER' },
+    ],
+}, {
+    version: 14,
+    description: 'Guarded write batches',
+    statements: [
+        // A write batch (`CmsHost.batch`) inserts one row per condition, held = 1 when it holds, and deletes them in its last statement: a condition that does not hold fails the CHECK, and the whole batch rolls back. No row outlives its batch.
+        { rql: 'CREATE TABLE cms_assertions (id TEXT PRIMARY KEY, held INTEGER NOT NULL CHECK (held = 1))' },
     ],
 }];
 

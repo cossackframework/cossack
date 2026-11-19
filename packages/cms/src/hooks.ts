@@ -411,6 +411,24 @@ export interface UserSignedInEvent {
  */
 export const userSignedIn = defineAction<UserSignedInEvent>('cms.user.signed-in', { version: 1, timeoutMs: 10_000 });
 
+export interface SiteCreatedEvent {
+    /** Outbox ID, stable across repeated deliveries: use it as the idempotency key. */
+    readonly eventId: string;
+    readonly topic: 'site.created';
+    readonly at: number;
+    /** The new site, as the network's registry names it. */
+    readonly site: { readonly id: string; readonly name: string; readonly host: string | null };
+    /** Its first administrator. */
+    readonly admin: UserRef;
+}
+
+/**
+ * A site of the network was just created, run from the new site's outbox before anyone uses it:
+ * the plugins active there (enabled for the network, or granted to new sites) prepare it, such as
+ * a first record or their settings. Its roles from plugin manifests exist already. Deliveries can repeat.
+ */
+export const siteCreated = defineAction<SiteCreatedEvent>('cms.site.created', { version: 1, timeoutMs: 30_000 });
+
 /** A `cms.user.before-register` result the host can use: the original email, existing roles, bounded text. */
 export function registrationDraftOf(value: unknown, original: RegistrationDraft, roles: ReadonlySet<string>): RegistrationDraft {
     const draft = value && typeof value === 'object' ? value as Partial<RegistrationDraft> : {};
@@ -487,7 +505,7 @@ export function mailMessageOf(value: unknown, original: MailMessage, kind: MailK
 
 export const EXTENSION_POINTS = Object.freeze([beforeWrite, afterCommit, cachePurge, paymentEvent, formValidate, formBeforeSubmit, formPrefill, formConfirmation, formNotification, formSubmitted,
     termBeforeSave, commentBeforeSave, menuBeforeSave, entryActions, entryColumns, bulkActions, dashboardNotices, dashboardTaskbar, siteMarkdown, siteEntryView,
-    userBeforeRegister, userRegistered, userSignedIn,
+    userBeforeRegister, userRegistered, userSignedIn, siteCreated,
     mailBeforeSend]);
 
 const TONES = new Set(['info', 'success', 'warning', 'error']);

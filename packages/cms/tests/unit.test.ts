@@ -317,8 +317,8 @@ describe('content helpers', () => {
     it('scopes access rules to owners and record conditions', async () => {
         const { ruleScope } = await import('../src/index');
         const rule = { any: [{ where: { status: 'published' } }, 'owner', { permission: 'cms/posts:read' }] } as const;
-        expect(ruleScope(rule, { kind: 'anonymous' })).toEqual({ owner: false, where: [{ status: 'published' }] });
-        expect(ruleScope(rule, userPrincipal('a', [], []))).toEqual({ owner: true, where: [{ status: 'published' }] });
+        expect(ruleScope(rule, { kind: 'anonymous' })).toEqual({ owner: false, where: [{ status: 'published' }], members: [] });
+        expect(ruleScope(rule, userPrincipal('a', [], []))).toEqual({ owner: true, where: [{ status: 'published' }], members: [] });
         expect(ruleScope(rule, userPrincipal('e', ['editor'], ['cms/*']))).toBe('allow');
         expect(resourceProblems({ name: 'x', fields: { a: field.string() }, access: { read: { where: { missing: 'x' } } } })).toEqual([expect.stringContaining('missing')]);
     });

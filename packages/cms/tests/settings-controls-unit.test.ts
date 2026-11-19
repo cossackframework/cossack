@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { RomeDB } from '@cossackframework/romedb';
-import { pluginSettingsProblems, settingsJsonSchema, themeProblems, validateSettingValue, type SettingDeclaration, type SettingsGroup } from '../src/index';
+import { general, pluginSettingsProblems, settingRoles, settingsJsonSchema, themeProblems, twoFactorRequired, userPrincipal, validateSettingValue, type SettingDeclaration, type SettingsGroup } from '../src/index';
 import { CmsSettings } from '../src/server/site-settings';
 
 const color: SettingDeclaration = { kind: 'string', control: 'color', default: '#2563eb' };
@@ -91,5 +91,43 @@ describe('rich settings values', () => {
         await expect(settings.exportDocument(context)).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         await expect(settings.applyDocument({ [group.id]: { color: '#fff' } }, context)).rejects.toMatchObject({ code: 'CMS_VALIDATION', fields: { 'plugin:brand.file': expect.any(String) } });
         expect(write).not.toHaveBeenCalled();
+    });
+});
+
+describe('checklist settings and two-step sign-in by role', () => {
+    const roles: SettingDeclaration = { kind: 'string', control: 'checklist', source: 'roles', default: '', pattern: '(?:[A-Za-z0-9_-]{1,80}(?:,[A-Za-z0-9_-]{1,80}){0,19})?' };
+
+    it('takes a checklist on a single string with a source, and nowhere else', () => {
+        const db = {} as RomeDB;
+        const groupOf = (field: SettingDeclaration) => [{ id: 'access', label: 'Access', fields: { value: field } }];
+        expect(() => new CmsSettings(db, groupOf(roles))).not.toThrow();
+        for (const field of [{ ...roles, source: undefined }, { ...roles, source: 'media' as const }, { ...color, source: 'roles' as const }, { ...roles, multiple: true }]) {
+            expect(() => new CmsSettings(db, groupOf(field))).toThrow();
+        }
+        expect(validateSettingValue('value', roles, 'admin,manager')).toBeUndefined();
+        expect(validateSettingValue('value', roles, 'admin, manager')).toBeDefined();
+    });
+
+    it('reads the roles of a checklist value', () => {
+        expect(settingRoles('admin,manager,admin')).toEqual(['admin', 'manager']);
+        expect(settingRoles('')).toEqual([]);
+        expect(settingRoles(null)).toEqual([]);
+    });
+
+    it('asks dashboard users for a second factor, all of them or those of the named roles', () => {
+        const staff = userPrincipal('u1', ['staff'], ['cms:dashboard']);
+        const manager = userPrincipal('u2', ['manager'], ['cms:dashboard']);
+        const subscriber = userPrincipal('u3', ['subscriber'], []);
+        expect(twoFactorRequired(staff, { required: false, roles: '' })).toBe(false);
+        expect(twoFactorRequired(staff, { required: true, roles: '' })).toBe(true);
+        expect(twoFactorRequired(subscriber, { required: true, roles: '' })).toBe(false);
+        expect(twoFactorRequired(staff, { required: true, roles: 'admin,manager' })).toBe(false);
+        expect(twoFactorRequired(manager, { required: true, roles: 'admin,manager' })).toBe(true);
+        expect(twoFactorRequired(subscriber, { required: true, roles: 'subscriber' })).toBe(false);
+        expect(twoFactorRequired({ kind: 'system', reason: 'test' }, { required: true, roles: '' })).toBe(false);
+    });
+
+    it('declares the roles setting in General', () => {
+        expect(general.fields.twoFactorRoles).toMatchObject({ control: 'checklist', source: 'roles', default: '' });
     });
 });

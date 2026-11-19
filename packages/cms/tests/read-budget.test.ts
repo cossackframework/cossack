@@ -37,6 +37,7 @@ const REVIEWED: Record<string, string> = {
     // Bounded by construction.
     'src/server/site-search.ts: SELECT s.collection, s.entry, search::snippet(': 'snippets of a fixed length, one page',
     'src/server/site-settings.ts: SELECT key, value FROM cms_settings WHERE key >': 'halves its own page on a result that is too large',
+    'src/server/batch.ts: SELECT CASE WHEN ${condition.statement.rql}': 'one 0 or 1 per condition of a batch',
 };
 
 function files(dir: string): string[] {

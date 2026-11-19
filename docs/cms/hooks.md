@@ -273,6 +273,25 @@ export function register({ hooks }: PluginContext) {
 }
 ```
 
+### Sites
+
+| Point | Kind | Deadline | Value and input |
+| --- | --- | --- | --- |
+| `cms.site.created` (`siteCreated`) | action, outbox | 30 s | `{ eventId, topic, at, site: { id, name, host }, admin: { id, email, name } }` once a site of the network is created, by a network admin or a person registering it. It runs on the new site, for the plugins active there: those the network enables and those new sites start with. Their manifest `roles` exist already. It is delivered before the site is shown to its administrator, and retried by maintenance if a handler fails. Deliveries can repeat: use `eventId`. |
+
+```ts
+import { siteCreated } from '@cossackframework/cms';
+import { systemPrincipal, type PluginContext } from '@cossackframework/cms/server';
+
+export function register({ hooks, cms }: PluginContext) {
+    hooks.addAction(siteCreated, async ({ site }) => {
+        const branches = cms.resource('acme/branches');
+        const principal = systemPrincipal('plugin:acme');
+        if (!(await branches.get('main', { principal }))) await branches.create({ name: site.name }, { principal, id: 'main' });
+    });
+}
+```
+
 ## Points a plugin provides
 
 A plugin can define extension points of its own, so other plugins extend it the way they

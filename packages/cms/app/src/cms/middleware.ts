@@ -1,12 +1,13 @@
-import type { Context, MiddlewareHandler } from 'hono';
+import type { Context, MiddlewareHandler, Next } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { enforceRateLimit, getClientIp, getSupportedLocales, LOCALE_COOKIE_NAME, setRequestLocale } from '@cossackframework/core';
 import { ANONYMOUS, escapeHtml, hasPermission, PERMISSIONS, type Principal, DEFAULT_ICON_STYLE, isIconStyle } from '@cossackframework/cms';
-import { MAIN, MAIN_SITE, networkSite, type SiteResolution } from '@cossackframework/cms/server';
+import { MAIN_SITE, networkSite, type SiteResolution } from '@cossackframework/cms/server';
 import { cmsFor, networkFor, type CmsBindings } from './index';
 import { handoff } from './handoff';
 import { dashboardPalette } from '../dashboard/head';
 import { runMaintenance } from './maintenance';
+import { answered, withRequestCalls } from './request-calls';
 import { accountNeedsSecondFactor, secondFactorRequired, type PublicUser } from '../auth';
 
 /**
@@ -28,11 +29,20 @@ const lastMaintenance = new Map<string, number>();
  * Maintenance also runs at most once a minute for each site. A host no site claims gets a 404,
  * an alias redirects to its site's primary domain, and an archived site shows only its dashboard.
  */
-export const cmsMiddleware: MiddlewareHandler = async (c, next) => {
+export const cmsMiddleware: MiddlewareHandler = (c, next) => withRequestCalls(c, () => serveSite(c, next));
+
+async function serveSite(c: Context, next: Next): Promise<Response | void> {
     const network = networkFor(c.env as CmsBindings);
     const url = new URL(c.req.url);
-    // Before setup the registry does not exist yet: the main site answers.
-    let found: SiteResolution = await network.resolve(url.host).catch(() => ({ kind: 'site', site: MAIN }));
+    // Before setup the registry does not exist yet and the main site answers (`resolve` says so).
+    // A lookup that fails answers 503: serving the main site at another site's address would show,
+    // and let caches keep, the wrong site's pages.
+    let found: SiteResolution;
+    try { found = await network.resolve(url.host); }
+    catch (error) {
+        console.error('[cms] could not look up the site of', url.host, error);
+        return c.text('The site is unavailable for a moment. Try again shortly.', 503, { 'retry-after': '5', 'cache-control': 'no-store' });
+    }
     // API clients name a site on the network host: `X-Cossack-Site: blog` (or `?site=blog` on the MCP
     // endpoint) serves that site, so a tool need not reach the site's own address.
     const requested = requestedSite(c, url);
@@ -66,9 +76,10 @@ export const cmsMiddleware: MiddlewareHandler = async (c, next) => {
     await cms.ready().catch(error => console.error('[cms] could not load collections', error));
     // Settings → Interface: the style every icon of this request is drawn in (`iconStyle()` in
     // cms/icons.ts reads it) and the dashboard's palettes (`dashboardHead()` in dashboard/head.ts).
-    const [style, palette, accent] = await Promise.all((['interface.iconStyle', 'interface.palette', 'interface.accent'] as const).map(key => cms.settings.get(key).catch(() => undefined)));
+    const settings = await cms.settings.all().catch(() => undefined);
+    const style = settings?.['interface.iconStyle'];
     c.set('cms.iconStyle', isIconStyle(style) ? style : DEFAULT_ICON_STYLE);
-    c.set('cms.palette', dashboardPalette(palette, accent));
+    c.set('cms.palette', dashboardPalette(settings?.['interface.palette'], settings?.['interface.accent']));
     // Until a user picks a language (Profile → Dashboard language), the dashboard speaks the
     // site's default one when a catalog has it. Site pages then switch to their content's language.
     const supported = getSupportedLocales();
@@ -78,6 +89,8 @@ export const cmsMiddleware: MiddlewareHandler = async (c, next) => {
     }
     const writes = cms.outboxWrites;
     await next();
+    // The outbox and maintenance below outlive the answer: their database calls must not end with it.
+    answered(c);
     securityHeaders(c, url);
     // The API answers for the site `X-Cossack-Site` names: a shared cache keeps one answer per site.
     if (url.pathname.startsWith('/api/') && !/(^|,)\s*x-cossack-site\s*(,|$)/i.test(c.res.headers.get('vary') ?? '')) c.header('vary', 'X-Cossack-Site', { append: true });
@@ -87,7 +100,7 @@ export const cmsMiddleware: MiddlewareHandler = async (c, next) => {
         lastMaintenance.set(found.site.database, now);
         later(c, runMaintenance(cms, { warm: false }));
     }
-};
+}
 
 /**
  * Headers every response carries unless the route set its own: no MIME sniffing, a tight

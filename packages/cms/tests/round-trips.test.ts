@@ -62,9 +62,10 @@ describe.skipIf(!live)('round trips', () => {
         clock += 60_000;
         reads.reset();
         await cms.ready();
-        // Collections, taxonomies and field groups together. The plugins' activation and the settings are
-        // read by the steps that need them: started beside these, they stopped a Worker from answering.
-        expect(reads.most()).toBeGreaterThanOrEqual(3);
+        // Collections and taxonomies in one request, beside the field groups: each read in flight takes one of
+        // the client's 32 places, which every request of the isolate shares. The plugins' activation and the
+        // settings are read by the steps that need them: started beside these, they stopped a Worker from answering.
+        expect(reads.most()).toBe(2);
         expect(cms.collections().map(collection => collection.name)).toContain('posts');
     });
 });

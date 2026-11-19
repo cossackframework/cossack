@@ -20,11 +20,11 @@ import { afterCommit, beforeWrite, type Draft, type ResourceEvent, type WriteAct
 import { sharedOp, type SharedFieldsEvent } from './shared-fields';
 import { readByIds, readPaged } from './budget';
 import { isLockedRecord, lockedView } from './locked';
-import { ANONYMOUS, evaluateRule, hasPermission, PERMISSIONS, principalId, ruleScope, type Principal, type RecordScope } from '../permissions';
+import { ANONYMOUS, evaluateRule, hasPermission, PERMISSIONS, principalId, ruleScope, systemPrincipal, type Principal, type RecordScope } from '../permissions';
 import type { FieldFilter, ListFilter, ListOptions, RecordPage, RecordShape, RevisionShape } from '../records';
 
 export type { FieldFilter, ListFilter, ListOptions };
-import type { AccessRule, Resource, ResourceAction } from '../resource';
+import type { AccessRule, MemberRule, Resource, ResourceAction } from '../resource';
 import type { CmsHost } from './host';
 import { uuidv7 } from '@cossackframework/core';
 
@@ -40,6 +40,70 @@ export interface OperationContext {
 export const JOIN_GROUP: unique symbol = Symbol('cms.joinGroup');
 
 const KEY = /^[A-Za-z0-9_-]{1,80}$/;
+/** Guards read filters over every field: they are written by code, and answer only whether they hold. */
+const SYSTEM = systemPrincipal('guard');
+
+/** One write of a batch (`CmsHost.batch`), on a resource by its ID. */
+export type BatchWrite =
+    | { readonly create: string; readonly input: { readonly [field: string]: unknown }; readonly id?: string }
+    | { readonly update: string; readonly id: string; readonly patch: { readonly [field: string]: unknown }; readonly expectedRevision: number }
+    | { readonly delete: string; readonly id: string; readonly expectedRevision: number };
+
+/**
+ * A condition a batch commits under: how many records of `resource` match `where` (and `id`),
+ * counted in the same request as the writes, before any of them. `{ max: 4 }` holds while at
+ * most four match; `{ min: 1 }`, the default, while one exists.
+ */
+export interface BatchGuard {
+    /** Names the guard in the refusal, such as `capacity`. */
+    readonly name: string;
+    readonly resource: string;
+    readonly where?: ListFilter['where'];
+    /** One record by ID. */
+    readonly id?: string;
+    readonly count?: { readonly min?: number; readonly max?: number };
+}
+
+/** A write ready to send, from `ResourceRepository.prepare`. */
+export interface PreparedWrite {
+    readonly resource: string;
+    /** The record's ID. */
+    readonly id: string;
+    /** The write's operation ID: its audit row and outbox event. */
+    readonly op: string;
+    readonly action: 'create' | 'update' | 'delete';
+    /** Conditions the write needs when it runs, whether alone or in a batch: a membership. */
+    readonly assertions: readonly Statement[];
+    /** In a batch only: the record is still as it was read (its revision and the access rules). Alone, the write's own statement checks it. */
+    readonly precondition?: Statement;
+    readonly statements: readonly Statement[];
+    /** The statement whose affected count says whether the record was written. */
+    readonly statement: number;
+    /** The record as the principal reads it after the write; null for a delete. */
+    readonly record: RecordShape | null;
+}
+
+/** Whether a rolled-back write failed one of its `cms_assertions` conditions. */
+export function isAssertionFailure(error: ClientError): boolean {
+    return error.code === 'RDB_CONSTRAINT' && /CHECK constraint failed: held = 1/.test(error.message);
+}
+
+/**
+ * The statements that check conditions in a write request: one `cms_assertions` row per
+ * condition before the writes (held = 1, or the CHECK fails and the request rolls back), and
+ * their removal after, so none outlives the request.
+ */
+export function assertionStatements(conditions: readonly Statement[], op: string): { insert: Statement[]; remove: Statement[] } {
+    if (!conditions.length) return { insert: [], remove: [] };
+    const ids = conditions.map((_, index) => `${op}:${index}`);
+    return {
+        insert: conditions.map((condition, index) => ({
+            rql: `INSERT INTO cms_assertions (id, held) SELECT $assertion, CASE WHEN ${condition.rql} THEN 1 ELSE 0 END WHERE 1 = 1`,
+            params: { ...condition.params, $assertion: ids[index]! },
+        })),
+        remove: [{ rql: `DELETE FROM cms_assertions WHERE id IN (${ids.map((_, index) => `$a${index}`).join(', ')})`, params: Object.fromEntries(ids.map((id, index) => [`$a${index}`, id])) }],
+    };
+}
 /** Fields a restored revision does not change: where and whether the entry is published, and its translations. */
 const KEPT_ON_RESTORE = new Set(['status', 'publishedAt', 'parent', 'menuOrder', 'locale', 'translationGroup', 'commentsOpen']);
 
@@ -164,7 +228,7 @@ export class ResourceRepository {
         // Hits are checked again in the outer query; fetch more when some may be filtered out.
         const params: { [key: string]: Value } = { $query: text, $hits: Math.min(filtered ? (offset + limit) * 4 : offset + limit, 10_000) };
         let source = `search::text('${this.resource.storage}__text', $query, $hits)`;
-        if (access !== 'allow' && access.owner && !access.where.length) {
+        if (access !== 'allow' && access.owner && !access.where.length && !access.members.length) {
             const owned = await this.#host.db.read([{ rql: `SELECT id FROM ${this.resource.storage} WHERE "_owner" = $owner LIMIT 4097`, params: { $owner: principalId(context.principal) } }], this.#readOptions(context));
             if (owned.results[0]!.rows.length > 4096) throw new CmsError('CMS_LIMIT', 'Search over more than 4096 owned records needs a separate collection per owner.');
             params.$allowed = owned.results[0]!.rows.map(row => row[0]!);
@@ -289,6 +353,7 @@ export class ResourceRepository {
         return co !== undefined && Array.isArray(record[co]) && (record[co] as unknown[]).includes(user);
     }
 
+    /** Owner and `where` rules, read on the record. Membership rules need the database, so here they reach nothing: the queries enforce them. */
     #inScope(rule: AccessRule, record: RecordShape, principal: Principal): boolean {
         const scope = ruleScope(rule, principal);
         if (scope === 'allow' || scope === 'deny') return scope === 'allow';
@@ -330,17 +395,62 @@ export class ResourceRepository {
     }
 
     async create(input: { readonly [field: string]: unknown }, context: OperationContext & { readonly id?: string }): Promise<RecordShape> {
+        const prepared = await this.prepare({ create: this.#id, input, ...(context.id !== undefined ? { id: context.id } : {}) }, context);
+        await this.#send(prepared, context);
+        return prepared.record!;
+    }
+
+    /**
+     * A write ready to send, alone or in a batch (`CmsHost.batch`): its statements, the
+     * conditions it needs at the moment it runs, and its record as the principal reads it.
+     * Everything a write checks before sending (access, validation, write filters, references)
+     * runs here.
+     */
+    async prepare(write: BatchWrite, context: OperationContext): Promise<PreparedWrite> {
+        if ('create' in write) return this.#prepareCreate(write.input, { ...context, ...(write.id !== undefined ? { id: write.id } : {}) });
+        if ('update' in write) return this.#prepareUpdate(write.id, write.patch, { ...context, expectedRevision: write.expectedRevision });
+        if ('delete' in write) return this.#prepareDelete(write.id, { ...context, expectedRevision: write.expectedRevision });
+        throw new CmsError('CMS_VALIDATION', 'A write creates, updates or deletes a record.');
+    }
+
+    /**
+     * A condition of the batch: how many records match a filter, read in the same request as the
+     * writes. Counted over every record, whoever writes: guards are written by code, and they
+     * answer only whether they hold.
+     */
+    guardCondition(guard: Omit<BatchGuard, 'resource'>): Statement {
+        const params: { [key: string]: Value } = {};
+        const conditions = this.#filters({ ...(guard.where ? { where: guard.where } : {}) }, SYSTEM, params);
+        if (guard.id !== undefined) {
+            checkKey(guard.id);
+            params.$guardKey = guard.id;
+            conditions.push(`id = type::record('${this.resource.storage}', $guardKey)`);
+        }
+        const { min, max } = guard.count ?? { min: 1 };
+        if ((min !== undefined && (!Number.isSafeInteger(min) || min < 0)) || (max !== undefined && (!Number.isSafeInteger(max) || max < 0)) || (min === undefined && max === undefined)) {
+            throw new CmsError('CMS_VALIDATION', `Guard ${guard.name} counts with a whole min, max or both.`);
+        }
+        const counted = `(SELECT count(*) FROM ${this.resource.storage}${conditions.length ? ` WHERE ${conditions.map(condition => `(${condition})`).join(' AND ')}` : ''})`;
+        const bounds = [...(min !== undefined ? [`${counted} >= ${min}`] : []), ...(max !== undefined ? [`${counted} <= ${max}`] : [])];
+        return bound(bounds.join(' AND '), params);
+    }
+
+    async #prepareCreate(input: { readonly [field: string]: unknown }, context: OperationContext & { readonly id?: string }): Promise<PreparedWrite> {
         const access = await this.#authorize('create', context.principal);
-        // Only an owner rule lets a user create; a record condition cannot be checked before the record exists.
-        if (access !== 'allow' && !(access.owner && context.principal.kind === 'user')) {
-            throw new CmsError(context.principal.kind === 'user' ? 'CMS_FORBIDDEN' : 'CMS_UNAUTHENTICATED', `Not allowed to create ${this.resource.id}.`);
+        const user = context.principal.kind === 'user';
+        // A record condition cannot be checked before the record exists: an owner rule lets a user
+        // create, and so does a membership rule on a field the new record sets (checked as it is written).
+        const members = access === 'allow' || !user ? [] : access.members.filter(rule => rule.match !== undefined);
+        if (access !== 'allow' && !(access.owner && user) && !members.length) {
+            throw new CmsError(user ? 'CMS_FORBIDDEN' : 'CMS_UNAUTHENTICATED', `Not allowed to create ${this.resource.id}.`);
         }
         const key = context.id ?? uuidv7();
         checkKey(key);
         const draft = await this.#prepareDraft('create', null, input, null, context);
+        const assertions = access !== 'allow' && !(access.owner && user) ? [this.#memberAssertion(members, draft, context.principal, true)!] : [];
         const now = this.#host.now();
         const op = uuidv7();
-        const owner = this.resource.ownership && context.principal.kind === 'user' ? context.principal.id : null;
+        const owner = this.resource.ownership && user ? (context.principal as { id: string }).id : null;
         const record = this.#shape(key, 1, now, now, owner, draft);
         const document: { [field: string]: Value } = { id: new RecordId(this.resource.storage, key), _rev: 1, _op: op, _createdAt: now, _updatedAt: now, _owner: owner };
         for (const [name, value] of Object.entries(draft)) if (value !== undefined) document[name] = this.#store(name, this.resource.fields[name]!, value);
@@ -348,10 +458,7 @@ export class ResourceRepository {
         const statements: Statement[] = [{ rql: `INSERT INTO ${this.resource.storage} DOCUMENT $document`, params: { $document: document } }];
         const guard = `EXISTS (SELECT 1 FROM ${this.resource.storage} WHERE id = type::record('${this.resource.storage}', $key) AND "_op" = $op)`;
         statements.push(...this.#sideEffects(guard, op, key, 1, 'create', record, actor(context.principal), now));
-        await this.#write(statements, op, context, error => {
-            if (error.code === 'RDB_CONSTRAINT') throw new CmsError('CMS_CONFLICT', 'A record with the same unique value already exists.', { cause: error });
-        });
-        return this.#redact(record, context.principal);
+        return { resource: this.resource.id, id: key, op, action: 'create', assertions, statements, statement: 0, record: this.#redact(record, context.principal) };
     }
 
     /**
@@ -384,6 +491,13 @@ export class ResourceRepository {
 
     /** Edit with an expected revision. A stale revision or lost access is a conflict, and nothing is written. */
     async update(id: string, patch: { readonly [field: string]: unknown }, context: OperationContext & { readonly expectedRevision: number }): Promise<RecordShape> {
+        const prepared = await this.#prepareUpdate(id, patch, context);
+        const result = await this.#send(prepared, context);
+        if (result.affected !== 1) throw new CmsError('CMS_CONFLICT', 'The record changed since it was read. Reload and try again.');
+        return prepared.record!;
+    }
+
+    async #prepareUpdate(id: string, patch: { readonly [field: string]: unknown }, context: OperationContext & { readonly expectedRevision: number }): Promise<PreparedWrite> {
         const access = await this.#authorize('update', context.principal);
         checkKey(id);
         if (!Number.isSafeInteger(context.expectedRevision) || context.expectedRevision < 1) throw new CmsError('CMS_VALIDATION', 'expectedRevision must be a positive integer.');
@@ -425,9 +539,11 @@ export class ResourceRepository {
         // A published entry whose URL changes keeps answering at the old one. The audit row,
         // written only when the change commits, guards these relational statements.
         statements.push(...await this.#host.redirectStatements(this.resource, previous, record, { rql: 'EXISTS (SELECT 1 FROM cms_audit WHERE id = $rOp)', params: { $rOp: op } }, principalId(context.principal)));
-        const result = await this.#write(statements, op, context);
-        if (result.affected !== 1) throw new CmsError('CMS_CONFLICT', 'The record changed since it was read. Reload and try again.');
-        return this.#redact(record, context.principal);
+        // In a batch the record must still be as read when the batch runs; a membership field set to
+        // another value must name one the user is a member of.
+        const moved = access === 'allow' ? null : this.#memberAssertion(access.members, draft, context.principal, false);
+        const current = bound(`EXISTS (SELECT 1 FROM ${this.resource.storage} WHERE ${condition.rql})`, condition.params);
+        return { resource: this.resource.id, id, op, action: 'update', assertions: moved ? [moved] : [], precondition: current, statements, statement: 0, record: this.#redact(record, context.principal) };
     }
 
     /**
@@ -543,6 +659,12 @@ export class ResourceRepository {
     }
 
     async delete(id: string, context: OperationContext & { readonly expectedRevision: number }): Promise<void> {
+        const prepared = await this.#prepareDelete(id, context);
+        const deleted = await this.#send(prepared, context);
+        if (deleted.affected !== 1) throw new CmsError('CMS_CONFLICT', 'The record changed or was deleted since it was read.');
+    }
+
+    async #prepareDelete(id: string, context: OperationContext & { readonly expectedRevision: number }): Promise<PreparedWrite> {
         const access = await this.#authorize('delete', context.principal);
         checkKey(id);
         if (!Number.isSafeInteger(context.expectedRevision) || context.expectedRevision < 1) throw new CmsError('CMS_VALIDATION', 'expectedRevision must be a positive integer.');
@@ -554,8 +676,37 @@ export class ResourceRepository {
         const previous = this.resource.fields.status ? await this.#current(id, access, context) : null;
         const statements = this.#sideEffects(guard, op, id, context.expectedRevision, 'delete', null, actor(context.principal), now, condition.params, previous);
         statements.push(bound(`DELETE FROM ${this.resource.storage} WHERE ${condition.rql}`, condition.params));
-        const deleted = await this.#write(statements, op, context, undefined, statements.length - 1);
-        if (deleted.affected !== 1) throw new CmsError('CMS_CONFLICT', 'The record changed or was deleted since it was read.');
+        return { resource: this.resource.id, id, op, action: 'delete', assertions: [], precondition: bound(guard, condition.params), statements, statement: statements.length - 1, record: null };
+    }
+
+    /**
+     * The condition that the record sets a membership field (`MemberRule.match`) to a value the
+     * user is a member of, by any of the rules: always on create, on update when it changes.
+     * Null when an update leaves those fields alone.
+     */
+    #memberAssertion(members: readonly MemberRule[], draft: Draft, principal: Principal, creating: boolean): Statement | null {
+        const rules = members.filter(rule => rule.match !== undefined && (creating || draft[rule.match] !== undefined));
+        if (!rules.length) return null;
+        const params: { [key: string]: Value } = { $member: principalId(principal) };
+        const parts = rules.flatMap((rule, index) => {
+            const value = draft[rule.match!];
+            if (value === null || value === undefined) return [];
+            params[`$mv${index}`] = this.#store(rule.match!, this.resource.fields[rule.match!]!, value);
+            return [`EXISTS (SELECT 1 FROM ${this.#host.resourceById(rule.resource).storage} WHERE ${quote(rule.user)} = $member AND ${quote(rule.field)} = $mv${index})`];
+        });
+        return bound(parts.length ? parts.join(' OR ') : '1 = 0', params);
+    }
+
+    /**
+     * Send one prepared write: its conditions as rows of `cms_assertions`, which roll the whole
+     * request back when one does not hold, then its statements.
+     */
+    async #send(prepared: PreparedWrite, context: OperationContext): Promise<{ affected: number; sequence: number }> {
+        const assertions = assertionStatements(prepared.assertions, prepared.op);
+        return this.#write([...assertions.insert, ...prepared.statements, ...assertions.remove], prepared.op, context, error => {
+            if (assertions.insert.length && isAssertionFailure(error)) throw new CmsError('CMS_FORBIDDEN', `Not allowed to ${prepared.action} ${this.resource.id} there: you are not a member.`, { cause: error });
+            if (prepared.action === 'create' && error.code === 'RDB_CONSTRAINT') throw new CmsError('CMS_CONFLICT', 'A record with the same unique value already exists.', { cause: error });
+        }, assertions.insert.length + prepared.statement);
     }
 
     async #authorize(action: ResourceAction, principal: Principal): Promise<Access> {
@@ -588,6 +739,14 @@ export class ResourceRepository {
                 });
                 scope.push(parts.length > 1 ? `(${parts.join(' AND ')})` : parts[0]!);
             });
+            // Records a row of the membership resource links the user to: the record itself, or its `match` field's value.
+            if (access.members.length && principal.kind === 'user') {
+                params.$member = principalId(principal);
+                for (const rule of access.members) {
+                    const storage = this.#host.resourceById(rule.resource).storage;
+                    scope.push(`${prefix}${rule.match ? quote(rule.match) : 'id'} IN (SELECT ${quote(rule.field)} FROM ${storage} WHERE ${quote(rule.user)} = $member)`);
+                }
+            }
             conditions = [...conditions, scope.length ? scope.join(' OR ') : '1 = 0'];
         }
         return { rql: conditions.map(condition => conditions.length > 1 ? `(${condition})` : condition).join(' AND '), params };
