@@ -436,7 +436,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                         if (typeof data._cossack_redirect === 'string') {
                             succeed();
                             window.location.href = data._cossack_redirect;
-                            return;
+                            return data._cossack_return;
                         }
                         const cursor = rpcSseCursor(response);
                         apply(cursor === undefined ? data : { ...data, _cossack_sse_cursor: cursor });

@@ -141,6 +141,16 @@ describe('HTTP component RPC targeting', () => {
         expect(order).toEqual(['invalidate', 'redirect']);
     });
 
+    it('completes a redirecting call with the value the method returned, and navigates', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ _cossack_redirect: '/keys', _cossack_return: { ok: true } })));
+        const visited: string[] = [];
+        vi.stubGlobal('window', { location: { set href(value: string) { visited.push(value); } } });
+        const component = makeComponent('sse');
+        proxyHttpMethods(component, [{ name: 'remove' }]);
+        await expect(component.__cossack_proxies.get('remove')?.()).resolves.toEqual({ ok: true });
+        expect(visited).toEqual(['/keys']);
+    });
+
     it('invalidates successful uploads and retains the cache for failed uploads', async () => {
         class FakeXhr {
             static status = 200;

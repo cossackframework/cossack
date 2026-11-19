@@ -1,4 +1,5 @@
 /** Versioned, response-local RPC stream protocol. Each UTF-8 line is one frame. */
+import { isLeavingPage } from './page-exit';
 import { validateRpcTimeout } from './server-method-metadata';
 
 export const RPC_STREAM_CONTENT_TYPE = 'application/x-cossack-rpc+ndjson';
@@ -505,6 +506,12 @@ export function createRpcCall<Result, Yield>(
     getRequestId?: () => string | undefined,
     cancellation?: { signal: AbortSignal; error: () => RpcError; setTimeout?: (timeoutMs: number) => void },
 ): RpcCall<Result, Yield> {
+    // A call cut off by leaving the page is no failure to report.
+    const report = onUnobservedError;
+    if (report) onUnobservedError = error => {
+        if (error instanceof RpcError && error.code === 'COSSACK_RPC_CANCELLED' && isLeavingPage()) return;
+        report(error);
+    };
     let resolve!: (value: Result) => void;
     let reject!: (error: unknown) => void;
     const completion = new Promise<Result>((yes, no) => { resolve = yes; reject = no; });

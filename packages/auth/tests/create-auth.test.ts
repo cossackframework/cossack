@@ -364,6 +364,12 @@ describe('createAuth — createLoginHandler request guards', () => {
         expect(res.headers.get('set-cookie')).toBe('session=abc; Path=/; HttpOnly');
     });
 
+    it('lets Sec-Fetch-Site: same-origin decide over Origin: null (Referrer-Policy: no-referrer)', async () => {
+        const { post } = setup();
+        expect((await post({ 'Content-Type': 'application/json', 'Sec-Fetch-Site': 'same-origin', Origin: 'null' })).status).toBe(200);
+        expect((await post({ 'Content-Type': 'application/json', 'Sec-Fetch-Site': 'cross-site', Origin: 'http://localhost' })).status).toBe(403);
+    });
+
     it('allows the https Origin behind a TLS-terminating proxy', async () => {
         const { post } = setup();
         const res = await post({ 'Content-Type': 'application/json', Origin: 'https://localhost', 'X-Forwarded-Proto': 'https' });

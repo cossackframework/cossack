@@ -179,7 +179,7 @@ export function createApiHandler(ComponentClass: new () => Cossack, methodNames:
                 throw error;
             }
             // For all other errors, return a generic 500.
-            logServerFailure(logContext, 'api', stage, 'COSSACK_API_INTERNAL');
+            logServerFailure(logContext, 'api', stage, 'COSSACK_API_INTERNAL', error);
             c.header('X-Cossack-Request-Id', logContext.requestId);
             return c.json({ error: 'Internal Server Error', code: 'COSSACK_API_INTERNAL', requestId: logContext.requestId }, 500);
         }

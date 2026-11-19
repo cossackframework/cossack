@@ -102,6 +102,26 @@ async post() {
 }
 ```
 
+## Forms from other sites
+
+A page's `post()` refuses a form that another site posts to it: the answer is
+403 with `COSSACK_CROSS_SITE_REQUEST`, and `post()` does not run. The browser
+tells where a request comes from:
+
+- `Sec-Fetch-Site: same-origin` passes. It decides alone, because a page
+  served with `Referrer-Policy: no-referrer` posts its own forms with
+  `Origin: null`: a check that compares `Origin` with the host would refuse
+  every form.
+- `cross-site` is refused.
+- For `same-site` (another subdomain), or without `Sec-Fetch-Site` (older
+  browsers, scripts), a present `Origin` must be the page's own.
+
+The check covers bodies a form can send (URL-encoded, multipart, plain text,
+or none). A JSON request from another site needs a CORS preflight, which
+`CORS_ORIGINS` decides. A page that another site must post to, such as an OAuth
+callback with `response_mode=form_post`, sets
+`@Page({ transport: 'http', allowCrossSiteForms: true })`.
+
 ## Flashing Messages
 
 Show the user the result of a form submission. Use the `flash()` method to set a flash message. The framework displays the message on the next page load.

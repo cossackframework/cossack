@@ -2,7 +2,7 @@
 import './metadata';
 import type { MiddlewareHandler, Context } from 'hono';
 import { isServer } from './environment';
-import { validateServerMethodTimeout } from './server-method-metadata';
+import { validateRpcResponseLimit, validateServerMethodTimeout } from './server-method-metadata';
 import { CossackOptions } from './cossack';
 import { createRef } from './ref';
 import { ValidationRule, ValidationConfig, ValidationRulesStore, StoreRuleMap, setValidationRules, flattenRuleTree } from './validation';
@@ -21,6 +21,12 @@ export interface PageOptions {
   transport?: CossackTransport;
   ssg?: boolean | SsgOptions;
   stateful?: boolean;
+  /**
+   * Let forms on other sites post to this page's `post()`. Off by default: a cross-site
+   * form post (by `Sec-Fetch-Site`, else `Origin`) gets 403 `COSSACK_CROSS_SITE_REQUEST`.
+   * Turn it on only for a callback another site posts to, such as an OAuth `form_post`.
+   */
+  allowCrossSiteForms?: boolean;
   /**
    * Determines which state backend (SSE store entry, Durable Object or Node
    * instance) a request connects to. Receives the Hono Context and returns a
@@ -151,6 +157,13 @@ export interface ServerOptions {
    * so the outcome is uncertain, never retried.
    */
   timeout?: number;
+  /**
+   * The largest JSON response of a call, in bytes: the returned value and the state the
+   * call changed. Default: the application's `rpc.maxResponseBytes`, else 1 MiB; at most
+   * 16 MiB. A larger response fails on the server with `COSSACK_RPC_RESPONSE_TOO_LARGE`
+   * and a `cossack.rpc.failure` log line. Use an HTTP route for bigger bodies.
+   */
+  maxResponseBytes?: number;
   /** @internal Compiler marker for generated server$ loaders. */
   serverResource?: boolean;
   /**
@@ -185,6 +198,7 @@ export function Server(options: ServerOptions = {}): any {
 
 function registerServer(options: ServerOptions): any {
   const timeout = validateServerMethodTimeout(options.timeout);
+  const maxResponseBytes = validateRpcResponseLimit(options.maxResponseBytes, 'Server method maxResponseBytes');
   return (target: any, propertyKey: string | symbol, descriptor?: PropertyDescriptor) => {
     // Only methods (and function-valued fields, whose value is unknown at
     // decoration time) are RPC actions. Accessors and internal server-only
@@ -199,6 +213,7 @@ function registerServer(options: ServerOptions): any {
       ...(Object.hasOwn(options, 'input') ? { input: options.input } : {}),
       ...(Object.hasOwn(options, 'authorize') ? { authorize: options.authorize } : {}),
       ...(timeout === undefined ? {} : { timeout }),
+      ...(maxResponseBytes === undefined ? {} : { maxResponseBytes }),
       ...(options.serverResource ? { serverResource: true } : {}),
     };
     Reflect.defineMetadata('cossack:server-methods', serverMethods, target.constructor);

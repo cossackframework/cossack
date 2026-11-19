@@ -119,7 +119,7 @@ export function defineApi(definition: Common<ApiSchemas> & { output?: InputSchem
                 response.headers.set('X-Cossack-Request-Id', requestId);
                 return response;
             }
-            logServerFailure(logContext, 'api', stage, 'COSSACK_API_INTERNAL');
+            logServerFailure(logContext, 'api', stage, 'COSSACK_API_INTERNAL', error);
             c.header('X-Cossack-Request-Id', requestId);
             return c.json({ error: 'Internal Server Error', code: 'COSSACK_API_INTERNAL', requestId }, 500);
         } finally {

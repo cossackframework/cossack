@@ -189,3 +189,24 @@ check needs one of these changes:
 
 The browser entry of the renderer no longer has `renderToString`: import it from
 `@cossackframework/renderer/server`.
+
+### Stricter template checks in 0.9.2
+
+`cossack check templates` and the editor type event listeners by their element. A
+`@change` listener on a `<select>` (or an `<input>`) receives an `Event`, so a handler
+typed `(event: InputEvent) => void` no longer checks: type it `(event: Event)` and read
+the value from `event.currentTarget` or `event.target`.
+
+### Changes after 0.9.2
+
+- A `@Server` method that calls `this.redirect()` completes in the browser with the value it
+  returned, not `undefined`. A `!result` check after such a call can go.
+- A page's `post()` refuses form posts from other sites (403 `COSSACK_CROSS_SITE_REQUEST`).
+  A page that another site posts to, such as an OAuth `form_post` callback, sets
+  `@Page({ allowCrossSiteForms: true })`.
+- The browser build stubs `src/middlewares/**`, `src/server/**`, `*.server.ts` and the recipes'
+  `src/jobs`, `src/schedules` and `src/notifications`, and a module that imports
+  `@cossackframework/auth` (other than `createAuthorizer`). A browser stub of your own for
+  these folders can go.
+- The browser build fails when a kept method passes, rather than calls, a method it removes
+  (`items.map(this.row)`). Call it or mark it `@Client()`.

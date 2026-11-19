@@ -96,6 +96,14 @@ export class FileUploader extends Cossack {
 }
 ```
 
+### Sharing a base class
+
+A page or component may extend an abstract class of your application that extends `Cossack`,
+such as a workspace that two applications share. Its methods are bound to the instance like
+the page's own (`@click=${this.add}` keeps `this`), its `init()` and `clientInit()` get the
+loading counter, and the page may add `@Server` methods of its own. When both classes define
+a method, the page's wins.
+
 ## Using Components
 
 Write a class-based component as a component tag in an `html` template. Attributes become its props and the content between the tags becomes its children.

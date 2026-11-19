@@ -52,9 +52,10 @@ export type AuthKit<User> = {
     /**
      * Credentials login route. Requires `Content-Type: application/json`
      * (415 otherwise) and a JSON object body (400 otherwise). Rejects
-     * cross-site requests with 403: `Sec-Fetch-Site` must be `same-origin`,
-     * `same-site`, `none` or absent, and a present `Origin` must match the
-     * request origin.
+     * cross-site requests with 403: `Sec-Fetch-Site: same-origin` or `none`
+     * passes alone (a same-origin post may carry `Origin: null`); for
+     * `same-site` or without it, a present `Origin` must match the request
+     * origin.
      */
     createLoginHandler: (options: LoginHandlerOptions<User>) => MiddlewareHandler;
     /**
@@ -71,8 +72,10 @@ export type AuthKit<User> = {
  * TLS-terminating proxy that sets `X-Forwarded-Proto: https`).
  */
 function isSameOriginRequest(c: Context): boolean {
-    const site = c.req.header('sec-fetch-site');
-    if (site !== undefined && !['same-origin', 'same-site', 'none'].includes(site.toLowerCase())) return false;
+    // same-origin decides alone: under Referrer-Policy: no-referrer a same-origin post sends Origin: null.
+    const site = c.req.header('sec-fetch-site')?.toLowerCase();
+    if (site === 'same-origin' || site === 'none') return true;
+    if (site !== undefined && site !== 'same-site') return false;
     const origin = c.req.header('origin');
     if (origin === undefined) return true;
     let url: URL;

@@ -128,6 +128,13 @@ dynamic proxies, `Function.prototype.call` with an arbitrary receiver, or
 methods passed as callbacks to external code are not detected. Mark the
 helper with `@Client()` in those cases (see below).
 
+The build fails when a kept method passes, rather than calls, a method that
+the browser build removes: `items.map(this.row)`, `this.row.bind(this)`, or a
+component prop such as `renderItem: this.row`. The browser would throw when it
+called it after hydration. Call it (`items.map(item => this.row(item))`) or
+mark it `@Client()`. Event handlers (`@click=${this.save}`, `onSave:` props in
+`render()`) are not affected: they are RPC boundaries.
+
 ### Event handlers are RPC boundaries
 
 A call inside an event handler runs later, when the user acts. It does not keep
@@ -221,6 +228,24 @@ Do not work around this by adding `@Server` to the helper. `@Server` turns it
 into an RPC method, which is rarely what you want for a pure client-side helper.
 The body then executes on the server instead of the client.
 
+## Server-only application code
+
+The browser build replaces these modules with stubs, so neither their code nor
+anything they import reaches the browser:
+
+- `src/server/**` and any `*.server.ts` or `*.server.mts` file under `src/`;
+- `src/jobs/**`, `src/schedules/**` and `src/notifications/**`, which the
+  recipes write;
+- a module that imports a server-only package (`@cossackframework/database`,
+  `@cossackframework/auth`, `@cossackframework/romedb`, the CMS's server
+  entries, `node:*`), unless it is a component module, whose `@Server` bodies
+  are stripped first.
+
+A call to a stubbed export from the browser throws and names the module. Import
+such code only from `@Server` methods, `server$` loaders and middleware. Route
+middleware in `src/middlewares/` gets an inert stub instead: see
+[Middleware in the browser build](./middlewares.md#middleware-in-the-browser-build).
+
 ## SSG `generateStaticParams`
 
 The same secure-by-default treatment applies to the SSG helper
@@ -274,9 +299,10 @@ code sample that quotes the function) are not affected.
 
 The plugin removes unused server-only imports after stripping method bodies.
 If client code still uses a server-only import, the build fails. The named
-`createAuthorizer` import from `@cossackframework/auth` is allowed: page
-decorators and conditional UI use its role and permission helpers in both
-environments. Keep authentication and session operations in server methods.
+`createAuthorizer` import from `@cossackframework/auth` is allowed, in a
+component module and in any other module: it is a pure factory that a page
+decorator may call at load. Keep authentication and session operations in
+server methods.
 
 Class discovery is fail closed. Every class in a client module is a framework
 class (stripped), a plain class (left unchanged), or a class the plugin cannot

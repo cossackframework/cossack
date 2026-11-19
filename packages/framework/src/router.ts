@@ -1,6 +1,7 @@
 import { logConfigRequirementFailure } from './config-diagnostics.js';
 import { logRuntimeFailure } from '@cossackframework/core/server-diagnostics';
-import { createServerFailureContext, logServerFailure } from './server-logging.js';
+import { createServerFailureContext, logDevelopmentCause, logServerFailure } from './server-logging.js';
+import { refuseCrossSiteForms } from './form-origin.js';
 import { HTTPException } from 'hono/http-exception';
 import { developmentRpcEvidence, developmentRpcInvoked, developmentRpcReturned, developmentRpcStream, developmentRpcNative } from './transports/development-trace.js';
 import { getModuleDefault } from './module-default.js';
@@ -23,6 +24,7 @@ import {
 } from '@cossackframework/core';
 import { enforceMethodRateLimit } from '@cossackframework/core';
 import { enforceActionInput, enforceActionAuthorization, getAuthorizationFailure, isActionValidationError, isClientVisibleError } from '@cossackframework/core';
+import { RPC_JSON_RESPONSE_MAX_BYTES, RPC_RESPONSE_LIMIT_HEADER, serverMethodResponseLimit, validateRpcResponseLimit } from '@cossackframework/core';
 
 /**
  * RPC allowlist that also accepts @Server methods on injected @Service
@@ -64,12 +66,42 @@ function withRpcSignal(c: Context, signal: AbortSignal): Context {
   });
 }
 
+const rpcResponseWarnings = new Set<string>();
+
+/**
+ * Answer a server method call with JSON within its response limit (`@Server({ maxResponseBytes })`,
+ * else `rpc.maxResponseBytes`, else 1 MiB). Over the limit, the call fails here, before the
+ * body goes over the wire, and the server logs it; the browser would otherwise refuse it
+ * with nothing in the server's log. In development, a response over half the limit warns.
+ */
+function rpcJsonResponse(c: Context, data: Record<string, unknown>, limit: number, logContext: RpcFailureContext): Response {
+  const body = JSON.stringify(data);
+  const bytes = new TextEncoder().encode(body).byteLength;
+  if (bytes > limit) {
+    logRpcFailure(logContext, 'response', 'COSSACK_RPC_RESPONSE_TOO_LARGE', { bytes, limitBytes: limit });
+    return c.json({ error: `The response of '${logContext.action}' is ${bytes} bytes, over its limit of ${limit} bytes. ` +
+      'Page the data, return less state, use an HTTP route, or raise maxResponseBytes (at most 16 MiB).',
+      code: 'COSSACK_RPC_RESPONSE_TOO_LARGE', requestId: logContext.requestId }, 500);
+  }
+  if (import.meta.env.DEV && bytes > limit / 2) {
+    const key = `${logContext.route}#${logContext.action}#${limit}`;
+    if (!rpcResponseWarnings.has(key)) {
+      rpcResponseWarnings.add(key);
+      console.warn(`[cossack] ${logContext.route} '${logContext.action}' answered ${bytes} bytes, more than half of its ${limit}-byte response limit. ` +
+        'Over the limit, the call fails with COSSACK_RPC_RESPONSE_TOO_LARGE.');
+    }
+  }
+  if (limit !== RPC_JSON_RESPONSE_MAX_BYTES) c.header(RPC_RESPONSE_LIMIT_HEADER, String(limit));
+  c.header('Content-Type', 'application/json');
+  return c.body(body, 200);
+}
+
 function serializeRpcResult(value: unknown, state: unknown) {
   return { value: snapshotRpcValue(value, 'value'), state: snapshotRpcValue(state, 'state') };
 }
 
 /** Preserve action-owned cookies when Hono merges its existing Context response. */
-async function rpcRedirectResponse(c: Context, result: unknown): Promise<Response | undefined> {
+async function rpcRedirectResponse(c: Context, result: unknown, send: (data: Record<string, unknown>) => Response): Promise<Response | undefined> {
   const response = result instanceof Response ? result : undefined;
   const existingCookies = new Set(c.res.headers.getSetCookie());
   for (const value of response?.headers.getSetCookie() ?? []) {
@@ -85,7 +117,10 @@ async function rpcRedirectResponse(c: Context, result: unknown): Promise<Respons
   // Fetch must receive RPC metadata rather than follow the redirect into HTML.
   await response?.body?.cancel();
   c.header('Location', undefined);
-  return c.json({ _cossack_redirect: location });
+  // A method that called this.redirect() and returned a value completes with it in the
+  // browser, so the call's declared type holds while the browser navigates.
+  const value = response ? undefined : snapshotRpcValue(result, 'value');
+  return send(value === undefined ? { _cossack_redirect: location } : { _cossack_redirect: location, _cossack_return: value });
 }
 import { createApiHandler, getAuthoredRouteMember } from './api-handler.js';
 import { createChainedComponent, createServiceScopeChain } from './service-scope-chain.js';
@@ -397,7 +432,17 @@ export interface CreateAppOptions {
    * `COSSACK_RPC_REQUEST_TOO_LARGE`. Defaults: 1 MiB JSON (`/crpc`) and
    * 32 MiB multipart (`/upload`, files included).
    */
-  rpc?: { maxJsonBytes?: number; maxUploadBytes?: number };
+  rpc?: {
+    maxJsonBytes?: number;
+    maxUploadBytes?: number;
+    /**
+     * The largest JSON response of a server method call: its value and the state it
+     * changed. Default 1 MiB, at most 16 MiB; `@Server({ maxResponseBytes })` sets it per
+     * method. A larger response fails with `COSSACK_RPC_RESPONSE_TOO_LARGE` and a
+     * `cossack.rpc.failure` log line; in development, one over half of it logs a warning.
+     */
+    maxResponseBytes?: number;
+  };
   /**
    * Localization options. The locale middleware always runs (it's a no-op
    * when the project has no `src/lang/` folder). Enable `autoDetectBrowser`
@@ -471,7 +516,7 @@ export function createApp(options: CreateAppOptions = {}) {
       }
       return c.json({ error: denial.message, code: denial.code, requestId: context.requestId }, denial.status);
     }
-    logServerFailure(context, 'request', 'middleware', 'COSSACK_REQUEST_INTERNAL');
+    logServerFailure(context, 'request', 'middleware', 'COSSACK_REQUEST_INTERNAL', error);
     return c.json({ error: 'Internal Server Error', code: 'COSSACK_REQUEST_INTERNAL', requestId: context.requestId }, 500);
   });
   const resolveNotFound = createNotFoundResolver(Object.keys(pages));
@@ -553,6 +598,7 @@ export function createApp(options: CreateAppOptions = {}) {
     owners,
     allowedOrigins: options.allowedOrigins,
     rpcBodyLimits: { jsonBytes: options.rpc?.maxJsonBytes, uploadBytes: options.rpc?.maxUploadBytes },
+    rpcResponseLimit: validateRpcResponseLimit(options.rpc?.maxResponseBytes, 'rpc.maxResponseBytes') ?? RPC_JSON_RESPONSE_MAX_BYTES,
     runtimeInfo: resolveRuntimeInfo,
     getMiddlewares,
     realtimeComponents,
@@ -930,7 +976,7 @@ export function createApp(options: CreateAppOptions = {}) {
           return c.json({ error: denial.message, code: denial.code, requestId }, denial.status);
         }
         c.header('X-Cossack-Request-Id', failureContext.requestId);
-        logServerFailure(failureContext, 'ssr', 'render', 'COSSACK_SSR_INTERNAL');
+        logServerFailure(failureContext, 'ssr', 'render', 'COSSACK_SSR_INTERNAL', err);
         const errorPage = findNearestSpecialPage(path, 'error');
         if (errorPage && path !== errorPage.path) {
           c.status(500);
@@ -1244,6 +1290,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
             return c.json({ error: e.message, code: 'COSSACK_RPC_CLIENT_ERROR', requestId }, 400);
           }
           logRpcFailure(logContext, 'action');
+          logDevelopmentCause(e);
           return c.json({ error: 'Internal Server Error', code: 'COSSACK_RPC_INTERNAL_ERROR', requestId }, 500);
         }
         // Generator results stream through the same response-local protocol as
@@ -1263,7 +1310,9 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
           return response;
         }
 
-        const redirectResponse = await rpcRedirectResponse(c, actionResult);
+        const responseLimit = serverMethodResponseLimit(owned.serviceClass, action) ?? routerContext.rpcResponseLimit!;
+        const send = (data: Record<string, unknown>) => rpcJsonResponse(c, data, responseLimit, logContext);
+        const redirectResponse = await rpcRedirectResponse(c, actionResult, send);
         if (redirectResponse) return redirectResponse;
         if (actionResult instanceof Response) {
           const finishResponseLifetime = retainResponseLifetime(c);
@@ -1275,7 +1324,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
         }
         const serviceState = getServiceState(owned.instance);
         const serialized = serializeRpcResult(actionResult, serviceState);
-        return c.json({
+        return send({
           _cossack_service_state: serialized.state,
           ...(serialized.value !== undefined ? { _cossack_return: serialized.value } : {}),
         });
@@ -1285,6 +1334,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
         if (!isActionValidationError(error) && !isClientVisibleError(error) &&
             !(error instanceof RpcError && error.code === 'COSSACK_RPC_CANCELLED')) {
           logRpcFailure(logContext, 'request');
+          logDevelopmentCause(error);
         }
         return c.json({ error: error instanceof RpcError ? error.message : 'Internal Server Error',
           code: error instanceof RpcError ? error.code : 'COSSACK_RPC_INTERNAL_ERROR', requestId }, 500);
@@ -1472,6 +1522,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
             return c.json({ error: e.message, code: 'COSSACK_RPC_CLIENT_ERROR', requestId }, 400);
           }
           logRpcFailure(logContext, 'action');
+          logDevelopmentCause(e);
           return c.json({ error: 'Internal Server Error', code: 'COSSACK_RPC_INTERNAL_ERROR', requestId }, 500);
         }
         if (componentContext.req.raw.signal.aborted) {
@@ -1518,7 +1569,10 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
           }
           return Promise.resolve();
         };
-        const redirectResponse = await rpcRedirectResponse(c, actionResult);
+        const responseLimit = serverMethodResponseLimit(getForwardedServerMethodClass(targetInstance, action) ?? targetInstance.constructor, action)
+          ?? routerContext.rpcResponseLimit!;
+        const send = (data: Record<string, unknown>) => rpcJsonResponse(c, data, responseLimit, logContext);
+        const redirectResponse = await rpcRedirectResponse(c, actionResult, send);
         if (redirectResponse) {
           await publishScopeState();
           return redirectResponse;
@@ -1541,7 +1595,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
           (serialized.state as any)._cossack_return = serialized.value;
         }
 
-        return c.json(serialized.state as Record<string, unknown>);
+        return send(serialized.state as Record<string, unknown>);
       } catch (error) {
         // Unexpected framework failures (construction, DI, serialization) still
         // produce one JSON RPC error on both backends.
@@ -1550,6 +1604,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
         if (!isActionValidationError(error) && !isClientVisibleError(error) &&
             !(error instanceof RpcError && error.code === 'COSSACK_RPC_CANCELLED')) {
           logRpcFailure(logContext, 'request');
+          logDevelopmentCause(error);
         }
         return c.json({ error: error instanceof RpcError ? error.message : 'Internal Server Error',
           code: error instanceof RpcError ? error.code : 'COSSACK_RPC_INTERNAL_ERROR', requestId }, 500);
@@ -1707,7 +1762,8 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
           // Only authored methods (stopping before Cossack.prototype) become
           // routes; a framework default can never expose a public verb.
           if (typeof getAuthoredRouteMember(PageComponent, method)?.value === 'function') {
-            target.add(method.toUpperCase(), step(createApiHandler(PageComponent, method, apiHandlerOptions(path))));
+            const handler = createApiHandler(PageComponent, method, apiHandlerOptions(path));
+            target.add(method.toUpperCase(), step(pageOptions.allowCrossSiteForms ? handler : refuseCrossSiteForms(handler)));
           }
         }
       }
