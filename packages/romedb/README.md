@@ -55,7 +55,36 @@ Rules:
 - Every write is saved before dispatch. A lost response leaves an `UncertainWriteError`;
   `recoverPending()` replays the exact request. It never sends a replacement write.
 - Reads send explicit `workLimits` and retry 503/429 backpressure a bounded number of times.
+- The client allows 32 calls in flight. A call it refuses for lack of places (`RDB_LIMIT`,
+  outcome `not-sent`) waits and tries again like a 503, so a burst of requests queues instead
+  of failing.
 - Request paths never warm a Cloud database. Call `warm()` from a schedule.
+
+## Requests that end early
+
+One binding serves every request of an isolate, and a call gives its place back when it
+settles. On Workers a call whose request ends first never settles: the visitor left, or the
+request failed while other calls of the same `Promise.all` were in flight, and the runtime
+cancelled their I/O with the request. Two things keep a binding serving:
+
+- `requestSignal`: a function that gives the signal of the current request. A call that passes
+  no `signal` of its own takes it, so its calls end, and give their places back, when it aborts.
+  The CMS passes one that aborts when the visitor leaves or the request fails. In your own
+  application, abort a controller from your first middleware the same way:
+
+  ```ts
+  import { getRequestContext } from '@cossackframework/core';
+
+  const db = createRomeDB({ url, token, pending, requestSignal: () => getRequestContext()?.get('requestCalls')?.signal });
+  ```
+
+  Work that runs after the answer under `waitUntil` should not take a signal that the end of the
+  answer aborts.
+- Calls that are still unsettled 5 seconds past their deadline (`timeoutMs`, 20 seconds by
+  default) were stranded. When the client refuses a call for lack of places and holds such
+  calls, the binding opens a new client and sends the call there; the old client keeps the
+  calls it still has and closes when they settle. A client from `connect` (a file) is never
+  replaced.
 
 Live tests run when `COSSACK_TEST_ROMEDB_BIN` points at a `romedb` executable (or
 `romedb` is on `PATH`); `COSSACK_TEST_ROMEDB_URL` and `COSSACK_TEST_ROMEDB_TOKEN`

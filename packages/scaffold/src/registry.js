@@ -218,6 +218,14 @@ export function resolveRecipe(options = {}) {
   return recipe;
 }
 
+/**
+ * Where jobs, schedules and notifications keep their ledger: a CMS project's RomeDB database,
+ * which needs no other binding, or the `JOB_STATE` D1 database.
+ */
+export function jobLedger(recipe) {
+  return recipe.resolvedFeatures.includes('cms') ? 'romedb' : 'd1';
+}
+
 /** Host support for all selected targets. Recorded recipes remain inspectable. */
 export function recipeCapabilityDiagnostics(recipe) {
   return ['web', ...(recipe.resolvedFeatures.includes('desktop') ? ['desktop'] : [])]
@@ -239,9 +247,11 @@ export function recipeCapabilityRequirements(recipe, target = 'web') {
     feature, source: { file: 'package.json' }, requires,
   });
   if (recipe.resolvedFeatures.includes('workflows')) add('workflows/cloudflare', { cloudflareBindings: ['WORKFLOWS'] });
-  if (recipe.resolvedFeatures.includes('jobs')) add('jobs/cloudflare-queues', { cloudflareBindings: ['JOBS', 'JOB_STATE'] });
-  if (recipe.resolvedFeatures.includes('schedules')) add('schedules/cloudflare-cron', { cloudflareBindings: ['JOBS', 'JOB_STATE'] });
-  if (recipe.resolvedFeatures.includes('notifications')) add('notifications/cloudflare-email', { cloudflareBindings: ['EMAIL', 'JOB_STATE'] });
+  // A RomeDB ledger is in the CMS's database, which the cms requirement already names.
+  const ledger = jobLedger(recipe) === 'd1' ? ['JOB_STATE'] : [];
+  if (recipe.resolvedFeatures.includes('jobs')) add('jobs/cloudflare-queues', { cloudflareBindings: ['JOBS', ...ledger] });
+  if (recipe.resolvedFeatures.includes('schedules')) add('schedules/cloudflare-cron', { cloudflareBindings: ['JOBS', ...ledger] });
+  if (recipe.resolvedFeatures.includes('notifications')) add('notifications/cloudflare-email', { cloudflareBindings: ['EMAIL', ...ledger] });
   if (recipe.resolvedFeatures.includes('cms')) add('cms', { transports: ['http'], ...(recipe.adapter === 'cloudflare' ? { cloudflareBindings: ['ROMEDB_PENDING', 'MEDIA'] } : { filesystem: true }) });
   if (recipe.resolvedFeatures.includes('resource')) add('resource', { transports: ['http'] });
   if (recipe.resolvedFeatures.includes('mutation')) add('mutation', { transports: ['http'] });
