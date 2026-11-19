@@ -87,7 +87,7 @@ Then add to `src/style.css` (after `@import "tailwindcss";`):
 | Drawer | `<dialog>` | Slide-in drawer panel with drag handle grip and backdrop |
 | Item | `<div>` | Generic list-row primitive with media/content/trailing slots |
 | CopyField | `<input readonly>` / `<textarea readonly>` | A value with a Copy button; when the browser refuses the clipboard it selects the text and asks to copy by hand (`copyLabel`, `copiedLabel`, `copyFailedLabel`, `mono`, `rows`, `onCopy`) |
-| SecretNotice | `<div role="group">` | A value shown once (API key, token, invitation code): a `message` above a CopyField |
+| SecretNotice | `<div role="group">` | A value shown once (API key, token, invitation code): an optional `title`, a `message` above a CopyField, an optional `note` under it and a Done button with `onDone` |
 
 ### Chat
 | Component | Native element | Description |

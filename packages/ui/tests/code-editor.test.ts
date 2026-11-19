@@ -22,6 +22,8 @@ it('resolves languages by name, alias or extension, and plain text for the unkno
     expect(await languageFor('json')).not.toBeNull();
     expect(await languageFor('TS')).not.toBeNull();
     expect(await languageFor('py')).not.toBeNull();
+    expect(await languageFor('sql')).not.toBeNull();
+    expect(await languageFor('postgresql')).not.toBeNull();
     expect(await languageFor('')).toBeNull();
     expect(await languageFor('no-such-language')).toBeNull();
 });
@@ -52,4 +54,16 @@ it('follows a new comparison and read-only setting on the same mounted editor', 
     render(component(CodeEditor, { id: 'diff', value: 'AFTER_TWO' }), host);
     await vi.waitFor(() => expect(host.querySelector('.cm-content')?.getAttribute('contenteditable')).toBe('true'));
     expect(host.textContent).not.toContain('BEFORE_B');
+});
+
+it('runs onSubmit on Ctrl+Enter, and inserts a line without it', async () => {
+    const submitted: string[] = [];
+    const host = document.createElement('div');
+    document.body.append(host);
+    render(component(CodeEditor, { id: 'query', value: 'SELECT 1', language: 'sql', onSubmit: (value: string) => submitted.push(value) }), host);
+    await vi.waitFor(() => expect(host.querySelector('.cm-content')).not.toBeNull());
+    const content = host.querySelector('.cm-content') as HTMLElement;
+    content.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true, cancelable: true }));
+    expect(submitted).toEqual(['SELECT 1']);
+    expect(content.textContent).toBe('SELECT 1');
 });
