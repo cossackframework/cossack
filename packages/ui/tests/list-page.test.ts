@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { renderToString } from '@cossackframework/renderer';
+import { html, renderToString } from '@cossackframework/renderer';
 import { bulkBar, countBadge, listFilters, listFooter, listTable, rowActions, tabFromQuery, toggleSelected } from '../src/blocks/index';
 
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
@@ -43,4 +43,21 @@ it('keeps row actions, counts and tabs as before', () => {
     expect(tabFromQuery('nope', ['all', 'drafts'] as const)).toBe('all');
     expect(toggleSelected(['a'], 'b', true)).toEqual(['a', 'b']);
     expect(toggleSelected(['a', 'b'], 'a', false)).toEqual(['b']);
+});
+
+it('names the table with a caption and takes a template as the empty text, marked data-empty', () => {
+    const named = renderToString(listTable({ rows: [{ id: 'a' }], key: row => row.id, columns: [{ label: 'ID', cell: row => row.id }], caption: 'Members' }));
+    expect(named).toMatch(/<caption class="sr-only">\s*Members\s*<\/caption>/);
+    expect(renderToString(listTable({ rows: [{ id: 'a' }], key: row => row.id, columns: [] }))).not.toContain('<caption');
+    const empty = renderToString(listTable({ rows: [], key: () => '', columns: [], empty: html`No keys. <a href="/keys/new">Create the first key</a>.` }));
+    expect(empty).toMatch(/<p data-empty[^>]*>/);
+    expect(empty).toContain('<a href="/keys/new">Create the first key</a>');
+});
+
+it('links back to the list without the search while a search is set', () => {
+    const searching = renderToString(listFilters({ action: '/members', hidden: { sort: 'name', page: '' }, search: { name: 'q', value: 'ada', placeholder: 'Search' }, clearLabel: 'Clear' }));
+    expect(searching).toMatch(/<a href="\/members\?sort=name" data-clear-filters[^>]*>\s*Clear\s*<\/a>/);
+    expect(renderToString(listFilters({ action: '/members?tab=all', search: { name: 'q', value: 'ada', placeholder: 'Search' }, clearLabel: 'Clear' }))).toContain('href="/members?tab=all"');
+    expect(renderToString(listFilters({ action: '/members', search: { name: 'q', value: '', placeholder: 'Search' }, clearLabel: 'Clear' }))).not.toContain('data-clear-filters');
+    expect(renderToString(listFilters({ action: '/members', search: { name: 'q', value: 'ada', placeholder: 'Search' } }))).not.toContain('data-clear-filters');
 });

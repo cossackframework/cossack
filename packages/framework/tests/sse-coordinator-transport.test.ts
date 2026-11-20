@@ -309,7 +309,7 @@ describe('SSE coordinator transport (/crpc and SSR through the distributed backe
     it('returns redirects as JSON while still publishing the mutated state', async () => {
         await page();
         const redirected = await call('redirectToHome');
-        expect(await redirected.json()).toEqual({ _cossack_redirect: '/after-increment' });
+        expect(await redirected.json()).toEqual({ _cossack_redirect: '/after-increment', _cossack_return: 'redirected' });
         expect(JSON.parse(scope().snapshot!.state)).toMatchObject({ count: 1 });
     });
 

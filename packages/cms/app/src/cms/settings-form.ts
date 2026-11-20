@@ -54,19 +54,20 @@ export async function settingRows(cms: CmsHost, group: SettingsGroup, principal:
     return { rows, values };
 }
 
-function choicesOf(cms: CmsHost, declaration: SettingDeclaration, principal: Principal, cache: ChoiceCache): Promise<SettingRow['choices']> {
-    if (declaration.control && declaration.kind !== 'enum' || declaration.source === 'media') return Promise.resolve([]);
-    if (declaration.kind === 'enum') return Promise.resolve((declaration.values ?? []).map(value => ({ value, label: declaration.choices?.[value] ?? value })));
-    if (!declaration.source) return Promise.resolve([]);
+async function choicesOf(cms: CmsHost, declaration: SettingDeclaration, principal: Principal, cache: ChoiceCache): Promise<SettingRow['choices']> {
+    if (declaration.control && declaration.kind !== 'enum' && declaration.control !== 'checklist' || declaration.source === 'media') return [];
+    if (declaration.kind === 'enum') return (declaration.values ?? []).map(value => ({ value, label: declaration.choices?.[value] ?? value }));
+    if (!declaration.source) return [];
     let found = cache.get(declaration.source);
     if (!found) { found = sourceChoices(cms, declaration, principal); cache.set(declaration.source, found); }
-    return found;
+    // A single role to give someone is never the administrator's; a checklist of roles lists every one.
+    return declaration.source === 'roles' && declaration.control !== 'checklist' ? (await found).filter(choice => choice.value !== 'admin') : found;
 }
 
 /** The choices a source offers: the site's roles, categories, published pages or the time zones. */
 async function sourceChoices(cms: CmsHost, declaration: SettingDeclaration, principal: Principal): Promise<SettingRow['choices']> {
     switch (declaration.source) {
-        case 'roles': return (await cms.users.roles()).filter(role => role.id !== 'admin').map(role => ({ value: role.id, label: role.name }));
+        case 'roles': return (await cms.users.roles()).map(role => ({ value: role.id, label: role.name }));
         case 'categories': return (await cms.taxonomies.tree('categories')).map(term => ({ value: term.id, label: `${'— '.repeat(term.depth)}${term.name}` }));
         case 'pages': return (await cms.resource('cms/pages').list({ where: { status: 'published' }, order: { field: 'title', direction: 'asc' }, limit: 100 }, { principal }))
             .records.map(record => ({ value: record.id, label: recordTitle(record, 'title') }));
@@ -149,6 +150,20 @@ function paletteControl(row: SettingRow, value: SettingValue | undefined, attrib
     </div>`;
 }
 
+/** The source's choices as checkboxes; the value is the checked ones' values joined by commas, in the choices' order. */
+function checklistControl(row: SettingRow, value: SettingValue | undefined, attributes: FieldControlAttributes, set: (value: SettingValue) => void): TemplateResult {
+    const checked = new Set(String(value ?? '').split(',').map(entry => entry.trim()).filter(Boolean));
+    const toggle = (choice: string, on: boolean) => {
+        if (on) checked.add(choice); else checked.delete(choice);
+        // Values the choices no longer list (a role deleted since) stay chosen until unchecked here.
+        set([...row.choices.map(entry => entry.value).filter(entry => checked.has(entry)), ...[...checked].filter(entry => !row.choices.some(choice => choice.value === entry))].join(','));
+    };
+    return html`<div id=${attributes.id} role="group" aria-label=${row.label} aria-describedby=${attributes['aria-describedby'] ?? null} data-checklist class="flex flex-wrap gap-x-4 gap-y-2">
+        ${row.choices.map(choice => component(Checkbox, { id: `${attributes.id}-${choice.value}`, label: choice.label, checked: checked.has(choice.value), disabled: value === null,
+            '@change': (event: Event) => toggle(choice.value, (event.target as HTMLInputElement).checked) }))}
+    </div>`;
+}
+
 export function settingControl(row: SettingRow, value: SettingValue | undefined, error: string | undefined, set: (value: SettingValue) => void, media?: SettingsMedia): TemplateResult {
     const id = settingControlId(row.namespace, row.name);
     const select = row.choices.length || row.kind === 'enum';
@@ -162,6 +177,8 @@ export function settingControl(row: SettingRow, value: SettingValue | undefined,
             ? iconStyleControl(row, value, attributes, set)
             : row.control === 'palette'
             ? paletteControl(row, value, attributes, set)
+            : row.control === 'checklist'
+            ? checklistControl(row, value, attributes, set)
             : row.control === 'file'
             ? component(SettingsFile, { attributes, label: row.label, value: String(value ?? ''), disabled: value === null, kinds: row.fileKinds, media, onChange: set })
             : row.kind === 'boolean'

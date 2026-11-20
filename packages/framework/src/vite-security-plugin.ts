@@ -275,6 +275,22 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
         }
       }
 
+      // Route middleware runs only on the server: a page names it in `@Page({ middlewares })`,
+      // so the browser's copy of the page imports it. The browser gets an inert stub that can be
+      // called at load (`guard.requireRole('admin')`), and none of the middleware's own imports.
+      if (isMiddlewareModulePath(shaped)) {
+        const program = parsedModule() ?? { body: [] };
+        return middlewareClientStub(namedExportsOf(program), moduleLabelFromId(cleanId), hasDefaultExport(program));
+      }
+      // Server-only application code: `src/server/`, `*.server.ts`, and the jobs, schedules
+      // and notifications the recipes write. A call from the browser throws and says so.
+      if (isServerModulePath(shaped)) {
+        const program = parsedModule() ?? { body: [] };
+        const label = moduleLabelFromId(cleanId);
+        return serverOnlyStub(namedExportsOf(program), label) +
+          (hasDefaultExport(program) ? `export default stub('default');\n` : '');
+      }
+
       // Match files in the project's `src/config/` directory. Anchored to
       // `/src/config/` so it doesn't catch unrelated `/config/` paths in
       // dependencies or other project subdirectories.
@@ -393,6 +409,9 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
   const secure = plugin.transform as (this: unknown, code: string, id: string) => { code: string; map: unknown };
   // Only a served file takes the extra, asynchronous step.
   plugin.transform = function (code, id) {
+    // A server never loads a browser-only module: no chunk of it, or of what it imports,
+    // reaches a server build, in an application or in a package (the UI's CodeEditor).
+    if (this.environment?.name !== 'client') code = dropClientModuleImports(code, id);
     const result = secure.call(this, code, id);
     return (servedOf(id) && shouldProcessFile(id) ? compileServed(id, result) : result) as ReturnType<typeof compileServed>;
   };
@@ -426,18 +445,9 @@ function isRuntimeServerOnlyImport(statement: any): boolean {
     isServerOnlyImportSource(String(statement.source?.value ?? ''));
 }
 
+/** One list for the transform's check and the load hook's stubs: {@link SERVER_ONLY_IMPORT_SOURCES}. */
 function isServerOnlyImportSource(source: string): boolean {
-  return source === '@cossackframework/database' ||
-    source.startsWith('@cossackframework/database/') ||
-    source === '@cossackframework/framework/session' ||
-    source === '@cossackframework/auth' ||
-    source.startsWith('@cossackframework/auth/') ||
-    // RomeDB clients and the CMS host: pages use them only inside @Server methods.
-    ((source === '@cossackframework/romedb' || source.startsWith('@cossackframework/romedb/') ||
-      source === '@romedb/client' || source.startsWith('@romedb/client/') ||
-      source === '@romedb/node' || source.startsWith('@romedb/node/')) && !CLIENT_SAFE_IMPORT_SOURCES.has(source)) ||
-    CMS_SERVER_ENTRIES.has(source) ||
-    source.startsWith('node:');
+  return isServerOnlyModuleSource(source);
 }
 
 /**
@@ -778,6 +788,82 @@ export function isClientOnlyModuleId(id: string): boolean {
   return /(?:^|[/\\])[^/\\]+\.client\.m?ts$/.test(cleanId);
 }
 
+/** `src/middlewares/**` (a plugin's too, and its `middlewares.ts`): route and global middleware. */
+export function isMiddlewareModulePath(path: string): boolean {
+  return /(?:^|\/)src\/(?:plugins\/[^/]+\/)?middlewares(?:\/.+)?\.m?ts$/.test(path.replace(/\\/g, '/'));
+}
+
+/** Server-only application code: `src/server/**`, `*.server.ts`, and the recipes' `src/jobs`, `src/schedules` and `src/notifications`. */
+export function isServerModulePath(path: string): boolean {
+  const normalized = path.replace(/\\/g, '/');
+  return /(?:^|\/)src\/(?:plugins\/[^/]+\/)?(?:server|jobs|schedules|notifications)\/.+\.m?ts$/.test(normalized) ||
+    /(?:^|\/)src\/(?:.+\/)?[^/]+\.server\.m?ts$/.test(normalized);
+}
+
+/**
+ * The browser's copy of a middleware module: every export is inert. A call, or a property of
+ * it, gives another inert value, so a page decorator that builds its guards at load
+ * (`guard.requireRole('admin')`) still loads. The browser never runs page middleware.
+ */
+export function middlewareClientStub(namedExports: string[], moduleName: string, hasDefault = false): string {
+  const header =
+    `// [cossack-security] ${commentText(moduleName)} is middleware: it runs on the server only — stubbed on the client.\n` +
+    `const inert = (name) => new Proxy(function () {}, {\n` +
+    `  apply: () => inert(name + '()'),\n` +
+    `  get: (_, key) => key === 'then' ? undefined : key === Symbol.toPrimitive || key === 'toString' ? () => '[server middleware ' + name + ']' : inert(name + '.' + String(key)),\n` +
+    `});\n`;
+  return header + namedExports.map((name, index) => stubExport(name, `inert(${jsString(`${moduleName}.${name}`)})`, index)).join('') +
+    (hasDefault ? `export default inert(${jsString(`${moduleName}.default`)});\n` : '');
+}
+
+/** Whether a parsed module has a default export (`export default`, `export { x as default }`). */
+function hasDefaultExport(program: any): boolean {
+  return (program.body ?? []).some((statement: any) => statement.type === 'ExportDefaultDeclaration' ||
+    (statement.type === 'ExportNamedDeclaration' && statement.exportKind !== 'type' && (statement.specifiers ?? []).some((specifier: any) =>
+      (specifier.exported?.name ?? specifier.exported?.value) === 'default')));
+}
+
+/** A specifier that names a browser-only module: `./chart.client`, `../internal/editor.client.js`. */
+const CLIENT_MODULE_SPECIFIER = /\.client(?:\.m?[jt]s)?$/;
+
+/**
+ * A server environment's copy of a module: every dynamic `import()` of a `.client` module
+ * becomes a rejected promise, so the bundler emits no chunk for it or for what it imports. A
+ * browser-only module runs in `onMount()` or an `@Client()` method, which the server never
+ * calls. Static imports keep the lazy throwing stub of {@link generateClientOnlyServerStub}.
+ */
+export function dropClientModuleImports(code: string, id: string): string {
+  const cleanId = id.split('?')[0].split('#')[0];
+  if (id.startsWith('\0') || !isScriptModulePath(cleanId) || !code.includes('.client') || !/\bimport\s*\(/.test(code)) return code;
+  const program = parseProgram(code);
+  if (!program) return code;
+  const ranges: Array<{ start: number; end: number; specifier: string }> = [];
+  const visit = (node: any): void => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) { node.forEach(visit); return; }
+    if (node.type === 'ImportExpression') {
+      const source = node.source;
+      const specifier = source?.type === 'Literal' && typeof source.value === 'string' ? source.value
+        : source?.type === 'TemplateLiteral' && source.expressions.length === 0 ? source.quasis[0]?.value?.cooked : undefined;
+      if (typeof specifier === 'string' && CLIENT_MODULE_SPECIFIER.test(specifier)) {
+        ranges.push({ start: node.start, end: node.end, specifier });
+        return;
+      }
+    }
+    for (const key in node) {
+      if (key !== 'parent' && key !== 'loc' && key !== 'range') visit(node[key]);
+    }
+  };
+  visit(program.body);
+  if (!ranges.length) return code;
+  let out = code;
+  for (const range of ranges.sort((a, b) => b.start - a.start)) {
+    const message = `[Cossack] ${range.specifier} is a browser-only module (.client) and does not load on the server.`;
+    out = `${out.slice(0, range.start)}Promise.reject(new Error(${JSON.stringify(message)}))${out.slice(range.end)}`;
+  }
+  return out;
+}
+
 type ClientOnlyExports = { named: string[]; hasDefault: boolean };
 
 /**
@@ -983,17 +1069,15 @@ function authClientStub(namedExports: string[]): string {
  * cannot run in the browser (they pull Node built-ins like `node:async_hooks`)
  * and must be stubbed on the client.
  *
- * NOTE: `@cossackframework/auth` is intentionally NOT in this set. The auth
- * package is pure TypeScript (only `hono` type imports, no Node built-ins) and
- * its `createAuthorizer` (the `guard` kit) must run on the client so that
- * `@Page({ middlewares: [guard.requireRole('admin')] })` can evaluate at module
- * load. A file that uses the server-only `createAuth` (sessions) typically also
- * imports ORM models (e.g. `src/auth.ts`) and is caught by the ORM rule — or
- * by the `src/auth.ts` filename special-case.
+ * The transform's check of a component module and the load hook's stub of any
+ * other module use this one list. One import is client-safe in both: the named
+ * `createAuthorizer` of `@cossackframework/auth` (see {@link isClientSafeImport}),
+ * a pure factory a module may call at load, such as `guard.requireRole('admin')`.
  */
 const SERVER_ONLY_IMPORT_SOURCES = new Set([
   '@cossackframework/database',
   '@cossackframework/framework/session',
+  '@cossackframework/auth',
   // RomeDB credentials, pending writes and CMS repositories never reach the client.
   '@cossackframework/romedb',
   '@romedb/client',
@@ -1067,12 +1151,32 @@ function importSourcesOf(program: any): string[] {
  * service file importing an ORM entity does not leak server code into the bundle.
  */
 export function isServerOnlyModule(id: string): boolean {
-  return readImportSources(id).some(isServerOnlyModuleSource);
+  const cleanId = id.split('?')[0].split('#')[0];
+  let source: string;
+  try { source = readFileSync(cleanId, 'utf-8'); } catch { return false; }
+  const program = parseProgram(source);
+  return program ? isServerOnlyProgram(program) : false;
 }
 
 /** {@link isServerOnlyModule} for an already parsed module. */
 function isServerOnlyProgram(program: any): boolean {
-  return importSourcesOf(program).some(isServerOnlyModuleSource);
+  return (program.body ?? []).some((statement: any) => {
+    const source = statement.source?.value;
+    if (typeof source !== 'string' || !isServerOnlyModuleSource(source)) return false;
+    if (statement.type === 'ImportDeclaration') return statement.importKind !== 'type' && !isClientSafeImport(statement);
+    if (statement.type === 'ExportNamedDeclaration' || statement.type === 'ExportAllDeclaration') return statement.exportKind !== 'type';
+    return false;
+  });
+}
+
+/**
+ * An import of a server-only package that a browser may still run: only the named
+ * `createAuthorizer` of `@cossackframework/auth`, a pure factory with no Node built-ins.
+ */
+function isClientSafeImport(statement: any): boolean {
+  const values = (statement.specifiers ?? []).filter((specifier: any) => specifier.importKind !== 'type');
+  return statement.source?.value === '@cossackframework/auth' && values.length > 0 && values.every((specifier: any) =>
+    specifier.type === 'ImportSpecifier' && (specifier.imported?.name ?? specifier.imported?.value) === 'createAuthorizer');
 }
 
 function isServerOnlyModuleSource(spec: string): boolean {
@@ -2223,6 +2327,52 @@ function computePreservedSet(
   return { preserved, handlerCalls };
 }
 
+/**
+ * Methods a preserved method passes as a value (`items.map(this.row)`, `this.row.bind(this)`,
+ * a component prop) although the browser build strips them: they would throw once the
+ * browser calls them. Calls (`this.row(item)`) keep their target, event handlers are
+ * RPC boundaries, and `@Server` or automatic RPC methods get a proxy, so none of those count.
+ */
+function strippedMethodValues(cls: any, methods: AstMethod[], preserved: Set<string>, automaticRpc: Set<string>): Array<{ method: string; from: string; start: number }> {
+  const stripped = new Set(methods.filter(method => !preserved.has(method.name) && !method.hasServerDecorator &&
+    !automaticRpc.has(method.name) && method.fieldValueStart === undefined).map(method => method.name));
+  if (!stripped.size) return [];
+  const found: Array<{ method: string; from: string; start: number }> = [];
+  for (const member of cls?.body?.body ?? []) {
+    if (member.type !== 'MethodDefinition' || !member.value?.body) continue;
+    const from = member.key?.type === 'PrivateIdentifier' ? `#${member.key.name}` : memberKeyName(member.key);
+    if (from === null || !preserved.has(from)) continue;
+    const render = from === 'render';
+    const visit = (node: any, parent: any, handler: boolean) => {
+      if (!node || typeof node.type !== 'string' || node.type.startsWith('TS')) return;
+      if (handler) return; // An event handler slot is an RPC boundary, not a client call.
+      const name = thisMemberName(node);
+      if (name && stripped.has(name) && !(parent?.type === 'CallExpression' && parent.callee === node) &&
+          !(parent?.type === 'AssignmentExpression' && parent.left === node)) {
+        found.push({ method: name, from, start: node.start });
+      }
+      if (node.type === 'TaggedTemplateExpression' && node.quasi?.type === 'TemplateLiteral') {
+        visit(node.tag, node, false);
+        node.quasi.expressions.forEach((expression: any, index: number) => visit(expression, node.quasi, isTemplateEventBinding(node.quasi.quasis[index])));
+        return;
+      }
+      if (node.type === 'Property') {
+        if (node.computed) visit(node.key, node, false);
+        visit(node.value, node, render && isHandlerProperty(node.key));
+        return;
+      }
+      for (const key of Object.keys(node)) {
+        if (key === 'parent' || TYPE_ONLY_KEYS.has(key)) continue;
+        const value = node[key];
+        if (Array.isArray(value)) value.forEach(child => visit(child, node, false));
+        else if (value && typeof value.type === 'string') visit(value, node, false);
+      }
+    };
+    visit(member.value.body, member.value, false);
+  }
+  return found;
+}
+
 /** Shared classification used by both build environments and inspection. */
 function analyzeClassMethods(
   cls: any,
@@ -2956,6 +3106,14 @@ function stripClientClasses(
     const { methods, preserved, automaticRpc } = analyzeClassMethods(
       cls, code, program, isClientSafeMethodFn, builtinMethods,
     );
+    const leaked = strippedMethodValues(cls, methods, preserved, automaticRpc);
+    if (leaked.length) {
+      const first = leaked[0]!;
+      const line = code.slice(0, first.start).split('\n').length;
+      throw new Error(`[Cossack Security] ${id}:${line}: ${className}.${first.from}() passes this.${first.method}, which the browser build removes, ` +
+        `so the browser would throw when it is called. Call it as this.${first.method}(...) inside ${first.from}(), or mark ${first.method}() with @Client(). ` +
+        'See docs/client-bundle.md#transitive-preservation-helpers-called-from-client-safe-methods.');
+    }
     const serverOnlyMethods = extractServerOnlyMethodNames(methods, preserved, automaticRpc);
 
     // 1. Stub the body of every non-preserved method, and the value of every

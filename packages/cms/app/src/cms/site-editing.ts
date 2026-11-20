@@ -19,7 +19,7 @@ export async function editableRecord(cms: CmsHost, collection: string, id: strin
         const definition = cms.collection(collection);
         const repository = cms.resource(`cms/${definition.name}`);
         const record = await repository.get(id, { principal });
-        return record && repository.canUpdate(record, principal) ? { collection: definition, record } : null;
+        return record && await repository.canUpdate(record, { principal }) ? { collection: definition, record } : null;
     } catch (error) {
         if (error instanceof CmsError) return null;
         throw error;
@@ -119,10 +119,11 @@ async function patternDocuments(cms: CmsHost, ids: readonly string[], options: r
     let records: Map<string, RecordShape>;
     try { records = await repository.getMany(ids.slice(0, 50), { principal }); }
     catch (error) { if (error instanceof CmsError) return []; throw error; }
+    const editable = await repository.editable([...records.values()], { principal });
     return ids.flatMap(id => {
         const record = records.get(id);
         if (!record || !Array.isArray(record.content)) return [];
-        return [{ key: `pattern:${id}`, kind: 'pattern' as const, name: id, label: recordTitle(record, 'title'), revision: record.rev, blocks: editorBlocks(record.content as EditorBlock[], options), editable: repository.canUpdate(record, principal), changed: false, error: '', conflict: false }];
+        return [{ key: `pattern:${id}`, kind: 'pattern' as const, name: id, label: recordTitle(record, 'title'), revision: record.rev, blocks: editorBlocks(record.content as EditorBlock[], options), editable: editable.has(record.id), changed: false, error: '', conflict: false }];
     });
 }
 

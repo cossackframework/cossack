@@ -28,7 +28,7 @@ export interface AutomationsOptions {
     /** The principal of an automation's author as of now, or null when they can no longer act (deleted, disabled). */
     readonly principal?: (userId: string) => Promise<Principal | null>;
     /** An entry as the principal may read it: without the fields they may not. */
-    readonly redact?: (collection: string, record: Record<string, unknown>, principal: Principal) => Record<string, unknown>;
+    readonly redact?: (collection: string, record: Record<string, unknown>, principal: Principal) => Promise<Record<string, unknown>>;
 }
 
 export class CmsAutomations {
@@ -146,7 +146,7 @@ export class CmsAutomations {
         catch (error) { throw new AutomationSkipped((error as Error).message); }
         const { record, collection } = vars;
         if (!record || typeof record !== 'object' || typeof collection !== 'string' || !this.#options.redact) return vars;
-        return { ...vars, record: this.#options.redact(collection, record as Record<string, unknown>, principal) };
+        return { ...vars, record: await this.#options.redact(collection, record as Record<string, unknown>, principal) };
     }
 
     async #perform(automation: Automation, vars: Record<string, unknown>, scopes: Omit<BindingScopes, 'entry'>): Promise<void> {

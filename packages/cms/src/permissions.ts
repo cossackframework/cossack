@@ -1,4 +1,4 @@
-import type { AccessRule } from './resource';
+import type { AccessRule, MemberRule } from './resource';
 
 /** Who is acting. Built per request from the session; never from client input. */
 export type Principal =
@@ -98,15 +98,18 @@ export function holdsAll(principal: Principal, permissions: readonly string[]): 
     return permissions.every(permission => hasPermission(principal, permission));
 }
 
-/** Records an action is limited to: the principal's own, or those matching any of the conditions. */
+/** Records an action is limited to: the principal's own, those matching any of the conditions, or those a membership links the user to. */
 export interface RecordScope {
     readonly owner: boolean;
     readonly where: readonly { readonly [field: string]: string | number | boolean }[];
+    /** Membership rules the host turns into query conditions; only users have memberships. */
+    readonly members: readonly MemberRule[];
 }
 
 /**
- * Evaluate a rule. `owner` means the action is allowed only on records the principal created,
- * which the host enforces with a query condition, not by trusting input.
+ * Evaluate a rule. `owner` means the action is allowed only on some records (the principal's
+ * own, those matching a `where`, or those a membership reaches), which the host enforces with a
+ * query condition, not by trusting input.
  */
 export function evaluateRule(rule: AccessRule, principal: Principal): 'allow' | 'owner' | 'deny' {
     const scope = ruleScope(rule, principal);
@@ -119,19 +122,22 @@ export function ruleScope(rule: AccessRule, principal: Principal): 'allow' | 'de
     if (rule === 'public') return 'allow';
     if (rule === 'none') return 'deny';
     if (rule === 'authenticated') return principal.kind === 'user' ? 'allow' : 'deny';
-    if (rule === 'owner') return principal.kind === 'user' ? { owner: true, where: [] } : 'deny';
+    if (rule === 'owner') return principal.kind === 'user' ? { owner: true, where: [], members: [] } : 'deny';
     if ('permission' in rule) return hasPermission(principal, rule.permission) ? 'allow' : 'deny';
-    if ('where' in rule) return { owner: false, where: [rule.where] };
+    if ('where' in rule) return { owner: false, where: [rule.where], members: [] };
+    if ('memberOf' in rule) return principal.kind === 'user' ? { owner: false, where: [], members: [rule.memberOf] } : 'deny';
     let owner = false;
     const where: RecordScope['where'][number][] = [];
+    const members: MemberRule[] = [];
     for (const entry of rule.any) {
         const outcome = ruleScope(entry, principal);
         if (outcome === 'allow') return 'allow';
         if (outcome === 'deny') continue;
         owner ||= outcome.owner;
         where.push(...outcome.where);
+        members.push(...outcome.members);
     }
-    return owner || where.length ? { owner, where } : 'deny';
+    return owner || where.length || members.length ? { owner, where, members } : 'deny';
 }
 
 export function principalId(principal: Principal): string {

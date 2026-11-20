@@ -6,7 +6,7 @@ export type CodeEditorProps = {
     /** The element ID of the editor's surface. */
     id: string;
     value: string;
-    /** `json`, `javascript`, `typescript`, `html`, `css`, `markdown`, or any name CodeMirror's language data knows; empty for plain text. */
+    /** `json`, `javascript`, `typescript`, `html`, `css`, `markdown`, `sql`, or any name CodeMirror's language data knows (`postgresql`, `sqlite`, `python`…); empty for plain text. */
     language?: string;
     /** Spoken name of the editor, for assistive technology. */
     label?: string;
@@ -19,12 +19,15 @@ export type CodeEditorProps = {
     /** Classes of the frame; the default gives a bordered box with a minimum height. */
     class?: string;
     onChange?(value: string): void;
+    /** Ctrl+Enter (Cmd+Enter on a Mac) in the editor, such as running a query; without it the key inserts a line. */
+    onSubmit?(value: string): void;
 };
 
 /**
  * Cossack UI CodeEditor — a CodeMirror 6 editor with syntax highlighting, loaded in the
  * browser on first use. The server renders the text in a plain box, so the page is complete
- * before the editor arrives and without JavaScript.
+ * before the editor arrives and without JavaScript. A server build leaves CodeMirror out: the
+ * framework drops the `import()` of a `.client` module there.
  *
  *   <${CodeEditor} id="body" language="json" .value=${text} .onChange=${value => (this.text = value)} />
  */
@@ -67,6 +70,11 @@ export class CodeEditor extends Cossack {
                 ...this.mountOptions(), value: this.props.value ?? "", language: this.language,
                 placeholder: this.props.placeholder ?? "", label: this.props.label ?? "Code",
                 onChange: value => this.props.onChange?.(value),
+                onSubmit: value => {
+                    if (!this.props.onSubmit) return false;
+                    this.props.onSubmit(value);
+                    return true;
+                },
             });
             this.ready = true;
         } catch (error) {

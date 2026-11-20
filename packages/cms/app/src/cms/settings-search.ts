@@ -65,6 +65,7 @@ export function settingsSearchEntries(cms: CmsHost, options: { network?: boolean
             network('defaultPlugins', 'Plugins enabled on new sites', 'Plugins new sites start with.', 'new sites'),
             network('defaultLanguage', 'Language of new sites', 'The default language new sites start with.', 'new sites locale'),
             network('siteExports', 'Site exports', 'Whether site admins export their own site or request it from a network admin.', 'database download backup export request approve'),
+            network('siteRegistration', 'People can register a site', 'Visitors create an account and a site, and become its administrator.', 'sign up signup register registration self-service new site'),
         );
     }
     return entries;

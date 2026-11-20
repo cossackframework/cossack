@@ -329,7 +329,7 @@ export async function dashboardFind(c: Context, text: string): Promise<{ id: str
     const found = await Promise.all(searched.map(async collection => {
         const resource = cms.resourceById(`cms/${collection.name}`);
         try {
-            const records = openMatches(cms, resource.id, await cms.resource(resource.id).search(text, { limit: 5 }, { principal }), principal);
+            const records = await openMatches(cms, resource.id, await cms.resource(resource.id).search(text, { limit: 5 }, { principal }), principal);
             return records.map(record => {
                 const href = `/dashboard/content/${collection.name}/${record.id}`;
                 return { id: href, label: recordTitle(record, resource.titleField), group: collection.label, href };

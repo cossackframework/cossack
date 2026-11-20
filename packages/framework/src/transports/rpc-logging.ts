@@ -12,12 +12,13 @@ export type RpcFailureStage =
   | 'stream'
   | 'response-stream'
   | 'cleanup'
+  | 'response'
   | 'response-cleanup'
   | 'coordinator-action'
   | 'coordinator-cancellation'
   | 'coordinator-stream';
 
-export type RpcFailureCode = 'COSSACK_RPC_INTERNAL_ERROR' | 'COSSACK_RPC_CLEANUP_FAILED';
+export type RpcFailureCode = 'COSSACK_RPC_INTERNAL_ERROR' | 'COSSACK_RPC_CLEANUP_FAILED' | 'COSSACK_RPC_RESPONSE_TOO_LARGE';
 
 const requestIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -30,6 +31,8 @@ export function logRpcFailure(
   context: RpcFailureContext | undefined,
   stage: RpcFailureStage,
   code: RpcFailureCode = 'COSSACK_RPC_INTERNAL_ERROR',
+  /** Sizes of a response over its limit. */
+  size?: { bytes: number; limitBytes: number },
 ): void {
   const elapsed = context ? performance.now() - context.startedAt : 0;
   console.error({
@@ -41,5 +44,6 @@ export function logRpcFailure(
     durationMs: Number.isFinite(elapsed) ? Math.max(0, Math.round(elapsed)) : 0,
     stage,
     code,
+    ...(size ? { bytes: Math.max(0, Math.round(size.bytes)), limitBytes: Math.max(0, Math.round(size.limitBytes)) } : {}),
   });
 }

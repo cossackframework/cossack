@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { component, renderToString } from '@cossackframework/renderer';
 import { CopyField, SecretNotice } from '../src/components/CopyField';
 
@@ -34,3 +34,18 @@ it('wraps the field in a notice that the value is shown once', () => {
     expect(renderToString(component(SecretNotice, { label: 'Code', value: 'x', message: 'Save this code.' }))).toContain('Save this code.');
 });
 
+
+it('gives a secret notice a title, a note under the field and a Done button', async () => {
+    const onDone = vi.fn();
+    const notice = new SecretNotice();
+    notice.props = { label: 'Invitation link', value: 'https://example.com/i/1', title: 'Invitation for ada@example.com', note: 'The link expires in seven days.', onDone, doneLabel: 'Fertig' };
+    const output = renderToString(notice.render());
+    expect(output).toContain('Invitation for ada@example.com');
+    expect(output.indexOf('Invitation for ada@example.com')).toBeLessThan(output.indexOf('Copy it now.'));
+    expect(output.indexOf('The link expires in seven days.')).toBeGreaterThan(output.indexOf('https://example.com/i/1'));
+    expect(output).toMatch(/>\s*Fertig\s*</);
+    const plain = renderToString(component(SecretNotice, { label: 'Code', value: 'x' }));
+    expect(plain).not.toContain('cs-secret-notice__title');
+    expect(plain).not.toContain('cs-secret-notice__note');
+    expect(plain).not.toMatch(/>\s*Done\s*</);
+});

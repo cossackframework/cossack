@@ -50,23 +50,67 @@ export default class ContactPage extends Cossack {
 `,
   };
 }
+/**
+ * The ledger of jobs (and notifications): D1 (`JOB_STATE`), or, in a CMS project, the project's
+ * RomeDB database, which needs no other binding (`src/jobs/ledger.ts`).
+ */
+function ledgerOf(options) {
+  return options.ledger === 'romedb'
+    ? { import: "import { jobLedger } from './ledger';\n", database: 'jobLedger(env)' }
+    : { import: '', database: 'env.JOB_STATE' };
+}
+
+/** The tables of the ledger in RomeDB, created on its first use: the stores' own, the example job's receipts and, with notifications, the preferences. */
+function romedbLedgerFile(options) {
+  return `import { rqlDatabase, createRomeDB, type RqlDatabase } from '@cossackframework/romedb';
+import type { CmsStorage } from '@cossackframework/cms/storage';
+import { jobStateSchema } from '@cossackframework/core/jobs';
+${options.notifications ? "import { notificationStateSchema } from '@cossackframework/core/notifications';\n" : ''}import { storage } from '../cms.config';
+
+let ledger: RqlDatabase | undefined;
+
+/**
+ * The ledger of jobs${options.notifications ? ' and notifications' : ''}: tables in the CMS's RomeDB database (ROMEDB_URL), beside its own,
+ * created on first use. Unconfirmed writes wait in the CMS's pending store (ROMEDB_PENDING),
+ * which its maintenance recovers. No D1 binding is needed.
+ */
+export function jobLedger(env: CloudflareBindings): RqlDatabase {
+  if (!ledger) {
+    const store = storage as CmsStorage<unknown>;
+    ledger = rqlDatabase(createRomeDB({ ...store.databaseConnection(env), pending: store.pendingWrites(env) }), { kind: 'jobs', schema: [
+      jobStateSchema,
+      'CREATE TABLE IF NOT EXISTS cossack_job_receipts (key TEXT PRIMARY KEY, tenant TEXT NOT NULL, actor TEXT NOT NULL, value TEXT NOT NULL)',${options.notifications ? `
+      notificationStateSchema,
+      "CREATE TABLE IF NOT EXISTS cossack_notification_preferences (tenant_id TEXT NOT NULL, user_id TEXT NOT NULL, template TEXT NOT NULL, channel TEXT NOT NULL CHECK(channel IN ('email','in-app')), enabled INTEGER NOT NULL CHECK(enabled IN (0,1)), PRIMARY KEY(tenant_id, user_id, template, channel))",` : ''}
+    ] });
+  }
+  return ledger;
+}
+`;
+}
+
 export function jobsRecipeFiles(options = {}) {
-  return {
+  const ledger = ledgerOf(options);
+  const files = {
     'src/jobs/index.ts': `${options.notifications ? "import { createNotifications } from '../notifications';\n" : ''}import { input } from '@cossackframework/core/input';
 import { defineJob, createJobRuntime, createCloudflareJobAdapter } from '@cossackframework/core/jobs';
 import { createD1JobStore } from '@cossackframework/framework/jobs';
-export function createJobs(env: CloudflareBindings) {
-  return createJobRuntime({ namespace: env.JOB_NAMESPACE, adapter: createCloudflareJobAdapter(env.JOBS), store: createD1JobStore(env.JOB_STATE),
+${ledger.import}export function createJobs(env: CloudflareBindings) {
+  const ledger = ${ledger.database};
+  return createJobRuntime({ namespace: env.JOB_NAMESPACE, adapter: createCloudflareJobAdapter(env.JOBS), store: createD1JobStore(ledger),
     jobs: { ${options.notifications ? `deliverNotification: defineJob({ schema: input.object({ id: input.string({ required: true, maxLength: 512 }) }), maxAttempts: 5,
       async handle(payload) { await createNotifications(env).deliver(payload.id); } }),` : ''} record: defineJob({ schema: input.object({ value: input.string({ required: true, maxLength: 1000 }) }), maxAttempts: 3,
       async handle(payload, context) {
         // One receipt per logical key, even if a handler crashes before queue acknowledgement.
-        await env.JOB_STATE.prepare('INSERT OR IGNORE INTO cossack_job_receipts (key,tenant,actor,value) VALUES (?,?,?,?)')
+        await ledger.prepare('INSERT INTO cossack_job_receipts (key,tenant,actor,value) VALUES (?,?,?,?) ON CONFLICT (key) DO NOTHING')
           .bind(context.key, context.scope.tenantId ?? '', context.scope.actorId ?? '', payload.value).run();
       } }) },
   });
 }
 `,
+  };
+  if (options.ledger === 'romedb') files['src/jobs/ledger.ts'] = romedbLedgerFile(options);
+  else Object.assign(files, {
     'src/jobs/migrations/0001_job_state.sql': `CREATE TABLE cossack_jobs (
  key TEXT PRIMARY KEY, job TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('running','retrying','completed','failed')),
  attempt INTEGER NOT NULL, updated_at INTEGER NOT NULL, lease_until INTEGER NOT NULL, token TEXT NOT NULL, code TEXT, action TEXT
@@ -74,10 +118,11 @@ export function createJobs(env: CloudflareBindings) {
 CREATE INDEX cossack_jobs_status ON cossack_jobs(status,updated_at);
 CREATE TABLE cossack_job_receipts (key TEXT PRIMARY KEY,tenant TEXT NOT NULL,actor TEXT NOT NULL,value TEXT NOT NULL);
 `,
-    'src/config/jobs.ts': `export const requirements = { variables: { JOB_NAMESPACE: { type: 'string', required: true } }, bindings: { JOBS: { kind: 'object', required: true, runtimes: ['cloudflare'] }, JOB_STATE: { kind: 'd1', required: true, runtimes: ['cloudflare'] } } } as const;
-export default () => ({ provider: 'cloudflare-queues' });
-`,
-  };
+  });
+  files['src/config/jobs.ts'] = `export const requirements = { variables: { JOB_NAMESPACE: { type: 'string', required: true } }, bindings: { JOBS: { kind: 'object', required: true, runtimes: ['cloudflare'] }${options.ledger === 'romedb' ? '' : ", JOB_STATE: { kind: 'd1', required: true, runtimes: ['cloudflare'] }"} } } as const;
+export default () => ({ provider: 'cloudflare-queues', ledger: '${options.ledger === 'romedb' ? 'romedb' : 'd1'}' });
+`;
+  return files;
 }
 
 export function schedulesRecipeFiles() {
@@ -93,22 +138,24 @@ export function createSchedules(env: CloudflareBindings) {
   };
 }
 
-export function notificationsRecipeFiles() {
-  return {
+export function notificationsRecipeFiles(options = {}) {
+  const ledger = ledgerOf(options);
+  const files = {
     'src/jobs/migrations/0002_notifications.sql': "CREATE TABLE IF NOT EXISTS cossack_notifications (\n id TEXT PRIMARY KEY, key TEXT NOT NULL UNIQUE, tenant_id TEXT NOT NULL, user_id TEXT NOT NULL,\n channel TEXT NOT NULL CHECK(channel IN ('email','in-app')), record_json TEXT NOT NULL,\n status TEXT NOT NULL CHECK(status IN ('queued','provider-accepted','failed','unknown','delivered')),\n created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, attempt INTEGER NOT NULL DEFAULT 0,\n is_read INTEGER NOT NULL DEFAULT 0 CHECK(is_read IN (0,1)), code TEXT, message_id TEXT,\n token TEXT, lease_until INTEGER NOT NULL DEFAULT 0, sending TEXT CHECK(sending IN ('none','provider'))\n);\nCREATE INDEX IF NOT EXISTS cossack_notifications_inbox ON cossack_notifications(tenant_id,user_id,channel,status,created_at,id);\nCREATE TABLE cossack_notification_preferences (tenant_id TEXT NOT NULL,user_id TEXT NOT NULL,template TEXT NOT NULL,channel TEXT NOT NULL CHECK(channel IN ('email','in-app')),enabled INTEGER NOT NULL CHECK(enabled IN (0,1)),PRIMARY KEY(tenant_id,user_id,template,channel));\n",
     'src/notifications/index.ts': `import { input } from '@cossackframework/core/input';
 import { createNotificationRuntime, defineNotificationTemplate, notificationHtml } from '@cossackframework/core/notifications';
 import { createD1NotificationStore, createCloudflareNotificationEmailProvider } from '@cossackframework/framework/notifications';
 import { createJobs } from '../jobs';
-export function createNotifications(env: CloudflareBindings) {
+${ledger.import.replace('./ledger', '../jobs/ledger')}export function createNotifications(env: CloudflareBindings) {
+  const ledger = ${ledger.database};
   return createNotificationRuntime({ namespace: env.JOB_NAMESPACE,
     templates: { notice: defineNotificationTemplate({ schema: input.object({ title: input.string({ required: true, maxLength: 200 }), body: input.string({ required: true, maxLength: 2000 }) }),
       render(data) { return { subject: data.title, text: data.body, html: notificationHtml\`<h1>\${data.title}</h1><p>\${data.body}</p>\` }; } }) },
-    store: createD1NotificationStore(env.JOB_STATE),
+    store: createD1NotificationStore(ledger),
     email: { provider: createCloudflareNotificationEmailProvider(env.EMAIL), from: env.MAIL_FROM },
     // Preferences are application-owned. This example requires explicit opt-in.
     async preferences({ recipient, template, channel }) {
-      const row = await env.JOB_STATE.prepare('SELECT enabled FROM cossack_notification_preferences WHERE tenant_id=? AND user_id=? AND template=? AND channel=?')
+      const row = await ledger.prepare('SELECT enabled FROM cossack_notification_preferences WHERE tenant_id=? AND user_id=? AND template=? AND channel=?')
         .bind(recipient.tenantId, recipient.userId, template, channel).first<{ enabled: number }>();
       return row?.enabled === 1;
     },
@@ -119,9 +166,12 @@ export function createNotifications(env: CloudflareBindings) {
 }
 `,
     'src/config/notifications.ts': `export const requirements = { variables: { MAIL_FROM: { type: 'string', required: true } }, bindings: {
-  EMAIL: { kind: 'object', required: true, runtimes: ['cloudflare'] }, JOB_STATE: { kind: 'd1', required: true, runtimes: ['cloudflare'] },
+  EMAIL: { kind: 'object', required: true, runtimes: ['cloudflare'] },${options.ledger === 'romedb' ? '' : " JOB_STATE: { kind: 'd1', required: true, runtimes: ['cloudflare'] },"}
 } } as const;
 export default () => ({ channels: ['email', 'in-app'] });
 `,
   };
+  // In RomeDB the ledger creates its tables itself (src/jobs/ledger.ts).
+  if (options.ledger === 'romedb') delete files['src/jobs/migrations/0002_notifications.sql'];
+  return files;
 }

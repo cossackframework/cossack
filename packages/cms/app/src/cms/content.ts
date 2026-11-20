@@ -358,7 +358,7 @@ export async function duplicateEntry(cms: CmsHost, route: string, id: string, pr
     const source = await repository.get(id, { principal });
     if (!source) throw new CmsError('CMS_NOT_FOUND', 'The entry does not exist.');
     // A copy holds everything the entry does: a reader the entry is locked for gets no copy to open.
-    if (lockedCopy(source, repository.canUpdate(source, principal))) throw new CmsError('CMS_FORBIDDEN', 'Only its editors can copy a protected or members-only entry.');
+    if (lockedCopy(source, await repository.canUpdate(source, { principal }))) throw new CmsError('CMS_FORBIDDEN', 'Only its editors can copy a protected or members-only entry.');
     const input: Record<string, unknown> = {};
     for (const [name, declaration] of Object.entries(resource.fields)) {
         // Empty fields stay unset: the repository refuses null where a field has no value.
@@ -497,8 +497,9 @@ export async function* exportEntries(cms: CmsHost, route: string, principal: Pri
         // may change in full, others without their password, and none the caller could not open
         // (a protected entry, or members-only for other roles).
         const roles = principal.kind === 'user' ? principal.roles : [];
+        const editable = await repository.editable(page.records, { principal });
         const records = page.records.flatMap(record => {
-            if (repository.canUpdate(record, principal)) return [record];
+            if (editable.has(record.id)) return [record];
             if (entryLock(record, { editor: false, signedIn: principal.kind === 'user', roles })) return [];
             const { password: _password, ...rest } = record;
             return [rest as RecordShape];

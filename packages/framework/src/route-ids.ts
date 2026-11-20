@@ -384,6 +384,8 @@ export interface RouterContext {
   allowedOrigins?: string[];
   /** Request-body limits for `/crpc` and `/upload`. */
   rpcBodyLimits?: import('./transports/http.js').RpcBodyLimits;
+  /** The application's `rpc.maxResponseBytes`, 1 MiB by default. */
+  rpcResponseLimit?: number;
   /** Resolve framework-owned runtime identity for reconstructed components. */
   runtimeInfo?: () => Promise<import('@cossackframework/core').CossackRuntimeInfo>;
   /** Page and enclosing layout guards, also enforced on transport endpoints. */

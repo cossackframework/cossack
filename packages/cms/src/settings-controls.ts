@@ -3,12 +3,14 @@ import { FIELD_MEDIA_KINDS, validateValue } from './fields';
 import type { SettingControl, SettingDeclaration } from './settings';
 
 const COLOR_PATTERN = '#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})';
+/** Values of a source joined by commas, such as role IDs. */
+const CHECKLIST_PATTERN = '[A-Za-z0-9_-]{1,80}(?:,[A-Za-z0-9_-]{1,80})*';
 const FILE_PATTERN = '(?:https?://[^\\s\\\\\\u0000-\\u001f\\u007f]+|/(?![/\\\\])[^\\s\\\\\\u0000-\\u001f\\u007f]*)';
 
 /** JSON Schema checks syntax; the server also parses absolute file URLs. */
 export function settingControlPattern(control: SettingControl): string {
     // Unlike $, the final assertion does not permit a trailing line break.
-    return `^(?:${control === 'color' ? COLOR_PATTERN : FILE_PATTERN})?(?![\\s\\S])`;
+    return `^(?:${control === 'color' ? COLOR_PATTERN : control === 'checklist' ? CHECKLIST_PATTERN : FILE_PATTERN})?(?![\\s\\S])`;
 }
 
 function controlValueProblem(declaration: SettingDeclaration, value: unknown): string | undefined {
@@ -37,9 +39,11 @@ export function settingControlProblems(name: string, declaration: SettingDeclara
     const problems: string[] = [];
     const at = `field ${name}`;
     const preview = declaration.control === 'icon-style' || declaration.control === 'palette';
-    if (declaration.control !== undefined && (!['color', 'file', 'icon-style', 'palette'].includes(declaration.control)
-        || declaration.kind !== (preview ? 'enum' : 'string') || declaration.multiple || declaration.media || declaration.source !== undefined)) {
-        problems.push(`${at}: control is color or file on a single string, or icon-style or palette on an enum, without a source.`);
+    // A checklist offers its source's choices; the other controls have none.
+    const sourced = declaration.control === 'checklist' ? declaration.source !== undefined && declaration.source !== 'media' : declaration.source === undefined;
+    if (declaration.control !== undefined && (!['color', 'file', 'icon-style', 'palette', 'checklist'].includes(declaration.control)
+        || declaration.kind !== (preview ? 'enum' : 'string') || declaration.multiple || declaration.media || !sourced)) {
+        problems.push(`${at}: control is color or file on a single string without a source, checklist on a single string with a source, or icon-style or palette on an enum without a source.`);
     }
     if (declaration.fileKinds !== undefined && (declaration.control !== 'file' || !Array.isArray(declaration.fileKinds)
         || !declaration.fileKinds.length || declaration.fileKinds.some(kind => !(FIELD_MEDIA_KINDS as readonly string[]).includes(kind))

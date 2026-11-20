@@ -71,7 +71,7 @@ export default class SeoEditorPage extends Cossack {
         const urls = await cms.entryUrls(collection, slice);
         this.total = total;
         // A locked entry's summary is written from its content: only its editors see it.
-        this.rows = slice.map(stored => repository.readerView(stored, principal)).map(record => {
+        this.rows = (await repository.readerViews(slice, { principal })).map(record => {
             const seo = (record.seo ?? {}) as { title?: string; description?: string };
             return { id: record.id, title: recordTitle(record, 'title'), url: urls.get(record.id) ?? null, status: String(record.status ?? ''), seoTitle: seo.title ?? '', description: seo.description ?? '', summary: typeof record.summary === 'string' ? record.summary : '', rev: record.rev, saved: false };
         });

@@ -23,6 +23,7 @@ import type { UrlCodec, UrlValue, UrlStateDefinition, UrlStateValues, UrlStatePa
 import { Client, PageOptions, Server, ClientState, Shared } from './decorators';
 import { isActionValidationError, isClientVisibleError } from './errors';
 import { RpcError, isUncertainRpcError, rpcCancellations, sendRpcFrame, type RpcStreamFrame, describeUnsupportedStateValue } from './rpc-stream';
+import { isLeavingPage } from './page-exit';
 import { evaluateRateLimit, getRateLimitForAction } from './rate-limit';
 import { enterRender, exitRender, isRendering as isRenderingFn } from './server-fn';
 import type { Context } from 'hono';
@@ -312,7 +313,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                     entry.error = error;
                     entry.failed = true;
                     if (!this.isServer) {
-                        console.error(`[Cossack server$:${name}]`, error);
+                        // A load cut off by leaving the page, or cancelled on purpose, is no failure to report.
+                        if (!(error instanceof RpcError && error.code === 'COSSACK_RPC_CANCELLED') && !isLeavingPage()) console.error(`[Cossack server$:${name}]`, error);
                         // Error status is observable state too. Notify the view
                         // after settlement so it can offer retry without an
                         // unrelated state change or a successful refresh.
@@ -860,15 +862,44 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         applyHeadTagsFn(tags);
     }
 
+    /**
+     * Bind every method of the component's classes, from its own class up to (not including)
+     * `Cossack`, so a method passed as a callback keeps `this`. A page may extend an
+     * application base class: the nearest definition wins.
+     */
     private autoBindMethods() {
-        const proto = Object.getPrototypeOf(this);
-        const propertyNames = Object.getOwnPropertyNames(proto);
-        for (const name of propertyNames) {
-            const descriptor = Object.getOwnPropertyDescriptor(proto, name);
-            if (descriptor && typeof descriptor.value === 'function' && name !== 'constructor') {
-                this.setProperty(name, descriptor.value.bind(this));
+        const bound = new Set<string>(['constructor']);
+        for (const proto of this._componentPrototypes()) {
+            for (const name of Object.getOwnPropertyNames(proto)) {
+                if (bound.has(name)) continue;
+                bound.add(name);
+                const descriptor = Object.getOwnPropertyDescriptor(proto, name);
+                if (descriptor && typeof descriptor.value === 'function') {
+                    this._setOwnMethod(name, descriptor, descriptor.value.bind(this));
+                }
             }
         }
+    }
+
+    /**
+     * Put a method on the instance. A read-only method of a class (defined with
+     * `Object.defineProperty`) cannot be assigned over, so the instance gets its own property.
+     */
+    private _setOwnMethod(name: string, descriptor: PropertyDescriptor, value: unknown): void {
+        if (descriptor.writable === false) {
+            Object.defineProperty(this, name, { value, writable: true, configurable: true, enumerable: false });
+        } else {
+            this.setProperty(name, value);
+        }
+    }
+
+    /** The component's prototypes, its own class first, up to and not including `Cossack`'s. */
+    private _componentPrototypes(): object[] {
+        const prototypes: object[] = [];
+        for (let proto = Object.getPrototypeOf(this); proto && proto !== Cossack.prototype && proto !== Object.prototype; proto = Object.getPrototypeOf(proto)) {
+            prototypes.push(proto);
+        }
+        return prototypes;
     }
 
     /**
@@ -1320,9 +1351,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     private _wrapLifecycleMethods() {
         const wrap = (methodName: 'init' | 'get' | 'clientInit') => {
-            // Get the original method from the prototype, before any proxy is set up
-            const proto = Object.getPrototypeOf(this);
-            const descriptor = Object.getOwnPropertyDescriptor(proto, methodName);
+            // The nearest class that defines it, an application base class included, before any proxy is set up.
+            const proto = this._componentPrototypes().find(candidate => Object.hasOwn(candidate, methodName));
+            const descriptor = proto ? Object.getOwnPropertyDescriptor(proto, methodName) : undefined;
             const original = descriptor?.value;
             if (!original || typeof original !== 'function') return;
 
@@ -1342,7 +1373,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 }
             };
             (wrapped as any).__cossack_wrapped = true;
-            this.setProperty(methodName, wrapped);
+            this._setOwnMethod(methodName, descriptor!, wrapped);
         };
 
         wrap('init');

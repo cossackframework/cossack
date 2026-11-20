@@ -10,6 +10,10 @@ fixed stage/code and bounded nonnegative duration. They omit exception messages,
 stacks, causes, custom properties, headers, payloads, concrete path parameters
 and query strings. An unknown HTTP method is logged as `unknown`.
 
+In development (`import.meta.env.DEV`), the request, SSR, API and RPC failure
+lines are followed by a second line, `[cossack] caused by:`, with the thrown
+error, its message and its stack. Production logs never carry it.
+
 Use the response's `X-Cossack-Request-Id` to find the event. Internal API/request
 JSON failures include the same `requestId` and a generic error code. The framework
 replaces invalid existing response IDs with UUIDs and restores its managed ID

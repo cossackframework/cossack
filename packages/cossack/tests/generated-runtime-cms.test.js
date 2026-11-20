@@ -847,7 +847,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       await fs.access(path.join(root, 'storage/romedb/token'));
       // The network dashboard waits until Settings → Network turns the network on.
       expect((await web.request('/dashboard/network')).headers.get('location')).toBe('/dashboard');
-      const network = { enabled: true, name: 'Dev network', subdomainSuffix: '', defaultTheme: '', defaultPlugins: [], defaultLanguage: '', siteExports: 'request' };
+      const network = { enabled: true, name: 'Dev network', subdomainSuffix: '', defaultTheme: '', defaultPlugins: [], defaultLanguage: '', siteExports: 'request', siteRegistration: false };
       expect((await web.action(SETTINGS, 'saveAll', [{ document: null, languages: null, permalinks: null, network, groups: {} }]))._cossack_return.error).toBe('');
       // Beside it, a directory service holds added sites' databases, which the Worker creates through ROMEDB_SITES_URL.
       if (servesDirectories()) {
@@ -975,6 +975,16 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
         contains(copyPage, 'thanh@example.com');
         lacks(copyPage, 'data-site-import');
         contains(await browserless(`http://copy.localhost:${devPort}`, routeIds, () => output, { connect: '127.0.0.1' }).page('/'), 'Hello World!');
+        // With People can register a site, a signed-in person registers one for their own account: the form asks for the site alone.
+        expect((await web.action(SETTINGS, 'saveAll', [{ document: null, languages: null, permalinks: null, network: { ...network, siteRegistration: true }, groups: {} }]))._cossack_return.error).toBe('');
+        const registration = await web.page('/auth/register-site');
+        contains(registration, 'data-signed-in-as');
+        lacks(registration, 'new-password');
+        const registered = await web.action('auth/register-site/index.ts', 'register', [{ siteName: 'Shop', subdomain: 'shop', name: '', email: '', password: '' }]);
+        expect(registered._cossack_redirect, JSON.stringify(registered)).toMatch(/^http:\/\/shop\.[^/]+\/auth\/handoff\?next=%2Fdashboard$/);
+        contains(await web.page('/dashboard/network/sites/shop'), 'ada@example.com');
+        // A visitor who is not signed in still gives an account.
+        contains(await browserless(origin, routeIds, () => output, { connect: '127.0.0.1' }).page('/auth/register-site'), 'new-password');
       }
     } finally {
       if (child.connected) child.send('STOP'); else child.kill('SIGTERM');

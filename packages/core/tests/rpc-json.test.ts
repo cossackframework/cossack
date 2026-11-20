@@ -59,6 +59,23 @@ describe('ordinary RPC envelope boundaries', () => {
                 .resolves.toEqual({ _cossack_redirect: location });
         });
 
+    it('reads up to the response limit the server sets, at most 16 MiB', async () => {
+        const body = (bytes: number) => JSON.stringify({ padding: 'x'.repeat(bytes) });
+        const limited = (bytes: number, limit: string) => new Response(body(bytes), { headers: { ...headers, 'X-Cossack-Rpc-Limit': limit } });
+        await expect(readRpcJsonResponse(limited(RPC_JSON_RESPONSE_MAX_BYTES + 10, String(2 * RPC_JSON_RESPONSE_MAX_BYTES)), 'component')).resolves.toHaveProperty('padding');
+        await expect(readRpcJsonResponse(limited(100, '64'), 'component')).rejects.toMatchObject({ code: 'COSSACK_RPC_RESPONSE_TOO_LARGE' });
+        // A limit over 16 MiB, or no number, is the default 1 MiB.
+        await expect(readRpcJsonResponse(limited(RPC_JSON_RESPONSE_MAX_BYTES + 10, String(64 * RPC_JSON_RESPONSE_MAX_BYTES)), 'component')).rejects.toMatchObject({ code: 'COSSACK_RPC_RESPONSE_TOO_LARGE' });
+        await expect(readRpcJsonResponse(limited(RPC_JSON_RESPONSE_MAX_BYTES + 10, 'lots'), 'component')).rejects.toMatchObject({ code: 'COSSACK_RPC_RESPONSE_TOO_LARGE' });
+    });
+
+    it('accepts a redirect with the value of the method that redirected, and nothing else beside it', async () => {
+        await expect(readRpcJsonResponse(Response.json({ _cossack_redirect: '/next', _cossack_return: { ok: true } }, { headers }), 'component'))
+            .resolves.toEqual({ _cossack_redirect: '/next', _cossack_return: { ok: true } });
+        await expect(readRpcJsonResponse(Response.json({ _cossack_redirect: '/next', count: 1 }, { headers }), 'component'))
+            .rejects.toMatchObject({ code: 'COSSACK_RPC_RESPONSE_INVALID' });
+    });
+
     it('requires a service object and accepts an explicit empty state', async () => {
         await expect(readRpcJsonResponse(Response.json({ _cossack_service_state: {} }, { headers }), 'service'))
             .resolves.toEqual({ _cossack_service_state: {} });

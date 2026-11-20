@@ -145,9 +145,39 @@ with the owner set to the plugin name by the host, stored in `r__<plugin>__<name
   `pattern`, `unique`, `index` and `search` (full text). `slugFrom`, `taxonomy` and `media`
   derive a slug, index term IDs and hold a media file ID.
 - `access` per action (`read`, `create`, `update`, `delete`): `public`, `authenticated`,
-  `owner` (needs `ownership: true`), `none`, `{ permission }`, `{ where: { field: value } }`
-  or `{ any: [...] }`. An unlisted action needs the permission
+  `owner` (needs `ownership: true`), `none`, `{ permission }`, `{ where: { field: value } }`,
+  `{ memberOf: { ... } }` (below) or `{ any: [...] }`. An unlisted action needs the permission
   `<plugin>/<resource>:<action>`.
+
+### Access through a membership
+
+`memberOf` reaches the records a user is linked to by a row of another of the plugin's
+resources, such as the branches a member is assigned to:
+
+```json
+"resources": [
+  { "name": "user_branches", "fields": { "user": { "kind": "string", "required": true, "index": true }, "branch": { "kind": "reference", "target": "acme/branches", "required": true } } },
+  { "name": "branches", "fields": { "name": { "kind": "string" } },
+    "access": { "read": { "memberOf": { "resource": "acme/user_branches", "user": "user", "field": "branch" } } } },
+  { "name": "shifts", "fields": { "branch": { "kind": "reference", "target": "acme/branches" } },
+    "access": { "read": { "memberOf": { "resource": "acme/user_branches", "user": "user", "field": "branch", "match": "branch" } } } }
+]
+```
+
+- `resource` is the membership resource, one of the plugin's own. `user` is its string field
+  holding user IDs; `field` is its field naming what the user belongs to.
+- Without `match`, the record itself must be that thing, so `field` is a reference to this
+  resource. With `match`, the record's `match` field must equal it; both hold the same kind
+  of value.
+- Only signed-in users have memberships. The host turns the rule into a query condition, so a
+  list, a count or a search returns only the records the memberships reach, and an update or a
+  delete outside them changes nothing. It reads the memberships as they are at that moment.
+- A create, or an update that changes the `match` field, must name a value the user is a
+  member of; this is checked in the same write.
+- `await repository.canRead(record, { principal })` and `canUpdate` apply the rule to a
+  record you already hold: owner and `where` rules on the record, a membership on the stored
+  record, in one read. For a list, `readable(records, context)` and
+  `editable(records, context)` answer with the IDs allowed, in one read for all of them.
 - `indexes`: `{ name, fields, unique? }`.
 - `revisions` (default true) keeps a snapshot of every write. `schemaless: true` types only
   the host fields in the database.
@@ -351,6 +381,25 @@ a notice on every screen, use the `cms.dashboard.taskbar` and `cms.dashboard.not
 Run as `cossack <plugin>:<name> --<option> <value>`. `name` is lowercase, unique in the
 plugin and at most 41 characters; options are `string`, `number` or `boolean`, with
 `required` and `description`. The handler comes from `context.commands.add()`.
+
+## `roles`
+
+```json
+"roles": [
+  { "id": "acme-manager", "name": "Manager", "permissions": ["cms:dashboard", "acme:approve", "acme/*"] },
+  { "id": "acme-staff", "name": "Staff", "permissions": ["cms:dashboard", "acme/shifts:read"] }
+]
+```
+
+Roles the host defines on each site where the plugin is active: when a site administrator
+grants the plugin, and on every site while the network enables it, new sites included (before
+`cms.site.created` runs). IDs start with `<plugin>-`. A role holds `cms:dashboard`,
+`cms:upload` and the plugin's own permissions (`<plugin>:<name>`, `<plugin>/<resource>:<action>`
+and patterns such as `<plugin>/*`). At most 10.
+
+A role the site already has is left as it is: an administrator may change it, and the next grant
+does not undo that. On a network-enabled plugin, a site that deleted one of its roles keeps
+none of them until the plugin is granted again.
 
 ## `schedules`
 

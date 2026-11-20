@@ -35,6 +35,7 @@ import {
   recipeCapabilityDiagnostics,
   projectNameProblem,
   authStore,
+  jobLedger,
 } from './registry.js';
 
 export {
@@ -55,6 +56,7 @@ export {
   resolveRecipe,
   recipeCapabilityRequirements,
   recipeCapabilityDiagnostics,
+  jobLedger,
 };
 
 const packageDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -532,7 +534,8 @@ function wranglerConfig(recipe, projectName) {
   const hasJobs = recipe.resolvedFeatures.includes('jobs');
   const jobs = hasJobs ? `,
   "queues": { "producers": [{ "binding": "JOBS", "queue": ${json(`${projectName}-jobs`)} }], "consumers": [{ "queue": ${json(`${projectName}-jobs`)}, "max_batch_size": 10, "max_retries": 5 }] }` : '';
-  if (hasJobs) {
+  // A CMS project keeps the ledger in its RomeDB database (src/jobs/ledger.ts): no D1 for it.
+  if (hasJobs && jobLedger(recipe) === 'd1') {
     if (recipe.resolvedFeatures.includes('database') && recipe.config.database === 'd1') database = database.replace(/]$/, `,${jobDatabase}]`);
     else database += `,\n  "d1_databases": [${jobDatabase}]`;
   }
@@ -1477,7 +1480,7 @@ export async function renderRecipe(recipe, options = {}) {
   }
   for (const [feature, generated] of [['turnstile', turnstileRecipeFiles], ['jobs', jobsRecipeFiles], ['schedules', schedulesRecipeFiles], ['notifications', notificationsRecipeFiles], ['workflows', workflowsRecipeFiles]]) {
     if (!recipe.resolvedFeatures.includes(feature)) continue;
-    for (const [file, source] of Object.entries(generated({ notifications: recipe.resolvedFeatures.includes('notifications') }))) files.set(file, { content: text(source), capability: feature });
+    for (const [file, source] of Object.entries(generated({ notifications: recipe.resolvedFeatures.includes('notifications'), ledger: jobLedger(recipe) }))) files.set(file, { content: text(source), capability: feature });
   }
   if (recipe.resolvedFeatures.includes('workflows')) {
     const entry = files.get('src/index.ts');
@@ -1546,7 +1549,9 @@ export async function renderRecipe(recipe, options = {}) {
     }
     if (exampleValues.length) {
     files.set('.dev.vars.example', {
-      content: text(environmentExample(exampleValues)),
+      // Wrangler drops every other name from .dev.vars when secrets.required is set.
+      content: text('# Wrangler loads only the names in wrangler.jsonc "secrets.required" from .dev.vars.\n' +
+        '# Development-only values go in vite.config.ts: see docs/environment.md.\n' + environmentExample(exampleValues)),
       // APP_SECRET is required by every Cloudflare recipe, not only databases.
       capability: 'base',
     });

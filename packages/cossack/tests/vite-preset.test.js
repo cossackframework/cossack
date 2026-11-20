@@ -123,6 +123,25 @@ describe('cossack/vite preset', () => {
     expect(plugin(await configOf(root), 'cloudflare').options.config).toBeUndefined();
   });
 
+  it('adds up the Worker configuration of every part and the project\'s, none replacing another', async () => {
+    const root = await project({ adapter: 'cloudflare' });
+    const worker = { name: 'app', assets: { run_worker_first: ['/*'] } };
+    // The CMS's part gives its development variables and exports; another part and the project add theirs.
+    const cms = () => ({ cloudflare: { config: () => ({ vars: { ROMEDB_URL: 'http://127.0.0.1:1', ROMEDB_TOKEN: 'local' }, exports: { PluginBridge: { type: 'worker-entrypoint' } } }) } });
+    const other = () => ({ cloudflare: { config: { vars: { PART: '1' }, compatibility_flags: ['a'] } } });
+    const changes = () => ({ cloudflare: { config: workerConfig => { workerConfig.changed = true; } } });
+    const options = { parts: [cms, other, changes], cloudflare: { config: () => ({ vars: { ROMEDB_TOKEN: 'project' }, compatibility_flags: ['b'] }) } };
+    const serve = plugin(await configOf(root, options, { mode: 'development', command: 'serve' }), 'cloudflare').options;
+    const merged = serve.config(worker);
+    expect(merged.vars).toEqual({ ROMEDB_URL: 'http://127.0.0.1:1', ROMEDB_TOKEN: 'project', PART: '1' });
+    expect(merged.exports).toEqual({ PluginBridge: { type: 'worker-entrypoint' } });
+    expect(merged.compatibility_flags).toEqual(['a', 'b']);
+    expect(merged.assets.run_worker_first).toContain('!/@vite/*');
+    expect(worker.changed).toBe(true);
+    const build = plugin(await configOf(root, options), 'cloudflare').options;
+    expect(build.config({ name: 'app' })).toEqual({ vars: { ROMEDB_URL: 'http://127.0.0.1:1', ROMEDB_TOKEN: 'project', PART: '1' }, exports: { PluginBridge: { type: 'worker-entrypoint' } }, compatibility_flags: ['a', 'b'] });
+  });
+
   it('bundles every entry of core and the renderer for the development server, and neither for a build or Desktop', async () => {
     const root = await project({ adapter: 'cloudflare' });
     await install(root, '@cossackframework/core', { 'package.json': { name: '@cossackframework/core', exports: {

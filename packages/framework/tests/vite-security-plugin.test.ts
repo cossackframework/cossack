@@ -25,6 +25,7 @@ import {
   cossackSecurityPlugin,
   generateClientOnlyServerStub,
   isClientOnlyModuleId,
+  dropClientModuleImports,
 } from '../src/vite-security-plugin';
 
 describe('ORM and session server-only imports', () => {
@@ -1000,13 +1001,14 @@ export class CounterPage extends Cossack {
     }
 }`;
 
-      const clientResult = transformCossackClass(
+      // The browser build refuses the reference: the stripped helper would throw if called.
+      expect(() => transformCossackClass(
         code,
         'counter.ts',
         isClientSafeMethod,
         BUILTIN_METHODS,
         true,
-      );
+      )).toThrow(/passes this\.sensitiveHelper/);
       const serverResult = injectAutomaticServerMethodMetadata(
         code,
         'counter.ts',
@@ -1014,7 +1016,6 @@ export class CounterPage extends Cossack {
         BUILTIN_METHODS,
       );
 
-      expect(clientResult).not.toContain('["sensitiveHelper"]');
       expect(serverResult).not.toContain('["sensitiveHelper"]');
     });
   });
@@ -2647,5 +2648,154 @@ class Demo extends Cossack {
     expect(result.diagnostics).toEqual([expect.objectContaining({
       code: 'COSSACK_COMPILER_INSPECTION_UNKNOWN', file: 'demo.ts',
     })]);
+  });
+});
+
+describe('dynamic imports of browser-only modules on the server', () => {
+  const editor = `export class CodeEditor {
+  async connect() {
+    const { mountCodeEditor } = await import("../internal/code-editor.client.js");
+    const other = await import(\`./chart.client\`);
+    const kept = await import("./data.js");
+    return [mountCodeEditor, other, kept];
+  }
+}`;
+
+  it('turns import() of a .client module into a rejected promise, in packages too', () => {
+    const out = dropClientModuleImports(editor, '/app/node_modules/@cossackframework/ui/dist/components/CodeEditor.js');
+    expect(out).not.toContain('import("../internal/code-editor.client.js")');
+    expect(out).not.toContain('import(`./chart.client`)');
+    expect(out).toContain('Promise.reject(new Error("[Cossack] ../internal/code-editor.client.js is a browser-only module (.client) and does not load on the server."))');
+    expect(out).toContain('import("./data.js")');
+    expect(dropClientModuleImports('const x = "a.client";', '/src/x.ts')).toBe('const x = "a.client";');
+    expect(dropClientModuleImports(editor, '/src/styles.css')).toBe(editor);
+  });
+
+  it('applies to server environments only, through the plugin', () => {
+    const plugin = cossackSecurityPlugin({ devWarning: false });
+    (plugin.configResolved as Function)({ root: '/app', command: 'build', logger: { info() {} }, resolve: { alias: [] } });
+    const id = '/app/node_modules/@cossackframework/ui/dist/components/CodeEditor.js';
+    const server = (plugin.transform as Function).call({ environment: { name: 'ssr' }, warn() {} }, editor, id);
+    expect(server.code).toContain('Promise.reject');
+    const client = (plugin.transform as Function).call({ environment: { name: 'client' }, warn() {} }, editor, id);
+    expect(client.code).toContain('import("../internal/code-editor.client.js")');
+  });
+
+  it('leaves the browser-only module and its imports out of a server build', async () => {
+    const { mkdtempSync, mkdirSync, readdirSync } = await import('node:fs');
+    const { build } = await import('vite');
+    const root = mkdtempSync(join(tmpdir(), 'cossack-client-chunk-'));
+    try {
+      mkdirSync(join(root, 'lib'));
+      writeFileSync(join(root, 'lib', 'heavy.js'), 'export const heavy = "HEAVY_EDITOR_CODE";\n');
+      writeFileSync(join(root, 'lib', 'editor.client.js'), 'import { heavy } from "./heavy.js";\nexport const mount = () => heavy;\n');
+      writeFileSync(join(root, 'entry.js'), 'export async function connect() { return (await import("./lib/editor.client.js")).mount(); }\n');
+      await build({ root, logLevel: 'silent', configFile: false, plugins: [cossackSecurityPlugin({ devWarning: false })],
+        build: { ssr: join(root, 'entry.js'), outDir: join(root, 'dist'), minify: false } });
+      const files = readdirSync(join(root, 'dist'));
+      expect(files).toEqual(['entry.mjs']);
+      const { readFileSync } = await import('node:fs');
+      expect(readFileSync(join(root, 'dist', 'entry.mjs'), 'utf8')).not.toContain('HEAVY_EDITOR_CODE');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+});
+
+describe('server-only application folders in the browser build', () => {
+  const roots: string[] = [];
+  afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+  const project = async (files: Record<string, string>) => {
+    const { mkdtempSync, mkdirSync } = await import('node:fs');
+    const { dirname } = await import('node:path');
+    const root = mkdtempSync(join(tmpdir(), 'cossack-server-folders-'));
+    roots.push(root);
+    for (const [path, source] of Object.entries(files)) {
+      mkdirSync(dirname(join(root, path)), { recursive: true });
+      writeFileSync(join(root, path), source, 'utf8');
+    }
+    const plugin = cossackSecurityPlugin({ devWarning: false });
+    (plugin.configResolved as Function)({ root, command: 'build', logger: { info() {} }, resolve: { alias: [] } });
+    const load = (environment: string, path: string) => (plugin.load as any).call({ environment: { name: environment } }, join(root, path));
+    return { load };
+  };
+  const evaluate = async (code: string) => import(`data:text/javascript,${encodeURIComponent(code)}`);
+
+  it('gives the browser an inert, callable stub of route middleware and none of its imports', async () => {
+    const { load } = await project({
+      'src/middlewares/auth.ts': `import { createAuth } from '@cossackframework/auth';\nimport { db } from '../server/db';\n` +
+        `export const guard = { requireRole: (role: string) => async (c: any, next: any) => next() };\nexport const requireUser = defineServerMiddleware(db);\nexport default requireUser;`,
+      'src/plugins/shop/middlewares.ts': `export const shopOnly = async () => {};`,
+    });
+    const stub = await load('client', 'src/middlewares/auth.ts');
+    expect(stub).not.toContain('@cossackframework/auth');
+    expect(stub).not.toContain('server/db');
+    const module = await evaluate(stub);
+    // A page decorator builds its guards at load: that works and does nothing.
+    expect(typeof module.guard.requireRole('admin')).toBe('function');
+    expect(module.requireUser).toBeTruthy();
+    expect(module.default).toBeTruthy();
+    expect(module.guard.then).toBeUndefined();
+    expect(await load('client', 'src/plugins/shop/middlewares.ts')).toContain('export const shopOnly');
+    // The server loads the real module.
+    expect(await load('ssr', 'src/middlewares/auth.ts')).toBeUndefined();
+  });
+
+  it('stubs src/server, *.server.ts and the recipe folders in the browser; a call throws', async () => {
+    const { load } = await project({
+      'src/server/db.ts': `export function query() { return 1; }\nexport default query;`,
+      'src/pages/reports/data.server.ts': `export const secret = process.env.SECRET;`,
+      'src/jobs/index.ts': `export const enqueue = () => {};`,
+      'src/schedules/index.ts': `export const schedules = [];`,
+      'src/notifications/index.ts': `export const notify = () => {};`,
+      'src/services/plain.ts': `export const plain = () => 1;`,
+    });
+    const db = await evaluate(await load('client', 'src/server/db.ts'));
+    expect(() => db.query()).toThrow(/server\/db\.query is server-only/);
+    expect(() => db.default()).toThrow(/server-only/);
+    expect(await load('client', 'src/pages/reports/data.server.ts')).not.toContain('process.env');
+    for (const path of ['src/jobs/index.ts', 'src/schedules/index.ts', 'src/notifications/index.ts']) {
+      expect(await load('client', path)).toContain('is server-only');
+    }
+    expect(await load('client', 'src/services/plain.ts')).toBeUndefined();
+    expect(await load('ssr', 'src/server/db.ts')).toBeUndefined();
+  });
+
+  it('treats @cossackframework/auth as server-only in both checks, except the named createAuthorizer', async () => {
+    const { load } = await project({
+      'src/services/accounts.ts': `import { createAuth } from '@cossackframework/auth';\nexport const auth = createAuth({});`,
+      'src/guards.ts': `import { createAuthorizer } from '@cossackframework/auth';\nexport const guard = createAuthorizer({});`,
+    });
+    expect(await load('client', 'src/services/accounts.ts')).toContain('is server-only');
+    expect(await load('client', 'src/guards.ts')).toBeUndefined();
+    expect(() => stripClientServerOnlyImports(`import { createAuth } from '@cossackframework/auth';\nexport const auth = createAuth({});`, '/src/x.ts'))
+      .toThrow(/server-only import "@cossackframework\/auth"/);
+  });
+});
+
+describe('methods a client method passes although the browser build strips them', () => {
+  const page = (body: string, extra = '') => `import { Cossack, Page, Server, Client } from '@cossackframework/core';
+import { html } from '@cossackframework/renderer';
+@Page()
+export default class Rows extends Cossack {
+  items = [1, 2];
+  private row(item: number) { return html\`<li>\${item}</li>\`; }
+  @Server() async save() {}
+  @Client() pick(item: number) { return item; }
+  ${extra}
+  render() { ${body} }
+}`;
+  const client = (source: string) => transformCossackClass(source, '/src/pages/rows.ts', isClientSafeMethod, BUILTIN_METHODS, false);
+
+  it('fails the client build when render() passes a stripped helper', () => {
+    expect(() => client(page('return html`<ul>${this.items.map(this.row)}</ul>`;')))
+      .toThrow(/Rows\.render\(\) passes this\.row, which the browser build removes.*this\.row\(\.\.\.\).*@Client\(\)/);
+    expect(() => client(page('const row = this.row.bind(this); return html`${this.items.map(row)}`;'))).toThrow(/passes this\.row/);
+  });
+
+  it('accepts calls, event handlers, server methods and client methods', () => {
+    expect(() => client(page('return html`<ul>${this.items.map(item => this.row(item))}</ul>`;'))).not.toThrow();
+    expect(() => client(page('return html`<button @click=${this.save}>Save</button>${this.items.map(this.pick)}`;'))).not.toThrow();
+    expect(() => client(page('return html`<button @click=${this.archive}>Archive</button>`;', 'archive() {}'))).not.toThrow();
   });
 });

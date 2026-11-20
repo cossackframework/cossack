@@ -20,6 +20,8 @@ export default class VerifyPage extends Cossack {
     @State() pending = false;
     /** The account the link confirms, shown before the button. */
     @State() email = '';
+    /** The email is confirmed, and the site it registered could not be made: why. */
+    @State() siteError = '';
 
     async init() {
         this.token = (this.c.req.query('token') ?? '').trim();
@@ -42,6 +44,8 @@ export default class VerifyPage extends Cossack {
         if (verified.pending) { this.pending = true; return; }
         const { headers } = await authSessions.create(verified.user, this.c);
         headers.forEach((value, key) => this.c.header(key, value));
+        // A site registration whose address was taken meanwhile: the account is ready, the site is not.
+        if (verified.siteError) { this.siteError = verified.siteError; return; }
         // Registered on the network for one of its sites: signed in here, the site's handoff takes them there.
         const record = verified.site ? await networkFor(this.c.env as CmsBindings).sites.get(verified.site).catch(() => null) : null;
         const target = record ? siteUrl(this.c.env as CmsBindings, networkSite(record)) : undefined;
@@ -51,7 +55,9 @@ export default class VerifyPage extends Cossack {
     render() {
         return html`
             <h3 class="mb-3 text-xl font-semibold text-foreground">${__('Confirm your email')}</h3>
-            ${this.pending ? component(Alert, {}, __('Your email address is confirmed. An administrator approves new accounts on this site; we will email you when yours is ready.')) : this.failed ? component(Alert, { variant: 'destructive' }, __('This link is not valid any more. Register again with the same email to get a new one, or sign in if your account is already confirmed.')) : html`
+            ${this.siteError ? html`${component(Alert, { variant: 'destructive' }, `${__('Your email address is confirmed, but the site could not be created:')} ${this.siteError}`)}
+                <p class="mt-4 text-sm"><a href="/auth/register-site" class="text-primary font-medium hover:underline">${__('Register a site')}</a></p>`
+            : this.pending ? component(Alert, {}, __('Your email address is confirmed. An administrator approves new accounts on this site; we will email you when yours is ready.')) : this.failed ? component(Alert, { variant: 'destructive' }, __('This link is not valid any more. Register again with the same email to get a new one, or sign in if your account is already confirmed.')) : html`
                 <form class="space-y-4" @submit=${(event: Event) => this.submit(event)}>
                     <p class="text-sm text-muted-foreground">${__('Confirm')} <strong class="text-foreground">${this.email}</strong> ${__('to finish creating your account. If this is not your address, close this page.')}</p>
                     ${component(Button, { type: 'submit', block: true }, __('Confirm email'))}

@@ -1,6 +1,6 @@
 // Client-safe CMS declarations: resources, fields, permissions, extension points and records.
 export { defineResource, resolveResource, resourceProblems, storageName, permissionFor, declarationHash, canonicalJson, SYSTEM_FIELDS, RESOURCE_NAME, OWNER_NAME, ResourceDeclarationError,
-    type ResourceDeclaration, type Resource, type ResourceAccess, type ResourceAction, type AccessRule, type IndexDeclaration, type MigrationStep } from './resource';
+    type ResourceDeclaration, type Resource, type ResourceAccess, type ResourceAction, type AccessRule, type MemberRule, memberRules, memberRuleProblems, type IndexDeclaration, type MigrationStep } from './resource';
 export { field, fieldProblems, validateValue, storageType, storageCheck, slugify, FIELD_NAME, SLUG_PATTERN, TAXONOMY_NAME, ROW_ID, ROW_LIMITS, ITEM_LIMITS, MULTIPLE_KINDS, FIELD_MEDIA_KINDS, CHOICE_SOURCES, type FieldMediaKind, type ChoiceSource, type FieldDeclaration, type FieldKind, type ListItemKind } from './fields';
 export {
     FIELD_BLOCK_TYPES, FIELD_BLOCKS, FIELD_GROUP_ID, FIELD_GROUP_LIMITS, fieldBlockFields, fieldBlockDeclaration, rowsSearchable, metaProblems, SYSTEM_META, flattenGroupFields, fieldGroupDeclarations, fieldBlockKindOf, fieldBlockOf, layoutOf, sameTarget, targetOrder, groupsForTarget, withTarget, fieldGroupProblems,
@@ -17,7 +17,7 @@ export { beforeWrite, afterCommit, cachePurge, pluginJob, paymentEvent, formVali
     type TermDraft, type TermWriteInput, type CommentDraft, type CommentWriteInput, type MenuWriteInput, type EntryAction, type BuiltinEntryAction, type EntryColumn, type EntryListInput,
     type DashboardNotice, type TaskbarItem } from './hooks';
 export { siteEntryView, ENTRY_VIEW_REFUSED_BLOCKS, type EntryViewParts } from './hooks';
-export { userBeforeRegister, userRegistered, userSignedIn, registrationDraftOf, type RegistrationDraft, type UserRef, type UserRegisteredEvent, type UserSignedInEvent } from './hooks';
+export { userBeforeRegister, userRegistered, userSignedIn, siteCreated, registrationDraftOf, type RegistrationDraft, type UserRef, type UserRegisteredEvent, type UserSignedInEvent, type SiteCreatedEvent } from './hooks';
 export { mailBeforeSend, mailMessageOf, mailRecipientsLocked, MAIL_KINDS, MAIL_LIMITS, type MailKind, type MailMessage, type MailSendInput } from './hooks';
 export { mailHtml, mailBodyHtml, MAIL_ACCENT, type MailLayout } from './mail';
 export type { RecordShape, RecordPage, RevisionShape, FieldFilter, ListFilter, ListOptions } from './records';
@@ -44,10 +44,10 @@ export { CORE_BLOCKS, BLOCK_CATEGORIES, BLOCK_ID, BLOCK_NAME, BLOCK_LIMITS, CUST
 export { hasBinding, bindingPaths, bindingRefs, bindingValue, bindingText, bindingProblem, usesUserBinding, resolveBindings, resolveBlockBindings, withBinding, siteBindingScope, BINDING_SCOPES, type BindingScope, type BindingScopes } from './bindings';
 export { parseBlockText, hasBlockReference, textBlocks, PATTERN_REFERENCE, type TextPart, type ParsedText } from './block-references';
 export { formInput, formValue, recordTitle, isSameOriginPost, type FormInput, type SubmittedForm } from './forms';
-export { manifestProblems, validateManifest, RESERVED_PLUGIN_NAMES, RESERVED_PLUGIN_PREFIX, requestedGrants, commandInput, isPluginPoint, pointOwner, providedPoints, ManifestError, HOST_SLOTS, CAPABILITIES, UNRESTRICTED_GRANT, type Capability, type UserAction, type PluginSchedule, type CmsPluginManifest, type PluginAuthor, type ProvidedPoint, type PluginCommand, type CommandOption, type SlotLink, type HostSlot } from './manifest';
+export { manifestProblems, validateManifest, RESERVED_PLUGIN_NAMES, RESERVED_PLUGIN_PREFIX, requestedGrants, commandInput, isPluginPoint, pointOwner, providedPoints, ManifestError, HOST_SLOTS, CAPABILITIES, UNRESTRICTED_GRANT, type Capability, type UserAction, type PluginSchedule, type CmsPluginManifest, type PluginAuthor, type ProvidedPoint, type PluginCommand, type PluginRole, PLUGIN_ROLE_PERMISSIONS, type CommandOption, type SlotLink, type HostSlot } from './manifest';
 export { MEDIA_TYPES, AVATAR_TYPES, ARCHIVE_TYPES, SVG_TYPE, MEDIA_FILTERS, MEDIA_FILTER_EXCLUDES, mediaKind, mediaUrl, formatBytes, matchesSignature, imageHasAlpha, imageSize, declaredType, sanitizeSvg, EXTENSION_TYPES, fileExtension, fileType, type MediaKind } from './media';
 export { taxonomyProblems, type TaxonomyDeclaration, type TermShape } from './taxonomy';
-export { general, interfaceGroup, DASHBOARD_PALETTES, DASHBOARD_ACCENTS, type DashboardPalette, type DashboardAccent, media, appearance, dashboard, writing, reading, discussion, seo, crawlers, indexnow, cache, languages, DATE_FORMATS, TIME_FORMATS, TITLE_SEPARATORS, formatSiteDate, validTimeZone, type SettingsGroup, type SettingsSection, type SettingDeclaration, type SettingSource, type SettingControl, type SiteSettings } from './settings';
+export { general, settingRoles, twoFactorRequired, interfaceGroup, DASHBOARD_PALETTES, DASHBOARD_ACCENTS, type DashboardPalette, type DashboardAccent, media, appearance, dashboard, writing, reading, discussion, seo, crawlers, indexnow, cache, languages, DATE_FORMATS, TIME_FORMATS, TITLE_SEPARATORS, formatSiteDate, validTimeZone, type SettingsGroup, type SettingsSection, type SettingDeclaration, type SettingSource, type SettingControl, type SiteSettings } from './settings';
 export { validateSettingValue, settingControlProblems } from './settings-controls';
 export { pluginSettingsProblems, pluginSettingsGroupId, PLUGIN_SETTINGS_LIMITS, type PluginSettingsDeclaration, type PluginSettingDeclaration } from './plugin-settings';
 export { parseSettingsDocument, checkSettingsDocument, stringifySettingsDocument, settingsJsonSchema, isPortableSetting, SETTINGS_DOCUMENT_MAX_BYTES, SETTINGS_DOCUMENT_MAX_FIELDS, type SettingsValue, type SettingsDocument } from './settings-document';

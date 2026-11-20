@@ -121,11 +121,42 @@ The `PluginContext` holds:
 | `commands.add(name, handler)` | Handle a command the manifest declares. |
 | `settings.get(name)`, `settings.all()` | Read the active plugin's declared settings, with defaults, as detached values. |
 | `cms.resource(id)` | A repository (`get`, `list`, `count`, `search`, `create`, `update`, `delete`) for the plugin's own resources and the ones it is granted. |
+| `cms.batch(writes, { principal, guards })` | Several writes that commit together or not at all, under guards (see [Write batches](#write-batches)). |
 | `fetch` | `fetch` limited to the hosts in `permissions.network`. |
 | `files`, `mail`, `jobs`, `users`, `cache`, `secrets`, `ai`, `payments` | The [capabilities](#capabilities) the manifest's `permissions` ask for. |
 
 A theme's `server.ts` exports `loaders` instead of, or beside, `register`; see
 [Themes](/docs/cms/themes.md#loaders).
+
+#### Write batches
+
+`cms.batch()` sends several writes in one request: every one commits, or none does. Guards
+count records in the same request, before any write, so a condition such as "while fewer than
+the capacity are approved" holds when the batch commits, however many people approve at once.
+
+```ts
+const [registration, shift] = await context.cms.batch([
+  { update: 'acme/registrations', id, patch: { status: 'approved' }, expectedRevision: registration.rev },
+  { update: 'acme/shifts', id: shift.id, patch: { approved: shift.approved + 1 }, expectedRevision: shift.rev },
+], { principal, guards: [
+  { name: 'capacity', resource: 'acme/registrations', where: { shift: shift.id, status: 'approved' }, count: { max: shift.capacity - 1 } },
+  { name: 'pending', resource: 'acme/registrations', id, where: { status: 'pending' } },
+] });
+```
+
+- A write is `{ create, input, id? }`, `{ update, id, patch, expectedRevision }` or
+  `{ delete, id, expectedRevision }`, with the resource ID. Each is checked as it would be alone:
+  access rules, validation, `cms.resource.before-write` filters, and the plugin's grants.
+  It returns each record as the principal reads it, and null for a delete.
+- A guard counts the records of a resource that match `where` (the filters `list` takes) and
+  `id`: `{ min }`, `{ max }` or both, and one record (`{ min: 1 }`) when `count` is left out.
+  Guards count every record, whoever asks, and say only whether they hold. Their resource is
+  the plugin's own or one it may read.
+- Each updated or deleted record must still be at its `expectedRevision` when the batch runs.
+- A refused batch writes nothing. `CMS_CONFLICT` names the guards that do not hold and the
+  records that changed in `error.fields`, such as `{ capacity: 'does not hold.' }`. A record
+  appears once per batch; a batch has 1-10 writes and at most 10 guards.
+- Application code calls `cms.batch()` on the host the same way.
 
 #### Capabilities
 

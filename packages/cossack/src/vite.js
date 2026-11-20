@@ -94,6 +94,21 @@ export function viteRequestsSkipTheWorker(workerConfig) {
   return rules === true ? { assets: { run_worker_first: ['/*', ...skipped] } } : {};
 }
 
+/**
+ * The Worker configuration that the parts' and the project's `cloudflare.config` add, merged
+ * in order (objects deeply, lists appended), as the Cloudflare plugin merges each into the
+ * configuration. Each is an object, or a function of the configuration that returns one (or
+ * changes it and returns nothing). While serving, Vite's own requests skip the Worker.
+ */
+export function mergeWorkerConfigs(customizers, workerConfig, context, serving = false) {
+  let merged = {};
+  for (const customizer of customizers) {
+    const addition = typeof customizer === 'function' ? customizer(workerConfig, context) : customizer;
+    if (addition) merged = mergeConfig(merged, addition);
+  }
+  return serving ? mergeConfig(merged, viteRequestsSkipTheWorker(workerConfig)) : merged;
+}
+
 /** The project's recipe (runtime and features), or null for a project the scaffold did not make. */
 async function projectRecipe(root) {
   const { readManifest, resolveManifestRecipe, recipeCapabilityRequirements } = await import('@cossackframework/scaffold');
@@ -164,9 +179,14 @@ export function cossackApp(options = {}) {
     if (runtime === 'cloudflare' && !desktop) {
       const { cloudflare } = await projectImport(root, '@cloudflare/vite-plugin');
       const given = { ...partOptions('cloudflare'), ...options.cloudflare };
-      plugins.push(cloudflare({ viteEnvironment: { name: 'ssr' }, ...given, ...wrangler,
-        ...(command === 'serve' ? { config: (workerConfig, context) => mergeConfig(
-          (typeof given.config === 'function' ? given.config(workerConfig, context) : given.config) ?? {}, viteRequestsSkipTheWorker(workerConfig)) } : {}) }),
+      // Every part's Worker configuration and the project's own add up, in that order: one does
+      // not replace another (the CMS's development variables and exports stay).
+      const customizers = [...parts.map(part => part.cloudflare?.config), options.cloudflare?.config].filter(Boolean);
+      // A build's configuration is the deployed one, with only what the parts and the project add.
+      const serving = command === 'serve';
+      const { config: _config, ...rest } = given;
+      plugins.push(cloudflare({ viteEnvironment: { name: 'ssr' }, ...rest, ...wrangler,
+        ...(serving || customizers.length ? { config: (workerConfig, context) => mergeWorkerConfigs(customizers, workerConfig, context, serving) } : {}) }),
         framework.cossackBuildBudgets({ ...wrangler, ...options.budgets }));
     }
     plugins.push(cossackSecurityPlugin({ devWarning: true, ...options.security }));

@@ -160,8 +160,33 @@ Network admins open `/dashboard/network` on the network host, while the network 
 
 The network's settings are under **Settings → Network** on the main site: whether the network
 is on, its name, the domain new sites' addresses end with, what new sites start with (a
-theme, plugins to enable, and a language) and how sites export their databases (see below). A default theme or plugin the network hides later
+theme, plugins to enable, and a language), whether people can register a site (see below) and
+how sites export their databases (see below). A default theme or plugin the network hides later
 is left out. They save with the page's *Save changes*.
+
+## People registering a site
+
+With **Settings → Network → People can register a site** on (off by default), a visitor creates
+a site at `/auth/register-site` on the network host and becomes its first administrator:
+
+1. They give the site's name and one name for its address under the network's domain, such as
+   `pho` for `pho.example.com`. The address names the site; a taken or reserved one (`main`,
+   `new`, `www`) is refused before anything is made.
+2. A visitor who is not signed in also gives their name, email and a password. A new email gets
+   an account that waits for its confirmation link, and the site is made when the link is opened.
+   The email of an existing account, with its password, makes the site at once. Without a mail
+   sender (development), the account is active at once. A person who is signed in on the network
+   host gives the site alone: it is made at once for their account, and **Sign out** lets them
+   use another one.
+3. The site starts like one a network admin adds with starter content: the network's theme,
+   plugins and language. The plugins hear of it through `cms.site.created`. Then the person is
+   signed in on the new site's dashboard.
+
+The checks are the CMS's: the Turnstile bot check when it is on, ten registrations an hour from
+one address, three sites a day per account, and a confirmed email. In code,
+`network.registerSite({ name, host, language? }, { principal })` does the same for a signed-in
+network account, and `network.checkSiteRegistration(input)` checks a registration without
+making it.
 
 Members of more than one site see **My sites** in the dashboard menu and the site taskbar's
 Start menu; `/dashboard/my-sites` lists them with their dashboards. The Network menu and the
@@ -319,7 +344,8 @@ const site = await network.createSite(
 `createSite` records each step it finishes: the database, the schema, the default roles and
 settings (with the network's default theme, plugins and language, or `language` when given),
 then the first administrator. If a step fails, calling it again with the same input
-resumes after the last finished step.
+resumes after the last finished step. The new site's plugins then get `cms.site.created`
+from its outbox, before `createSite` returns; their manifest `roles` exist already.
 
 ## Background work
 

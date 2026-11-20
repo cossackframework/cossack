@@ -480,7 +480,7 @@ export class ServiceScope {
                         if (typeof (data as any)._cossack_redirect === 'string') {
                             success = true;
                             window.location.href = (data as any)._cossack_redirect;
-                            return undefined;
+                            return (data as any)._cossack_return;
                         }
                         apply(data._cossack_service_state as Record<string, unknown>);
                         success = true;

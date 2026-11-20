@@ -21,6 +21,8 @@ export interface CodeEditorOptions {
     /** JSON: the schema to lint and complete against. */
     schema: object | null;
     onChange(value: string): void;
+    /** Ctrl+Enter (Cmd+Enter on a Mac): true when it was handled; otherwise the key inserts a line as usual. */
+    onSubmit?(value: string): boolean;
 }
 
 export interface CodeEditorHandle {
@@ -82,7 +84,7 @@ export function mountCodeEditor(parent: HTMLElement, options: CodeEditorOptions)
     const extensions: Extension[] = [
         lineNumbers(), highlightSpecialChars(), history(), drawSelection(), indentOnInput(), bracketMatching(), foldGutter(), highlightActiveLine(),
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-        keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+        keymap.of([{ key: 'Mod-Enter', run: view => options.onSubmit?.(view.state.doc.toString()) === true }, ...defaultKeymap, ...historyKeymap, indentWithTab]),
         theme, EditorView.lineWrapping,
         language.of([]),
         editable.of(editableOf(options.readOnly)),

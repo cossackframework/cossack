@@ -88,7 +88,7 @@ describe('the bridge', () => {
         const repository = new Proxy({}, { get: (_target, method) => (...args: unknown[]) => { seen.push([method, ...args]); return 'ok'; } });
         const value = {
             name: 'desk',
-            cms: { resource: (id: string) => { seen.push(['resource', id]); return repository; } },
+            cms: { resource: (id: string) => { seen.push(['resource', id]); return repository; }, batch: (writes: unknown, operation: unknown) => { seen.push(['batch', writes, operation]); return 'batched'; } },
             settings: { get: (field: string) => `setting:${field}`, all: () => ({}) },
             fetch: (request: Request) => `fetched:${request.url}`,
             cache: { get: (key: string) => `cache:${key}` },
@@ -124,6 +124,17 @@ describe('the bridge', () => {
         await expect(serveIsolatedCall(value, 'resource.get', ['desk/tickets', 't1', { principal: admin }, { principal: systemPrincipal('plugin:desk') }], [user])).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
         await expect(serveIsolatedCall(value, 'resource.update', ['desk/tickets', 't1', { status: 'closed' }, { principal: admin }, { principal: user }], [user])).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
         expect(seen.length).toBe(before);
+    });
+
+    it('serves batches with exactly the writes and a context acting as a given principal', async () => {
+        const { value, seen } = context();
+        const writes = [{ create: 'desk/tickets', input: { title: 'x' } }];
+        expect(await serveIsolatedCall(value, 'cms.batch', [writes, { principal: user, guards: [] }], [user])).toBe('batched');
+        expect(seen).toEqual([['batch', writes, { principal: user, guards: [] }]]);
+        await expect(serveIsolatedCall(value, 'cms.batch', [writes, { principal: { ...user, roles: ['admin'] } }], [user])).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
+        await expect(serveIsolatedCall(value, 'cms.batch', [writes], [user])).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
+        await expect(serveIsolatedCall(value, 'cms.purge', [writes, { principal: user }], [user])).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
+        expect(seen.length).toBe(1);
     });
 });
 

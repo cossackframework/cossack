@@ -25,9 +25,10 @@ export async function apiEntries(cms: CmsHost, collection: CollectionDefinition,
     // The password itself never leaves. A protected entry's fields stay with those who may edit
     // it, and a members-only entry's with signed-in users: others get its core fields alone.
     const withheld = withheldFields(cms, collection);
+    const editable = principal === undefined ? new Set<string>() : await repository.editable(records, { principal });
     records = records.map(record => {
         const { password, ...rest } = record;
-        const editor = principal !== undefined && repository.canUpdate(record, principal);
+        const editor = editable.has(record.id);
         const lock = entryLock(record, { editor, signedIn: principal?.kind === 'user', roles: principal?.kind === 'user' ? principal.roles : [] });
         if (!lock) return (typeof password === 'string' && password ? (editor ? record : rest) : rest) as RecordShape;
         const bare = Object.fromEntries(Object.entries(rest).filter(([name]) => !withheld.has(name))) as unknown as RecordShape;

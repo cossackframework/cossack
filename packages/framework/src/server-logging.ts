@@ -28,10 +28,20 @@ export function createServerFailureContext(c: Context, options: { route?: string
     action: label(options.action ?? 'unknown', 80), runtime: label(runtime, 40),
     startedAt: typeof startedAt === 'number' && Number.isFinite(startedAt) ? startedAt : performance.now() };
 }
-/** No exception argument: arbitrary messages, stacks, causes and properties stay private. */
-export function logServerFailure(context: ServerFailureContext, kind: ServerFailureKind, stage: ServerFailureStage, code: ServerFailureCode): void {
+/**
+ * In production the line carries no exception: arbitrary messages, stacks, causes and
+ * properties stay private. In development, the thrown error (message and stack) follows it.
+ */
+export function logServerFailure(context: ServerFailureContext, kind: ServerFailureKind, stage: ServerFailureStage, code: ServerFailureCode, error?: unknown): void {
   const elapsed = performance.now() - context.startedAt;
   console.error({ event: `cossack.${kind}.failure`, requestId: uuid.test(context.requestId) ? context.requestId : 'unavailable',
     route: label(context.route, 160), action: label(context.action, 80), runtime: label(context.runtime, 40),
     durationMs: Number.isFinite(elapsed) ? Math.max(0, Math.round(elapsed)) : 0, stage, code });
+  logDevelopmentCause(error);
+}
+
+/** Development only: the error behind a failure line, with its stack. */
+export function logDevelopmentCause(error: unknown): void {
+  if (error === undefined || !import.meta.env?.DEV) return;
+  console.error('[cossack] caused by:', error);
 }

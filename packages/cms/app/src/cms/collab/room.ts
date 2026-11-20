@@ -92,7 +92,7 @@ export const requireEntryEditor: MiddlewareHandler = defineServerMiddleware(asyn
             const { resource } = routeResource(cms, route);
             const repository = cms.resource(resource.id);
             const record = await repository.get(id, { principal });
-            allowed = record !== null && repository.canUpdate(record, principal);
+            allowed = record !== null && await repository.canUpdate(record, { principal });
         } catch (error) {
             // Only a passing database error keeps an earlier yes, and only for a while: a lost
             // entry, collection or right, an inactive plugin or a pending migration refuses.

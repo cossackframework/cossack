@@ -214,7 +214,9 @@ sessions, login UI, nested navigation, forged client state, and session expiry.
 
 `cossack add jobs` composes a Cloudflare Queue consumer and producer with an
 independent D1 job ledger and receipt migration. Apply the local `JOB_STATE`
-migration before consuming jobs. Select real remote resource IDs before
+migration before consuming jobs. In a CMS project the ledger is in the CMS's
+RomeDB database instead (`src/jobs/ledger.ts`): no D1 binding, and the tables are
+created on first use. Select real remote resource IDs before
 deploying. Keep `JOB_NAMESPACE` distinct for environments sharing a ledger.
 Dispatch from authorized server code with explicit tenant/actor scope and a
 stable logical idempotency key. The portable local adapter is deterministic test

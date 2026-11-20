@@ -236,14 +236,10 @@ describe.skipIf(!live)('RomeDB limits', () => {
         await cms.db.write([{ rql: 'CREATE TABLE limits_noise (id INTEGER PRIMARY KEY, at INTEGER NOT NULL)' }]);
         let done = false;
         let next = 0;
-        // Two writers, as sessions, drafts and the outbox write on a busy site: about 80 writes a
-        // second. (Back to back with no pause, they hold off a migration's DDL for RomeDB's whole
-        // 15-second deadline: the service lock lets writers pass a waiting schema change.)
+        // Two writers, as sessions, drafts and the outbox write on a busy site, back to back. Since
+        // RomeDB 0.2.27 a waiting schema change goes before writes that arrive after it.
         const noise = Promise.all([0, 1].map(async () => {
-            while (!done) {
-                await cms.db.write([{ rql: 'INSERT INTO limits_noise (id, at) VALUES ($id, $at)', params: { $id: ++next, $at: Date.now() } }]);
-                await new Promise(resolve => setTimeout(resolve, 25));
-            }
+            while (!done) await cms.db.write([{ rql: 'INSERT INTO limits_noise (id, at) VALUES ($id, $at)', params: { $id: ++next, $at: Date.now() } }]);
         }));
         try {
             for (let i = 0; i < 40; i++) {

@@ -193,7 +193,7 @@ export default class EntryEditor extends Cossack {
             const view = await editorView(cms, this.route, principal);
             const { resource } = routeResource(cms, this.route);
             const record = this.id === 'new' ? null : await cms.resource(resource.id).get(this.id, { principal });
-            if (this.id !== 'new' && (!record || !cms.resource(resource.id).canUpdate(record, principal))) { this.error = __('This entry does not exist or you cannot edit it.'); this.c.status(404); return; }
+            if (this.id !== 'new' && (!record || !await cms.resource(resource.id).canUpdate(record, { principal }))) { this.error = __('This entry does not exist or you cannot edit it.'); this.c.status(404); return; }
             if (!record && evaluateRule(resource.access.create, principal) === 'deny') { this.error = __('You cannot create entries here.'); this.c.status(403); return; }
             this.view = view;
             this.schema = recordSchema(resource);
@@ -236,7 +236,7 @@ export default class EntryEditor extends Cossack {
                 if (view.path !== null || view.route === 'forms') this.previewLinks = await cms.previews.count(resource.id, record.id).catch(() => 0);
             }
             // The entry's notes, with who wrote them; opening the entry marks the viewer's mentions seen.
-            if (record && principal.kind === 'user' && cms.resource(resource.id).canUpdate(record, principal)) {
+            if (record && principal.kind === 'user' && await cms.resource(resource.id).canUpdate(record, { principal })) {
                 this.meId = principal.id;
                 this.canRemoveNotes = hasPermission(principal, PERMISSIONS.manageUsers);
                 this.notes = await cms.notes.forEntry(resource.id, record.id).catch(() => []);
@@ -976,7 +976,7 @@ export default class EntryEditor extends Cossack {
             if (!Object.values(resource.fields).some(field => field.search)) continue;
             try {
                 const principal = this.c.get('principal');
-                const records = openMatches(cms, resource.id, await cms.resource(resource.id).search(query, { limit: 6, ...(collection.publishable === false ? {} : { where: { status: 'published' } }) }, { principal }), principal).filter(record => record.id !== exclude);
+                const records = (await openMatches(cms, resource.id, await cms.resource(resource.id).search(query, { limit: 6, ...(collection.publishable === false ? {} : { where: { status: 'published' } }) }, { principal }), principal)).filter(record => record.id !== exclude);
                 const urls = await cms.entryUrls(collection, records);
                 for (const record of records) if (urls.get(record.id)) found.push({ title: recordTitle(record, 'title'), url: urls.get(record.id)!, collection: collection.singular });
             } catch (error) { if (!isCmsError(error)) throw error; }
@@ -1051,7 +1051,7 @@ export default class EntryEditor extends Cossack {
             return;
         }
         const record = await cms.resource(resource.id).get(this.id, { principal });
-        if (!record || !cms.resource(resource.id).canUpdate(record, principal)) throw new ClientVisibleError(__('This entry does not exist or you cannot edit it.'));
+        if (!record || !await cms.resource(resource.id).canUpdate(record, { principal })) throw new ClientVisibleError(__('This entry does not exist or you cannot edit it.'));
     }
 
     /** The resource this editor's route names, read on the server. */

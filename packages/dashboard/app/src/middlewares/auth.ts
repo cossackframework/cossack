@@ -64,7 +64,9 @@ export const requireDashboardUser = defineServerMiddleware(async (c, next) => {
  * static assets) is reachable without a session.
  *
  * The OAuth routes (/auth/<provider>/redirect and /callback) are exempt from the
- * guest check: a signed-in user would otherwise be bounced away mid-flow.
+ * guest check: a signed-in user would otherwise be bounced away mid-flow. So is the
+ * CMS network's /auth/register-site, where a signed-in person registers a site for
+ * their own account.
  *
  * A page of something the project turned off (src/dashboard.config.ts) answers 404:
  * the password pages without `credentials`, a dashboard module that is not chosen,
@@ -72,6 +74,8 @@ export const requireDashboardUser = defineServerMiddleware(async (c, next) => {
  */
 const PASSWORD_PAGES = /^\/auth\/(?:register|forgot-password|reset-password|two-factor)(?:\/|$)/;
 const OAUTH_ROUTE = /^\/auth\/[^/]+\/(?:redirect|callback)$/;
+/** Sign-in pages that also serve people who are signed in. */
+const SIGNED_IN_PAGES = /^\/auth\/register-site\/?$/;
 /** The dashboard pages of each module. */
 const MODULE_PAGES: Record<string, RegExp> = {
     users: /^\/dashboard\/users(?:\/|$)/,
@@ -92,7 +96,7 @@ export const authGuard = defineServerMiddleware(async (c, next) => {
     const user = c.get('user');
 
     if (turnedOff(path)) return c.notFound();
-    if (path.startsWith('/auth/') && user && !OAUTH_ROUTE.test(path)) {
+    if (path.startsWith('/auth/') && user && !OAUTH_ROUTE.test(path) && !SIGNED_IN_PAGES.test(path)) {
         return c.redirect(config('auth.redirectAfterLogin'));
     }
     // A fresh site creates its first administrator on the setup page.
