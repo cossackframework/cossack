@@ -210,3 +210,7 @@ the value from `event.currentTarget` or `event.target`.
   these folders can go.
 - The browser build fails when a kept method passes, rather than calls, a method it removes
   (`items.map(this.row)`). Call it or mark it `@Client()`.
+- CMS repositories: `canRead` and `canUpdate` return a promise and take a context, so they see
+  `memberOf` rules: `await repository.canUpdate(record, { principal })`. For lists,
+  `readable(records, context)` and `editable(records, context)` give the allowed IDs, and
+  `readerView(record, principal)` is `readerViews(records, context)`.

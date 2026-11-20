@@ -172,10 +172,12 @@ a site at `/auth/register-site` on the network host and becomes its first admini
 1. They give the site's name and one name for its address under the network's domain, such as
    `pho` for `pho.example.com`. The address names the site; a taken or reserved one (`main`,
    `new`, `www`) is refused before anything is made.
-2. They also give their name, email and a password. A new email gets an account that waits for
-   its confirmation link, and the site is made when the link is opened. The email of an existing
-   account, with its password, makes the site at once. Without a mail sender (development), the
-   account is active at once. Like the other sign-in pages, it is for visitors who are not signed in.
+2. A visitor who is not signed in also gives their name, email and a password. A new email gets
+   an account that waits for its confirmation link, and the site is made when the link is opened.
+   The email of an existing account, with its password, makes the site at once. Without a mail
+   sender (development), the account is active at once. A person who is signed in on the network
+   host gives the site alone: it is made at once for their account, and **Sign out** lets them
+   use another one.
 3. The site starts like one a network admin adds with starter content: the network's theme,
    plugins and language. The plugins hear of it through `cms.site.created`. Then the person is
    signed in on the new site's dashboard.

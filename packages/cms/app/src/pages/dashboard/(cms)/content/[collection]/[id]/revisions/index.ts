@@ -46,7 +46,7 @@ export default class RevisionsPage extends Cossack {
             this.title = recordTitle(record, resource.titleField);
             this.singular = collection?.singular ?? __('Entry');
             this.current = record.rev;
-            this.canRestore = repository.canUpdate(record, principal);
+            this.canRestore = await repository.canUpdate(record, { principal });
             const revisions = await repository.revisions(this.id, { principal }, { limit: 50 });
             const actors = await cms.users.getMany(revisions.map(entry => entry.actor ?? '').filter(Boolean));
             this.revisions = revisions.map(entry => ({ revision: entry.revision, at: entry.at, actor: actors.get(entry.actor ?? '')?.name ?? entry.actor ?? '' }));

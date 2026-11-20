@@ -702,10 +702,10 @@ export function entryLock(record: RecordShape, reader: EntryReader): 'password' 
  * Search results a signed-in dashboard user may see: a locked entry (`entryLock`) that matched
  * would tell what its content says, so only entries open to them stay, as the content API's search.
  */
-export function openMatches(cms: CmsHost, resourceId: string, records: readonly RecordShape[], principal: Principal): RecordShape[] {
-    const repository = cms.resource(resourceId);
+export async function openMatches(cms: CmsHost, resourceId: string, records: readonly RecordShape[], principal: Principal): Promise<RecordShape[]> {
     const signedIn = principal.kind === 'user';
-    return records.filter(record => !entryLock(record, { editor: signedIn && repository.canUpdate(record, principal), signedIn, roles: signedIn ? principal.roles : [] }));
+    const editable = signedIn ? await cms.resource(resourceId).editable(records, { principal }) : new Set<string>();
+    return records.filter(record => !entryLock(record, { editor: editable.has(record.id), signedIn, roles: signedIn ? principal.roles : [] }));
 }
 
 /**
@@ -713,7 +713,7 @@ export function openMatches(cms: CmsHost, resourceId: string, records: readonly 
  * entry's unlock cookie, as the entry's page decides: for the comments API and form.
  */
 export async function requestLock(cms: CmsHost, record: RecordShape, resourceId: string, principal: Principal, cookie: string | undefined): Promise<'password' | 'members' | null> {
-    const editor = principal.kind === 'user' && cms.resource(resourceId).canUpdate(record, principal);
+    const editor = principal.kind === 'user' && await cms.resource(resourceId).canUpdate(record, { principal });
     const unlocked = isProtected(record) && cookie !== undefined && cookie === await unlockToken(record);
     return entryLock(record, { signedIn: principal.kind === 'user', roles: principal.kind === 'user' ? principal.roles : [], editor, unlocked: unlocked ? new Set([record.id]) : undefined });
 }

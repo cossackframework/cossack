@@ -3,7 +3,7 @@ import { input, type InputOf } from '@cossackframework/core/input';
 import { Alert, Button, Field, Input, PasswordInput, Turnstile } from '@cossackframework/ui';
 import { html, component, bind } from '@cossackframework/renderer';
 import { networkSite } from '@cossackframework/cms/server';
-import { authSessions, registerSite, siteRegistrationOpen } from '#app/auth';
+import { authSessions, logout, registerSite, siteRegistrationOpen, type PublicUser } from '#app/auth';
 import { botCheckKey, passesBotCheck } from '#app/auth-bot-check';
 import { BOT_CHECK_FAILED, botCheckToken } from '#app/auth-bot-token';
 import { networkFor, siteUrl, type CmsBindings } from '#app/cms/index';
@@ -30,8 +30,8 @@ interface RegisterSiteForm {
  * Register a site on the network host, while Settings → Network → People can register a site is
  * on: the site's name and address, and the account that runs it. A new account confirms its
  * email first, and the site is made when the link is opened; an existing account gives its
- * password. The person becomes the site's administrator and is taken there. Like every sign-in
- * page, it is for visitors who are not signed in.
+ * password. A person who is signed in gives the site alone, for their own account. The person
+ * becomes the site's administrator and is taken there.
  */
 @Page({ transport: 'http' })
 export default class RegisterSitePage extends Cossack {
@@ -43,10 +43,13 @@ export default class RegisterSitePage extends Cossack {
     @State() error = '';
     /** The Turnstile site key while the bot check is on. */
     @State() botKey: string | null = null;
+    /** The signed-in person's email: the site is theirs, and the form asks for no account. */
+    @State() signedInAs: string | null = null;
 
     async init() {
         this.closed = !(await siteRegistrationOpen());
         this.botKey = botCheckKey();
+        this.signedInAs = (this.c.get('user') as PublicUser | undefined)?.email ?? null;
         const network = networkFor(this.c.env as CmsBindings);
         if (!this.closed) this.suffix = (await network.settings()).subdomainSuffix || network.subdomainSuffix || 'localhost';
     }
@@ -63,7 +66,9 @@ export default class RegisterSitePage extends Cossack {
         const values = await registerSiteInput.parse(submitted);
         this.error = '';
         if (!(await passesBotCheck(values.turnstile, 'register'))) { this.error = BOT_CHECK_FAILED; return; }
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email.trim()) || values.password.length < 8) {
+        // The session names the account, never the form.
+        const user = (this.c.get('user') as PublicUser | undefined) ?? null;
+        if (!user && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email.trim()) || values.password.length < 8)) {
             this.error = 'Enter your email and a password of at least 8 characters.';
             return;
         }
@@ -71,10 +76,8 @@ export default class RegisterSitePage extends Cossack {
             // The domain is the network's, whatever the browser sent.
             const network = networkFor(this.c.env as CmsBindings);
             const suffix = (await network.settings()).subdomainSuffix || network.subdomainSuffix || 'localhost';
-            const result = await registerSite({
-                site: { name: values.siteName, host: `${values.subdomain.trim().toLowerCase()}.${suffix}` },
-                name: values.name, email: values.email.trim(), password: values.password,
-            }, null);
+            const site = { name: values.siteName, host: `${values.subdomain.trim().toLowerCase()}.${suffix}` };
+            const result = await registerSite(user ? { site } : { site, name: values.name, email: values.email.trim(), password: values.password }, user?.id ?? null);
             if ('verification' in result) { this.sent = true; return; }
             if (result.signIn) {
                 const { headers } = await authSessions.create(result.user, this.c);
@@ -86,6 +89,19 @@ export default class RegisterSitePage extends Cossack {
             this.redirect(target ? `${target.replace(/\/+$/, '')}/auth/handoff?next=${encodeURIComponent('/dashboard')}` : '/dashboard');
         } catch (error) {
             this.error = isClientVisibleError(error) ? error.message : 'Could not register the site. Try again.';
+        }
+    }
+
+    /** Sign out, to register the site with another account. */
+    @Server()
+    async signOut() {
+        this.error = '';
+        try {
+            const { headers } = await logout(this.c);
+            headers.forEach((value, key) => this.c.header(key, value));
+            this.redirect('/auth/register-site');
+        } catch {
+            this.error = 'Could not sign out. Try again.';
         }
     }
 
@@ -108,19 +124,23 @@ export default class RegisterSitePage extends Cossack {
                         ${component(Input, { ...attributes, type: 'text', required: true, maxlength: 40, pattern: '[a-z0-9](?:[a-z0-9-]*[a-z0-9])?', autocapitalize: 'off', spellcheck: 'false', '.value': bind(this.form, 'subdomain') })}
                         <span class="shrink-0 text-sm text-muted-foreground">.${this.suffix}</span>
                     </div>` })}
+                ${this.signedInAs ? html`<p class="text-sm text-muted-foreground" data-signed-in-as>${__('Signed in as')} <span class="font-medium text-foreground">${this.signedInAs}</span>. ${__('The site will be yours.')}</p>` : html`
                 ${component(Field, { label: __('Your name'), for: 'name',
                     control: attributes => component(Input, { ...attributes, type: 'text', autocomplete: 'name', '.value': bind(this.form, 'name') }) })}
                 ${component(Field, { label: __('Email'), for: 'email',
                     control: attributes => component(Input, { ...attributes, type: 'email', autocomplete: 'username', spellcheck: 'false', required: true, '.value': bind(this.form, 'email') }) })}
                 ${component(Field, { label: __('Password'), for: 'password', hint: __('At least 8 characters. Have an account? Enter its email and password.'),
-                    control: attributes => component(PasswordInput, { ...attributes, autocomplete: 'new-password', required: true, minlength: 8, value: this.form.password, onValueChange: (value: string) => { this.form.password = value; } }) })}
+                    control: attributes => component(PasswordInput, { ...attributes, autocomplete: 'new-password', required: true, minlength: 8, value: this.form.password, onValueChange: (value: string) => { this.form.password = value; } }) })}`}
                 ${this.botKey ? component(Turnstile, { id: 'register-site-verify', siteKey: this.botKey, action: 'register', label: __('Bot protection') }) : null}
                 ${this.error ? component(Alert, { variant: 'destructive' }, this.error) : null}
                 ${component(Button, { type: 'submit', block: true }, __('Create site'))}
             </form>
-            <p class="mt-6 text-center text-sm text-muted-foreground">
+            ${this.signedInAs ? html`<p class="mt-6 text-center text-sm text-muted-foreground">
+                ${__('Another account?')}
+                <button type="button" class="text-primary font-medium hover:underline" @click=${() => this.signOut()} data-sign-out>${__('Sign out')}</button>
+            </p>` : html`<p class="mt-6 text-center text-sm text-muted-foreground">
                 ${__('Already have a site?')}
                 <a href="/auth/login" class="text-primary font-medium hover:underline">${__('Sign in')}</a>
-            </p>`;
+            </p>`}`;
     }
 }

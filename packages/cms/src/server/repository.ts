@@ -270,7 +270,7 @@ export class ResourceRepository {
         const record = await this.get(id, context);
         if (!record) throw new CmsError('CMS_NOT_FOUND', 'Record not found.');
         const since = record.createdAt;
-        if (this.canUpdate(record, context.principal)) return { editor: true, since };
+        if (await this.canUpdate(record, context)) return { editor: true, since };
         if (!hasPermission(context.principal, `${this.resource.id}:read`) || isLockedRecord(record)) {
             throw new CmsError('CMS_FORBIDDEN', 'Only editors read this record\'s revisions.');
         }
@@ -315,19 +315,56 @@ export class ResourceRepository {
         return this.update(id, patch, context);
     }
 
-    /** Whether the principal may update the record: its rule allows, or the record is in the rule's scope. */
-    /** The record as this principal may read it outside the site's gate: whole for those who may update it, else the reader's view (`lockedView`). */
-    readerView(record: RecordShape, principal: Principal): RecordShape {
-        return this.canUpdate(record, principal) ? record : lockedView(record, this.resource.fields);
+    /** The records as this principal may read them outside the site's gate: whole for those who may update them, else the reader's view (`lockedView`). */
+    async readerViews(records: readonly RecordShape[], context: OperationContext): Promise<RecordShape[]> {
+        const editable = await this.editable(records, context);
+        return records.map(record => editable.has(record.id) ? record : lockedView(record, this.resource.fields));
     }
 
-    canUpdate(record: RecordShape, principal: Principal): boolean {
-        return this.#inScope(this.resource.access.update, record, principal);
+    /** Whether the principal may update the stored record (`editable`). */
+    async canUpdate(record: RecordShape, context: OperationContext): Promise<boolean> {
+        return (await this.editable([record], context)).has(record.id);
     }
 
-    /** Whether the principal may read this record: the read rule, evaluated on the record itself. */
-    canRead(record: RecordShape, principal: Principal): boolean {
-        return this.#inScope(this.resource.access.read, record, principal);
+    /** Whether the principal may read the stored record (`readable`). */
+    async canRead(record: RecordShape, context: OperationContext): Promise<boolean> {
+        return (await this.readable([record], context)).has(record.id);
+    }
+
+    /**
+     * The IDs of the records the principal may update: the update rule allows, or the record is
+     * in its scope. Owner and `where` rules are judged on the records; membership rules on the
+     * stored records and memberships, in one read for all records the others leave out. For IDs
+     * alone, `updatable` reads every one.
+     */
+    editable(records: readonly RecordShape[], context: OperationContext): Promise<Set<string>> {
+        return this.#allowed(this.resource.access.update, records, context);
+    }
+
+    /** The IDs of the records the principal may read, by the read rule (as `editable`). */
+    readable(records: readonly RecordShape[], context: OperationContext): Promise<Set<string>> {
+        return this.#allowed(this.resource.access.read, records, context);
+    }
+
+    async #allowed(rule: AccessRule, records: readonly RecordShape[], context: OperationContext): Promise<Set<string>> {
+        const { principal } = context;
+        const scope = ruleScope(rule, principal);
+        if (scope === 'allow') return new Set(records.map(record => record.id));
+        if (scope === 'deny') return new Set();
+        const allowed = new Set(records.filter(record => this.#onRecord(scope, record, principal)).map(record => record.id));
+        if (!scope.members.length || principal.kind !== 'user') return allowed;
+        const rest = [...new Set(records.map(record => record.id).filter(id => !allowed.has(id) && typeof id === 'string' && KEY.test(id)))];
+        if (!rest.length) return allowed;
+        // The same condition lists and writes use, on the stored records: what the memberships reach now.
+        const members: Access = { owner: false, where: [], members: scope.members };
+        const rows = await readByIds(this.#host.db, rest, slice => {
+            const keys: { [key: string]: Value } = {};
+            const list = slice.map((id, index) => { keys[`$k${index}`] = id; return `type::record('${this.resource.storage}', $k${index})`; }).join(', ');
+            const { rql, params } = this.#conditions(members, principal, [`id IN (${list})`], keys);
+            return { rql: `SELECT record::id(id) FROM ${this.resource.storage} WHERE ${rql} LIMIT ${slice.length}`, params };
+        }, this.#readOptions(context));
+        for (const row of rows) allowed.add(String(row[0]));
+        return allowed;
     }
 
     /**
@@ -353,10 +390,14 @@ export class ResourceRepository {
         return co !== undefined && Array.isArray(record[co]) && (record[co] as unknown[]).includes(user);
     }
 
-    /** Owner and `where` rules, read on the record. Membership rules need the database, so here they reach nothing: the queries enforce them. */
-    #inScope(rule: AccessRule, record: RecordShape, principal: Principal): boolean {
-        const scope = ruleScope(rule, principal);
-        if (scope === 'allow' || scope === 'deny') return scope === 'allow';
+    /** Whether a visitor who is not signed in reads the record: no memberships, so the record alone decides. */
+    #readByAnyone(record: RecordShape): boolean {
+        const scope = ruleScope(this.resource.access.read, ANONYMOUS);
+        return scope === 'allow' || (scope !== 'deny' && this.#onRecord(scope, record, ANONYMOUS));
+    }
+
+    /** Owner and `where` rules, judged on the record. Membership rules need the database (`#allowed`). */
+    #onRecord(scope: RecordScope, record: RecordShape, principal: Principal): boolean {
         if (scope.owner && principal.kind === 'user' && this.#owns(record, principal.id)) return true;
         return scope.where.some(rule => Object.entries(rule).every(([name, value]) => record[name] === value));
     }
@@ -380,16 +421,20 @@ export class ResourceRepository {
         const result = await this.#host.db.read([{
             rql: `SELECT id, ${levels.map((path, index) => `${path} AS l${index}`).join(', ')} FROM ${this.resource.storage} WHERE id IN (${list}) LIMIT ${wanted.length}`, params,
         }], this.#readOptions(context));
+        const found: [string, RecordShape[]][] = [];
         for (const row of result.results[0]!.rows) {
             const chain: RecordShape[] = [];
             for (let index = 1; index < row.length; index++) {
                 const document = row[index];
                 if (!document || typeof document !== 'object' || document instanceof RecordId || !(document as Document).id) break;
-                const record = this.#public(document as Document, context.principal);
-                if (!this.canRead(record, context.principal)) break;
-                chain.push(record);
+                chain.push(this.#public(document as Document, context.principal));
             }
-            chains.set(String((row[0] as RecordId).key), chain);
+            found.push([String((row[0] as RecordId).key), chain]);
+        }
+        const readable = await this.readable(found.flatMap(([, chain]) => chain), context);
+        for (const [id, chain] of found) {
+            const end = chain.findIndex(record => !readable.has(record.id));
+            chains.set(id, end < 0 ? chain : chain.slice(0, end));
         }
         return chains;
     }
@@ -645,7 +690,7 @@ export class ResourceRepository {
         await flush();
     }
 
-    /** The IDs among these the principal may update. */
+    /** The IDs among these the principal may update, read for every ID (`editable` judges records it holds). */
     async updatable(ids: readonly string[], context: OperationContext): Promise<Set<string>> {
         let access: Access;
         try { access = await this.#authorize('update', context.principal); } catch (error) { if (error instanceof CmsError) return new Set(); throw error; }
@@ -1085,7 +1130,7 @@ export class ResourceRepository {
         // A deleted record's revisions, drafts, notes and preview links go in an outbox job
         // (`entryDeleted` in the host), a page at a time: an entry saved a thousand times still deletes.
         // The site's search index, guarded by the audit row above.
-        statements.push(...this.#host.siteSearch.statements(this.resource, key, op, record && this.canRead(record, ANONYMOUS) ? record : null));
+        statements.push(...this.#host.siteSearch.statements(this.resource, key, op, record && this.#readByAnyone(record) ? record : null));
         const event: ResourceEvent = {
             eventId: op, topic: action === 'create' ? 'resource.created' : action === 'update' ? 'resource.updated' : 'resource.deleted',
             // Webhooks, plugins and automations get the reader's view: a locked entry's password and content stay here.

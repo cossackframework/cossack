@@ -174,8 +174,10 @@ resources, such as the branches a member is assigned to:
   delete outside them changes nothing. It reads the memberships as they are at that moment.
 - A create, or an update that changes the `match` field, must name a value the user is a
   member of; this is checked in the same write.
-- Code that checks a record in memory (`canRead`, `canUpdate`) does not see memberships:
-  read through the repository instead.
+- `await repository.canRead(record, { principal })` and `canUpdate` apply the rule to a
+  record you already hold: owner and `where` rules on the record, a membership on the stored
+  record, in one read. For a list, `readable(records, context)` and
+  `editable(records, context)` answer with the IDs allowed, in one read for all of them.
 - `indexes`: `{ name, fields, unique? }`.
 - `revisions` (default true) keeps a snapshot of every write. `schemaless: true` types only
   the host fields in the database.

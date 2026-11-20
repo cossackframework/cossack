@@ -60,6 +60,6 @@ async function mayReadNotes(cms: CmsHost, note: Note, userId: string): Promise<b
         if (!principal) return false;
         const repository = cms.resource(note.resource);
         const record = await repository.get(note.recordId, { principal });
-        return record !== null && repository.canUpdate(record, principal);
+        return record !== null && await repository.canUpdate(record, { principal });
     } catch { return false; }
 }

@@ -61,8 +61,8 @@ describe.skipIf(!live)('locked entries in events', () => {
         const repository = cms.resource('app/diary');
         await repository.create({ title: 'Locked', body: 'secret body', summary: 'secret summary', password: 'hunter2' }, { principal: systemPrincipal('test'), id: 'locked' });
         const stored = await repository.get('locked', { principal: editor });
-        expect(repository.readerView(stored!, editor)).toMatchObject({ body: 'secret body', password: 'hunter2' });
-        expect(JSON.stringify(repository.readerView(stored!, reader))).not.toMatch(/secret|hunter2/);
+        expect((await repository.readerViews([stored!], { principal: editor }))[0]).toMatchObject({ body: 'secret body', password: 'hunter2' });
+        expect(JSON.stringify(await repository.readerViews([stored!], { principal: reader }))).not.toMatch(/secret|hunter2/);
         const outbox = await cms.db.read([{ rql: "SELECT payload FROM cms_outbox WHERE topic = 'resource.created'" }]);
         const payloads = outbox.results[0]!.rows.map(row => String(row[0]));
         expect(payloads.some(payload => payload.includes('"id":"locked"'))).toBe(true);

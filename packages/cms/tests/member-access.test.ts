@@ -97,6 +97,25 @@ describe.skipIf(!live)('membership access on the database', () => {
         await expect(repository.list({}, { principal: { kind: 'anonymous' } })).rejects.toMatchObject({ code: 'CMS_UNAUTHENTICATED' });
     });
 
+    it('checks records in memory through the memberships', async () => {
+        const repository = cms.resource('app/shifts');
+        const north = (await repository.get('n1', { principal: system }))!;
+        const south = (await repository.get('s1', { principal: system }))!;
+        expect(await repository.canRead(north, { principal: ada })).toBe(true);
+        expect(await repository.canRead(south, { principal: ada })).toBe(false);
+        expect(await repository.canUpdate(south, { principal: bob })).toBe(true);
+        expect(await repository.canRead(north, { principal: { kind: 'anonymous' } })).toBe(false);
+        expect(await repository.editable([north, south], { principal: ada })).toEqual(new Set(['n1']));
+        expect(await repository.readable([north, south], { principal: system })).toEqual(new Set(['n1', 's1']));
+        // The record itself: a branch is read by its members.
+        const branches = cms.resource('app/branches');
+        const [northBranch, southBranch] = [(await branches.get('north', { principal: system }))!, (await branches.get('south', { principal: system }))!];
+        expect(await branches.readable([northBranch, southBranch], { principal: bob })).toEqual(new Set(['south']));
+        // Those who may update the record read its history as editors.
+        expect((await repository.revisions('n1', { principal: ada })).length).toBeGreaterThan(0);
+        await expect(repository.revisions('s1', { principal: ada })).rejects.toMatchObject({ code: 'CMS_NOT_FOUND' });
+    });
+
     it('follows the membership as it changes', async () => {
         await cms.resource('app/assignments').create({ user: 'ada', branch: 'south' }, { principal: system, id: 'ada-south' });
         expect((await cms.resource('app/shifts').list({ order: { field: 'title', direction: 'asc' } }, { principal: ada })).records.map(record => record.id)).toEqual(['n1', 's1']);

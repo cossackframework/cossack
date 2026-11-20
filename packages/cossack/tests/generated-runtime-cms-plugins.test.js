@@ -125,7 +125,7 @@ describe.skipIf(!liveRomeDBTests())('CMS plugin trust', () => {
 
       // Network → Plugins asks the same way: unticked stays as it was, ticked runs it on every site.
       const setNetwork = enabled => web.action(SETTINGS, 'saveAll', [{ document: null, languages: null, permalinks: null, groups: {},
-        network: { enabled, name: 'Desk network', subdomainSuffix: '', defaultTheme: '', defaultPlugins: [], defaultLanguage: '', siteExports: 'request' } }]);
+        network: { enabled, name: 'Desk network', subdomainSuffix: '', defaultTheme: '', defaultPlugins: [], defaultLanguage: '', siteExports: 'request', siteRegistration: false } }]);
       expect((await setNetwork(true))._cossack_return.error).toBe('');
       const vaultState = async () => /data-plugin="?vault"? data-state="?([a-z]+)/.exec(await web.page('/dashboard/network/plugins'))?.[1];
       contains(await web.page('/dashboard/network/plugins'), 'Danger: vault asks for unrestricted access');

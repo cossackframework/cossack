@@ -53,7 +53,7 @@ export default class PreviewPage extends Cossack {
             } else {
                 const repository = cms.resource(resourceId);
                 const saved = await repository.get(id, { principal });
-                if (saved && repository.canUpdate(saved, principal)) {
+                if (saved && await repository.canUpdate(saved, { principal })) {
                     record = stored = saved;
                     this.editUrl = `/dashboard/content/${collection.name}/${id}`;
                     // Unsaved changes from the editor show in place of the saved ones.

@@ -25,7 +25,7 @@ function host(records: RecordShape[]): CmsHost {
         collections: () => [posts],
         resource: (name: string) => name === 'cms/patterns'
             ? { getMany: async () => new Map([[pattern.id, pattern]]) }
-            : { list: async () => ({ records }), get: async (id: string) => records.find(entry => entry.id === id) ?? null, canUpdate: () => false },
+            : { list: async () => ({ records }), get: async (id: string) => records.find(entry => entry.id === id) ?? null, canUpdate: async () => false, editable: async () => new Set<string>() },
         resourceById: () => resource,
         entryUrls: async (_collection: unknown, entries: readonly RecordShape[]) => new Map(entries.map(entry => [entry.id, `/posts/${String(entry.slug)}`])),
         users: { getMany: async () => new Map() },
@@ -68,7 +68,7 @@ describe('locked entries stay locked outside their page', () => {
         const listed = [record('a', { price: 49 }), record('m', { price: 49, membersOnly: true, memberRoles: ['vip'] })];
         const fields = { ...resource.fields, price: { kind: 'number', index: true } };
         const shop = { ...host(listed), resourceById: () => ({ ...resource, fields }),
-            resource: () => ({ list: async (options: { where: Record<string, unknown> }) => { calls.push(options.where); return { records: listed }; }, count: async () => 2, canUpdate: () => false }) } as unknown as CmsHost;
+            resource: () => ({ list: async (options: { where: Record<string, unknown> }) => { calls.push(options.where); return { records: listed }; }, count: async () => 2, canUpdate: async () => false, editable: async () => new Set<string>() }) } as unknown as CmsHost;
         const list = (principal: unknown, query: Record<string, string>) => entriesList({ get: (key: string) => key === 'cms' ? shop : principal } as unknown as Context, 'posts', query);
         await list({ kind: 'anonymous' }, { 'filter[price]': '49' });
         expect(calls.at(-1)).toMatchObject({ price: 49, password: { in: [null, ''] }, membersOnly: { ne: true } });
@@ -125,7 +125,7 @@ describe('locked entries stay locked outside their page', () => {
     it('answers an editor\'s own write with the entry whole', async () => {
         const written = record('w1', { password: 'hunter2', body: 'editor body' });
         const editorHost = { ...host([written]), collection: () => posts,
-            resource: () => ({ create: async () => written, canUpdate: () => true, getMany: async () => new Map() }) } as unknown as CmsHost;
+            resource: () => ({ create: async () => written, canUpdate: async () => true, editable: async (records: { id: string }[]) => new Set(records.map(entry => entry.id)), getMany: async () => new Map() }) } as unknown as CmsHost;
         const editor = { kind: 'user', id: 'e1', roles: ['editor'], permissions: ['cms/*'] };
         const created = await entryCreate({ get: (key: string) => key === 'cms' ? editorHost : editor } as unknown as Context, 'posts', { title: 'x' });
         expect(created.item).toMatchObject({ body: 'editor body', password: 'hunter2' });
@@ -139,7 +139,7 @@ describe('locked entries stay locked outside their page', () => {
             resource: () => ({ list: async (options: { offset: number; limit: number }) => {
                 offsets.push(options.offset);
                 return { records: Array.from({ length: options.limit }, (_, index) => record(`r${options.offset + index}`, { price: 49 })), more: true };
-            }, count: async () => 5000, canUpdate: () => false }) } as unknown as CmsHost;
+            }, count: async () => 5000, canUpdate: async () => false, editable: async () => new Set<string>() }) } as unknown as CmsHost;
         const member = { kind: 'user', id: 'u1', roles: ['subscriber'], permissions: [] };
         const page = await entriesList({ get: (key: string) => key === 'cms' ? shop : member } as unknown as Context, 'posts', { 'filter[price]': '49', perPage: '100', page: '40' });
         expect(offsets).toHaveLength(10);

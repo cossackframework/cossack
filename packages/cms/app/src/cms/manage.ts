@@ -247,8 +247,9 @@ export async function entriesList(c: Context, name: string, query: Query): Promi
     if (q) {
         // A locked entry the reader may not open stays out: that it matched would tell what its content says.
         const signedIn = principal.kind === 'user';
-        const records = (await repository.search(q, { limit: perPage, where }, { principal }))
-            .filter(record => !entryLock(record, { editor: repository.canUpdate(record, principal), signedIn, roles: signedIn ? principal.roles : [] }));
+        const found = await repository.search(q, { limit: perPage, where }, { principal });
+        const editable = await repository.editable(found, { principal });
+        const records = found.filter(record => !entryLock(record, { editor: editable.has(record.id), signedIn, roles: signedIn ? principal.roles : [] }));
         return { items: await apiEntries(cms, collection, records, html, principal), page: 1, pages: 1, total: records.length };
     }
     // `sort=publishedAt:asc`, `sort=title`: a scalar field of the collection; the default follows what is listed.
@@ -275,7 +276,8 @@ export async function entriesList(c: Context, name: string, query: Query): Promi
         for (let offset = 0; ; offset += LOCKED_SCAN_BATCH) {
             if (offset >= LOCKED_SCAN_LIMIT) { truncated = true; break; }
             const batch = await repository.list({ where, order, limit: LOCKED_SCAN_BATCH, offset }, { principal });
-            open.push(...batch.records.filter(record => !entryLock(record, { editor: repository.canUpdate(record, principal), signedIn: true, roles: principal.roles })));
+            const editable = await repository.editable(batch.records, { principal });
+            open.push(...batch.records.filter(record => !entryLock(record, { editor: editable.has(record.id), signedIn: true, roles: principal.roles })));
             if (!batch.more && !batch.next) break;
         }
         const pages = Math.max(1, Math.ceil(open.length / perPage));
@@ -519,7 +521,7 @@ export async function notesForEntry(c: Context, name: string, id: string, status
     const principal = c.get('principal');
     const record = await entryOf(cms, resource, id, principal);
     // Notes are the editors' discussion: publishing an entry does not publish them.
-    if (!cms.resource(resource).canUpdate(record, principal)) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to read notes on this entry.');
+    if (!await cms.resource(resource).canUpdate(record, { principal })) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to read notes on this entry.');
     if (status !== undefined && status !== '' && status !== 'open' && status !== 'resolved') throw new CmsError('CMS_VALIDATION', 'status is open or resolved.');
     return { threads: noteThreads(await cms.notes.forEntry(resource, id)).filter(thread => !status || thread.root.status === status) };
 }
@@ -536,7 +538,7 @@ export async function noteAdd(c: Context, name: string, id: string, input: Body)
     const resource = `cms/${collection.name}`;
     const repository = cms.resource(resource);
     const record = await entryOf(cms, resource, id, principal);
-    if (!repository.canUpdate(record, principal)) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to leave notes on this entry.');
+    if (!await repository.canUpdate(record, { principal })) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to leave notes on this entry.');
     const author = await cms.users.get(principal.id).catch(() => null);
     // Its webhooks and emails follow from the outbox, queued with the note.
     const note = await cms.notes.create({
@@ -556,7 +558,7 @@ async function editableNote(c: Context, noteId: string): Promise<{ note: Note; r
     const repository = cms.resource(note.resource);
     const record = await repository.get(note.recordId, { principal });
     if (!record) throw new CmsError('CMS_NOT_FOUND', 'Note not found.');
-    if (!repository.canUpdate(record, principal)) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to change notes on this entry.');
+    if (!await repository.canUpdate(record, { principal })) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to change notes on this entry.');
     return { note, record, principal };
 }
 
@@ -602,7 +604,7 @@ export async function notesAcross(c: Context, status: string | undefined, limit:
         if (owner !== 'cms' || !resourceName) continue;
         let record: RecordShape | null;
         try { record = await cms.resource(entry.resource).get(entry.recordId, { principal }); } catch { continue; }
-        if (!record || !cms.resource(entry.resource).canUpdate(record, principal)) continue;
+        if (!record || !await cms.resource(entry.resource).canUpdate(record, { principal })) continue;
         const threads = noteThreads(await cms.notes.forEntry(entry.resource, entry.recordId)).filter(thread => !status || thread.root.status === status);
         if (!threads.length) continue;
         items.push({ collection: resourceName, entryId: entry.recordId, title: recordTitle(record, cms.resourceById(entry.resource).titleField), status: typeof record.status === 'string' ? record.status : null, threads });

@@ -747,9 +747,9 @@ export class CmsHost {
             principal: id => this.users.principal(id),
             // As the repository answers the author: without the fields their permissions do not read,
             // and a locked entry as its readers see it unless the author may update it.
-            redact: (collection, record, principal) => {
+            redact: async (collection, record, principal) => {
                 const fields = this.#collections.has(collection) ? this.resourceById(`cms/${collection}`).fields : {};
-                const editor = this.#collections.has(collection) && this.resource(`cms/${collection}`).canUpdate(record as RecordShape, principal);
+                const editor = this.#collections.has(collection) && await this.resource(`cms/${collection}`).canUpdate(record as RecordShape, { principal });
                 const seen = editor ? record : lockedView(record as RecordShape, fields);
                 const hidden = Object.entries(fields).filter(([, field]) => field.access?.read && !hasPermission(principal, field.access.read)).map(([name]) => name);
                 return hidden.length ? Object.fromEntries(Object.entries(seen).filter(([name]) => !hidden.includes(name))) : seen;
@@ -1054,7 +1054,7 @@ export class CmsHost {
         const repository = this.resource(resourceId);
         const record = await repository.get(id, { principal });
         if (!record) throw new CmsError('CMS_NOT_FOUND', 'Record not found.');
-        if (!repository.canUpdate(record, principal)) throw new CmsError(principal.kind === 'anonymous' ? 'CMS_UNAUTHENTICATED' : 'CMS_FORBIDDEN', 'Not allowed to edit this entry.');
+        if (!await repository.canUpdate(record, { principal })) throw new CmsError(principal.kind === 'anonymous' ? 'CMS_UNAUTHENTICATED' : 'CMS_FORBIDDEN', 'Not allowed to edit this entry.');
         return record;
     }
 
@@ -1525,7 +1525,7 @@ export class CmsHost {
         const source = await repository.get(id, { principal });
         if (!source) throw new CmsError('CMS_NOT_FOUND', 'Entry not found.');
         // A translation starts as a copy: a reader the entry is locked for gets none to open.
-        if (lockedCopy(source, repository.canUpdate(source, principal))) throw new CmsError('CMS_FORBIDDEN', 'Only its editors can translate a protected or members-only entry.');
+        if (lockedCopy(source, await repository.canUpdate(source, { principal }))) throw new CmsError('CMS_FORBIDDEN', 'Only its editors can translate a protected or members-only entry.');
         // A translation the principal cannot read still exists: never start a second one.
         const existing = (await this.translations(collection, source, { principal: systemPrincipal('translations') })).get(locale);
         if (existing) {
