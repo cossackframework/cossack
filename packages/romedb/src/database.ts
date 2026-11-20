@@ -178,21 +178,14 @@ export class UncertainWriteError extends Error {
     }
 }
 
-/** The client's own deadline for a call that names none (`@romedb/client`'s default `timeoutMs`). */
-const CLIENT_TIMEOUT_MS = 20_000;
-/** How long past its deadline a call may stay unsettled before it counts as stranded. */
-const STRANDED_GRACE_MS = 5_000;
-
 /**
  * The client refused a call for lack of places: it allows 32 calls (and 2 MiB of request
- * bodies) in flight. Nothing was sent.
+ * bodies) in flight. Nothing was sent, and it passes once earlier calls end, so it says
+ * nothing about the call's size. The binding waits and tries again before it gives up.
  */
-function refusedForPlaces(error: unknown): boolean {
-    return error instanceof ClientError && error.code === 'RDB_LIMIT' && error.outcome === 'not-sent' && /request limit reached/i.test(error.message);
+export function isClientFull(error: unknown): boolean {
+    return error instanceof ClientError && error.code === 'RDB_LIMIT' && (error.limit === 'client-requests' || error.limit === 'client-bytes');
 }
-
-/** A call in flight on a client, by when it must have settled. */
-interface InFlight { readonly deadline: number }
 
 const DEFAULT_LIMITS: RomeDBWorkLimits = {
     read: { rowsRead: 50_000, vmSteps: 2_000_000 },
@@ -203,11 +196,9 @@ const DEFAULT_LIMITS: RomeDBWorkLimits = {
  * One database binding per isolate or process. Calls are request-scoped through their
  * options: pass the request's AbortSignal (or `requestSignal`) and explicit budgets.
  *
- * A client this binding opened from `url` is replaced when it refuses a call for lack of places
- * while some of its calls are long past their deadline: such calls were stranded (on Workers, a
- * call whose request ended first never settles), so their places would never come back. The old
- * client keeps the calls it still has. A refusal with no stranded call is backpressure: the call
- * waits and tries again, like a 503.
+ * A client that refuses a call for lack of places is backpressure: the call waits and tries
+ * again, like a 503. The client gives back the place of a call past its deadline itself, so a
+ * call that never settles (on Workers, one whose request ended first) holds its place no longer.
  */
 export class RomeDB {
     readonly url: string;
@@ -220,13 +211,7 @@ export class RomeDB {
     readonly #sleep: NonNullable<RomeDBOptions['sleep']>;
     readonly #now: () => number;
     #client: Promise<DatabaseClient> | undefined;
-    /** The client `#client` resolved to. */
-    #current: DatabaseClient | undefined;
     #preflight: Promise<DatabaseInfo> | undefined;
-    /** Calls in flight through this binding, by client. */
-    readonly #inFlight = new Map<DatabaseClient, Set<InFlight>>();
-    /** Replaced clients, closed once their last call settles. */
-    readonly #retired = new Set<DatabaseClient>();
 
     constructor(options: RomeDBOptions) {
         if (!options.pending) throw new TypeError('RomeDB requires a pending write store');
@@ -275,14 +260,12 @@ export class RomeDB {
     async read(statements: Statement[], options: ReadCallOptions = {}): Promise<BatchResult> {
         const scoped = this.#scoped(options);
         const call = { ...scoped, workLimits: scoped.workLimits ?? this.#limits.read };
-        let replaced = false;
         for (let attempt = 1; ; attempt++) {
             const client = await this.#connection();
             try {
-                return await this.#track(client, call, () => client.read(clientStatements(statements), call));
+                return await client.read(clientStatements(statements), call);
             } catch (error) {
                 if (tooLarge(error)) throw new RequestTooLargeError(error);
-                if (!replaced && refusedForPlaces(error) && this.#replaceStranded(client)) { replaced = true; attempt--; continue; }
                 const delay = this.#retryDelay(error, attempt, call.signal);
                 if (delay === undefined) throw error;
                 await this.#wait(delay, call.signal);
@@ -299,15 +282,13 @@ export class RomeDB {
         const retries = call.retryConflicts ?? 0;
         let conflicts = 0;
         let refusals = 0;
-        let replaced = false;
         for (;;) {
             const client = await this.#connection();
             try {
                 // A batch refused for lack of places was never sent: it keeps its request ID.
                 return await this.#writeOnce(client, statements, conflicts === 0 ? call : { ...call, requestId: undefined });
             } catch (error) {
-                if (refusedForPlaces(error)) {
-                    if (!replaced && this.#replaceStranded(client)) { replaced = true; continue; }
+                if (isClientFull(error)) {
                     const delay = this.#retryDelay(error, ++refusals, call.signal);
                     if (delay === undefined) throw error;
                     await this.#wait(delay, call.signal);
@@ -334,7 +315,7 @@ export class RomeDB {
         let lastError: unknown;
         for (let attempt = 1; ; attempt++) {
             try {
-                const result = await this.#track(client, options, () => attempt === 1 ? client.submit(request, options) : client.recover(request, options));
+                const result = attempt === 1 ? await client.submit(request, options) : await client.recover(request, options);
                 await this.#forget(id);
                 return result;
             } catch (error) {
@@ -464,11 +445,7 @@ export class RomeDB {
     async close(): Promise<void> {
         const client = this.#client;
         this.#client = undefined;
-        this.#current = undefined;
         this.#preflight = undefined;
-        const retired = [...this.#retired];
-        this.#retired.clear();
-        await Promise.all(retired.map(old => old.close().catch(() => {})));
         if (client) await (await client.catch(() => undefined))?.close();
     }
 
@@ -486,43 +463,6 @@ export class RomeDB {
         if (options.signal !== undefined) return options;
         const signal = this.#options.requestSignal?.();
         return signal ? { ...options, signal } : options;
-    }
-
-    /** Run a call on a client, keeping it among the calls in flight until it settles. */
-    async #track<T>(client: DatabaseClient, options: RequestOptions, run: () => Promise<T>): Promise<T> {
-        const call: InFlight = { deadline: this.#now() + (options.timeoutMs ?? this.#options.timeoutMs ?? CLIENT_TIMEOUT_MS) + STRANDED_GRACE_MS };
-        let calls = this.#inFlight.get(client);
-        if (!calls) this.#inFlight.set(client, calls = new Set());
-        calls.add(call);
-        try {
-            return await run();
-        } finally {
-            calls.delete(call);
-            if (!calls.size) {
-                this.#inFlight.delete(client);
-                if (this.#retired.delete(client)) void client.close().catch(() => {});
-            }
-        }
-    }
-
-    /**
-     * After the client refused a call for lack of places: when calls past their deadline hold
-     * places on it, they were stranded and never give them back, so the next call opens a new
-     * client. True when the call should try again on another client (also when another call
-     * replaced it already). Clients from `connect`, such as files, are never replaced.
-     */
-    #replaceStranded(client: DatabaseClient): boolean {
-        if (this.#options.connect) return false;
-        if (this.#current !== client) return this.#current !== undefined || this.#client !== undefined;
-        const now = this.#now();
-        const stranded = [...this.#inFlight.get(client) ?? []].filter(call => call.deadline <= now).length;
-        if (!stranded) return false;
-        this.#client = undefined;
-        this.#current = undefined;
-        this.#preflight = undefined;
-        if (this.#inFlight.has(client)) this.#retired.add(client);
-        console.warn(`[romedb] ${stranded} database call(s) never settled after their deadline and hold the client's places: a new client takes over.`);
-        return true;
     }
 
     #connection(): Promise<DatabaseClient> {
@@ -543,7 +483,6 @@ export class RomeDB {
                         if (this.#client === opening) this.#preflight = Promise.resolve(info);
                     } catch (error) { await client.close(); throw error; }
                 }
-                if (this.#client === opening) this.#current = client;
                 return client;
             });
             this.#client = opening;
@@ -556,7 +495,7 @@ export class RomeDB {
         if (attempt >= this.#attempts || signal?.aborted || !(error instanceof ClientError)) return undefined;
         if (error.code === 'RDB_CANCELLED' || error.code === 'RDB_AUTH' || error.code === 'RDB_FORBIDDEN' || error.code === 'RDB_CLOSED') return undefined;
         // The client's own places are full: wait for calls of other requests to settle.
-        if (refusedForPlaces(error)) return Math.min(this.#maxDelay, 25 * 2 ** attempt) + Math.floor(Math.random() * 50);
+        if (isClientFull(error)) return Math.min(this.#maxDelay, 25 * 2 ** attempt) + Math.floor(Math.random() * 50);
         const backpressure = error.status === 503 || error.status === 429;
         if (!backpressure && !(writing && error.outcome === 'unknown') && !(error.outcome === 'read-failed' && (error.code === 'RDB_TRANSPORT' || error.status === undefined))) return undefined;
         const base = error.retryAfterMs ?? 50 * 2 ** (attempt - 1);

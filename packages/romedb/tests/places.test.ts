@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { ClientError, createRomeDB, MemoryPendingWriteStore, REQUIRED_ENGINE_VERSION } from '../src/index';
 
 // The client allows 32 calls in flight. On Workers a call whose request ends first never
-// settles (its I/O is cancelled with the request), so its place is never given back. These
-// tests strand calls with a fetch that ignores its signal and never answers.
+// settles (its I/O is cancelled with the request); the client gives its place back once its
+// deadline passes. These tests strand calls with a fetch that ignores its signal and never answers.
 const LOCAL = 'http://127.0.0.1:4321/v1/database';
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const details = { id: 'db-1', sequence: 10, serviceVersion: 1, engineVersion: REQUIRED_ENGINE_VERSION, capabilities: { readVersion: 2, atomicWrites: true, replayWindow: 64, exactSequenceCondition: true }, limits: {} };
@@ -32,54 +32,34 @@ function service(options: { hang?: (sql: string) => boolean; delayMs?: number } 
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
 describe('RomeDB binding: the client\'s places', () => {
-    it('opens a new client when stranded calls hold every place, and the site keeps answering', async () => {
+    it('treats a full client as backpressure until the places of calls past their deadline come back', async () => {
         const fake = service({ hang: sql => sql === 'SELECT stranded' });
-        let now = 1_000;
-        const warnings: unknown[] = [];
-        const warn = console.warn;
-        console.warn = (...args: unknown[]) => { warnings.push(args); };
-        try {
-            const db = createRomeDB({ url: LOCAL, token: 't', pending: new MemoryPendingWriteStore(), fetch: fake.fetch, timeoutMs: 50, now: () => now, sleep: async () => {} });
-            for (let i = 0; i < 32; i++) void db.read([{ rql: 'SELECT stranded' }]);
-            await pause(10);
-            // Before the stranded calls pass their deadline, a full client is backpressure.
-            await expect(db.read([{ rql: 'SELECT 1' }])).rejects.toMatchObject({ code: 'RDB_LIMIT', outcome: 'not-sent' });
-            expect(fake.opened).toBe(1);
-            now += 60_000;
-            const result = await db.read([{ rql: 'SELECT 1' }]);
-            expect(result.results[0]!.rows).toHaveLength(1);
-            expect(fake.opened).toBe(2);
-            // The new client has every place: later calls go through it.
-            await Promise.all(Array.from({ length: 20 }, () => db.read([{ rql: 'SELECT 1' }])));
-            expect(fake.opened).toBe(2);
-            await db.write([{ rql: 'UPDATE x SET y = 1' }]);
-            expect(fake.writes).toBe(1);
-            expect(warnings).toHaveLength(1);
-            await db.close();
-        } finally {
-            console.warn = warn;
-        }
+        const db = createRomeDB({ url: LOCAL, token: 't', pending: new MemoryPendingWriteStore(), fetch: fake.fetch, timeoutMs: 50, sleep: async () => {} });
+        for (let i = 0; i < 32; i++) void db.read([{ rql: 'SELECT stranded' }]).catch(() => {});
+        await pause(10);
+        // The client names the limit: its places, not the size of the request.
+        await expect(db.read([{ rql: 'SELECT 1' }])).rejects.toMatchObject({ code: 'RDB_LIMIT', outcome: 'not-sent', limit: 'client-requests' });
+        await pause(80);
+        const result = await db.read([{ rql: 'SELECT 1' }]);
+        expect(result.results[0]!.rows).toHaveLength(1);
+        // The same client: its places came back.
+        await Promise.all(Array.from({ length: 20 }, () => db.read([{ rql: 'SELECT 1' }])));
+        expect(fake.opened).toBe(1);
+        await db.close();
     });
 
-    it('sends a write refused for lack of places on the new client, with the same request ID', async () => {
+    it('sends a write refused for lack of places again, with the same request ID', async () => {
         const fake = service({ hang: sql => sql === 'SELECT stranded' });
-        let now = 1_000;
-        const warn = console.warn;
-        console.warn = () => {};
-        try {
-            const pending = new MemoryPendingWriteStore();
-            const db = createRomeDB({ url: LOCAL, token: 't', pending, fetch: fake.fetch, timeoutMs: 50, now: () => now, sleep: async () => {} });
-            await db.read([{ rql: 'SELECT 1' }]);
-            for (let i = 0; i < 32; i++) void db.read([{ rql: 'SELECT stranded' }]);
-            await pause(10);
-            now += 60_000;
-            const result = await db.write([{ rql: 'UPDATE x SET y = 1' }], { requestId: 'op-places' });
-            expect(result.requestId).toBe('op-places');
-            expect(fake.opened).toBe(2);
-            expect(await pending.list()).toHaveLength(0);
-        } finally {
-            console.warn = warn;
-        }
+        const pending = new MemoryPendingWriteStore();
+        const db = createRomeDB({ url: LOCAL, token: 't', pending, fetch: fake.fetch, timeoutMs: 50, retry: { attempts: 6 } });
+        await db.read([{ rql: 'SELECT 1' }]);
+        for (let i = 0; i < 32; i++) void db.read([{ rql: 'SELECT stranded' }]).catch(() => {});
+        await pause(10);
+        const result = await db.write([{ rql: 'UPDATE x SET y = 1' }], { requestId: 'op-places' });
+        expect(result.requestId).toBe('op-places');
+        expect(fake.writes).toBe(1);
+        expect(await pending.list()).toHaveLength(0);
+        await db.close();
     });
 
     it('waits for places held by live calls instead of failing a burst', async () => {
@@ -90,20 +70,6 @@ describe('RomeDB binding: the client\'s places', () => {
         expect(fake.reads).toBe(60);
         expect(fake.opened).toBe(1);
         await db.close();
-    });
-
-    it('never replaces a client opened by connect, such as a file', async () => {
-        const fake = service({ hang: sql => sql === 'SELECT stranded' });
-        const { connect } = await import('@romedb/client');
-        let now = 1_000;
-        let opened = 0;
-        const db = createRomeDB({ url: LOCAL, token: 't', pending: new MemoryPendingWriteStore(), now: () => now, sleep: async () => {},
-            connect: () => { opened++; return connect({ url: LOCAL, token: 't', fetch: fake.fetch, timeoutMs: 50, warm: false }); } });
-        for (let i = 0; i < 32; i++) void db.read([{ rql: 'SELECT stranded' }]);
-        await pause(10);
-        now += 60_000;
-        await expect(db.read([{ rql: 'SELECT 1' }])).rejects.toBeInstanceOf(ClientError);
-        expect(opened).toBe(1);
     });
 
     it('ends a call with the request it belongs to, which gives its place back', async () => {

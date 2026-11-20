@@ -33,7 +33,7 @@ function fakeDb(reply: Reply): RomeDB & { reads: Statement[][] } {
 }
 
 const cancelled = () => new ClientError('RDB_CANCELLED', 'Database request failed', 'read-failed');
-const full = () => new ClientError('RDB_LIMIT', 'Client request limit reached', 'not-sent');
+const full = () => new ClientError('RDB_LIMIT', 'Client request limit reached', 'not-sent', { limit: 'client-requests' });
 const missing = (table: string) => new ClientError('RDB_QUERY', `no such table: ${table}`, 'read-failed');
 const stubHost = (site: NetworkSite, db: RomeDB) => ({ site: site.id, db }) as unknown as CmsHost;
 

@@ -1,5 +1,5 @@
 /** Settings declarations, authorized portable documents, and atomic storage. */
-import { ClientError, LOCAL_REQUEST_BYTES, UncertainWriteError, encodeValue, type RomeDB, type Statement } from '@cossackframework/romedb';
+import { ClientError, LOCAL_REQUEST_BYTES, UncertainWriteError, encodeValue, isClientFull, type RomeDB, type Statement } from '@cossackframework/romedb';
 
 /** Room a request needs besides its statement: its identity and work limits. */
 const REQUEST_ROOM = 4096;
@@ -260,8 +260,8 @@ export class CmsSettings {
                 try { result = await this.#db.read([{ rql: 'SELECT key, value FROM cms_settings WHERE key > $after ORDER BY key LIMIT $limit', params: { $after: after, $limit: pageSize } }]); }
                 catch (error) {
                     if (error instanceof ClientError && /cms_settings/i.test(error.message) && /no such table|not found|does not exist/i.test(error.message)) return { values: Object.freeze(values) as SiteSettings, errors };
-                    // A page too large to return comes in smaller pages. A refusal before sending (the client's places are full) is not about the page.
-                    if (error instanceof ClientError && (error.code === 'RDB_LIMIT' || error.code === 'RDB_RESULT_TOO_LARGE') && error.outcome !== 'not-sent' && pageSize > 1) { pageSize = Math.max(1, Math.floor(pageSize / 2)); continue; }
+                    // A page too large to return comes in smaller pages. A client whose places are full says nothing about the page.
+                    if (error instanceof ClientError && (error.code === 'RDB_LIMIT' || error.code === 'RDB_RESULT_TOO_LARGE') && !isClientFull(error) && pageSize > 1) { pageSize = Math.max(1, Math.floor(pageSize / 2)); continue; }
                     throw error;
                 }
                 if (sequence !== undefined && sequence !== result.sequence) break;

@@ -26,8 +26,8 @@
   the host's activation state).
 - The middleware reads the settings once, and collections and taxonomies are read in one
   request.
-- If calls are stranded anyway, the binding opens a new client once the old one is full and
-  holds calls long past their deadline, for added sites and the main site alike. A full
+- If calls are stranded anyway, the client gives their places back once their deadline
+  passes (`@romedb/client` 0.2.26 and later), for added sites and the main site alike. A full
   client makes a burst wait and try again instead of failing.
 - Found on the way: a failed site lookup served the main site at another site's address; it
   now answers 503. A failed read no longer turns the network off for 30 seconds, and a

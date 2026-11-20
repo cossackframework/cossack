@@ -56,8 +56,9 @@ Rules:
   `recoverPending()` replays the exact request. It never sends a replacement write.
 - Reads send explicit `workLimits` and retry 503/429 backpressure a bounded number of times.
 - The client allows 32 calls in flight. A call it refuses for lack of places (`RDB_LIMIT`,
-  outcome `not-sent`) waits and tries again like a 503, so a burst of requests queues instead
-  of failing.
+  outcome `not-sent`, `limit` `client-requests` or `client-bytes`) waits and tries again like
+  a 503, so a burst of requests queues instead of failing. `isClientFull(error)` tells such a
+  refusal from one about the call's size.
 - Request paths never warm a Cloud database. Call `warm()` from a schedule.
 
 ## Requests that end early
@@ -80,11 +81,9 @@ cancelled their I/O with the request. Two things keep a binding serving:
 
   Work that runs after the answer under `waitUntil` should not take a signal that the end of the
   answer aborts.
-- Calls that are still unsettled 5 seconds past their deadline (`timeoutMs`, 20 seconds by
-  default) were stranded. When the client refuses a call for lack of places and holds such
-  calls, the binding opens a new client and sends the call there; the old client keeps the
-  calls it still has and closes when they settle. A client from `connect` (a file) is never
-  replaced.
+- The client gives back the place of a call past its deadline (`timeoutMs`, 20 seconds by
+  default) when it is full, since `@romedb/client` 0.2.26. A call that never settles holds its
+  place until then; `requestSignal` gives it back at once.
 
 Live tests run when `COSSACK_TEST_ROMEDB_BIN` points at a `romedb` executable (or
 `romedb` is on `PATH`); `COSSACK_TEST_ROMEDB_URL` and `COSSACK_TEST_ROMEDB_TOKEN`

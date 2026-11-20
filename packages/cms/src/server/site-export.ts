@@ -4,7 +4,7 @@
  * binary values come back exactly with `decodeValue`. Media files are not included: `cms_files`
  * rows name their storage keys.
  */
-import { ClientError, encodeValue, type DatabaseFile, type RecordId, type RomeDB, type Statement, type Value } from '@cossackframework/romedb';
+import { ClientError, encodeValue, isClientFull, type DatabaseFile, type RecordId, type RomeDB, type Statement, type Value } from '@cossackframework/romedb';
 import { HOST_TABLES } from './host-schema';
 
 /**
@@ -121,8 +121,8 @@ export async function* siteExport(db: RomeDB, options: SiteExportOptions): Async
             let page;
             try { page = (await read([{ rql: `SELECT ${select} FROM ${name} ${after} ORDER BY ${order} LIMIT $limit`, params }], sequence)).results[0]!; }
             catch (error) {
-                // A page of large rows can pass the limit on one response: read fewer.
-                if (error instanceof ClientError && (error.code === 'RDB_LIMIT' || error.code === 'RDB_RESULT_TOO_LARGE') && size > 1) { size = Math.max(1, Math.floor(size / 2)); continue; }
+                // A page of large rows can pass the limit on one response: read fewer. A full client is not about the page.
+                if (error instanceof ClientError && (error.code === 'RDB_LIMIT' || error.code === 'RDB_RESULT_TOO_LARGE') && !isClientFull(error) && size > 1) { size = Math.max(1, Math.floor(size / 2)); continue; }
                 throw error;
             }
             const rows = page.rows.map(row => table.model === 'relational'

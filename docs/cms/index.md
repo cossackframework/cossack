@@ -189,9 +189,9 @@ Workers, so its place would be lost for good. The CMS ends a request's database 
 visitor leaves or it fails (`cancelsRequestIo` of `cloudflareStorage`, `cms/request-calls.ts`);
 work after the answer, such as the outbox, is left alone. A request that shared a cached read
 (settings, the site a host names, the activation state) with a request that ended reads again
-for itself. Should calls be stranded anyway, the binding opens a new client once the old one is
-full, and a burst waits for places instead of failing (see `@cossackframework/romedb`, "Requests
-that end early"). A site lookup that fails answers 503; it never serves the main site in its place.
+for itself. Should calls be stranded anyway, the client gives their places back once their
+deadline passes, and a burst waits for places instead of failing (see `@cossackframework/romedb`,
+"Requests that end early"). A site lookup that fails answers 503; it never serves the main site in its place.
 
 ## Data in one paragraph
 
