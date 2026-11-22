@@ -112,9 +112,15 @@ What the rest of the CMS calls on the stores today (inventory of 2026-11-22):
 - Tests: 17 files test the stores directly, 9 use users as fixtures, 66 do not touch them.
 
 4. **Done:** the port and its in-memory version (`memoryPeople`), with tests. Nothing uses it yet.
-5. `CmsUsers` becomes a class over the port: identity and roles from the port, slug and field
-   values from the CMS's documents. First with the present RomeDB code behind the port, so
-   every suite stays green; the nine fixture test files move to `memoryPeople`.
+5. `CmsUsers` over the port. In parts:
+   - **Done:** `createCMS({ people })` makes `host.users` a `PeopleUsers`
+     (`src/server/people-users.ts`): who a user is and their roles come from the port; the
+     author slug (`cms_authors`, host step 16) and the field values are the CMS's. What is
+     about accounts and sign-in is refused there (`CMS_UNAVAILABLE`). Without `people` the
+     present store is used, so every suite stays as it was. Test: `tests/people-users.test.ts`.
+   - Open: the host's other uses of the old stores with a port (`tokenPrincipal`,
+     `uploadAvatar`, the `$user` of automations, forms' rate limits); the nine fixture test
+     files move to `memoryPeople`.
 6. The application's port over the dashboard's services; a CMS project gets the account
    models and migrations; the CMS's `auth.ts`, `services/{users,roles,rbac}.ts`,
    `cms/handoff.ts` and `cms/middlewares.ts` give way to the dashboard's. Roles need a

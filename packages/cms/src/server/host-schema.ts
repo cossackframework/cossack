@@ -26,7 +26,7 @@ export const HOST_TABLES = [
     'cms_comments', 'cms_user_security', 'cms_passkeys', 'cms_auth_challenges', 'cms_areas', 'cms_form_sends', 'cms_form_mail', 'cms_form_results', 'cms_crawler_visits', 'cms_not_found', 'cms_cache',
     'cms_accounts', 'cms_sites', 'cms_site_domains', 'cms_handoffs', 'cms_session_sites', 'cms_memberships', 'cms_network', 'cossack_jobs', 'cossack_notifications',
     'cms_drafts', 'cms_notes', 'cms_note_mentions', 'cms_schedules', 'cms_automations', 'cms_registrations', 'cms_search', 'cms_attempts', 'cms_schema_generations',
-    'cms_assertions',
+    'cms_assertions', 'cms_authors',
 ] as const;
 
 export const HOST_STEPS: readonly HostStep[] = [{
@@ -311,6 +311,13 @@ export const HOST_STEPS: readonly HostStep[] = [{
         { rql: 'ALTER TABLE cms_users DROP COLUMN meta' },
         // A term's, in the storage of its taxonomy's internal resource (cms/tf_<taxonomy>), which exists while groups are attached to the taxonomy.
         { rql: 'ALTER TABLE cms_terms DROP COLUMN meta' },
+    ],
+}, {
+    version: 16,
+    description: 'Author slugs beside the people port',
+    statements: [
+        // With users kept by the application (the people port, specs/cms-on-dashboard.md), the CMS keeps a user's author slug itself, under the user's ID.
+        { rql: 'CREATE TABLE cms_authors (user_id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE)' },
     ],
 }];
 

@@ -29,6 +29,8 @@ import { AVATAR_TYPES, mediaUrl } from '../media';
 import { canonicalJson, declarationHash, memberRuleProblems, ResourceDeclarationError, resolveResource, storageName, type Resource, type ResourceAction, type ResourceDeclaration } from '../resource';
 import { Outbox, type OutboxOptions } from './outbox';
 import { FieldValues } from './field-values';
+import { PeopleUsers } from './people-users';
+import type { PeoplePort } from './people';
 import { groupMedia, JOIN_GROUP, ResourceRepository, type BatchGuard, type BatchWrite, type FieldFilter, type ListOptions, type OperationContext } from './repository';
 import { batchResource, writeBatch } from './batch';
 import { migrate, nextGenerationStatement, planSchema, readCatalog, type MigrationReport, type SchemaPlan } from './schema';
@@ -125,6 +127,12 @@ export function termFieldsId(taxonomy: string): string {
 export interface CmsOptions {
     /** The site's database. */
     readonly db: RomeDB;
+    /**
+     * Who keeps accounts, roles and sign-in: the application, on the dashboard package
+     * (`specs/cms-on-dashboard.md`). With it, `users` reads and writes people through this port
+     * and keeps only author slugs and field values. Without it, the CMS's own account tables are used.
+     */
+    readonly people?: PeoplePort;
     /** The site runs in development: webhooks may use plain HTTP and go to this machine or a private network. */
     readonly localWebhooks?: boolean;
     /**
@@ -634,7 +642,8 @@ export class CmsHost {
             media: values => this.#valuesMedia(this.#resources.get(USER_FIELDS)!.fields, values),
             now: this.#now,
         });
-        this.users = new CmsUsers(this.db, { accounts: this.accounts, ...(this.siteAccounts ? { siteAccounts: this.siteAccounts } : {}), ...(options.site ? { site: options.site } : {}), now: this.#now, fields: this.userFields, checkMeta: (meta, previous, principal) => this.#checkMeta({ kind: 'users' }, meta, previous, principal) });
+        const userOptions: ConstructorParameters<typeof CmsUsers>[1] = { accounts: this.accounts, ...(this.siteAccounts ? { siteAccounts: this.siteAccounts } : {}), ...(options.site ? { site: options.site } : {}), now: this.#now, fields: this.userFields, checkMeta: (meta, previous, principal) => this.#checkMeta({ kind: 'users' }, meta, previous, principal) };
+        this.users = options.people ? new PeopleUsers(this.db, { ...userOptions, people: options.people }) : new CmsUsers(this.db, userOptions);
         this.redirects = new CmsRedirects(this.db, { now: this.#now, changed: () => this.#purgeSite('redirects') });
         this.traffic = new CmsTraffic(this.db, { now: this.#now });
         this.apiTokens = new CmsApiTokens(this.network, { now: this.#now });
