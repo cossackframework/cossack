@@ -7,12 +7,15 @@ import {
   type ExecutableSQL,
   type SQLNode,
 } from "./fragment.js";
+import type { RecordLink } from "../record-link.js";
 
 export type SQLInterpolation =
   | DatabaseValue
   | undefined
   | SQLFragment
-  | readonly DatabaseValue[];
+  // A link to a document record (RomeDB): sent as a record value.
+  | RecordLink
+  | readonly (DatabaseValue | RecordLink)[];
 
 export interface SQLTag {
   <Result = Record<string, unknown>>(

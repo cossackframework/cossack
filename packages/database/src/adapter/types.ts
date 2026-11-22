@@ -14,6 +14,8 @@ export interface DriverCapabilities {
   readonly cancellation: boolean;
   readonly parameterLimit: number;
   readonly batchLimit: number;
+  /** The provider stores document entities (`@Entity({ model: "document" })`). */
+  readonly documents?: boolean;
 }
 
 export interface QueryMeta {

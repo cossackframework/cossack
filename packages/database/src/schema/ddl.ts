@@ -1,6 +1,6 @@
 import type { Dialect } from "../adapter/types.js";
 import { UnsupportedCapabilityError } from "../errors.js";
-import type { ColumnSchema, EntitySchema } from "./types.js";
+import type { ColumnSchema, EntitySchema, IndexSchema } from "./types.js";
 import type { SchemaOperation } from "./operations.js";
 
 function literal(value: unknown): string {
@@ -55,7 +55,8 @@ export function columnDDL(column: ColumnSchema, dialect: Dialect): string {
 
 function foreignKeys(entity: EntitySchema, dialect: Dialect): string[] {
   return entity.relations
-    .filter((relation) => relation.owner && relation.physical && relation.joinColumn && relation.referencedColumn)
+    .filter((relation) => relation.owner && relation.physical && relation.joinColumn && relation.referencedColumn &&
+      relation.targetModel !== "document")
     .map((relation) => {
       const parts = [
         `FOREIGN KEY (${dialect.quoteIdentifier(relation.joinColumn!)})`,
@@ -66,18 +67,27 @@ function foreignKeys(entity: EntitySchema, dialect: Dialect): string[] {
     });
 }
 
+/** An indexed column; in a document table "profile.city" names a field inside a nested object. */
+function indexColumn(column: string, document: boolean, dialect: Dialect): string {
+  return document ? column.split(".").map((part) => dialect.quoteIdentifier(part)).join(".") : dialect.quoteIdentifier(column);
+}
+
+function createIndexDDL(tableName: string, index: IndexSchema, document: boolean, dialect: Dialect): string {
+  return `CREATE${index.unique ? " UNIQUE" : ""} INDEX ${dialect.quoteIdentifier(index.name)} ` +
+    `ON ${dialect.quoteIdentifier(tableName)} (${index.columns.map((column) => indexColumn(column, document, dialect)).join(", ")})`;
+}
+
 export function createTableDDL(entity: EntitySchema, dialect: Dialect): string[] {
+  const document = entity.model === "document";
   const columns = entity.columns.map((column) => columnDDL(column, dialect));
   columns.push(...foreignKeys(entity, dialect));
   const statements = [
-    `CREATE TABLE ${dialect.quoteIdentifier(entity.tableName)} (\n  ${columns.join(",\n  ")}\n)`,
+    // A table without a column list is a document table (RomeDB): its fields are not declared.
+    document
+      ? `CREATE TABLE ${dialect.quoteIdentifier(entity.tableName)}`
+      : `CREATE TABLE ${dialect.quoteIdentifier(entity.tableName)} (\n  ${columns.join(",\n  ")}\n)`,
   ];
-  for (const index of entity.indexes) {
-    statements.push(
-      `CREATE${index.unique ? " UNIQUE" : ""} INDEX ${dialect.quoteIdentifier(index.name)} ` +
-      `ON ${dialect.quoteIdentifier(entity.tableName)} (${index.columns.map((column) => dialect.quoteIdentifier(column)).join(", ")})`,
-    );
-  }
+  for (const index of entity.indexes) statements.push(createIndexDDL(entity.tableName, index, document, dialect));
   for (const relation of entity.relations) {
     if (!relation.owner || !relation.joinTable) continue;
     const join = relation.joinTable;
@@ -85,10 +95,11 @@ export function createTableDDL(entity: EntitySchema, dialect: Dialect): string[]
       `CREATE TABLE ${dialect.quoteIdentifier(join.name)} (\n` +
       `  ${dialect.quoteIdentifier(join.joinColumn)} ${dialect.mapType(join.referencedLogicalType)} NOT NULL,\n` +
       `  ${dialect.quoteIdentifier(join.inverseJoinColumn)} ${dialect.mapType(join.inverseReferencedLogicalType)} NOT NULL,\n` +
-      `  PRIMARY KEY (${dialect.quoteIdentifier(join.joinColumn)}, ${dialect.quoteIdentifier(join.inverseJoinColumn)}),\n` +
-      `  FOREIGN KEY (${dialect.quoteIdentifier(join.joinColumn)}) REFERENCES ${dialect.quoteIdentifier(entity.tableName)} (${dialect.quoteIdentifier(join.referencedColumn)}) ON DELETE CASCADE,\n` +
-      `  FOREIGN KEY (${dialect.quoteIdentifier(join.inverseJoinColumn)}) REFERENCES ${dialect.quoteIdentifier(relation.targetTableName ?? relation.targetEntity)} (${dialect.quoteIdentifier(join.inverseReferencedColumn)}) ON DELETE CASCADE\n` +
-      `)`,
+      `  PRIMARY KEY (${dialect.quoteIdentifier(join.joinColumn)}, ${dialect.quoteIdentifier(join.inverseJoinColumn)})` +
+      // A document table cannot be the target of a foreign key: that side holds the record's key only.
+      (document ? "" : `,\n  FOREIGN KEY (${dialect.quoteIdentifier(join.joinColumn)}) REFERENCES ${dialect.quoteIdentifier(entity.tableName)} (${dialect.quoteIdentifier(join.referencedColumn)}) ON DELETE CASCADE`) +
+      (relation.targetModel === "document" ? "" : `,\n  FOREIGN KEY (${dialect.quoteIdentifier(join.inverseJoinColumn)}) REFERENCES ${dialect.quoteIdentifier(relation.targetTableName ?? relation.targetEntity)} (${dialect.quoteIdentifier(join.inverseReferencedColumn)}) ON DELETE CASCADE`) +
+      `\n)`,
     );
   }
   return statements;
@@ -131,10 +142,7 @@ export function renderOperation(operation: SchemaOperation, dialect: Dialect): r
           })) + (operation.after.array ? "[]" : ""),
       ];
     case "create-index":
-      return [
-        `CREATE${operation.index.unique ? " UNIQUE" : ""} INDEX ${q(operation.index.name)} ` +
-        `ON ${q(operation.tableName)} (${operation.index.columns.map(q).join(", ")})`,
-      ];
+      return [createIndexDDL(operation.tableName, operation.index, operation.model === "document", dialect)];
     case "drop-index":
       return [dialect.name === "mysql"
         ? `DROP INDEX ${q(operation.indexName)} ON ${q(operation.tableName)}`

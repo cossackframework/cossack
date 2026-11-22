@@ -30,6 +30,7 @@ On Workers, pass `url` and `token` instead of `connect`.
 | `@cossackframework/romedb/values` | `Float64`, `RecordId`, `Vector`, `toTransport`, `fromTransport` (client-safe) |
 | `@cossackframework/romedb/node` | `connectNode` (files through `@romedb/node`, `romedb serve` and Cloud by URL), `FilePendingWriteStore` |
 | `@cossackframework/romedb/cloudflare` | `RomeDBPendingWrites` Durable Object and `DurableObjectPendingWriteStore` |
+| `@cossackframework/romedb/orm` | `romedb(db)`, the adapter that runs the Cossack ORM (`@cossackframework/database`) on a RomeDB instance, with relational and document entities, and `romedbClient()`, the instance behind an ORM (see the database package's `docs/romedb.md`) |
 | `@cossackframework/romedb/dev` | `romedbDev()` Vite plugin: starts `romedb serve` for a loopback `ROMEDB_URL` and passes its token, and, unless `ROMEDB_SITES_URL` is set, `romedb serve --directory storage/romedb/sites` on the next port for a CMS network's added sites (`ROMEDB_SITES_URL`, `ROMEDB_SITES_TOKEN`); `romedbDevVars` hands them to the Cloudflare plugin |
 | `@cossackframework/romedb/testing` | `startRomeDBService` and `startRomeDBDirectory` for live tests against `romedb serve` |
 

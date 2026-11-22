@@ -115,10 +115,24 @@ export function finalizeMetadata(
         ...(draft.reflectedType === undefined ? {} : { reflectedType: draft.reflectedType }),
       });
     });
-    const primaryColumns = columns.filter((column) => column.primary);
+    const document = item.draft.options.model === "document";
+    let primaryColumns = columns.filter((column) => column.primary);
     if (primaryColumns.length === 0 && !item.draft.options.virtual) {
       throw new MetadataError(`${item.modelName} requires at least one primary column.`);
     }
+    if (document) {
+      // A document's identity is its record `id`: one field, which RomeDB fills in when it is left out.
+      const primary = primaryColumns[0];
+      if (primaryColumns.length !== 1 || primary?.columnName !== "id") {
+        throw new MetadataError(`${item.modelName} is a document entity: it needs exactly one primary column, stored as "id".`);
+      }
+      if (primary.generated === "increment" || primary.generated === "identity") {
+        throw new MetadataError(`${item.modelName}.${primary.propertyName}: a document entity's id is a key or a generated uuid, not a counter.`);
+      }
+    }
+    /** Columns that hold a record link, by physical name, with the document table they point at. */
+    const recordTables = new Map<string, string>();
+    if (document && primaryColumns[0]) recordTables.set(primaryColumns[0].columnName, item.tableName);
     if (primaryColumns.length > 1 && primaryColumns.some((column) => column.generated)) {
       throw new MetadataError(`${item.modelName} cannot use generated columns in a composite primary key.`);
     }
@@ -217,6 +231,7 @@ export function finalizeMetadata(
         ...(joinColumn === undefined ? {} : { joinColumn }),
         ...(referencedColumn === undefined ? {} : { referencedColumn }),
         ...(referencedProperty === undefined ? {} : { referencedProperty }),
+        ...(targetDraft.options.model === "document" ? { targetModel: "document" as const } : {}),
         ...(joinTable === undefined ? {} : { joinTable }),
         cascade,
         ...(draft.options.onDelete === undefined ? {} : { onDelete: draft.options.onDelete }),
@@ -226,6 +241,12 @@ export function finalizeMetadata(
 
     for (const relation of relations) {
       if (!relation.owner || !relation.physical || !relation.joinColumn || relation.kind === "many-to-many") continue;
+      // Between two document entities the join column is a record link to the target's id.
+      const targetInfo = preliminary.get(relation.target);
+      const targetPrimaryProperty = targetInfo?.draft.columns.find((column) => column.options.primary)?.propertyName;
+      if (document && relation.targetModel === "document" && targetInfo && relation.referencedProperty === targetPrimaryProperty) {
+        recordTables.set(relation.joinColumn, targetInfo.tableName);
+      }
       const existing = columns.find((column) => column.columnName === relation.joinColumn);
       if (existing) {
         Object.defineProperty(relation, "joinProperty", {
@@ -273,12 +294,23 @@ export function finalizeMetadata(
     }
     relations.forEach(Object.freeze);
 
+    if (document) {
+      for (let index = 0; index < columns.length; index++) {
+        const column = columns[index]!;
+        const recordTable = recordTables.get(column.columnName);
+        columns[index] = Object.freeze({ ...column, document: true, ...(recordTable === undefined ? {} : { recordTable }) });
+      }
+      primaryColumns = columns.filter((column) => column.primary);
+    }
+
     const indexes = item.draft.indexes.map((index, indexNumber) => {
       if (index.properties.length === 0) throw new MetadataError(`Index ${indexNumber} on ${item.modelName} has no columns.`);
       const physical = index.properties.map((property) => {
-        const column = columns.find((candidate) => candidate.propertyName === property);
+        // A document entity may index a field inside a json column: "profile.city".
+        const [head, ...path] = document ? property.split(".") : [property];
+        const column = columns.find((candidate) => candidate.propertyName === head);
         if (!column) throw new MetadataError(`Index on ${item.modelName} references missing property "${property}".`);
-        return column.columnName;
+        return [column.columnName, ...path].join(".");
       });
       return Object.freeze({
         name: index.options.name ?? `idx_${item.tableName}_${physical.join("_")}`,
@@ -286,6 +318,15 @@ export function finalizeMetadata(
         unique: index.options.unique ?? false,
       });
     });
+
+    if (document) {
+      // A document table has no column constraints: a unique column is a unique index.
+      for (const column of columns) {
+        if (!column.unique || column.primary) continue;
+        if (indexes.some((index) => index.unique && index.columns.length === 1 && index.columns[0] === column.columnName)) continue;
+        indexes.push(Object.freeze({ name: `uq_${item.tableName}_${column.columnName}`, columns: [column.columnName], unique: true }));
+      }
+    }
 
     const hooks = new Map<LifecycleEvent, readonly string[]>();
     for (const [event, methods] of item.draft.hooks) hooks.set(event, Object.freeze([...methods]));
@@ -298,6 +339,7 @@ export function finalizeMetadata(
       relations: Object.freeze(relations),
       indexes: Object.freeze(indexes),
       virtual: item.draft.options.virtual ?? false,
+      ...(document ? { model: "document" as const } : {}),
       primaryColumns: Object.freeze(primaryColumns),
       hooks,
       columnByProperty: new Map(columns.map((column) => [column.propertyName, column])),

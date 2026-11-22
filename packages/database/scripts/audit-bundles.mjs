@@ -47,7 +47,7 @@ for (const entry of ["dist/index.js", "dist/adapter/index.js", "dist/cossack/ind
 }
 
 const workers = new Set();
-for (const entry of ["dist/runtime/cloudflare.js", "dist/runtime/cloudflare-turso.js"]) {
+for (const entry of ["dist/runtime/cloudflare.js", "dist/runtime/cloudflare-turso.js", "dist/runtime/romedb.js"]) {
   for (const path of await auditGraph(entry, workersForbidden, `Workers entry ${entry}`)) workers.add(path);
 }
 
@@ -58,5 +58,5 @@ if (!cloudflareTurso.includes("@tursodatabase/serverless")) {
 
 console.log(
   `Bundle audit passed (${neutral.size} neutral modules from /, /adapter and /cossack; ` +
-  `${workers.size} Workers modules from /cloudflare and /cloudflare-turso).`,
+  `${workers.size} Workers modules from /cloudflare, /cloudflare-turso and /romedb).`,
 );

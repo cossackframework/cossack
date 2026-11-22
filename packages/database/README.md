@@ -37,6 +37,7 @@ Use TypeScript legacy decorators:
 - [Relationships](./docs/relationships.md)
 - [Raw queries](./docs/raw-queries.md)
 - [Runtimes](./docs/runtimes.md)
+- [RomeDB](./docs/romedb.md)
 - [Migrations](./docs/migrations.md)
 - [Seeders](./docs/seeders.md)
 - [Advanced usage](./docs/advanced.md)

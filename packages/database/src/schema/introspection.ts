@@ -1,5 +1,5 @@
 import type { DatabaseValue, QueryResult } from "../adapter/types.js";
-import type { OrmSchema, ColumnSchema, LogicalType } from "./types.js";
+import type { OrmSchema, ColumnSchema, EntitySchema, LogicalType } from "./types.js";
 
 type Execute = <Row = Record<string, unknown>>(
   text: string,
@@ -104,6 +104,73 @@ function postgresIndexColumn(value: string): string | undefined {
   return /^[a-z_][a-z0-9_$]*$/.test(trimmed) ? trimmed : undefined;
 }
 
+export interface SQLiteTableCatalog {
+  readonly name: string;
+  /** The table's CREATE TABLE text, read for enum CHECK constraints. */
+  readonly sql: string;
+  readonly columns: readonly { name: string; type: string; notnull: number | boolean; dflt_value: unknown; pk: number | boolean }[];
+  readonly indexes: readonly { name: string; columns: readonly string[]; unique: boolean; origin?: string }[];
+  readonly foreignKeys: readonly { table: string; from: string; to: string; on_delete?: "CASCADE" | "SET NULL" | "RESTRICT" | "NO ACTION" }[];
+}
+
+/** One table of a SQLite-dialect catalog as an entity schema, from rows shaped like SQLite's PRAGMA results. */
+export function sqliteEntitySchema(table: SQLiteTableCatalog): EntitySchema {
+    const indexes = table.indexes
+      .filter((index) => !index.name.startsWith("sqlite_autoindex_"))
+      .map(({ name, columns, unique }) => ({ name, columns: [...columns], unique }));
+    const checks = enumChecks(table.sql);
+    const primaryCount = table.columns.filter((column) => column.pk).length;
+    const columns: ColumnSchema[] = table.columns.map((column) => {
+      const length = parseLength(column.type);
+      const values = checks.get(column.name);
+      return {
+        propertyName: column.name,
+        columnName: column.name,
+        logicalType: values ? "enum" : logicalFromDatabase(column.type),
+        databaseType: column.type,
+        nullable: !column.notnull && !column.pk,
+        primary: Boolean(column.pk),
+        // Only a single-column `INTEGER PRIMARY KEY` is a rowid alias that SQLite fills in.
+        generated: column.pk && primaryCount === 1 && column.type.trim().toLowerCase() === "integer" ? "increment" : false,
+        // Only UNIQUE constraints (origin "u") make a column unique; explicit
+        // CREATE UNIQUE INDEX statements stay in `indexes`.
+        unique: table.indexes.some((index) =>
+          index.unique &&
+          index.origin === "u" &&
+          index.columns.length === 1 &&
+          index.columns[0] === column.name),
+        ...(length === undefined ? {} : { length }),
+        ...(logicalFromDatabase(column.type) === "decimal" ? parsePrecision(column.type) : {}),
+        ...(values ? { enumValues: values } : {}),
+        ...(column.dflt_value === null ? {} : { default: sqliteDefault(column.dflt_value) }),
+        insert: true,
+        update: true,
+        select: true,
+      };
+    });
+    return {
+      modelName: table.name,
+      tableName: table.name,
+      columns,
+      relations: table.foreignKeys.map((foreignKey) => ({
+        propertyName: foreignKey.from,
+        kind: "many-to-one" as const,
+        targetEntity: foreignKey.table,
+        targetTableName: foreignKey.table,
+        owner: true,
+        nullable: columns.find((column) => column.columnName === foreignKey.from)?.nullable ?? true,
+        physical: true,
+        joinColumn: foreignKey.from,
+        referencedColumn: foreignKey.to,
+        referencedProperty: foreignKey.to,
+        cascade: [],
+        ...(foreignKey.on_delete === undefined ? {} : { onDelete: foreignKey.on_delete }),
+      })),
+      indexes,
+      virtual: false,
+    };
+}
+
 export async function introspectSQLite(
   execute: Execute,
   options: { readonly excludedTablePrefixes?: readonly string[] } = {},
@@ -145,66 +212,19 @@ export async function introspectSQLite(
         ...(index.origin === undefined ? {} : { origin: index.origin }),
       });
     }
-    const indexes = allIndexes
-      .filter((index) => !index.name.startsWith("sqlite_autoindex_"))
-      .map(({ name, columns, unique }) => ({ name, columns, unique }));
     const foreignKeys = await execute<{
       table: string;
       from: string;
       to: string;
       on_delete: "CASCADE" | "SET NULL" | "RESTRICT" | "NO ACTION";
     }>(`PRAGMA foreign_key_list("${escaped}")`);
-    const checks = enumChecks(table.sql ?? "");
-    const primaryCount = columnsResult.rows.filter((column) => column.pk).length;
-    const columns: ColumnSchema[] = columnsResult.rows.map((column) => {
-      const length = parseLength(column.type);
-      const values = checks.get(column.name);
-      return {
-        propertyName: column.name,
-        columnName: column.name,
-        logicalType: values ? "enum" : logicalFromDatabase(column.type),
-        databaseType: column.type,
-        nullable: !column.notnull && !column.pk,
-        primary: Boolean(column.pk),
-        // Only a single-column `INTEGER PRIMARY KEY` is a rowid alias that SQLite fills in.
-        generated: column.pk && primaryCount === 1 && column.type.trim().toLowerCase() === "integer" ? "increment" : false,
-        // Only UNIQUE constraints (origin "u") make a column unique; explicit
-        // CREATE UNIQUE INDEX statements stay in `indexes`.
-        unique: allIndexes.some((index) =>
-          index.unique &&
-          index.origin === "u" &&
-          index.columns.length === 1 &&
-          index.columns[0] === column.name),
-        ...(length === undefined ? {} : { length }),
-        ...(logicalFromDatabase(column.type) === "decimal" ? parsePrecision(column.type) : {}),
-        ...(values ? { enumValues: values } : {}),
-        ...(column.dflt_value === null ? {} : { default: sqliteDefault(column.dflt_value) }),
-        insert: true,
-        update: true,
-        select: true,
-      };
-    });
-    entities.push({
-      modelName: table.name,
-      tableName: table.name,
-      columns,
-      relations: foreignKeys.rows.map((foreignKey) => ({
-        propertyName: foreignKey.from,
-        kind: "many-to-one" as const,
-        targetEntity: foreignKey.table,
-        targetTableName: foreignKey.table,
-        owner: true,
-        nullable: columns.find((column) => column.columnName === foreignKey.from)?.nullable ?? true,
-        physical: true,
-        joinColumn: foreignKey.from,
-        referencedColumn: foreignKey.to,
-        referencedProperty: foreignKey.to,
-        cascade: [],
-        onDelete: foreignKey.on_delete,
-      })),
-      indexes,
-      virtual: false,
-    });
+    entities.push(sqliteEntitySchema({
+      name: table.name,
+      sql: table.sql ?? "",
+      columns: columnsResult.rows,
+      indexes: allIndexes,
+      foreignKeys: foreignKeys.rows,
+    }));
   }
   return { version: 1, dialect: "sqlite", entities };
 }

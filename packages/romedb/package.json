@@ -24,6 +24,7 @@
     "@romedb/client": "0.2.27"
   },
   "devDependencies": {
+    "@cossackframework/database": "workspace:*",
     "@romedb/node": "0.2.27",
     "@types/node": "^22.19.0",
     "vitest": "^4.1.12"
@@ -33,6 +34,7 @@
     "./values": "./src/values-entry.ts",
     "./node": "./src/node.ts",
     "./cloudflare": "./src/cloudflare.ts",
+    "./orm": "./src/orm.ts",
     "./testing": "./src/testing.ts",
     "./dev": {
       "types": "./src/dev.d.ts",
@@ -41,10 +43,14 @@
     "./package.json": "./package.json"
   },
   "peerDependencies": {
+    "@cossackframework/database": "workspace:*",
     "@romedb/node": "0.2.27",
     "vite": "*"
   },
   "peerDependenciesMeta": {
+    "@cossackframework/database": {
+      "optional": true
+    },
     "@romedb/node": {
       "optional": true
     },

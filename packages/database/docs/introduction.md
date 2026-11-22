@@ -122,6 +122,7 @@ fragments and public adapter contracts.
 - [Models](./models.md)
 - [Queries](./queries.md)
 - [Relationships](./relationships.md)
+- [RomeDB](./romedb.md)
 - [Raw queries](./raw-queries.md)
 - [Comparison](./comparison.md)
 - [Complete SQLite starter](../examples/sqlite-starter/README.md)

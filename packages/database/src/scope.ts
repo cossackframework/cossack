@@ -24,9 +24,19 @@ export function unregisterORM(orm: ORM): void {
   registered.delete(orm);
 }
 
+/**
+ * The ORM whose scope the caller is in. An application may run several ORMs (one per
+ * database) and open one's scope inside another's: the innermost scope wins.
+ */
 export function currentORM(): ORM | undefined {
+  let current: ORM | undefined;
+  let innermost = 0;
   for (const orm of registered) {
-    if (orm.isCurrentScope()) return orm.currentScopedORM();
+    // An ORM of another copy of this module may not number its scopes: it counts as outermost.
+    const sequence = typeof orm.currentScopeSequence === "function"
+      ? orm.currentScopeSequence()
+      : (orm.isCurrentScope() ? Number.MIN_VALUE : 0);
+    if (sequence > innermost) { innermost = sequence; current = orm; }
   }
-  return undefined;
+  return current?.currentScopedORM();
 }

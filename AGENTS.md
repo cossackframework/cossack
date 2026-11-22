@@ -27,7 +27,7 @@ The project is a `pnpm` workspace. All packages are located in the `packages` di
 -   **`node-adapter`**: The Node.js runtime adapter.
 -   **`framework`**: The meta framework package
 -   **`auth`**: Auth package
--   **`database`**: Active Record entities, migrations, seeders, and D1/Turso/PostgreSQL/MySQL adapters. The framework remains ORM-agnostic; use `cossack add database`.
+-   **`database`**: Active Record entities, migrations, seeders, and D1/Turso/PostgreSQL/MySQL adapters, and RomeDB through `@cossackframework/romedb/orm` (relational entities, and document entities with record links: `packages/database/docs/romedb.md`). The framework remains ORM-agnostic; use `cossack add database`.
 -   **`test-utils`**: Test helpers
 -   **`scaffold`**: Node-only recipe engine for creation and feature composition. Use this repository as example/template for new projects.
 -   **`cossack`**: The Cossack CLI. It consumes `scaffold` directly. `cossack/vite` is the Vite preset: a project's `vite.config.ts` is `cossackApp()`, and a mounted package adds its part through `cossack.vite` (`docs/vite-plugins.md`).

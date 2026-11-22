@@ -2,6 +2,7 @@ export { createORM, ORM, type ORMOptions } from "./orm.js";
 export { BaseEntity } from "./entity/base-entity.js";
 export { ModelManager } from "./entity/manager.js";
 export { sql, createSQLTag, type SQLTag, type SQLInterpolation } from "./sql/tag.js";
+export { atomic, currentDialect } from "./atomic.js";
 export { SQL, type SQLClient, type SQLOptions } from "./sql/client.js";
 export {
   SQLFragment,
@@ -73,6 +74,7 @@ export {
   type DeleteOptions,
 } from "./query/types.js";
 export { ExpressionBuilder } from "./query/expression.js";
+export { RecordLink, isRecordLink, type RecordKey } from "./record-link.js";
 export { defineConfig, type ORMConfig, type ORMToolingContext } from "./config.js";
 export { SchemaBuilder } from "./schema/builder.js";
 export { diffSchemas, describeOperation, reverseSchemaOperations } from "./schema/diff.js";
@@ -87,8 +89,10 @@ export {
   type IndexSchema,
   type LogicalType,
   type RelationKind,
+  type EntityModel,
 } from "./schema/types.js";
 export { MigrationRunner } from "./migration/runner.js";
+export { applyPendingMigrations } from "./migration/startup.js";
 export type {
   Migration,
   MigrationContext,
@@ -123,6 +127,7 @@ export {
   DestructiveSchemaChangeError,
   MigrationError,
   SeederError,
+  isWriteConflict,
 } from "./errors.js";
 export type {
   Adapter,

@@ -96,3 +96,28 @@ describe("ORM scopes", () => {
     await orm.close();
   });
 });
+
+describe("several ORMs", () => {
+  it("resolves the innermost scope, whichever ORM was created first", async () => {
+    const { createORM } = await import("../src/index.js");
+    const { currentORM } = await import("../src/scope.js");
+    const { nodeSQLite } = await import("../src/runtime/node.js");
+    const first = createORM({ adapter: await nodeSQLite(), entities: [] });
+    const second = createORM({ adapter: await nodeSQLite(), entities: [] });
+    try {
+      await first.run(async () => {
+        expect(currentORM()).toBe(first);
+        await second.run(async () => {
+          expect(currentORM()).toBe(second);
+          await first.run(async () => { expect(currentORM()).toBe(second); });
+        });
+        expect(currentORM()).toBe(first);
+      });
+      await second.run(async () => {
+        await first.run(async () => { expect(currentORM()).toBe(first); });
+        expect(currentORM()).toBe(second);
+      });
+      expect(currentORM()).toBeUndefined();
+    } finally { await first.close(); await second.close(); }
+  });
+});
