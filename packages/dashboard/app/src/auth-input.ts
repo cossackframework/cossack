@@ -16,6 +16,9 @@ export type LoginInput = InputOf<typeof loginInput>;
 export const registerInput = input.object({ name: input.string({ maxLength: 191 }), email, password, turnstile });
 export type RegisterInput = InputOf<typeof registerInput>;
 
+export const setupInput = input.object({ code: input.string({ required: true, maxLength: 512 }), name: input.string({ maxLength: 191 }), email, password });
+export type SetupInput = InputOf<typeof setupInput>;
+
 export const resetRequestInput = input.object({ email, turnstile });
 export type ResetRequestInput = InputOf<typeof resetRequestInput>;
 

@@ -27,7 +27,8 @@
     "@cossackframework/auth": "workspace:*",
     "@cossackframework/core": "workspace:*",
     "@cossackframework/renderer": "workspace:*",
-    "@cossackframework/solar-icons": "0.7.1"
+    "@cossackframework/solar-icons": "0.7.1",
+    "uqr": "0.1.3"
   },
   "peerDependencies": {
     "@cossackframework/database": "workspace:*",
@@ -67,7 +68,12 @@
       "models/Session.ts",
       "models/Role.ts",
       "models/UserRole.ts",
-      "models/OAuthAccount.ts"
+      "models/OAuthAccount.ts",
+      "models/UserSecurity.ts",
+      "models/Passkey.ts",
+      "models/AuthChallenge.ts",
+      "models/AuthAttempt.ts",
+      "models/ApiToken.ts"
     ],
     "hostTemplate": "0.9.0"
   }

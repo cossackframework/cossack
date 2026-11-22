@@ -39,6 +39,10 @@ export class Session extends BaseEntity {
   @Column({ type: 'text', name: 'ip_address', nullable: true })
   declare ipAddress: string | null;
 
+  /** The sign-in used a second factor: an authenticator or recovery code, or a passkey. */
+  @Column({ type: 'boolean', name: 'second_factor', default: false })
+  declare secondFactor: boolean;
+
   @CreateDateColumn({ name: 'created_at', default: '' })
   declare createdAt: Date;
 

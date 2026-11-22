@@ -1033,6 +1033,26 @@ export async function approveRegistration(userId: string): Promise<boolean> {
   return true;
 }
 
+/** Whether new accounts wait for an administrator's approval (Settings → General). */
+export async function registrationApproval(): Promise<boolean> {
+  return cms().settings.get('general.approveRegistrations').catch(() => false);
+}
+
+export interface Registration { id: string; name: string; email: string; verified: boolean; createdAt: number }
+
+/** The accounts that wait for approval, for Users → Registrations. */
+export async function registrations(): Promise<Registration[]> {
+  return (await cms().users.registrations({ limit: 200 })).map(({ user, verified, createdAt }) => ({ id: user.id, name: user.name, email: user.email, verified, createdAt }));
+}
+
+/** Delete an account that waits for approval. False when it does not wait. */
+export async function deleteRegistration(userId: string): Promise<boolean> {
+  const host = cms();
+  if (!(await host.users.awaitingApproval(userId))) return false;
+  await host.users.delete(userId);
+  return true;
+}
+
 /** How long a sign-in link lives. */
 const MAGIC_LINK_TTL_MS = 15 * 60_000;
 

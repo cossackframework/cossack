@@ -25,6 +25,8 @@ export const SERVED_DASHBOARD_PATHS = [
   'src/services/users.ts',
   'src/services/roles.ts',
   'src/services/rbac.ts',
+  'src/services/security.ts',
+  'src/services/api-tokens.ts',
   'src/lib/permissions.ts',
   'src/lib/uuid.ts',
   'src/middlewares/auth.ts',

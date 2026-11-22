@@ -501,7 +501,7 @@ async function essentials(origin, routeIds, diagnostics, { runtime, cloudflare =
   const editorUser = 'dashboard/users/new/index.ts';
   await web.action(editorUser, 'create', ['Eve', 'eve@example.com', 'eve password 1', ['editor']]);
   // An application password Eve holds from before the requirement stops working with it.
-  const eveUserId = (await (await web.request('/dashboard/users?search=eve')).text()).match(/\/dashboard\/users\/(?!new\b)([A-Za-z0-9_-]{8,})/)[1];
+  const eveUserId = (await (await web.request('/dashboard/users?search=eve')).text()).match(/\/dashboard\/users\/(?!new\b|registrations\b)([A-Za-z0-9_-]{8,})/)[1];
   const earlier = await web.action('dashboard/users/[id]/index.ts', 'addToken', ['Before the rule', 'write', 30], { params: { id: eveUserId } });
   expect(earlier.newToken).toMatch(/^cms_/);
   expect((await web.action(SETTINGS, 'saveAll', [{ document: { general: { requireTwoFactor: true } }, languages: null, permalinks: null, groups: {} }]))._cossack_return.error).toBe('');
@@ -587,7 +587,7 @@ async function essentials(origin, routeIds, diagnostics, { runtime, cloudflare =
   expect(JSON.stringify(unconfirmed)).toMatch(/current password to change your email/);
 
   // An administrator issues an application password for Eve from her user screen; it acts as Eve.
-  const eveId = (await (await web.request('/dashboard/users?search=eve')).text()).match(/\/dashboard\/users\/(?!new\b)([A-Za-z0-9_-]{8,})/)[1];
+  const eveId = (await (await web.request('/dashboard/users?search=eve')).text()).match(/\/dashboard\/users\/(?!new\b|registrations\b)([A-Za-z0-9_-]{8,})/)[1];
   const userScreen = 'dashboard/users/[id]/index.ts';
   const issued = await web.action(userScreen, 'addToken', ['Eve build', 'read', 30], { params: { id: eveId } });
   expect(issued._cossack_return).toBe(true);

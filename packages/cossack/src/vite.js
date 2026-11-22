@@ -109,14 +109,30 @@ export function mergeWorkerConfigs(customizers, workerConfig, context, serving =
   return serving ? mergeConfig(merged, viteRequestsSkipTheWorker(workerConfig)) : merged;
 }
 
+/**
+ * RomeDB in development: \`romedb serve\` for a loopback ROMEDB_URL, with its token handed to
+ * the Worker. On Node, RomeDB's native addon loads with Node, not through Vite, and shares
+ * @romedb/client's value classes with the URL client.
+ */
+async function romedbPart(root, { mode, command, runtime }) {
+  const { romedbDev, romedbDevVars } = await projectImport(root, '@cossackframework/romedb/dev');
+  return {
+    setup: [romedbDev()],
+    cloudflare: { config: () => romedbDevVars() },
+    ...(runtime === 'node' && !(mode === 'desktop' && command === 'build')
+      ? { config: { environments: { ssr: { resolve: { external: ['@romedb/client', '@romedb/node'] } } } } }
+      : {}),
+  };
+}
+
 /** The project's recipe (runtime and features), or null for a project the scaffold did not make. */
 async function projectRecipe(root) {
-  const { readManifest, resolveManifestRecipe, recipeCapabilityRequirements } = await import('@cossackframework/scaffold');
+  const { readManifest, resolveManifestRecipe, recipeCapabilityRequirements, ormOnRomeDB } = await import('@cossackframework/scaffold');
   try {
     const manifest = await readManifest(root);
     if (!manifest) return null;
     const recipe = resolveManifestRecipe(manifest);
-    return { runtime: recipe.adapter, features: recipe.resolvedFeatures,
+    return { runtime: recipe.adapter, features: recipe.resolvedFeatures, ormOnRomeDB: ormOnRomeDB(recipe),
       requirements: target => recipeCapabilityRequirements(recipe, target) };
   } catch { return null; }
 }
@@ -165,6 +181,8 @@ export function cossackApp(options = {}) {
     // `parts` adds more of them: the package's own application holds the served files as
     // source and mounts nothing, so it names the package's part itself.
     for (const part of options.parts ?? []) parts.push(await part({ root, mode, command, runtime }) ?? {});
+    // A project whose ORM is on RomeDB, without the CMS (which brings the same in its part).
+    if (recipe?.ormOnRomeDB && !features.has('cms')) parts.push(await romedbPart(root, { mode, command, runtime }));
     const partOptions = key => Object.assign({}, ...parts.map(part => part[key] ?? {}));
 
     const wrangler = options.configPath ? { configPath: options.configPath } : {};

@@ -6,11 +6,24 @@ import { dashboard } from '@/dashboard.config';
 
 const showsDashboard = dashboard.dashboard !== false;
 
-export const authOptions: Required<DashboardConfig> = {
+export const authOptions: Required<Omit<DashboardConfig, 'security' | 'registration'>> & {
+    registration: Required<NonNullable<DashboardConfig['registration']>>;
+    security: Required<NonNullable<DashboardConfig['security']>>;
+} = {
     authMethods: dashboard.authMethods ?? ['credentials'],
     oauth: dashboard.oauth ?? [],
     modules: dashboard.modules ?? ['users', 'sessions', 'settings', 'roles'],
     dashboard: showsDashboard,
     redirectAfterLogin: dashboard.redirectAfterLogin ?? (showsDashboard ? '/dashboard' : '/'),
     navigation: dashboard.navigation ?? [],
+    registration: {
+        open: dashboard.registration?.open !== false,
+        verifyEmail: dashboard.registration?.verifyEmail === true,
+        approve: dashboard.registration?.approve === true,
+        defaultRole: dashboard.registration?.defaultRole ?? '',
+    },
+    security: {
+        requireTwoFactor: dashboard.security?.requireTwoFactor === true,
+        twoFactorRoles: dashboard.security?.twoFactorRoles ?? [],
+    },
 };

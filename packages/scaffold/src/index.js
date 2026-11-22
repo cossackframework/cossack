@@ -36,6 +36,7 @@ import {
   projectNameProblem,
   authStore,
   jobLedger,
+  ormOnRomeDB,
 } from './registry.js';
 
 export {
@@ -57,6 +58,7 @@ export {
   recipeCapabilityRequirements,
   recipeCapabilityDiagnostics,
   jobLedger,
+  ormOnRomeDB,
 };
 
 const packageDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -298,18 +300,31 @@ const AUTH_PATHS = new Set([
   'src/pages/auth/register/index.ts',
   'src/pages/auth/reset-password/index.ts',
   'src/pages/auth/two-factor/index.ts',
+  'src/pages/auth/setup/index.ts',
+  'src/pages/auth/verify/index.ts',
+  'src/pages/auth/magic/index.ts',
   'src/passkeys.client.ts',
 ]);
 /** Auth storage on the ORM; the CMS store keeps users and sessions in RomeDB instead. */
 const AUTH_ORM_PATHS = new Set([
   'src/lib/uuid.ts',
+  'src/services/security.ts',
   'src/migrations/0001_create_users.ts',
   'src/migrations/0002_create_sessions.ts',
   'src/migrations/0008_add_session_public_id.ts',
   'src/migrations/0005_create_oauth_accounts.ts',
+  'src/migrations/0009_create_account_security.ts',
+  'src/migrations/0010_add_user_status.ts',
+  'src/migrations/0011_create_api_tokens.ts',
+  'src/services/api-tokens.ts',
+  'src/models/ApiToken.ts',
   'src/models/User.ts',
   'src/models/Session.ts',
   'src/models/OAuthAccount.ts',
+  'src/models/UserSecurity.ts',
+  'src/models/Passkey.ts',
+  'src/models/AuthChallenge.ts',
+  'src/models/AuthAttempt.ts',
 ]);
 const DASHBOARD_CORE_PATHS = new Set([
   'src/dashboard/access.ts',
@@ -350,6 +365,7 @@ const MODULE_PATHS = {
     'src/pages/dashboard/users/index.ts',
     'src/pages/dashboard/users/new/index.ts',
     'src/pages/dashboard/users/[id]/index.ts',
+    'src/pages/dashboard/users/registrations/index.ts',
     'src/dashboard/user-sections.ts',
   ],
   sessions: ['src/pages/dashboard/sessions/index.ts'],
@@ -517,11 +533,13 @@ function wranglerConfig(recipe, projectName) {
   // of realtime pages, layouts and components (`transport: 'durable-object'`), which the framework
   // reaches through COSSACK_OBJECT. Both are SQLite-backed: new_sqlite_classes, not new_classes.
   const cms = recipe.resolvedFeatures.includes('cms');
+  // The ORM on RomeDB keeps unconfirmed writes in the same Durable Object as the CMS does.
+  const pending = cms || ormOnRomeDB(recipe);
   const sse = `,
   "durable_objects": {
-    "bindings": [{ "name": "COSSACK_SSE", "class_name": "SseDurableObject" }, { "name": "COSSACK_OBJECT", "class_name": "AppDurableObject" }${cms ? ', { "name": "ROMEDB_PENDING", "class_name": "RomeDBPendingWrites" }' : ''}]
+    "bindings": [{ "name": "COSSACK_SSE", "class_name": "SseDurableObject" }, { "name": "COSSACK_OBJECT", "class_name": "AppDurableObject" }${pending ? ', { "name": "ROMEDB_PENDING", "class_name": "RomeDBPendingWrites" }' : ''}]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SseDurableObject"] }, { "tag": "realtime-v1", "new_sqlite_classes": ["AppDurableObject"] }${cms ? ', { "tag": "cms-v1", "new_sqlite_classes": ["RomeDBPendingWrites"] }' : ''}]${cms ? `,
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SseDurableObject"] }, { "tag": "realtime-v1", "new_sqlite_classes": ["AppDurableObject"] }${cms ? ', { "tag": "cms-v1", "new_sqlite_classes": ["RomeDBPendingWrites"] }' : pending ? ', { "tag": "romedb-v1", "new_sqlite_classes": ["RomeDBPendingWrites"] }' : ''}]${cms ? `,
   // CMS media. Local development uses a local bucket; create the remote one with
   // pnpm exec wrangler r2 bucket create ${commentName}-media
   "r2_buckets": [{ "binding": "MEDIA", "bucket_name": ${json(`${projectName}-media`)} }],
@@ -603,6 +621,10 @@ function packageJson(recipe, projectName) {
       recipe.config.database === 'hyperdrive-mysql'
     ) {
       dependencies.mysql2 = dependencyVersion('mysql2');
+    } else if (recipe.config.database === 'romedb') {
+      dependencies['@cossackframework/romedb'] = `^${templateVersion}`;
+      // Node opens RomeDB files in process with @romedb/node, on one version with @romedb/client.
+      if (recipe.adapter === 'node') for (const name of ['@romedb/client', '@romedb/node']) dependencies[name] = dependencyVersion(name);
     }
   }
   if (recipe.resolvedFeatures.includes('auth') || recipe.resolvedFeatures.includes('turnstile')) dependencies['@cossackframework/auth'] = `^${templateVersion}`;
@@ -726,8 +748,151 @@ function pnpmWorkspace(recipe) {
   return `${recipe.resolvedFeatures.includes('desktop') ? 'nodeLinker: hoisted\n\n' : ''}allowBuilds:\n${builds.map((name) => `  ${name.startsWith('@') ? `'${name}'` : name}: true`).join('\n')}${overrides}`;
 }
 
+/**
+ * The ORM on RomeDB. The server applies pending migrations when it starts: one process owns
+ * a RomeDB file, so a command cannot open it beside the running server. A CMS project uses
+ * the CMS's own instance, so both share one connection.
+ */
+function romedbOrmFactory(recipe) {
+  const cms = recipe.resolvedFeatures.includes('cms');
+  if (recipe.adapter === 'node') {
+    // In a CMS project the server takes the CMS's instance: one process owns a database file.
+    // The import is dynamic, so a command, which runs outside Vite, never loads the CMS's pages.
+    const serverDatabase = cms
+      ? `async function serverDatabase(env: ORMEnvironment): Promise<RomeDB> {
+  const { cmsFor } = await import('${CMS_PACKAGE}/app/cms/index');
+  return cmsFor(env as Parameters<typeof cmsFor>[0]).db;
+}`
+      : `async function serverDatabase(env: ORMEnvironment): Promise<RomeDB> {
+  return getRomeDB(env);
+}`;
+    return `import { applyPendingMigrations, createORM, type ORM } from '@cossackframework/database';
+import { createRomeDB, type RomeDB } from '@cossackframework/romedb';
+import { connectNode, FilePendingWriteStore, isServiceUrl } from '@cossackframework/romedb/node';
+import { romedb } from '@cossackframework/romedb/orm';
+import { migrations } from '../migrations';
+import { models } from '../models';
+
+export type ORMEnvironment = Record<string, string | undefined>;
+
+let database: RomeDB | undefined;
+
+/**
+ * A RomeDB instance from the environment. ROMEDB_URL is a file path (the database opens in
+ * this process and is created on first use) or the URL of \`romedb serve\` or RomeDB Cloud,
+ * which needs ROMEDB_TOKEN. One process owns a file, so there is one instance.
+ */
+export function getRomeDB(env: ORMEnvironment = process.env): RomeDB {
+  if (database) return database;
+  const url = env.ROMEDB_URL || 'storage/romedb/app.romedb';
+  const token = env.ROMEDB_TOKEN || undefined;
+  if (isServiceUrl(url) && !token) throw new Error(\`ROMEDB_TOKEN is required for \${url}. Use a file path in ROMEDB_URL to keep the database in this process.\`);
+  return database = createRomeDB({
+    url,
+    ...(token ? { token } : {}),
+    connect: () => connectNode({ url, ...(token ? { token } : {}) }),
+    // A write is saved here before it is sent, so an unconfirmed one survives a restart.
+    pending: new FilePendingWriteStore(env.ROMEDB_PENDING_DIR ?? '.cossack/romedb-pending'),
+  });
+}
+
+/** For commands (\`cossack migration\`, \`cossack seed\`). With a database file, stop the server first. */
+export function createToolingAdapter() {
+  // A command passes its own context here, not the environment.
+  return romedb(getRomeDB());
+}
+
+${serverDatabase}
+
+let singleton: Promise<ORM> | undefined;
+
+/** The application's ORM. The first call applies the migrations that are not applied yet. */
+export function getORM(env: ORMEnvironment = process.env): Promise<ORM> {
+  singleton ??= serverDatabase(env).then(db => romedb(db)).then(async (adapter) => {
+    const orm = createORM({ adapter, entities: models });
+    await applyPendingMigrations(orm, migrations);
+    return orm;
+  });
+  // A failed start is not kept: the next request tries again.
+  singleton.catch(() => { singleton = undefined; });
+  return singleton;
+}
+`;
+  }
+  const instance = cms
+    ? `import { cmsFor, type CmsBindings } from '${CMS_PACKAGE}/app/cms/index';
+
+export type ORMEnvironment = CmsBindings;
+
+/** The CMS's RomeDB instance, so the ORM and the CMS share one connection. */
+export function getRomeDB(env: ORMEnvironment): RomeDB {
+  return cmsFor(env).db;
+}`
+    : `import { createRomeDB, type PendingWriteStore } from '@cossackframework/romedb';
+import { DurableObjectPendingWriteStore, type DurableObjectNamespaceLike } from '@cossackframework/romedb/cloudflare';
+
+export interface ORMEnvironment {
+  /** A RomeDB Cloud database, or the loopback URL that \`pnpm dev\` serves with \`romedb serve\`. */
+  ROMEDB_URL?: string;
+  ROMEDB_TOKEN?: string;
+  /** Durable Object namespace of RomeDBPendingWrites (exported from src/index.ts). */
+  ROMEDB_PENDING?: DurableObjectNamespaceLike;
+}
+
+function required<T>(value: T | undefined, name: string): T {
+  if (!value) throw new Error(\`\${name} is required\`);
+  return value;
+}
+
+let database: { url: string; db: RomeDB } | undefined;
+
+/** One instance for the isolate. Commands pass their own pending-write store. */
+export function getRomeDB(env: ORMEnvironment, pending?: PendingWriteStore): RomeDB {
+  const url = required(env.ROMEDB_URL, 'ROMEDB_URL');
+  if (!pending && database?.url === url) return database.db;
+  const db = createRomeDB({
+    url,
+    token: required(env.ROMEDB_TOKEN, 'ROMEDB_TOKEN'),
+    // A write is saved in a Durable Object before it is sent, so an unconfirmed one survives the isolate.
+    pending: pending ?? new DurableObjectPendingWriteStore(required(env.ROMEDB_PENDING, 'ROMEDB_PENDING')),
+  });
+  if (!pending) database = { url, db };
+  return db;
+}`;
+  return `import { AsyncLocalStorage } from 'node:async_hooks';
+import { applyPendingMigrations, createORM } from '@cossackframework/database';
+import type { Adapter } from '@cossackframework/database';
+import { createAsyncLocalScope } from '@cossackframework/database/adapter';
+import type { RomeDB } from '@cossackframework/romedb';
+import { romedb } from '@cossackframework/romedb/orm';
+${instance}
+import { migrations } from '../migrations';
+import { models } from '../models';
+
+export async function createRuntimeAdapter(env: ORMEnvironment): Promise<Adapter> {
+  return romedb(getRomeDB(env));
+}
+
+let migrated: Promise<unknown> | undefined;
+
+export async function createRequestORM(env: ORMEnvironment) {
+  const adapter = await createRuntimeAdapter(env);
+  const orm = createORM({
+    adapter: { ...adapter, scope: createAsyncLocalScope(new AsyncLocalStorage()) },
+    entities: models,
+  });
+  // Once for the isolate: apply the migrations that are not applied yet.
+  migrated ??= applyPendingMigrations(orm, migrations);
+  migrated.catch(() => { migrated = undefined; });
+  await migrated;
+  return orm;
+}
+`;
+}
+
 function ormFactory(recipe) {
   const provider = recipe.config.database;
+  if (provider === 'romedb') return romedbOrmFactory(recipe);
   if (recipe.adapter === 'node') {
     const adapterImport = provider === 'sqlite'
       ? 'nodeSQLite'
@@ -824,6 +989,29 @@ export async function createRequestORM(env: ORMEnvironment) {
 }
 
 function ormTooling(recipe) {
+  if (recipe.config.database === 'romedb') {
+    // Commands run outside the Worker, where no Durable Object holds unconfirmed writes.
+    return `import type { Adapter, ORMToolingContext } from '@cossackframework/database';
+import { createCloudflareToolingPlatform } from '@cossackframework/database/tooling';
+import { createRomeDB, MemoryPendingWriteStore } from '@cossackframework/romedb';
+import { romedb } from '@cossackframework/romedb/orm';
+
+interface ToolingEnvironment { ROMEDB_URL?: string; ROMEDB_TOKEN?: string }
+
+export async function createToolingAdapter(context: ORMToolingContext): Promise<Adapter> {
+  const platform = await createCloudflareToolingPlatform<ToolingEnvironment>(context);
+  try {
+    // \`pnpm dev\` passes the local service's token in the environment; .dev.vars holds the URL.
+    const url = platform.env.ROMEDB_URL ?? process.env.ROMEDB_URL;
+    const token = platform.env.ROMEDB_TOKEN ?? process.env.ROMEDB_TOKEN;
+    if (!url || !token) throw new Error('ROMEDB_URL and ROMEDB_TOKEN are required. The server applies migrations when it starts, so a command is rarely needed.');
+    return await romedb(createRomeDB({ url, token, pending: new MemoryPendingWriteStore() }));
+  } finally {
+    await platform.dispose();
+  }
+}
+`;
+  }
   if (recipe.config.database === 'd1') {
     return `import type { Adapter, ORMToolingContext } from '@cossackframework/database';
 import { createD1ToolingAdapter } from '@cossackframework/database/tooling';
@@ -883,7 +1071,12 @@ export default defineConfig({
 
 function ormMiddlewareModule(recipe) {
   const runtime = recipe.adapter === 'node'
-    ? `const orm = await getORM();
+    ? recipe.config.database === 'romedb'
+      // The database opens with the first request, not when this module loads: a build that
+      // imports the module must not take the file from a running server.
+      ? `export const ormRequestMiddleware = async (context: Context, next: () => Promise<void>) =>
+  ormMiddleware(await getORM())(context, next);`
+      : `const orm = await getORM();
 export const ormRequestMiddleware = ormMiddleware(orm);`
     : `export const ormRequestMiddleware = ormMiddleware((context: Context) =>
   createRequestORM(context.env as ORMEnvironment));`;
@@ -898,7 +1091,7 @@ export const ormRequestMiddleware = ormMiddleware(orm);`
 import { extendCacheDriver } from '@cossackframework/framework/cache';
 import { createSessionMiddleware } from '@cossackframework/framework/session';
 ${factoryImport}
-${recipe.adapter === 'node' ? '' : "import type { Context } from 'hono';\n"}
+${recipe.adapter === 'node' && recipe.config.database !== 'romedb' ? '' : "import type { Context } from 'hono';\n"}
 
 ${runtime}
 
@@ -910,16 +1103,15 @@ extendCacheDriver('database', () => createDatabaseCacheStore());
 `;
 }
 
-function modelsBarrel(recipe) {
-  const ormAuth = recipe.resolvedFeatures.includes('auth') && authStore(recipe.resolvedFeatures) === 'database';
-  const names = [
-    ...(ormAuth
-      ? ['User', 'Session', 'OAuthAccount']
-      : []),
-    // Roles are part of ORM sign-in: the served auth.ts reads them for every user.
-    ...(ormAuth ? ['Role', 'UserRole'] : []),
-    'CacheItem',
-  ];
+/** The entities of sign-in on the ORM. Roles are part of it: the served auth.ts reads them for every user. */
+const ACCOUNT_MODELS = ['User', 'Session', 'OAuthAccount', 'UserSecurity', 'Passkey', 'AuthChallenge', 'AuthAttempt', 'ApiToken', 'Role', 'UserRole'];
+/** Their migrations, in the order they apply. */
+const ACCOUNT_MIGRATIONS = [
+  '0001_create_users.ts', '0002_create_sessions.ts', '0003_create_roles.ts', '0005_create_oauth_accounts.ts', '0007_create_user_roles.ts',
+  '0008_add_session_public_id.ts', '0009_create_account_security.ts', '0010_add_user_status.ts', '0011_create_api_tokens.ts',
+];
+
+function modelsBarrel(recipe, names = accountBarrelNames(recipe)) {
   const imports = names.map((name) => `import { ${name} } from './${name}';`);
   const exports = names.map((name) => `export { ${name} } from './${name}';`);
   return `import 'reflect-metadata';
@@ -929,6 +1121,11 @@ ${exports.join('\n')}
 
 export const models = [${names.join(', ')}] as const;
 `;
+}
+
+function accountBarrelNames(recipe) {
+  const ormAuth = recipe.resolvedFeatures.includes('auth') && authStore(recipe.resolvedFeatures) === 'database';
+  return [...(ormAuth ? ACCOUNT_MODELS : []), 'CacheItem'];
 }
 
 function registeredBarrel(kind, files) {
@@ -1202,6 +1399,10 @@ function nodeEnvironmentValues(recipe, projectName, example = false) {
     } else if (recipe.config.database === 'turso') {
       values.push(['TURSO_DATABASE_URL', example ? 'https://your-database.turso.io' : '']);
       values.push(['TURSO_AUTH_TOKEN', example ? 'your-turso-token' : '']);
+    } else if (recipe.config.database === 'romedb') {
+      // A file in this process by default; a URL (romedb serve, RomeDB Cloud) needs ROMEDB_TOKEN.
+      // A CMS project already names them below.
+      if (!recipe.resolvedFeatures.includes('cms')) values.push(['ROMEDB_URL', 'storage/romedb/app.romedb'], ['ROMEDB_TOKEN', ''], ['ROMEDB_PENDING_DIR', '.cossack/romedb-pending']);
     } else {
       values.push(['DATABASE_URL', example
         ? `${recipe.config.database}://user:password@localhost:5432/database`
@@ -1257,6 +1458,11 @@ function cloudflareEnvironmentValues(recipe, example = false) {
   }
   if (recipe.resolvedFeatures.includes('turnstile')) values.push(['TURNSTILE_SECRET_KEY', 'your-secret-key']);
   if (recipe.resolvedFeatures.includes('cms')) values.push(...cmsEnvironmentValues(example, 'cloudflare'));
+  // Workers reach RomeDB over HTTP. Locally, \`pnpm dev\` starts \`romedb serve\` for the loopback
+  // URL and passes its token, so .dev.vars holds none.
+  else if (ormOnRomeDB(recipe)) values.push(...(example
+    ? [['ROMEDB_URL', 'https://cloud.romedb.com/v1/organizations/<organization>/databases/<database>'], ['ROMEDB_TOKEN', 'your-romedb-database-grant']]
+    : [['ROMEDB_URL', 'http://127.0.0.1:4321']]));
   return values;
 }
 
@@ -1398,7 +1604,7 @@ export async function renderRecipe(recipe, options = {}) {
   });
   files.set('.gitignore', {
     content: text('node_modules/\ndist/\nout/\n.wrangler/\n.env*\n.dev.vars*\n!.env.example\n!.dev.vars.example\n.cossack/routes.ts\n.cossack/config.d.ts\n.cossack/preview.json\n.cossack/preview-secrets.json\n.cossack/**/*.lock\n.cossack/romedb-pending/\n' +
-      (recipe.resolvedFeatures.includes('cms') ? 'storage/media/\nstorage/romedb/\n' : '')),
+      (recipe.resolvedFeatures.includes('cms') ? 'storage/media/\nstorage/romedb/\n' : ormOnRomeDB(recipe) ? 'storage/romedb/\n' : '')),
     capability: 'base',
   });
 
@@ -1438,18 +1644,7 @@ export async function renderRecipe(recipe, options = {}) {
       capability: 'database',
     });
     const ormAuth = recipe.resolvedFeatures.includes('auth') && authStore(recipe.resolvedFeatures) === 'database';
-    const migrationFiles = [
-      ...(ormAuth
-        ? [
-            '0001_create_users.ts',
-            '0002_create_sessions.ts',
-            '0005_create_oauth_accounts.ts',
-            '0008_add_session_public_id.ts',
-          ]
-        : []),
-      ...(ormAuth ? ['0003_create_roles.ts', '0007_create_user_roles.ts'] : []),
-      '0006_create_cache_table.ts',
-    ];
+    const migrationFiles = [...(ormAuth ? ACCOUNT_MIGRATIONS : []), '0006_create_cache_table.ts'];
     files.set('src/migrations/index.ts', {
       content: text(registeredBarrel('migrations', migrationFiles)),
       capability: 'database',
@@ -1497,6 +1692,12 @@ export async function renderRecipe(recipe, options = {}) {
     const source = entry.content.toString('utf8').replace("import { createJobs } from './jobs';", "import { createJobs } from './jobs';\nimport { createSchedules } from './schedules/index';")
       .replace('fetch: app.fetch,', "fetch: app.fetch,\n  async scheduled(controller: ScheduledController, env: CloudflareBindings) { await createSchedules(env).scheduled(controller); },");
     files.set('src/index.ts', { ...entry, content: text(source) });
+  }
+  if (ormOnRomeDB(recipe) && recipe.adapter === 'cloudflare' && !recipe.resolvedFeatures.includes('cms')) {
+    const entry = files.get('src/index.ts');
+    files.set('src/index.ts', { ...entry, content: text(entry.content.toString('utf8').replace('export { SseDurableObject };', `export { SseDurableObject };
+// The Durable Object that keeps unconfirmed RomeDB writes, which wrangler.jsonc names (ROMEDB_PENDING).
+export { RomeDBPendingWrites } from '@cossackframework/romedb/cloudflare';`)) });
   }
   if (recipe.resolvedFeatures.includes('cms')) {
     for (const [file, source] of Object.entries(cmsRecipeFiles({ adapter: recipe.adapter, oauth: recipe.config.authMethods.includes('oauth') ? recipe.config.oauth : [] }))) files.set(file, { content: text(source), capability: 'cms' });

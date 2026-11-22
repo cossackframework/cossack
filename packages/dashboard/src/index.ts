@@ -27,6 +27,27 @@ export interface DashboardConfig {
     redirectAfterLogin?: string;
     /** The project's own screens in the dashboard's navigation, after the modules. Default: none. */
     navigation?: DashboardNavigationItem[];
+    /** Who may create an account on /auth/register, and what a new account waits for. */
+    registration?: {
+        /** Visitors may register. Default: true. */
+        open?: boolean;
+        /**
+         * A new account confirms its email with a link before it can sign in. It needs an email
+         * sender (the EMAIL binding) and APP_URL; without a sender it is off. Default: false.
+         */
+        verifyEmail?: boolean;
+        /** An administrator approves each new account (Users → Registrations). Default: false. */
+        approve?: boolean;
+        /** The name of the role a new account gets. Default: none. */
+        defaultRole?: string;
+    };
+    /** Two-step sign-in. Every user can turn it on for their account; this makes it required. */
+    security?: {
+        /** Users must sign in with a second factor (an authenticator app or a passkey) before they can act. Default: false. */
+        requireTwoFactor?: boolean;
+        /** The names of the roles `requireTwoFactor` applies to. Default: every user. */
+        twoFactorRoles?: string[];
+    };
 }
 
 /**

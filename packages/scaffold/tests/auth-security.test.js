@@ -18,15 +18,31 @@ async function generatedAuth() {
   const OAuthAccount = { findOne: vi.fn(), insert: vi.fn() };
   let provider;
   const createSession = vi.fn();
+  const security = {
+    signInBegin: vi.fn(async () => ({ ok: true })), signInSucceeded: vi.fn(), attempt: vi.fn(async () => true), release: vi.fn(),
+    sha256Hex: async text => `hash:${text}`, randomToken: () => 'T'.repeat(43), RESET_REQUESTS: { windowMs: 3_600_000, perEmail: 3, perAddress: 10 },
+    requiresCode: vi.fn(async () => false), hasSecondFactor: vi.fn(async () => false), reset: vi.fn(),
+  };
   const modules = {
     'hono/cookie': { getCookie: c => c?.cookie },
     '@cossackframework/auth': { createAuth: (options) => { provider = options; return { createSession }; }, createOAuth: vi.fn(), OAuthError,
-      createCredentialVerifier, createSessionManager, hashPassword, verifyPassword },
-    '@cossackframework/database': { MoreThan: (value) => value, sql },
-    '@cossackframework/core': { ClientVisibleError: Error },
+      createCredentialVerifier, createSessionManager, hashPassword, verifyPassword, totpUri: vi.fn() },
+    '@cossackframework/auth/passkeys': {},
+    '@cossackframework/database': { MoreThan: (value) => value, In: (values) => values, sql },
+    '@cossackframework/core': { ClientVisibleError: Error, getClientIp: () => '203.0.113.7', getRequestContext: () => undefined },
+    uqr: { renderSVG: vi.fn() },
+    './brand': { siteName: async () => 'Test' },
+    './lib/permissions': { ALL_PERMISSIONS: [] },
+    '@/models/Role': { Role: { findOne: vi.fn(), insert: vi.fn() } },
+    '@/models/UserRole': { UserRole: { insert: vi.fn() } },
+    // Second factors and sign-in limits have their own tests; here every attempt is allowed.
+    './services/security': security,
+    './services/api-tokens': { revokeAll: vi.fn() },
     './lib/uuid': { uuidv7: () => 'generated-id' },
     // The project's choices, as src/dashboard.config.ts states them for this recipe.
-    './auth-options': { authOptions: { authMethods: ['credentials', 'oauth'], oauth: ['github'], modules: ['sessions'], dashboard: true, redirectAfterLogin: '/dashboard' } },
+    './auth-options': { authOptions: { authMethods: ['credentials', 'oauth'], oauth: ['github'], modules: ['sessions'], dashboard: true, redirectAfterLogin: '/dashboard',
+      registration: { open: true, verifyEmail: false, approve: false, defaultRole: '' },
+      security: { requireTwoFactor: false, twoFactorRoles: [] } } },
     '@/models/User': { User },
     '@/models/Session': { Session },
     '@/models/OAuthAccount': { OAuthAccount },
@@ -37,7 +53,7 @@ async function generatedAuth() {
     if (!(name in modules)) throw new Error(`Unexpected dependency: ${name}`);
     return modules[name];
   }, module, module.exports);
-  return { api: module.exports, provider, Session, User, OAuthAccount, createSession, sql, files };
+  return { api: module.exports, provider, Session, User, OAuthAccount, createSession, sql, files, security };
 }
 
 const ownerContext = () => ({ cookie: 'CURRENT_PRIVATE_BEARER', get: () => ({ id: 'member' }),

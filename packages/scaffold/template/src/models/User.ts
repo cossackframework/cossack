@@ -37,6 +37,13 @@ export class User extends BaseEntity {
   @Column({ type: 'json', name: 'meta', nullable: true })
   declare meta: Record<string, unknown> | null;
 
+  /**
+   * `active` signs in. `unconfirmed` waits for the link in its confirmation email, `pending`
+   * for an administrator's approval, and `disabled` was turned off.
+   */
+  @Column({ type: 'varchar', name: 'status', length: 16, default: 'active' })
+  declare status: 'active' | 'unconfirmed' | 'pending' | 'disabled';
+
   @CreateDateColumn({ name: 'created_at' })
   declare createdAt: Date;
 

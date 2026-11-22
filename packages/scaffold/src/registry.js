@@ -89,6 +89,8 @@ export const DATABASE_PROVIDERS = {
   mysql: { adapters: ['node'] },
   'hyperdrive-postgres': { adapters: ['cloudflare'] },
   'hyperdrive-mysql': { adapters: ['cloudflare'] },
+  // RomeDB through the ORM: a file in the process or a URL on Node, a URL on Workers.
+  romedb: { adapters: ADAPTERS },
 };
 
 export function parseList(value) {
@@ -222,6 +224,11 @@ export function resolveRecipe(options = {}) {
  * Where jobs, schedules and notifications keep their ledger: a CMS project's RomeDB database,
  * which needs no other binding, or the `JOB_STATE` D1 database.
  */
+/** The project keeps its ORM tables in RomeDB (`--database romedb`). */
+export function ormOnRomeDB(recipe) {
+  return recipe.resolvedFeatures.includes('database') && recipe.config.database === 'romedb';
+}
+
 export function jobLedger(recipe) {
   return recipe.resolvedFeatures.includes('cms') ? 'romedb' : 'd1';
 }
@@ -264,6 +271,10 @@ export function recipeCapabilityRequirements(recipe, target = 'web') {
     if (recipe.config.database === 'd1') add('database/d1', { cloudflareBindings: ['DB'] });
     if (recipe.config.database.startsWith('hyperdrive-')) {
       add(`database/${recipe.config.database}`, { cloudflareBindings: ['HYPERDRIVE'] });
+    }
+    // Unconfirmed writes are kept in a Durable Object on Workers and in files on Node.
+    if (recipe.config.database === 'romedb') {
+      add('database/romedb', recipe.adapter === 'cloudflare' ? { cloudflareBindings: ['ROMEDB_PENDING'] } : { filesystem: true });
     }
   }
   if (target === 'desktop' && recipe.resolvedFeatures.includes('desktop')) {

@@ -34,6 +34,8 @@
 !/src/services/users.ts
 !/src/services/roles.ts
 !/src/services/rbac.ts
+!/src/services/security.ts
+!/src/services/api-tokens.ts
 !/src/pages/
 /src/pages/*
 !/src/pages/auth/

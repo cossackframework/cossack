@@ -65,10 +65,12 @@ describe('cms recipe', () => {
     expect(pkg.dependencies['@romedb/client']).toMatch(/^\d/);
     expect(pkg.dependencies['@romedb/client']).toBe(pkg.dependencies['@romedb/node']);
     expect(text(files, '.gitignore')).toContain('storage/media/');
-    // Applications with database auth keep passwords only, in their own modules.
+    // Applications with database auth keep second factors on the ORM, in their own modules.
     // Their shell is served from the dashboard package (dashboard-recipe.test.js); `servedFiles` shows it.
     const orm = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['dashboard'] }), { servedFiles: true });
-    expect(text(orm, 'src/auth.ts')).toContain('export const twoFactorAvailable = false;');
+    expect(text(orm, 'src/auth.ts')).toContain('export const twoFactorAvailable = true;');
+    expect(orm.has('src/services/security.ts')).toBe(true);
+    expect(text(orm, 'src/models/index.ts')).toContain('UserSecurity, Passkey, AuthChallenge, AuthAttempt, ApiToken');
     expect(text(orm, 'src/passkeys.client.ts')).not.toContain('@simplewebauthn');
     expect(JSON.parse(text(orm, 'package.json')).cossack.packages).toEqual(['@cossackframework/dashboard']);
     expect(orm.has('src/pages/dashboard/index.ts')).toBe(true);
