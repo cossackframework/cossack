@@ -43,6 +43,13 @@ export const FILE_EXPORT_EMPTIED_TABLES: readonly string[] = [
     'cms_file_variants',
 ];
 
+/**
+ * The same for the application's account tables, which the dashboard package keeps through the
+ * ORM: sessions (keyed by their tokens), second factors, application passwords, sign-in
+ * challenges and counters, one-time codes, and the cache. Accounts, roles and passkeys stay.
+ */
+export const ACCOUNT_SECRET_TABLES: readonly string[] = ['sessions', 'user_security', 'api_tokens', 'auth_challenges', 'auth_attempts', 'tenant_handoffs', 'tenant_sessions', 'cache_items'];
+
 /** RomeDB's longest wait for a copy to start arriving. On Cloud a job builds it first. */
 const FILE_EXPORT_TIMEOUT = 120_000;
 
@@ -53,8 +60,11 @@ const FILE_EXPORT_TIMEOUT = 120_000;
  */
 export async function siteFile(db: RomeDB, options: { signal?: AbortSignal } = {}): Promise<DatabaseFile> {
     const signal = options.signal ? { signal: options.signal } : {};
-    // Every site's database has every host table, so each named table exists.
-    return db.exportFile({ ...signal, timeoutMs: FILE_EXPORT_TIMEOUT, emptyTables: [...FILE_EXPORT_EMPTIED_TABLES] });
+    // Every site's database has every host table. The application's account tables (the
+    // dashboard package's, on the ORM) are there once it applied its migrations.
+    const info = await db.read([{ rql: 'INFO FOR DB' }], signal);
+    const present = new Set(((info.results[0]!.rows[0]![0] as { tables?: { name: string }[] }).tables ?? []).map(table => table.name));
+    return db.exportFile({ ...signal, timeoutMs: FILE_EXPORT_TIMEOUT, emptyTables: [...FILE_EXPORT_EMPTIED_TABLES, ...ACCOUNT_SECRET_TABLES.filter(table => present.has(table))] });
 }
 
 /** A new webhook secret, for one that comes from a copy or an export. */

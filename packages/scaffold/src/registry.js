@@ -45,7 +45,7 @@ export const FEATURE_REGISTRY = {
   notifications: { requires: ['jobs'] },
   workflows: { requires: [] },
   // RomeDB CMS: content, media, taxonomies, settings and plugins in the shared dashboard.
-  // With cms, auth keeps users and sessions in RomeDB, so it no longer needs database.
+  // Accounts, roles and sessions are the dashboard package's, on the ORM in the CMS's database.
   cms: { requires: ['ui', 'auth', 'dashboard', 'markdown'] },
 };
 
@@ -67,7 +67,6 @@ export function authStore(features) {
 }
 
 function requirementsOf(feature, requested) {
-  if (feature === 'auth' && authStore(requested) === 'cms') return ['ui'];
   return FEATURE_REGISTRY[feature].requires;
 }
 
@@ -167,8 +166,9 @@ export function resolveRecipe(options = {}) {
     if (conflict.features.every(feature => resolvedFeatures.includes(feature))) throw new Error(conflict.reason);
   }
 
+  // The CMS is on RomeDB, and its accounts (the ORM's tables) are in the same database.
   const database = options.database ??
-    (adapter === 'cloudflare' ? 'd1' : 'sqlite');
+    (resolvedFeatures.includes('cms') ? 'romedb' : adapter === 'cloudflare' ? 'd1' : 'sqlite');
   if (!DATABASE_PROVIDERS[database]) {
     throw new Error(`Unknown database provider "${database}". Supported values: ${Object.keys(DATABASE_PROVIDERS).join(', ')}`);
   }

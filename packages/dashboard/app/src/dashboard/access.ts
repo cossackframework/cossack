@@ -7,7 +7,7 @@ import type { DashboardModule, DashboardNotice, DashboardStatus } from './types'
 /** Navigation for the signed-in user: the installed modules they may open, in order. */
 export async function navigation(c: Context): Promise<DashboardModule[]> {
     const user = c.get('user') as { roles?: { name: string; permissions?: string[] }[] } | undefined;
-    const admin = !!user?.roles?.some(role => role.name === 'admin');
+    const admin = !!user?.roles?.some(role => (role as { id?: string }).id === 'admin') || (user as { networkAdmin?: boolean } | undefined)?.networkAdmin === true;
     // Tenants are managed on the main host, while they are on.
     const modules = !tenantsEnabled || currentTenant(c) ? dashboardModules
         : [...dashboardModules, (user as { networkAdmin?: boolean } | undefined)?.networkAdmin ? tenants : myTenants];

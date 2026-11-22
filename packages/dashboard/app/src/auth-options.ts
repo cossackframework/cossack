@@ -12,6 +12,8 @@ export const authOptions: Required<Omit<DashboardConfig, 'security' | 'registrat
     security: Required<NonNullable<DashboardConfig['security']>>;
     /** What an application password starts with: `app_…`. */
     tokenPrefix: string;
+    /** The environment variable that holds the setup code. */
+    setupCodeVariable: string;
 } = {
     authMethods: dashboard.authMethods ?? ['credentials'],
     oauth: dashboard.oauth ?? [],
@@ -31,6 +33,7 @@ export const authOptions: Required<Omit<DashboardConfig, 'security' | 'registrat
         verifyDomains: dashboard.tenants?.verifyDomains !== false,
     },
     tokenPrefix: 'app',
+    setupCodeVariable: 'SETUP_CODE',
     security: {
         requireTwoFactor: dashboard.security?.requireTwoFactor === true,
         twoFactorRoles: dashboard.security?.twoFactorRoles ?? [],

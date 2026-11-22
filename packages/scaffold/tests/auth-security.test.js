@@ -45,7 +45,7 @@ async function generatedAuth() {
     // The project's choices, as src/dashboard.config.ts states them for this recipe.
     './auth-options': { authOptions: { authMethods: ['credentials', 'oauth'], oauth: ['github'], modules: ['sessions'], dashboard: true, redirectAfterLogin: '/dashboard',
       registration: { open: true, verifyEmail: false, approve: false, defaultRole: '' },
-      security: { requireTwoFactor: false, twoFactorRoles: [] }, tenants: { enabled: false, signIn: 'host' }, tokenPrefix: 'app' } },
+      security: { requireTwoFactor: false, twoFactorRoles: [] }, tenants: { enabled: false, signIn: 'host' }, tokenPrefix: 'app', setupCodeVariable: 'SETUP_CODE' } },
     '@/models/User': { User },
     '@/models/Session': { Session },
     '@/models/OAuthAccount': { OAuthAccount },

@@ -12,9 +12,11 @@ afterEach(async () => { await Promise.all(directories.splice(0).map(directory =>
 const text = (files, rel) => files.get(rel)?.content.toString();
 
 describe('cms recipe', () => {
-  it('brings auth and the dashboard on RomeDB without the ORM', () => {
+  it('brings auth and the dashboard, with accounts on the ORM in the CMS\'s database', () => {
     const recipe = resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'] });
-    expect(recipe.resolvedFeatures).toEqual(['ui', 'auth', 'dashboard', 'markdown', 'cms']);
+    expect(recipe.resolvedFeatures).toEqual(['ui', 'database', 'auth', 'dashboard', 'markdown', 'cms']);
+    // Accounts, roles and sessions are the dashboard package's tables, in the CMS's RomeDB database.
+    expect(recipe.config.database).toBe('romedb');
     expect(authStore(recipe.resolvedFeatures)).toBe('cms');
     expect(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['auth'] }).resolvedFeatures).toContain('database');
     // OAuth is added to email and password, never in their place: setup creates the first administrator with a password.
@@ -31,10 +33,15 @@ describe('cms recipe', () => {
     for (const rel of ['src/pages/auth/login/index.ts', 'src/pages/dashboard/layout.ts', 'src/pages/dashboard/users/index.ts', 'src/dashboard/list-table.ts', 'src/dashboard/registry.ts',
       'src/dashboard/modules/users.ts', 'src/dashboard/types.ts', 'src/auth.ts', 'src/auth-input.ts', 'src/brand.ts', 'src/services/users.ts', 'src/middlewares/auth.ts', 'src/config/auth.ts', 'src/lib/permissions.ts'])
       expect(files.has(rel), rel).toBe(false);
-    expect([...files.keys()].filter(rel => rel.startsWith('src/')).sort()).toEqual([
+    // Besides its own files, the project holds the schema of its accounts (models, migrations, the ORM's wiring): a project owns its schema.
+    const own = rel => !/^src\/(?:models|migrations|seeders)\//.test(rel) && rel !== 'src/orm/factory.ts' && rel !== 'src/middlewares/orm.ts';
+    expect([...files.keys()].filter(rel => rel.startsWith('src/') && own(rel)).sort()).toEqual([
       'src/App.ts', 'src/bootstrap/middlewares.ts', 'src/client/entry-client.ts', 'src/cms.config.ts', 'src/components/ui/index.ts', 'src/config/app.ts', 'src/config/cache.ts', 'src/config/cors.ts',
       'src/index.ts', 'src/root.ts', 'src/stores.client.ts', 'src/style.css', 'src/vite-env.d.ts',
     ]);
+    expect([...files.keys()].filter(rel => rel.startsWith('src/models/')).sort()).toEqual(['ApiToken', 'AuthAttempt', 'AuthChallenge', 'CacheItem', 'OAuthAccount', 'Passkey', 'Role', 'Session', 'Tenant', 'TenantDomain',
+      'TenantHandoff', 'TenantMember', 'TenantNetwork', 'TenantSession', 'User', 'UserRole', 'UserSecurity', 'index'].map(name => `src/models/${name}.ts`));
+    expect(files.has('src/migrations/0001_create_users.ts')).toBe(true);
     // What the cms feature writes: the project's configuration and the update workflow.
     expect([...files].filter(([, entry]) => entry.capability === 'cms').map(([rel]) => rel).sort()).toEqual(['.github/workflows/cossack-update.yml', 'src/cms.config.ts']);
     expect(text(files, 'src/cms.config.ts')).toContain('export const options: CmsProjectConfig = {');
@@ -44,8 +51,10 @@ describe('cms recipe', () => {
     expect(text(files, 'src/cms.config.ts')).toContain('export const storage = nodeStorage;');
     expect([...files.keys()].filter(rel => rel.startsWith('src/pages/') || rel.startsWith('src/plugins/') || rel.startsWith('src/cms/') || rel.startsWith('src/dashboard/'))).toEqual([]);
     expect(files.has('src/pages/index.ts')).toBe(false);
-    for (const rel of ['src/models/User.ts', 'src/models/Session.ts', 'src/models/Role.ts', 'src/migrations/0001_create_users.ts', 'src/lib/uuid.ts', 'orm.config.ts', 'src/seeders/application.seeder.ts'])
-      expect(files.has(rel), rel).toBe(false);
+    // The services that use the models are the package's; the seeder is the blank one, since setup makes the first account.
+    for (const rel of ['src/lib/uuid.ts', 'src/services/security.ts', 'src/tenants.ts']) expect(files.has(rel), rel).toBe(false);
+    expect(text(files, 'src/seeders/application.seeder.ts')).toContain('Add application seed data here.');
+    expect(text(files, 'src/bootstrap/middlewares.ts')).toContain('  ormRequestMiddleware,\n  ...cmsMiddlewares,');
     // The CMS's middleware is one list from the package; the project's own goes after it.
     const middlewares = text(files, 'src/bootstrap/middlewares.ts');
     expect(middlewares).toContain("import { cmsMiddlewares } from '@cossackframework/cms/app/cms/middlewares';");
@@ -60,7 +69,9 @@ describe('cms recipe', () => {
     expect(text(files, 'src/style.css')).toContain('@source "../node_modules/@cossackframework/cms/app/src";');
     // The editor, passkey and QR code libraries are the package's dependencies, not the project's.
     expect(pkg.dependencies).toMatchObject({ '@cossackframework/cms': expect.any(String), '@cossackframework/auth': expect.any(String), '@aws-sdk/client-s3': expect.any(String), sharp: expect.any(String) });
-    for (const name of ['@cossackframework/database', '@tiptap/core', '@simplewebauthn/browser', 'uqr']) expect(pkg.dependencies).not.toHaveProperty(name);
+    for (const name of ['@tiptap/core', '@simplewebauthn/browser', 'uqr']) expect(pkg.dependencies).not.toHaveProperty(name);
+    // The project's own models are on the ORM.
+    expect(pkg.dependencies).toHaveProperty('@cossackframework/database');
     // Different versions would install a second copy of RomeDB's value classes.
     expect(pkg.dependencies['@romedb/client']).toMatch(/^\d/);
     expect(pkg.dependencies['@romedb/client']).toBe(pkg.dependencies['@romedb/node']);
@@ -171,19 +182,21 @@ describe('cms recipe', () => {
     expect(JSON.parse(text(files, 'package.json')).dependencies).not.toHaveProperty('@tiptap/core');
   });
 
-  it('keeps the ORM application seeder only for ORM auth', async () => {
+  it('keeps the application seeder that makes an administrator for projects without the CMS', async () => {
     const both = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms', 'database'] }));
     expect(text(both, 'src/seeders/application.seeder.ts')).toContain('Add application seed data here.');
-    expect(text(both, 'src/models/index.ts')).not.toContain('User');
+    expect(text(both, 'src/models/index.ts')).toContain('User');
+    const plain = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['dashboard'] }));
+    expect(text(plain, 'src/seeders/application.seeder.ts')).toContain('ADMIN_EMAIL');
     expect(both.has('src/auth.ts')).toBe(false);
     expect(text(both, 'src/bootstrap/middlewares.ts')).toContain('  ormRequestMiddleware,\n  ...cmsMiddlewares,');
   });
 
-  it('refuses to add cms to a project whose users live in the database feature', async () => {
+  it('refuses to add cms to a project whose data is in another database', async () => {
     const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-cms-recipe-'));
     directories.push(cwd);
     const { projectDir } = await createApp('orm-auth', { cwd, adapter: 'node', preset: 'auth', interactive: false });
-    await expect(addFeature(projectDir, 'cms', { interactive: false })).rejects.toThrow(/keeps its users in the database feature/);
+    await expect(addFeature(projectDir, 'cms', { interactive: false })).rejects.toThrow(/keeps its data in another database/);
   });
   it('reads the recipe from the CMS application: what is served and rendered', async () => {
     const { isCmsPath, isServedCmsPath } = await import('../src/cms-recipe.js');

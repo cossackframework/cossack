@@ -1,3 +1,4 @@
+import { userOfPrincipal } from '#app/cms/actor';
 import type { Context } from 'hono';
 import { hasPermission, PERMISSIONS } from '@cossackframework/cms';
 import { apiError, writeAllowed, writeBody } from '#app/cms/content-api';
@@ -12,7 +13,7 @@ function actorOf(c: Context): PublicUser | undefined {
     const user = c.get('user') as PublicUser | undefined;
     if (user) return user;
     const principal = c.get('principal') as Principal | undefined;
-    return principal?.kind === 'user' ? { id: principal.id, email: '', name: '', avatar: null, meta: null, roles: [], principal } : undefined;
+    return principal?.kind === 'user' ? userOfPrincipal(principal) : undefined;
 }
 
 /**

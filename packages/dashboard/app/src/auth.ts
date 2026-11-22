@@ -481,7 +481,7 @@ export async function registrationOpen(): Promise<boolean> {
  */
 export async function setupRequired(): Promise<boolean> {
   return accounts(async () => {
-  if (!env('SETUP_CODE', '') || currentTenant()) return false;
+  if (!env(authOptions.setupCodeVariable, '') || currentTenant()) return false;
   try { return (await User.count()) === 0; }
   catch { return false; }
   });
@@ -505,15 +505,15 @@ export async function completeSetup(code: string, account: { email: string; pass
   return accounts(async () => {
   // Wrong codes are counted per address: the code is the only thing between a visitor and the site.
   if (!(await security.attempt('setup', clientAddress(), 5, 60_000))) throw new ClientVisibleError('Too many attempts. Wait a minute, then try again.');
-  const expected = env('SETUP_CODE', '');
+  const expected = env(authOptions.setupCodeVariable, '');
   if (!expected || !(await sameSecret(code, expected))) throw new ClientVisibleError('The setup code is not right.');
   if (!(await setupRequired())) throw new ClientVisibleError('This site is already set up.');
   const now = new Date();
-  let role = await Role.findOne({ where: { name: 'admin' } });
+  // The admin role is the one with the ID `admin`, whatever it is called.
+  let role = await Role.findOne({ where: { id: 'admin' } });
   if (!role) {
-    const id = uuidv7();
-    await Role.insert({ id, name: 'admin', permissions: [...ALL_PERMISSIONS], createdAt: now });
-    role = await Role.findOne({ where: { id } });
+    await Role.insert({ id: 'admin', name: 'admin', permissions: [...ALL_PERMISSIONS], createdAt: now });
+    role = await Role.findOne({ where: { id: 'admin' } });
   }
   if (!role) throw new Error('Unable to create the admin role.');
   const id = uuidv7();
@@ -624,7 +624,7 @@ export async function registerUser(email: string, password: string, name?: strin
   const status = verify ? 'unconfirmed' : options.approve ? 'pending' : 'active';
   // On a tenant's host the new account is that tenant's own.
   await User.insert({ id, email, name: name ?? null, passwordHash: await hashPassword(password), avatar: null, meta: null, status, tenantAccount: tenantAccountHome(), createdAt: new Date() });
-  const role = options.defaultRole ? await Role.findOne({ where: { name: options.defaultRole } }) : null;
+  const role = options.defaultRole ? await Role.findOne({ where: { id: options.defaultRole } }) ?? await Role.findOne({ where: { name: options.defaultRole } }) : null;
   if (role) await UserRole.insert({ userId: id, roleId: role.id, createdAt: new Date() });
   const user: PublicUser = { id, email, name: name ?? '', avatar: null, meta: null, roles: role ? [{ id: role.id, name: role.name, permissions: role.permissions ?? [] }] : [] };
   await authEvents.registered({ id, email, name: name ?? '' });
@@ -824,7 +824,8 @@ async function userById(userId: string): Promise<PublicUser | null> {
 function twoFactorAsked(user: Pick<PublicUser, 'roles'>): boolean {
   const { requireTwoFactor, twoFactorRoles } = authOptions.security;
   if (!requireTwoFactor) return false;
-  return twoFactorRoles.length === 0 || user.roles.some(role => twoFactorRoles.includes(role.name));
+  // A role is named by its name, or by its ID where a package keeps the two apart.
+  return twoFactorRoles.length === 0 || user.roles.some(role => twoFactorRoles.includes(role.name) || twoFactorRoles.includes(role.id));
 }
 
 /**
@@ -1322,9 +1323,9 @@ export async function deleteOwnAccount(c: Context, userId: string, password: str
   // The application keeps an administrator.
   const lastAdmin = (await sql<{ total: number }>`
     SELECT COUNT(*) AS total FROM user_roles ur INNER JOIN roles r ON r.id = ur.role_id INNER JOIN users u ON u.id = ur.user_id
-    WHERE r.name = 'admin' AND u.status = 'active' AND ur.user_id <> ${userId}
+    WHERE r.id = 'admin' AND u.status = 'active' AND ur.user_id <> ${userId}
   `).rows[0];
-  if ((await rolesHere(userId)).some((role) => role.name === 'admin') && !Number(lastAdmin?.total ?? 0)) throw new ClientVisibleError('The last administrator cannot delete their account. Give someone else the admin role first.');
+  if ((await rolesHere(userId)).some((role) => role.id === 'admin') && !Number(lastAdmin?.total ?? 0)) throw new ClientVisibleError('The last administrator cannot delete their account. Give someone else the admin role first.');
   await revokeSessionsOf(c, userId);
   const { headers } = await logout(c);
   await removeAccount(userId);

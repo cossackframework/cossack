@@ -437,12 +437,13 @@ function capabilityFor(rel, recipe) {
   if (BASE_PATHS.has(rel) || rel.startsWith('public/') || rel === 'tsconfig.json') return 'base';
   if (UI_PATHS.has(rel)) return recipe.resolvedFeatures.includes('ui') ? 'ui' : null;
   if (ORM_PATHS.has(rel)) return recipe.resolvedFeatures.includes('database') ? 'database' : null;
-  const ormAuth = recipe.resolvedFeatures.includes('auth') && authStore(recipe.resolvedFeatures) === 'database';
+  const ormAuth = recipe.resolvedFeatures.includes('auth');
   if (AUTH_ORM_PATHS.has(rel)) return ormAuth ? 'auth' : null;
   if (AUTH_PATHS.has(rel)) return recipe.resolvedFeatures.includes('auth') ? 'auth' : null;
   if (DASHBOARD_CORE_PATHS.has(rel)) return recipe.resolvedFeatures.includes('dashboard') ? 'dashboard' : null;
   // The application seeder belongs to the ORM; it seeds RBAC roles only for ORM auth.
-  if (rel === 'src/seeders/application.seeder.ts') return recipe.resolvedFeatures.includes('dashboard') && recipe.resolvedFeatures.includes('database') ? 'dashboard' : null;
+  // The CMS makes its first account and roles on its setup page.
+  if (rel === 'src/seeders/application.seeder.ts') return recipe.resolvedFeatures.includes('dashboard') && recipe.resolvedFeatures.includes('database') && !recipe.resolvedFeatures.includes('cms') ? 'dashboard' : null;
   // Roles are part of ORM sign-in: the served auth.ts reads them for every user.
   if (RBAC_ORM_PATHS.has(rel)) return ormAuth ? 'auth' : null;
   if (RBAC_PATHS.has(rel)) return recipe.resolvedFeatures.includes('auth') ? 'auth' : null;
@@ -1211,14 +1212,20 @@ function ormMiddlewareModule(recipe) {
     ? recipe.config.database === 'romedb'
       // The database opens with the first request, not when this module loads: a build that
       // imports the module must not take the file from a running server.
-      ? `export const ormRequestMiddleware = async (context: Context, next: () => Promise<void>) =>
-  ormMiddleware(await getORM())(context, next);`
+      ? (recipe.resolvedFeatures.includes('cms')
+        // The CMS's database is opened with the request's bindings, the ones its own middleware uses.
+        ? `export const ormRequestMiddleware = async (context: Context, next: () => Promise<void>) =>
+  ormMiddleware(await getORM(context.env as ORMEnvironment))(context, next);`
+        : `export const ormRequestMiddleware = async (context: Context, next: () => Promise<void>) =>
+  ormMiddleware(await getORM())(context, next);`)
       : `const orm = await getORM();
 export const ormRequestMiddleware = ormMiddleware(orm);`
     : `export const ormRequestMiddleware = ormMiddleware((context: Context) =>
   createRequestORM(context.env as ORMEnvironment));`;
   const factoryImport = recipe.adapter === 'node'
-    ? "import { getORM } from '../orm/factory';"
+    ? recipe.config.database === 'romedb' && recipe.resolvedFeatures.includes('cms')
+      ? "import { getORM, type ORMEnvironment } from '../orm/factory';"
+      : "import { getORM } from '../orm/factory';"
     : "import { createRequestORM, type ORMEnvironment } from '../orm/factory';";
   return `import {
   createDatabaseCacheStore,
@@ -1261,7 +1268,7 @@ export const models = [${names.join(', ')}] as const;
 }
 
 function accountBarrelNames(recipe) {
-  const ormAuth = recipe.resolvedFeatures.includes('auth') && authStore(recipe.resolvedFeatures) === 'database';
+  const ormAuth = recipe.resolvedFeatures.includes('auth');
   return [...(ormAuth ? ACCOUNT_MODELS : []), 'CacheItem'];
 }
 
@@ -1780,7 +1787,7 @@ export async function renderRecipe(recipe, options = {}) {
       content: text(modelsBarrel(recipe)),
       capability: 'database',
     });
-    const ormAuth = recipe.resolvedFeatures.includes('auth') && authStore(recipe.resolvedFeatures) === 'database';
+    const ormAuth = recipe.resolvedFeatures.includes('auth');
     const migrationFiles = [...(ormAuth ? ACCOUNT_MIGRATIONS : []), '0006_create_cache_table.ts'];
     files.set('src/migrations/index.ts', {
       content: text(registeredBarrel('migrations', migrationFiles)),
@@ -1791,7 +1798,7 @@ export async function renderRecipe(recipe, options = {}) {
       content: text(registeredBarrel('seeds', seedFiles)),
       capability: 'database',
     });
-    if (!ormAuth || !recipe.resolvedFeatures.includes('dashboard')) {
+    if (!ormAuth || !recipe.resolvedFeatures.includes('dashboard') || recipe.resolvedFeatures.includes('cms')) {
       files.set('src/seeders/application.seeder.ts', {
         content: text(blankSeeder()),
         capability: 'database',
@@ -3113,8 +3120,8 @@ export async function addFeature(projectDir, feature, options = {}) {
   const root = path.resolve(projectDir);
   const manifest = await readManifest(root);
   const current = await inferRecipe(root, manifest);
-  if (feature === 'cms' && current.resolvedFeatures.includes('auth') && authStore(current.resolvedFeatures) === 'database') {
-    throw new Error('This project keeps its users in the database feature. The cms feature keeps users, roles and sessions in RomeDB, so add it to a new project: cossack create <name> --features cms.');
+  if (feature === 'cms' && current.resolvedFeatures.includes('database') && current.config.database !== 'romedb') {
+    throw new Error('This project keeps its data in another database. The cms feature keeps content and accounts in RomeDB, so add it to a new project: cossack create <name> --features cms.');
   }
   if (options.dryRun) options = { ...options, interactive: false };
   let previous = {};

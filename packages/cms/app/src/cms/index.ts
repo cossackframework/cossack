@@ -11,6 +11,7 @@ import { announceNoteEvent } from './notes-announce';
 import { reservedRouteSegments } from './reserved-paths';
 import { requestCallsSignal } from './request-calls';
 import { devMailTransport, markMailKeptOnly } from './dev-mail';
+import { ormPeople } from './people';
 import registry from 'virtual:cossack-pages';
 
 /**
@@ -125,6 +126,8 @@ export function networkFor(env: CmsBindings): CmsNetwork {
               const made = (host: CmsHost) => siteMail && !transport ? markMailKeptOnly(host) : host;
               return made(createCMS({
                 db: siteDb, network: db, site: site.id, modules, resources, plugins,
+                // Accounts, roles and sign-in are the dashboard package's, on the ORM (specs/cms-on-dashboard.md).
+                people: ormPeople,
                 // A site whose APP_URL is this machine is in development: its webhooks may stay local. No APP_URL is no exception.
                 localWebhooks: localAddress(env.APP_URL),
                 ...(webhookFetch && !localAddress(env.APP_URL) ? { webhookFetch } : {}),

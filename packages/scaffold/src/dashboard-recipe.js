@@ -49,6 +49,7 @@ export const SERVED_DASHBOARD_PATHS = [
 
 /** Whether the recipe's sign-in is the package's: `auth` with users in the database. */
 export function mountsDashboard(recipe) {
+  // A CMS project gets these pages from the CMS package, which ships a copy with its own.
   return recipe.resolvedFeatures.includes('auth') && authStore(recipe.resolvedFeatures) === 'database';
 }
 

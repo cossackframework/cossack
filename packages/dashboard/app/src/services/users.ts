@@ -6,6 +6,7 @@ import { accounts, currentTenant } from '../tenants';
 import { forgetMemberships, joinCurrentTenant, leaveCurrentTenant, requireAnotherNetworkAdmin, tenantOwnAccount } from './tenants';
 import * as security from './security';
 import * as apiTokens from './api-tokens';
+import { defaultRole } from './roles';
 import { User } from '@/models/User';
 import { UserRole } from '@/models/UserRole';
 import { Role } from '@/models/Role';
@@ -216,7 +217,9 @@ export async function createUser(input: CreateUserInput): Promise<PublicUser> {
     meta: null,
     createdAt: new Date(),
   });
-  const roleIds = [...new Set(input.roleIds ?? [])];
+  // Roles chosen by someone who may assign them; otherwise the default role, when one is set.
+  const fallback = input.roleIds === undefined ? await defaultRole() : null;
+  const roleIds = [...new Set(input.roleIds ?? (fallback ? [fallback.id] : []))];
   if (roleIds.length) {
     const known = await Role.find({ where: { id: In(roleIds) } });
     if (known.length !== roleIds.length) throw new ClientVisibleError('Choose roles that exist.');
@@ -233,6 +236,20 @@ export async function updateUser(id: string, patch: UpdateUserInput): Promise<vo
   if (Object.keys(patch).length) await User.update({ id }, patch);
 }
 
+/**
+ * Let a user sign in, or stop them: a disabled account is a guest with every session it has.
+ * In a tenant a member's account is shared, so only the tenant's own accounts change here.
+ */
+export async function setUserStatus(id: string, status: 'active' | 'disabled'): Promise<void> {
+  if (currentTenant() && !await tenantOwnAccount(id)) throw new ClientVisibleError(SHARED_ACCOUNT);
+  if (status === 'disabled') {
+    await requireAnotherAdmin(id, 'disabled');
+    if (!currentTenant()) await requireAnotherNetworkAdmin(id, 'disabled');
+  }
+  await User.update({ id }, { status });
+  if (status === 'disabled') await sql`DELETE FROM sessions WHERE user_id = ${id} AND meta = ${JSON.stringify({ type: 'auth' })}`;
+}
+
 export async function changeUserPassword(id: string, newPassword: string): Promise<void> {
   if (currentTenant() && !await tenantOwnAccount(id)) throw new ClientVisibleError(SHARED_ACCOUNT);
   if (!(await User.exists({ id }))) throw new ClientVisibleError('User not found.');
@@ -245,7 +262,7 @@ export async function changeUserPassword(id: string, newPassword: string): Promi
  */
 async function requireAnotherAdmin(userId: string, change: string, keeps = false): Promise<void> {
   if (keeps) return;
-  const admin = await Role.findOne({ where: { name: 'admin' } });
+  const admin = await Role.findOne({ where: { id: 'admin' } });
   if (!admin || !await UserRole.exists({ userId, roleId: admin.id })) return;
   const others = (await sql<{ total: number }>`
     SELECT COUNT(*) AS total FROM user_roles ur INNER JOIN users u ON u.id = ur.user_id
@@ -280,12 +297,12 @@ export async function assignRole(userId: string, roleId: string): Promise<void> 
 }
 
 export async function removeRole(userId: string, roleId: string): Promise<void> {
-  if ((await Role.findOne({ where: { id: roleId } }))?.name === 'admin') await requireAnotherAdmin(userId, 'left without the admin role');
+  if (roleId === 'admin') await requireAnotherAdmin(userId, 'left without the admin role');
   await UserRole.delete({ userId, roleId });
 }
 
 export async function syncUserRoles(userId: string, roleIds: string[]): Promise<void> {
-  const admin = await Role.findOne({ where: { name: 'admin' } });
+  const admin = await Role.findOne({ where: { id: 'admin' } });
   await requireAnotherAdmin(userId, 'left without the admin role', !!admin && roleIds.includes(admin.id));
   await UserRole.delete({ userId });
   if (roleIds.length) {

@@ -14,7 +14,9 @@
 !/scripts/start.mjs
 !/src/
 /src/*
-!/src/auth.ts
+!/src/mail.ts
+!/src/avatars.ts
+!/src/auth-events.ts
 !/src/auth-options.ts
 !/src/brand.ts
 !/src/passkeys.client.ts
@@ -34,8 +36,6 @@
 !/src/services/
 /src/services/*
 !/src/services/rbac.ts
-!/src/services/roles.ts
-!/src/services/users.ts
 !/src/plugins/
 /src/plugins/*
 !/src/plugins/default-theme/
@@ -51,9 +51,6 @@
 !/src/pages/auth/
 /src/pages/auth/*
 !/src/pages/auth/setup/
-!/src/pages/auth/magic/
-!/src/pages/auth/verify/
-!/src/pages/auth/register-site/
 !/src/pages/dashboard/
 /src/pages/dashboard/*
 !/src/pages/dashboard/(cms)/

@@ -1,3 +1,5 @@
+import { hashPassword } from '@cossackframework/auth';
+import { User } from '@/models/User';
 import { Client, Cossack, Page, RateLimit, State, flash, flashed, type HeadValue } from '@cossackframework/core';
 import { Alert } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
@@ -73,12 +75,14 @@ export default class SetupPage extends Cossack {
             return this.redirect('/auth/setup');
         }
         await cms.ready({ force: true });
-        if (await cms.accounts.hasNetworkAdmin()) return this.redirect('/auth/login');
+        // Set up once: the first account is the network's administrator.
+        if (await User.exists({ networkAdmin: true })) return this.redirect('/auth/login');
         if ((await cms.users.count()) > 0) return this.takeOver(value('email'), value('password'));
         try {
             for (const role of DEFAULT_ROLES) await cms.users.defineRole({ ...role, permissions: [...role.permissions] });
             // The first account runs the network as well as this site.
-            const user = await cms.users.create({ email: value('email'), name: value('name'), password: value('password'), roles: ['admin'], networkRole: NETWORK_ADMIN });
+            const user = await cms.users.create({ email: value('email'), name: value('name'), password: value('password'), roles: ['admin'] });
+            await User.update({ id: user.id }, { networkAdmin: true });
             await cms.settings.update('general', { siteTitle: value('siteTitle').trim() || 'My Site', adminEmail: user.email }, { principal: systemPrincipal('setup') });
             // A first post, a category, a contact form and its page, as the administrator, when asked for; a restored database keeps its own content.
             if (value('starter')) {
@@ -128,7 +132,8 @@ export default class SetupPage extends Cossack {
             const address = normalizeEmail(email);
             const member = (await cms.users.list({ search: address, limit: 100 })).items.find(user => user.email === address);
             if (!member?.assignments.some(role => role.id === 'admin')) throw new Error('Enter the email of one of this site\'s administrators.');
-            await cms.accounts.adoptMembers(MAIN_SITE, member.id, password);
+            // The members came with the export, without passwords: this one gets a password and runs the network.
+            await User.update({ id: member.id }, { passwordHash: await hashPassword(password), networkAdmin: true, status: 'active' });
             const { headers } = await authSessions.create(member.id, this.c);
             headers.forEach((header, name) => this.c.header(name, header, { append: true }));
         } catch (error) {

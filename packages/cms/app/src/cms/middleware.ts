@@ -1,14 +1,15 @@
 import type { Context, MiddlewareHandler, Next } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { enforceRateLimit, getClientIp, getSupportedLocales, LOCALE_COOKIE_NAME, setRequestLocale } from '@cossackframework/core';
-import { ANONYMOUS, escapeHtml, hasPermission, PERMISSIONS, type Principal, DEFAULT_ICON_STYLE, isIconStyle } from '@cossackframework/cms';
+import { ANONYMOUS, escapeHtml, hasPermission, PERMISSIONS, userPrincipal, type Principal, DEFAULT_ICON_STYLE, isIconStyle } from '@cossackframework/cms';
 import { MAIN_SITE, networkSite, type SiteResolution } from '@cossackframework/cms/server';
 import { cmsFor, networkFor, type CmsBindings } from './index';
 import { handoff } from './handoff';
 import { dashboardPalette } from '../dashboard/head';
 import { runMaintenance } from './maintenance';
 import { answered, withRequestCalls } from './request-calls';
-import { accountNeedsSecondFactor, secondFactorRequired, type PublicUser } from '../auth';
+import { apiTokenUser, secondFactorRequired, securityStatus, type PublicUser } from '../auth';
+import { authOptions } from '../auth-options';
 
 /**
  * For `createApp({ isPluginActive })`: a rendered plugin's pages, layouts and HTTP handlers
@@ -80,6 +81,8 @@ async function serveSite(c: Context, next: Next): Promise<Response | void> {
     const style = settings?.['interface.iconStyle'];
     c.set('cms.iconStyle', isIconStyle(style) ? style : DEFAULT_ICON_STYLE);
     c.set('cms.palette', dashboardPalette(settings?.['interface.palette'], settings?.['interface.accent']));
+    // The shared sign-in code reads registration and two-step sign-in from these (src/auth-options.ts).
+    c.set('cms.settings', settings ?? {});
     // Until a user picks a language (Profile → Dashboard language), the dashboard speaks the
     // site's default one when a catalog has it. Site pages then switch to their content's language.
     const supported = getSupportedLocales();
@@ -121,9 +124,22 @@ function securityHeaders(c: Context, url: URL): void {
  * application password (`Authorization: Bearer cms_…`) signs the request in instead; read-only
  * passwords may only read, and token requests skip the session's same-origin checks.
  */
+/** The request principal of a signed-in user: their roles' names and permissions here; a network administrator's role carries `*`. */
+export function principalOf(user: PublicUser): Principal {
+    return userPrincipal(user.id, user.roles.map(role => role.id), user.roles.flatMap(role => role.permissions));
+}
+
+/** Whether Settings → General ask this account for two-step sign-in and it has no second factor yet. */
+async function accountNeedsSecondFactor(user: PublicUser): Promise<boolean> {
+    const { requireTwoFactor, twoFactorRoles } = authOptions.security;
+    if (!requireTwoFactor || (twoFactorRoles.length > 0 && !user.roles.some(role => twoFactorRoles.includes(role.id) || twoFactorRoles.includes(role.name)))) return false;
+    const status = await securityStatus(user.id);
+    return !status.totp && status.passkeys.length === 0;
+}
+
 export const cmsPrincipal: MiddlewareHandler = async (c, next) => {
     const user = c.get('user') as PublicUser | undefined;
-    let session = user?.principal as Principal | undefined;
+    let session = user ? principalOf(user) : undefined;
     // Staff that General settings require to use two-step sign-in act with their session only
     // once they have a second factor. Until then the session is anonymous everywhere (the site,
     // Live Edit, previews, server methods), so no page has to repeat the check; signing in and
@@ -135,10 +151,11 @@ export const cmsPrincipal: MiddlewareHandler = async (c, next) => {
     c.set('principal', session ?? ANONYMOUS);
     const header = c.req.header('authorization') ?? '';
     if (!user && /^Bearer cms_/i.test(header) && API_PATH.test(c.req.path)) {
-        const token = await c.get('cms').tokenPrincipal(header.slice(7).trim()).catch(() => null);
-        if (!token) return c.json({ error: 'The application password is not valid.', code: 'CMS_UNAUTHENTICATED' }, 401, { 'www-authenticate': 'Bearer' });
+        const verified = await apiTokenUser(header.slice(7).trim()).catch(() => null);
+        if (!verified) return c.json({ error: 'The application password is not valid.', code: 'CMS_UNAUTHENTICATED' }, 401, { 'www-authenticate': 'Bearer' });
+        const token = { principal: principalOf(verified.user), scope: verified.scope };
         // An application password made before the requirement was turned on stops working too.
-        if (token.principal.kind === 'user' && await accountNeedsSecondFactor({ id: token.principal.id, principal: token.principal }).catch(() => true)) return secondFactorRefusal(c);
+        if (await accountNeedsSecondFactor(verified.user).catch(() => true)) return secondFactorRefusal(c);
         if (token.scope === 'read' && c.req.path !== MCP_PATH && !['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) return c.json({ error: 'This application password can only read.', code: 'CMS_FORBIDDEN' }, 403);
         c.set('principal', token.principal);
         c.set('cms.token', true);

@@ -30,6 +30,7 @@
   "dependencies": {
     "@cossackframework/auth": "workspace:*",
     "@cossackframework/core": "workspace:*",
+    "@cossackframework/database": "workspace:*",
     "@cossackframework/renderer": "workspace:*",
     "@cossackframework/romedb": "workspace:*",
     "@cossackframework/solar-icons": "0.7.1",
@@ -106,7 +107,24 @@
     ],
     "host": [
       "cms.config.ts",
-      "stores.client.ts"
+      "stores.client.ts",
+      "orm/factory.ts",
+      "models/User.ts",
+      "models/Session.ts",
+      "models/Role.ts",
+      "models/UserRole.ts",
+      "models/OAuthAccount.ts",
+      "models/UserSecurity.ts",
+      "models/Passkey.ts",
+      "models/AuthChallenge.ts",
+      "models/AuthAttempt.ts",
+      "models/ApiToken.ts",
+      "models/Tenant.ts",
+      "models/TenantDomain.ts",
+      "models/TenantMember.ts",
+      "models/TenantHandoff.ts",
+      "models/TenantNetwork.ts",
+      "models/TenantSession.ts"
     ],
     "hostTemplate": "0.9.0"
   },

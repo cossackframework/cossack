@@ -1,7 +1,6 @@
 # The CMS on the dashboard's accounts and tenants
 
-Status: decided 2026-11-22 (below); steps 1 to 3 built (the dashboard's side) and step 4 (the
-port). Steps 5 to 8 change the CMS's code and are not started. Steps are committed one by one. It replaces "step 6" of `specs/romedb-orm.md`,
+Status: decided 2026-11-22 (below); steps 1 to 6 built. Added sites are broken until step 7. Steps are committed one by one. It replaces "step 6" of `specs/romedb-orm.md`,
 which was built in part and reverted on 2026-11-21, before the dashboard had tenants
 (`specs/dashboard-tenants.md`) and before a user's field values were documents
 (`specs/cms-field-values.md`).
@@ -124,11 +123,36 @@ What the rest of the CMS calls on the stores today (inventory of 2026-11-22):
      passwords are the application's) and an automation's `$user` is the member.
    - Stays the CMS's: the counters of forms and comments (`security.attempt` on
      `cms_attempts`), which step 8 moves out of `security.ts`.
-6. The application's port over the dashboard's services; a CMS project gets the account
-   models and migrations; the CMS's `auth.ts`, `services/{users,roles,rbac}.ts`,
-   `cms/handoff.ts` and `cms/middlewares.ts` give way to the dashboard's. Roles need a
-   display name beside the name the CMS uses as their ID (`roles.label`). Avatar uploads and
-   held accounts are decided here.
+6. **Done:** the application signs people in with the dashboard's code.
+   - A CMS project has the `database` feature on RomeDB (the CMS's own instance) with the
+     account models and migrations; `@cossackframework/cms` depends on
+     `@cossackframework/database` and lists the models in `cossack.host`.
+   - The CMS app's `auth.ts`, `services/users.ts`, `services/roles.ts` and its verify, sign-in
+     link and site registration pages are gone; the dashboard's come in with the shell.
+   - CMS-owned, on the dashboard's user shape: `auth-options.ts` (registration and two-step
+     sign-in from Settings → General, as getters over the request's settings), `mail.ts`,
+     `avatars.ts`, `auth-events.ts` (the dashboard's replaceable modules), `lib/permissions.ts`,
+     `services/rbac.ts`, `cms/people.ts` (the port over the ORM models), `cms/actor.ts`.
+   - Roles: the ID is the handle (`admin`, `editor`; a role made on the Roles screen gets one
+     from its name) and the name is what people read. The dashboard finds the admin role by
+     its ID. New accounts get the default role.
+   - `cms/middleware.ts` builds the principal from the dashboard's user and verifies
+     `Bearer cms_…` through the dashboard.
+   - A site's database file leaves out the account tables that hold secrets.
+   - **Red until step 7:** added sites. `generated-runtime-cms` fails in its browser case (the
+     network's users screen) and its Workers development case (adding a site);
+     `generated-runtime-cms-cli` fails at `sites create`. Everything single-site passes.
+   - **Thinner coverage:** eight test files of the old `auth.ts` were deleted (account flows,
+     network account takeover, OAuth sign-in, passkey sign-in policy, second factor changes and
+     gate, site registration, user management). The dashboard's code has
+     `scaffold/tests/auth-security.test.js` and `generated-runtime-account-security`, which do
+     not cover: email links built from the site's address and never the request's Host, a
+     per-account count of wrong current passwords, OAuth's refusal to claim an existing email,
+     and the passkey-only policy. Step 8 rebuilds these.
+   - **Different from before:** with two-step sign-in required and no role named, every
+     account is asked, not only the people who can use the dashboard. The CMS's recovery
+     endpoint, its maintenance purges and the dashboard home's "recent sessions" still read
+     the old stores.
 7. Sites on tenants: `CmsNetwork` keeps the host of each site and the network's policy,
    settings, exports and updates, and takes sites, domains and members from the tenants
    service. Site export and import. The network screens give way to the Tenants screen where

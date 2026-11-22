@@ -260,7 +260,7 @@ export async function removeTenantDomain(id: string, host: string): Promise<void
 /**
  * Make an account a member of a tenant: a member row under the account's ID in the tenant's
  * database (email and name copied, no password), its roles there, and the membership in the
- * main database. Call it in the main database's scope. Roles are given by name.
+ * main database. Call it in the main database's scope. Roles are given by ID.
  */
 export async function addMemberById(tenant: TenantInfo, userId: string, roleNames: readonly string[] = []): Promise<void> {
   const account = await User.findOne({ where: { id: userId } });
@@ -277,7 +277,7 @@ async function joinHere(account: User, roleNames: readonly string[]): Promise<vo
     await User.insert({ id: account.id, email: account.email, name: account.name, passwordHash: null, avatar: account.avatar, meta: null, status: 'active', createdAt: new Date() });
   }
   if (!roleNames.length) return;
-  const roles = (await Role.find({ take: 500 })).filter(role => roleNames.includes(role.name));
+  const roles = (await Role.find({ take: 500 })).filter(role => roleNames.includes(role.id));
   for (const role of roles) await UserRole.upsert({ userId: account.id, roleId: role.id, createdAt: new Date() }, ['userId', 'roleId']);
 }
 

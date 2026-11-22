@@ -13,11 +13,11 @@ export default defineSeeder({
     const now = new Date();
     const permissions = [...ALL_PERMISSIONS];
 
-    let adminRole = await Role.findOne({ where: { name: 'admin' } });
+    // The admin role is the one with the ID `admin`.
+    let adminRole = await Role.findOne({ where: { id: 'admin' } });
     if (!adminRole) {
-      const id = uuidv7();
-      await Role.insert({ id, name: 'admin', permissions, createdAt: now });
-      adminRole = await Role.findOne({ where: { id } });
+      await Role.insert({ id: 'admin', name: 'admin', permissions, createdAt: now });
+      adminRole = await Role.findOne({ where: { id: 'admin' } });
     } else if (JSON.stringify(adminRole.permissions ?? []) !== JSON.stringify(permissions)) {
       await Role.update({ id: adminRole.id }, { permissions });
     }

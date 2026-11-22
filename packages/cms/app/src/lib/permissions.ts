@@ -82,3 +82,27 @@ const LABELS: Record<string, string> = {
 export function permissionLabel(permission: string): string {
     return LABELS[permission] ?? permission;
 }
+
+/**
+ * Permission patterns: `*` matches everything, `cms/*` every permission starting with `cms/`,
+ * and `cms/posts:*` every action on one resource. The same rule as the CMS's own `permissionMatches`.
+ */
+export function permissionMatches(pattern: string, permission: string): boolean {
+    if (pattern === '*' || pattern === permission) return true;
+    return pattern.endsWith('*') && permission.startsWith(pattern.slice(0, -1));
+}
+
+/** Whether one of the held patterns gives the permission. */
+export function holds(held: readonly string[], permission: string): boolean {
+    return held.some(pattern => permissionMatches(pattern, permission));
+}
+
+/** Whether the held patterns give every one of the permissions, each as written. */
+export function holdsAll(held: readonly string[], permissions: readonly string[]): boolean {
+    return permissions.every(permission => holds(held, permission));
+}
+
+/** A permission a role may hold: any pattern of lowercase names, as plugins add their own. */
+export function validPermission(permission: string): boolean {
+    return /^(?:\*|[a-z][a-z0-9:/._*-]{0,127})$/.test(permission);
+}

@@ -11,9 +11,10 @@ import {
     ANONYMOUS, mediaKind, mediaUrl, type MediaKind, type SnippetPart,
     type Block, type FieldFilter, type MenuItem, type MenuShape, type Note, type NoteThread, type Principal, type RecordShape, type RichTextDoc, redirectProblems, type Redirect, type RedirectStatus, type FieldDeclaration, WEBHOOK_EVENTS, COMMENT_STATUSES, type Webhook, type CommentShape, type CommentStatus } from '@cossackframework/cms';
 import { networkSite, type ApiToken, type CmsHost, type NetworkSite, type SiteRecord } from '@cossackframework/cms/server';
-import { createApiToken, listApiTokens, manageableHere, NETWORK_ACCOUNT_LOCKED, revokeApiToken, type PublicUser } from '../auth';
+import { createApiToken, listApiTokens, revokeApiToken, type PublicUser } from '../auth';
+import { userOfPrincipal } from './actor';
 import { canAssignRoles, canGrantRoles, canManageUser } from '../services/rbac';
-import { changeUserPassword, createUser, deleteUser, getUser, listUsers, syncUserRoles, updateUser, type UserDetail, type UserSummary } from '../services/users';
+import { changeUserPassword, createUser, deleteUser, getUser, listUsers, setUserStatus, syncUserRoles, updateUser, type UserDetail, type UserSummary } from '../services/users';
 import { apiEntries, apiPatterns, withheldFields, type ApiEntry } from './content-api';
 import { entryLock } from './site';
 import { routeResource } from './content';
@@ -48,7 +49,7 @@ function allowed(c: Context, permission: string, refusal: string): Principal & {
 /** The signed-in user as the RBAC helpers see them; a token request has no `user` on the context. */
 function actor(c: Context): PublicUser {
     const principal = signedIn(c);
-    return (c.get('user') as PublicUser | undefined) ?? { id: principal.id, email: '', name: '', avatar: null, meta: null, roles: [], principal };
+    return (c.get('user') as PublicUser | undefined) ?? userOfPrincipal(principal);
 }
 
 function integer(value: unknown, fallback: number, min: number, max: number): number {
@@ -691,8 +692,7 @@ export async function userUpdate(c: Context, id: string, input: Body): Promise<U
     if (input.status !== undefined) {
         if (input.status !== 'active' && input.status !== 'disabled') throw new CmsError('CMS_VALIDATION', 'status is active or disabled.');
         if (id === me.id) throw new CmsError('CMS_VALIDATION', 'Your own account stays active.');
-        if (!(await manageableHere(id))) throw new CmsError('CMS_FORBIDDEN', NETWORK_ACCOUNT_LOCKED);
-        await c.get('cms').users.setStatus(id, input.status);
+        await setUserStatus(id, input.status);
     }
     return (await getUser(id))!;
 }
