@@ -10,6 +10,8 @@ export const authOptions: Required<Omit<DashboardConfig, 'security' | 'registrat
     tenants: Required<NonNullable<DashboardConfig['tenants']>>;
     registration: Required<NonNullable<DashboardConfig['registration']>>;
     security: Required<NonNullable<DashboardConfig['security']>>;
+    /** What an application password starts with: `app_…`. */
+    tokenPrefix: string;
 } = {
     authMethods: dashboard.authMethods ?? ['credentials'],
     oauth: dashboard.oauth ?? [],
@@ -28,6 +30,7 @@ export const authOptions: Required<Omit<DashboardConfig, 'security' | 'registrat
         signIn: dashboard.tenants?.signIn === 'shared' ? 'shared' : 'host',
         verifyDomains: dashboard.tenants?.verifyDomains !== false,
     },
+    tokenPrefix: 'app',
     security: {
         requireTwoFactor: dashboard.security?.requireTwoFactor === true,
         twoFactorRoles: dashboard.security?.twoFactorRoles ?? [],

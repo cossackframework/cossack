@@ -1,6 +1,7 @@
 // Application passwords on the ORM: named tokens a user creates for apps and scripts. A token
 // is `app_<id>.<secret>`; only the secret's SHA-256 is stored. A request with one acts as the
 // user with their current roles; `read` tokens may only read.
+import { authOptions } from '../auth-options';
 import { ClientVisibleError } from '@cossackframework/core';
 import { ApiToken as ApiTokenRow } from '@/models/ApiToken';
 import { clock, randomToken, sha256Hex } from './security';
@@ -17,7 +18,8 @@ export interface ApiToken {
   expiresAt: number | null;
 }
 
-const FORMAT = /^app_([A-Za-z0-9_-]{16})\.([A-Za-z0-9_-]{43})$/;
+/** `<prefix>_<id>.<secret>`; the prefix is the project's (`app`), or the package's that serves these pages. */
+const format = () => new RegExp(`^${authOptions.tokenPrefix}_([A-Za-z0-9_-]{16})\\.([A-Za-z0-9_-]{43})$`);
 /** Tokens a user can hold. */
 export const API_TOKEN_LIMIT = 20;
 
@@ -54,7 +56,7 @@ export async function create(userId: string, input: { name: string; scope?: ApiT
   const expiresAt = input.expiresAt ?? null;
   await ApiTokenRow.insert({ id, userId, name, secretHash: await sha256Hex(secret), scope, createdAt: new Date(now), lastUsedAt: null,
     expiresAt: expiresAt === null ? null : new Date(expiresAt) });
-  return { token: `app_${id}.${secret}`, record: { id, userId, name, scope, createdAt: now, lastUsedAt: null, expiresAt } };
+  return { token: `${authOptions.tokenPrefix}_${id}.${secret}`, record: { id, userId, name, scope, createdAt: now, lastUsedAt: null, expiresAt } };
 }
 
 /** False when the user has no such token. */
@@ -68,7 +70,7 @@ export async function revokeAll(userId: string): Promise<void> {
 
 /** The token's owner and access, or null for an unknown, wrong or expired token. Use is recorded at most every five minutes. */
 export async function verify(token: string): Promise<{ id: string; userId: string; scope: ApiTokenScope } | null> {
-  const match = typeof token === 'string' ? FORMAT.exec(token) : null;
+  const match = typeof token === 'string' ? format().exec(token) : null;
   if (!match) return null;
   const [, id, secret] = match;
   const row = await ApiTokenRow.findOne({ where: { id: id! } });

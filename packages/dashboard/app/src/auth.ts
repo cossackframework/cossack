@@ -23,6 +23,9 @@ import { ClientVisibleError, getClientIp, getRequestContext } from '@cossackfram
 import { renderSVG } from 'uqr';
 import { uuidv7 } from './lib/uuid';
 import { authOptions } from './auth-options';
+import { mailer } from './mail';
+import { avatarUploads as storedAvatars, storeAvatar } from './avatars';
+import { authEvents } from './auth-events';
 import { accounts, currentTenant, hostName, inTenant, mainHost, sharedSignIn, tenantOfHost } from './tenants';
 import { TenantHandoff } from '@/models/TenantHandoff';
 import { TenantSession } from '@/models/TenantSession';
@@ -269,6 +272,7 @@ export const authSessions = createSessionManager({
       // The main database remembers which tenants the main session reached, to end them with it.
       const tenant = currentTenant();
       if (parent && tenant) await accounts(() => TenantSession.upsert({ sessionPublicId: parent, tenantId: tenant.id, userId: record.userId, createdAt: new Date() }, ['sessionPublicId', 'tenantId']));
+      await authEvents.signedIn({ id: record.userId });
     },
     async read(id) { return authSession(await sessions(() => Session.findOne({ where: { id } }))); },
     async replace(expected, replacement, now) {
@@ -535,19 +539,6 @@ export function linkOrigin(): string | null {
   return ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) ? url.origin : null;
 }
 
-interface Mail { to: string; subject: string; text: string }
-
-/** The email sender: the `EMAIL` binding (send_email on Workers). Null when none is configured. */
-function mailer(): { send(mail: Mail): Promise<void> } | null {
-  const sender = binding<{ send: (message: unknown) => Promise<unknown> }>('EMAIL');
-  if (!sender) return null;
-  const from = env('MAIL_FROM', 'no-reply@example.com');
-  return { async send(mail) { await sender.send({ ...mail, from, html: `<p>${escapeHtml(mail.text).replace(/\n/g, '<br>')}</p>` }); } };
-}
-
-function escapeHtml(text: string): string {
-  return text.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!);
-}
 
 // A link's token is kept as its hash, in the sessions table like reset tokens, with its own purpose.
 type LinkKind = 'verify' | 'magic';
@@ -628,12 +619,15 @@ export async function registerUser(email: string, password: string, name?: strin
   if (existing?.status === 'unconfirmed') await removeAccount(existing.id);
   else if (existing) throw new ClientVisibleError('An account with this email already exists.');
   const id = uuidv7();
+  // What else has a say in a registration (src/auth-events.ts) may change the name, or refuse it.
+  name = (await authEvents.beforeRegister({ email, name: name ?? '' })).name || undefined;
   const status = verify ? 'unconfirmed' : options.approve ? 'pending' : 'active';
   // On a tenant's host the new account is that tenant's own.
   await User.insert({ id, email, name: name ?? null, passwordHash: await hashPassword(password), avatar: null, meta: null, status, tenantAccount: tenantAccountHome(), createdAt: new Date() });
   const role = options.defaultRole ? await Role.findOne({ where: { name: options.defaultRole } }) : null;
   if (role) await UserRole.insert({ userId: id, roleId: role.id, createdAt: new Date() });
   const user: PublicUser = { id, email, name: name ?? '', avatar: null, meta: null, roles: role ? [{ id: role.id, name: role.name, permissions: role.permissions ?? [] }] : [] };
+  await authEvents.registered({ id, email, name: name ?? '' });
   if (verify) {
     await sendVerification({ id, email, name: name ?? null });
     return { ...user, verification: 'sent' };
@@ -719,12 +713,14 @@ export async function deleteRegistration(userId: string): Promise<boolean> {
  * Whether profile pictures can be uploaded. Without file storage, users enter an image URL;
  * configure a storage provider and implement uploadAvatar to accept uploads.
  */
-export const avatarUploads = false;
+export const avatarUploads = storedAvatars;
 
-export async function uploadAvatar(_userId: string, _file: File): Promise<string> {
-  return accounts(async () => {
-  throw new ClientVisibleError('Picture uploads need file storage. Enter an image URL instead.');
-  });
+/** Store an uploaded picture (src/avatars.ts) and make it the user's avatar. Answers its URL. */
+export async function uploadAvatar(userId: string, file: File): Promise<string> {
+  if (!storedAvatars) throw new ClientVisibleError('Picture uploads need file storage. Enter an image URL instead.');
+  const url = await storeAvatar(userId, file);
+  await updateUserProfile(userId, { avatar: url });
+  return url;
 }
 
 export interface ProfileUpdate {
