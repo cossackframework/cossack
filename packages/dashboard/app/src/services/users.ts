@@ -186,7 +186,8 @@ function unknownPassword(): string {
 }
 
 export async function createUser(input: CreateUserInput): Promise<PublicUser> {
-  if (!input.invite && !input.password) throw new ClientVisibleError('Set a password or send an invitation.');
+  // In a tenant an existing main account joins without a password; only a new account needs one.
+  if (!input.invite && !input.password && !currentTenant()) throw new ClientVisibleError('Set a password or send an invitation.');
   if (input.invite && !canInvite()) throw new ClientVisibleError('No email sender is configured, so invitations cannot be sent. Set a password instead.');
   if (input.invite) input = { ...input, password: unknownPassword() };
   // In a tenant: the account with this email becomes a member; a new account is made when there is none.
