@@ -34,7 +34,9 @@ async function accountSecurity(database) {
     // An authenticator app: the setup gives a secret, and a code from it confirms it.
     const setup = await owner.action(security, 'beginSetup', []);
     expect(setup.error).toBe('');
-    const confirmed = await owner.action(security, 'finishSetup', [await totpCode(setup.setup.secret, totpStep(Date.now()))]);
+    // The same code is tried again below, so it is made once: a code made later could belong to the next 30 seconds.
+    const usedCode = await totpCode(setup.setup.secret, totpStep(Date.now()));
+    const confirmed = await owner.action(security, 'finishSetup', [usedCode]);
     expect(confirmed.error).toBe('');
     expect(confirmed.recoveryCodes).toHaveLength(10);
     expect(confirmed.status).toMatchObject({ totp: true, recoveryCodes: 10 });
@@ -45,7 +47,7 @@ async function accountSecurity(database) {
     expect([visitor.jar.has('session_id'), visitor.jar.has('two_factor')]).toEqual([false, true]);
     expect((await visitor.action(twoFactor, 'verify', ['000000'])).error).toContain('4 tries left');
     // The code that confirmed the setup was used: it does not work a second time.
-    expect((await visitor.action(twoFactor, 'verify', [await totpCode(setup.setup.secret, totpStep(Date.now()))])).error).toContain('tries left');
+    expect((await visitor.action(twoFactor, 'verify', [usedCode])).error).toContain('tries left');
     const verified = await visitor.action(twoFactor, 'verify', [confirmed.recoveryCodes[0]]);
     expect(verified._cossack_redirect).toBe('/dashboard/profile/security?recovered=1');
     expect(visitor.jar.has('session_id')).toBe(true);

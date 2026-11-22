@@ -65,8 +65,30 @@ async function tenants(database) {
     const stranger = on('acme.app.test');
     expect((await stranger.action(login, 'login', [{ email: grace.email, password: grace.password }])).error).toContain('not a member of Acme');
     expect(stranger.jar.has('session_id')).toBe(false);
-    // Nobody registers on a tenant's host.
-    expect((await on('acme.app.test').action(register, 'register', [{ name: 'Eve', email: 'eve@example.test', password: 'test-password-789' }])).error).toContain('closed');
+    // Someone who registers on a tenant's host gets an account of that tenant only: its password
+    // and sessions are in the tenant's database, and the main host does not know it.
+    const eve = { name: 'Eve', email: 'eve@example.test', password: 'test-password-789' };
+    const own = on('acme.app.test');
+    await own.action(register, 'register', [eve]);
+    expect(own.jar.has('session_id')).toBe(true);
+    expect((await own.request('/dashboard')).status).toBe(200);
+    expect(await acme.page('/dashboard/users')).toContain(eve.email);
+    expect(await owner.page('/dashboard/users')).not.toContain(eve.email);
+    expect((await on('app.test').action(login, 'login', [{ email: eve.email, password: eve.password }])).error).toBe('Invalid credentials');
+    const again = on('acme.app.test');
+    expect((await again.action(login, 'login', [{ email: eve.email, password: eve.password }])).error ?? '').toBe('');
+    expect((await again.action(login, 'login', [{ email: eve.email, password: 'wrong-password-000' }])).error).toBe('Invalid credentials');
+    if (database === 'sqlite') {
+      const own = file => { const db = new DatabaseSync(path.join(root, file), { readOnly: true }); try { return db.prepare('SELECT email, tenant_account AS own, password_hash IS NOT NULL AS secret FROM users ORDER BY email').all().map(row => [row.email, Number(row.own), Number(row.secret)]); } finally { db.close(); } };
+      // The administrator is a member here (no password in this database); Eve is the tenant's own.
+      expect(own('tenants/acme.sqlite')).toEqual([[admin.email, 0, 0], [eve.email, 1, 1]]);
+      expect(own('database.sqlite').map(row => row[0])).toEqual([admin.email, grace.email]);
+    }
+    // The tenant's administrator makes such an account too, for an email no main account has.
+    const frank = { email: 'frank@example.test', password: 'test-password-321' };
+    expect((await acme.action(newUser, 'create', ['Frank', frank.email, frank.password, [], false])).error ?? '').toBe('');
+    expect((await on('acme.app.test').action(login, 'login', [frank])).error ?? '').toBe('');
+    expect((await on('app.test').action(login, 'login', [frank])).error).toBe('Invalid credentials');
 
     // The tenant's administrator adds the account as a member, on the tenant's own Users screen.
     const added = await acme.action(newUser, 'create', ['', grace.email, '', [], false]);
@@ -79,7 +101,7 @@ async function tenants(database) {
     const mainUsers = await owner.page('/dashboard/users');
     expect(mainUsers).toContain(admin.email);
     expect(mainUsers).toContain(grace.email);
-    expect((await owner.action(screen, 'open', [made.tenants[0].id])).members.map(entry => entry.email).sort()).toEqual([admin.email, grace.email]);
+    expect((await owner.action(screen, 'open', [made.tenants[0].id])).members.map(entry => entry.email).sort()).toEqual([admin.email, eve.email, frank.email, grace.email]);
 
     // Removed from the tenant, the account's session there is a guest's; the account stays.
     expect((await owner.action(screen, 'removeMember', [made.tenants[0].id, added.id ?? (await owner.action(screen, 'open', [made.tenants[0].id])).members.find(entry => entry.email === grace.email).id], { state: { selected: made.tenants[0].id } })).error).toBe('');
@@ -189,7 +211,17 @@ it('signs in once for every host with shared sign-in', async () => {
     expect((await main.action(screen, 'addMember', [(await main.action(screen, 'open', [''])).tenants[0].id, grace.email])).error).toBe('');
     const tenantSide = on('acme.app.test');
     const mainSide = on('app.test');
-    const [, toMain] = pathOf(await tenantSide.request('/auth/login'));
+    // The tenant's host sends them to the main host once, on its own; nobody is signed in there,
+    // so they come back to the tenant's own sign-in page, which has a link for main accounts.
+    const [, auto] = pathOf(await tenantSide.request('/auth/login'));
+    expect(auto).toContain('auto=1');
+    const returned = await mainSide.request(auto);
+    expect([returned.status, returned.headers.get('location')]).toEqual([302, `http://acme.app.test:${port}/auth/login`]);
+    const page = await tenantSide.request('/auth/login');
+    expect(page.status).toBe(200);
+    expect(await page.text()).toContain('/auth/tenant/start');
+    const [, toMain] = pathOf(await tenantSide.request('/auth/tenant/start'));
+    expect(toMain).not.toContain('auto=1');
     const asked = await mainSide.request(toMain);
     expect([asked.status, asked.headers.get('location')]).toEqual([302, '/auth/login']);
     expect((await mainSide.action(login, 'login', [{ email: grace.email, password: grace.password }])).error ?? '').toBe('');

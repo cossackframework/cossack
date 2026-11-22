@@ -17,6 +17,7 @@ import { SESSION_COOKIE_NAME } from '../auth';
 // The cookies of shared sign-in; the endpoints under src/pages/auth/tenant read them.
 const TENANT_STATE = 'tenant_state';
 const TENANT_RETURN = 'tenant_return';
+const TENANT_AUTO = 'tenant_auto';
 const WELL_KNOWN = '/.well-known/cossack-tenant';
 const TENANTS_SCREEN = /^\/dashboard\/tenants(?:\/|$)/;
 
@@ -52,13 +53,21 @@ export const tenantMiddleware = defineServerMiddleware(async (c, next) => {
         return c.redirect(url.toString(), 301);
     }
     if (tenant.status === 'archived') return c.text('This site is archived.', 503);
-    // Shared sign-in: people sign in on the main host, which sends them back with a one-time code.
-    if (sharedSignIn && c.req.method === 'GET' && c.req.path === '/auth/login') {
+    // Shared sign-in. The tenant's sign-in page is for its own accounts; people with a main
+    // account sign in on the main host, which sends them back with a one-time code. A visitor
+    // goes there once on their own: signed in already, they arrive signed in; if not, they come
+    // back to this page, whose link ("/auth/tenant/start") takes them to the main host's sign-in.
+    const start = c.req.path === '/auth/tenant/start';
+    const first = c.req.path === '/auth/login' && !getCookie(c, TENANT_AUTO) && !getCookie(c, SESSION_COOKIE_NAME);
+    if (sharedSignIn && c.req.method === 'GET' && (start || first)) {
         const url = new URL(c.req.url);
+        const secure = url.protocol === 'https:';
         const state = crypto.randomUUID().replaceAll('-', '');
-        setCookie(c, TENANT_STATE, state, { path: '/', httpOnly: true, sameSite: 'Lax', maxAge: 600, secure: url.protocol === 'https:' });
-        const back = returnPath(c.req.query('redirect'));
-        const query = new URLSearchParams({ host, state, ...(back ? { next: back } : {}) });
+        setCookie(c, TENANT_STATE, state, { path: '/', httpOnly: true, sameSite: 'Lax', maxAge: 600, secure });
+        // Once in five minutes, so a visitor without a main session is not sent in circles.
+        setCookie(c, TENANT_AUTO, '1', { path: '/', httpOnly: true, sameSite: 'Lax', maxAge: 300, secure });
+        const back = returnPath(c.req.query(start ? 'next' : 'redirect'));
+        const query = new URLSearchParams({ host, state, ...(back ? { next: back } : {}), ...(start ? {} : { auto: '1' }) });
         url.hostname = main;
         url.pathname = '/auth/tenant/redirect';
         url.search = query.toString();

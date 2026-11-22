@@ -27,7 +27,7 @@ import { accounts, currentTenant, hostName, inTenant, mainHost, sharedSignIn, te
 import { TenantHandoff } from '@/models/TenantHandoff';
 import { TenantSession } from '@/models/TenantSession';
 import { Tenant } from '@/models/Tenant';
-import { withTenant } from './tenants';
+import { asMainAccount, asTenantAccount, markTenantAccountRequest, tenantAccountHome, withTenant } from './tenants';
 import { ALL_PERMISSIONS } from './lib/permissions';
 import { siteName } from './brand';
 import * as security from './services/security';
@@ -136,9 +136,39 @@ async function loadUserRoles(userId: string): Promise<RoleAssignment[]> {
   return await memberOfTenant(userId) ? inTenant(() => rolesHere(userId)) : [];
 }
 
+/** In a tenant's request: whether the ID is an account of this tenant only. */
+async function tenantAccount(userId: string): Promise<boolean> {
+  if (!currentTenant()) return false;
+  return inTenant(async () => (await User.findOne({ where: { id: userId } }))?.tenantAccount === true);
+}
+
+/** Run account code where the account lives: this tenant's database for its own accounts, the main one otherwise. */
+async function accountOf<T>(userId: string, work: () => Promise<T>): Promise<T> {
+  return await tenantAccount(userId) ? asTenantAccount(() => accounts(work)) : asMainAccount(() => accounts(work));
+}
+
+/**
+ * Run code about the account with this email, as someone on this host would mean it: on a
+ * tenant's host its own account with the email, else the main account.
+ */
+async function accountByEmail<T>(email: string, work: () => Promise<T>): Promise<T> {
+  const own = currentTenant() ? await inTenant(async () => (await User.findOne({ where: { email } }))?.tenantAccount === true) : false;
+  return own ? asTenantAccount(work) : asMainAccount(work);
+}
+
+/**
+ * Run code that starts from a token (a link, a challenge): in the tenant's database first on
+ * a tenant's host, and in the main one when that found nothing.
+ */
+async function accountByToken<T>(work: () => Promise<T>, nothing: (value: T) => boolean): Promise<T> {
+  if (!currentTenant()) return work();
+  const own = await asTenantAccount(work);
+  return nothing(own) ? asMainAccount(work) : own;
+}
+
 /** Whether the account is a network administrator: its own flag, in the main database. */
 async function isNetworkAdmin(userId: string): Promise<boolean> {
-  return accounts(async () => (await User.findOne({ where: { id: userId } }))?.networkAdmin === true);
+  return asMainAccount(() => accounts(async () => (await User.findOne({ where: { id: userId } }))?.networkAdmin === true));
 }
 
 /** Whether the tenant of this request has the account as an active member. Always true without a tenant. */
@@ -307,7 +337,14 @@ export const auth = createAuth<PublicUser>({
   },
   resolveUserById: async (userId) => {
     try {
-      const row = await accounts(() => User.findOne({ where: { id: userId } }));
+      // An account of this tenant only: everything of it is in the tenant's database.
+      if (await tenantAccount(userId)) {
+        const c = getRequestContext();
+        if (c) markTenantAccountRequest(c);
+        const own = await inTenant(() => User.findOne({ where: { id: userId } }));
+        return own?.status === 'active' ? publicUser(own, await inTenant(() => rolesHere(userId))) : null;
+      }
+      const row = await asMainAccount(() => accounts(() => User.findOne({ where: { id: userId } })));
       // An account that was turned off, or waits again, is a guest even with a live session.
       if (!row || row.status !== 'active') return null;
       // So is an account on the host of a tenant it does not belong to.
@@ -320,7 +357,7 @@ export const auth = createAuth<PublicUser>({
     }
   },
   createSession: async (user, c) => {
-    const full = await accounts(() => User.findOne({ where: { id: user.id } }));
+    const full = await accountOf(user.id, () => User.findOne({ where: { id: user.id } }));
     if (!full) throw new Error('User not found');
     return authSessions.create(full.id, c);
   },
@@ -347,7 +384,7 @@ const credentials = createCredentialVerifier<User, PublicUser>({
  * address before the password is checked, so guesses sent at once meet the limit too.
  */
 export async function loginUser(email: string, password: string, address = clientAddress()): Promise<PublicUser | null> {
-  return accounts(async () => {
+  return accountByEmail(email, () => accounts(async () => {
   const allowed = await security.signInBegin(email, address);
   if (!allowed.ok) throw new SignInLockedError(allowed.retryAfterMs);
   const user = await credentials.verify(email, password);
@@ -360,7 +397,7 @@ export async function loginUser(email: string, password: string, address = clien
   // The password matched: on a tenant's host, the visitor is told when the account is not its member.
   if (!await allowedHere(user.id)) throw new SignInMemberError(currentTenant()!.name);
   return user;
-  });
+  }));
 }
 
 /** The account is right, but it is not a member of the tenant whose host this is. Thrown after the password matched. */
@@ -414,7 +451,7 @@ const PASSWORD_CHECKS = { max: 10, windowMs: 15 * 60_000 };
  * counted per account, so an open session cannot guess its way to the password.
  */
 export async function passwordMatches(userId: string, password: string): Promise<boolean> {
-  return accounts(async () => {
+  return accountOf(userId, async () => {
   if (!(await security.attempt('password-check', userId, PASSWORD_CHECKS.max, PASSWORD_CHECKS.windowMs))) {
     throw new ClientVisibleError('Too many wrong passwords. Wait a few minutes, then try again.');
   }
@@ -429,8 +466,7 @@ export async function passwordMatches(userId: string, password: string): Promise
 /** Whether visitors may create accounts on /auth/register (src/dashboard.config.ts: `registration.open`). */
 export async function registrationOpen(): Promise<boolean> {
   return accounts(async () => {
-  // Accounts are made on the main host; a tenant's administrators add its members.
-  return authOptions.registration.open && !currentTenant();
+  return authOptions.registration.open;
   });
 }
 
@@ -554,11 +590,11 @@ async function takeLink(kind: LinkKind, token: string): Promise<string | null> {
  * it would sign them into. Null for a link that is not valid.
  */
 export async function linkAccountEmail(kind: LinkKind, token: string): Promise<string | null> {
-  return accounts(async () => {
+  return accountByToken(() => accounts(async () => {
   const row = await liveLink(kind, token);
   if (!row?.userId) return null;
   return (await User.findOne({ where: { id: row.userId } }))?.email ?? null;
-  });
+  }), value => value === null);
 }
 
 async function sendVerification(user: { id: string; email: string; name: string | null }): Promise<void> {
@@ -576,9 +612,9 @@ async function sendVerification(user: { id: string; email: string; name: string 
  * that order: the account then waits, and the result says which.
  */
 export async function registerUser(email: string, password: string, name?: string): Promise<PublicUser> {
-  return accounts(async () => {
+  return (currentTenant() ? asTenantAccount : asMainAccount)(() => accounts(async () => {
   const options = authOptions.registration;
-  if (!options.open || currentTenant()) throw new ClientVisibleError('Registration is closed on this site.');
+  if (!options.open) throw new ClientVisibleError('Registration is closed on this site.');
   // With a sender and the project asking for it, the account waits for the email's link.
   const verify = options.verifyEmail && mailer() !== null;
   // Without the site's address no link can be sent: the account is not created active instead.
@@ -593,7 +629,8 @@ export async function registerUser(email: string, password: string, name?: strin
   else if (existing) throw new ClientVisibleError('An account with this email already exists.');
   const id = uuidv7();
   const status = verify ? 'unconfirmed' : options.approve ? 'pending' : 'active';
-  await User.insert({ id, email, name: name ?? null, passwordHash: await hashPassword(password), avatar: null, meta: null, status, createdAt: new Date() });
+  // On a tenant's host the new account is that tenant's own.
+  await User.insert({ id, email, name: name ?? null, passwordHash: await hashPassword(password), avatar: null, meta: null, status, tenantAccount: tenantAccountHome(), createdAt: new Date() });
   const role = options.defaultRole ? await Role.findOne({ where: { name: options.defaultRole } }) : null;
   if (role) await UserRole.insert({ userId: id, roleId: role.id, createdAt: new Date() });
   const user: PublicUser = { id, email, name: name ?? '', avatar: null, meta: null, roles: role ? [{ id: role.id, name: role.name, permissions: role.permissions ?? [] }] : [] };
@@ -602,7 +639,7 @@ export async function registerUser(email: string, password: string, name?: strin
     return { ...user, verification: 'sent' };
   }
   return options.approve ? { ...user, approval: 'pending' } : user;
-  });
+  }));
 }
 
 /** Remove an account with what belongs to it: sessions and links, roles, second factors. */
@@ -621,14 +658,14 @@ async function removeAccount(userId: string): Promise<void> {
  * an administrator's approval (`pending`). Null for an unknown, spent or expired link.
  */
 export async function verifyEmail(token: string): Promise<{ user: string; pending: boolean } | null> {
-  return accounts(async () => {
+  return accountByToken(() => accounts(async () => {
   const userId = await takeLink('verify', token);
   if (!userId) return null;
   const pending = authOptions.registration.approve;
   // Only an account still waiting for this link changes: one an administrator disabled since stays as it is.
   const updated = await User.update({ id: userId, status: 'unconfirmed' }, { status: pending ? 'pending' : 'active' });
   return updated.meta.rowsAffected === 1 ? { user: userId, pending } : null;
-  });
+  }), value => value === null);
 }
 
 /** Whether new accounts wait for an administrator's approval. */
@@ -642,10 +679,10 @@ export interface Registration { id: string; name: string; email: string; verifie
 
 /** The accounts that wait: for approval (`verified`), or still for their email's confirmation. */
 export async function registrations(): Promise<Registration[]> {
-  return accounts(async () => {
+  return (currentTenant() ? asTenantAccount : asMainAccount)(() => accounts(async () => {
   const rows = await User.find({ where: { status: In(['pending', 'unconfirmed']) }, order: { createdAt: 'asc' }, take: 200 });
   return rows.map(row => ({ id: row.id, name: row.name ?? '', email: row.email, verified: row.status === 'pending', createdAt: row.createdAt.getTime() }));
-  });
+  }));
 }
 
 /**
@@ -653,7 +690,7 @@ export async function registrations(): Promise<Registration[]> {
  * when it was not waiting for approval.
  */
 export async function approveRegistration(userId: string): Promise<boolean> {
-  return accounts(async () => {
+  return accountOf(userId, async () => {
   const updated = await User.update({ id: userId, status: 'pending' }, { status: 'active' });
   if (updated.meta.rowsAffected !== 1) return false;
   const [user, mail, origin] = [await User.findOne({ where: { id: userId } }), mailer(), linkOrigin()];
@@ -669,7 +706,7 @@ export async function approveRegistration(userId: string): Promise<boolean> {
 
 /** Delete an account that waits for approval or confirmation. False when it does not wait. */
 export async function deleteRegistration(userId: string): Promise<boolean> {
-  return accounts(async () => {
+  return accountOf(userId, async () => {
   const user = await User.findOne({ where: { id: userId } });
   if (!user || (user.status !== 'pending' && user.status !== 'unconfirmed')) return false;
   await removeAccount(userId);
@@ -698,7 +735,7 @@ export interface ProfileUpdate {
 
 /** Update editable profile fields. */
 export async function updateUserProfile(userId: string, patch: ProfileUpdate): Promise<void> {
-  return accounts(async () => {
+  return accountOf(userId, async () => {
   const values: Partial<User> = {};
   if (patch.name !== undefined) values.name = patch.name;
   if (patch.avatar !== undefined) values.avatar = patch.avatar;
@@ -772,7 +809,7 @@ declare module 'hono' {
  * signed in with a password alone stays limited even after its account gains a factor.
  */
 export async function createSession(userId: string, c: Context, options: { secondFactor?: boolean } = {}) {
-  return accounts(async () => {
+  return accountOf(userId, async () => {
   c.set('auth.signInSecondFactor', options.secondFactor === true);
   try { return await authSessions.create(userId, c); }
   finally { c.set('auth.signInSecondFactor', false); }
@@ -801,7 +838,7 @@ function twoFactorAsked(user: Pick<PublicUser, 'roles'>): boolean {
  * not having used it: throws SignInPasskeyError.
  */
 export async function beginTwoFactor(userId: string): Promise<string | null> {
-  return accounts(async () => {
+  return accountOf(userId, async () => {
   if (await security.requiresCode(userId)) return security.createChallenge('signin', userId, 'password');
   const user = await userById(userId);
   if (user && twoFactorAsked(user) && await security.hasSecondFactor(userId)) throw new SignInPasskeyError();
@@ -814,7 +851,9 @@ export async function beginTwoFactor(userId: string): Promise<string | null> {
  * code is checked, on the pending sign-in and on the account, so codes sent at once count too.
  */
 export async function completeTwoFactor(challengeId: string, code: string): Promise<{ user: PublicUser; recovery: boolean } | { error: string; expired: boolean }> {
-  return accounts(async () => {
+  // The challenge is where the account that started it is.
+  const own = currentTenant() ? await asTenantAccount(() => accounts(async () => (await security.challenge(challengeId, 'signin')) !== null)) : false;
+  return (own ? asTenantAccount : asMainAccount)(() => accounts(async () => {
   const expired = { error: 'The sign-in expired. Enter your password again.', expired: true };
   const pending = await security.challenge(challengeId, 'signin');
   if (!pending?.userId) return expired;
@@ -834,11 +873,11 @@ export async function completeTwoFactor(challengeId: string, code: string): Prom
   const user = await userById(pending.userId);
   if (!user) return { error: 'This account cannot sign in.', expired: true };
   return { user, recovery: used === 'recovery' };
-  });
+  }));
 }
 
 export async function securityStatus(userId: string): Promise<SecurityStatus> {
-  return accounts(async () => {
+  return accountOf(userId, async () => {
   return security.status(userId);
   });
 }
@@ -850,7 +889,7 @@ export async function securityStatus(userId: string): Promise<SecurityStatus> {
  * with the factor), so a factor added later does not trust a session that never used it.
  */
 export async function secondFactorRequired(user: PublicUser, c: Context | undefined = getRequestContext()): Promise<boolean> {
-  return accounts(async () => {
+  return accountOf(user.id, async () => {
   if (!twoFactorAsked(user)) return false;
   return c?.get('auth.sessionSecondFactor') !== true;
   });
@@ -907,7 +946,7 @@ async function checkAccountCode(userId: string, code: string): Promise<void> {
 
 /** A new authenticator secret, its `otpauth://` URI and a QR code of it as SVG. */
 export async function startAuthenticator(user: PublicUser): Promise<{ secret: string; uri: string; qr: string }> {
-  return accounts(async () => {
+  return accountOf(user.id, async () => {
   await requireFactorSetupAllowed(user.id);
   const secret = await security.startTotp(user.id);
   const uri = totpUri({ secret, issuer: await siteName().catch(() => 'Cossack'), account: user.email });
@@ -917,7 +956,7 @@ export async function startAuthenticator(user: PublicUser): Promise<{ secret: st
 
 /** Confirm the authenticator with a code from it; returns the recovery codes, shown once. */
 export async function confirmAuthenticator(userId: string, code: string): Promise<string[]> {
-  return accounts(async () => {
+  return accountOf(userId, async () => {
   await requireFactorSetupAllowed(userId);
   const hadFactor = await security.hasSecondFactor(userId);
   const codes = await security.confirmTotp(userId, code);
@@ -928,7 +967,7 @@ export async function confirmAuthenticator(userId: string, code: string): Promis
 
 /** Turning the authenticator off needs one of its codes, or a recovery code. */
 export async function disableAuthenticator(userId: string, code: string): Promise<void> {
-  return accounts(async () => {
+  return accountOf(userId, async () => {
   requireFactorUsed(userId);
   await checkAccountCode(userId, code);
   await security.disableTotp(userId);
@@ -936,7 +975,7 @@ export async function disableAuthenticator(userId: string, code: string): Promis
 }
 
 export async function newRecoveryCodes(userId: string, code: string): Promise<string[]> {
-  return accounts(async () => {
+  return accountOf(userId, async () => {
   requireFactorUsed(userId);
   await checkAccountCode(userId, code);
   return security.regenerateRecoveryCodes(userId);
@@ -945,7 +984,7 @@ export async function newRecoveryCodes(userId: string, code: string): Promise<st
 
 /** Remove a user's second factors, for a user manager helping someone who lost their device. The page checks who may. */
 export async function resetSecondFactors(userId: string): Promise<void> {
-  return accounts(async () => {
+  return accountOf(userId, async () => {
   await security.reset(userId);
   });
 }
@@ -961,7 +1000,7 @@ async function passkeySite(c: Context): Promise<PasskeyConfig> {
 }
 
 export async function passkeyRegistration(c: Context, user: PublicUser): Promise<{ challenge: string; options: PublicKeyCredentialCreationOptionsJSON }> {
-  return accounts(async () => {
+  return accountOf(user.id, async () => {
   await requireFactorSetupAllowed(user.id);
   const existing = await security.passkeys(user.id);
   const options = await passkeyRegistrationOptions(await passkeySite(c), { id: user.id, name: user.email, displayName: user.name },
@@ -971,7 +1010,7 @@ export async function passkeyRegistration(c: Context, user: PublicUser): Promise
 }
 
 export async function addPasskey(c: Context, user: PublicUser, challengeId: string, response: RegistrationResponseJSON, name: string): Promise<void> {
-  return accounts(async () => {
+  return accountOf(user.id, async () => {
   const pending = await security.challenge(challengeId, 'passkey-register');
   if (!pending || pending.userId !== user.id || !(await security.takeChallenge(challengeId, 'passkey-register'))) {
     throw new ClientVisibleError('The passkey request expired. Try again.');
@@ -986,7 +1025,7 @@ export async function addPasskey(c: Context, user: PublicUser, challengeId: stri
 }
 
 export async function removePasskey(userId: string, id: string): Promise<void> {
-  return accounts(async () => {
+  return accountOf(userId, async () => {
   requireFactorUsed(userId);
   await security.removePasskey(userId, id);
   });
@@ -1011,7 +1050,7 @@ export async function passkeySignIn(c: Context): Promise<{ challenge: string; op
 
 /** The user a passkey signs in, after checking its signature against the challenge. */
 export async function completePasskeySignIn(c: Context, challengeId: string, response: AuthenticationResponseJSON): Promise<PublicUser | null> {
-  return accounts(async () => {
+  return accountByToken(() => accounts(async () => {
   const pending = await security.challenge(challengeId, 'passkey-signin');
   if (!pending || !(await security.takeChallenge(challengeId, 'passkey-signin'))) return null;
   const passkey = await security.passkey(response?.id);
@@ -1021,7 +1060,7 @@ export async function completePasskeySignIn(c: Context, challengeId: string, res
   await security.usePasskey(passkey.id, verified.counter);
   if (!await allowedHere(passkey.userId)) throw new SignInMemberError(currentTenant()!.name);
   return userById(passkey.userId);
-  });
+  }), value => value === null);
 }
 
 // --- Application passwords -------------------------------------------------
@@ -1029,14 +1068,14 @@ export async function completePasskeySignIn(c: Context, challengeId: string, res
 export const apiTokensAvailable = true;
 
 export async function listApiTokens(userId: string): Promise<ApiToken[]> {
-  return accounts(async () => {
+  return accountOf(userId, async () => {
   return apiTokens.list(userId);
   });
 }
 
 /** A new application password; the token is shown once. */
 export async function createApiToken(userId: string, name: string, scope: 'read' | 'write', expiresInDays: number | null = null): Promise<string> {
-  return accounts(async () => {
+  return accountOf(userId, async () => {
   // An application password signs in without a second factor: an account that must have one
   // gets passwords only once it does, and only from a session that used it.
   const owner = await userById(userId);
@@ -1050,7 +1089,7 @@ export async function createApiToken(userId: string, name: string, scope: 'read'
 }
 
 export async function revokeApiToken(userId: string, id: string): Promise<void> {
-  return accounts(async () => {
+  return accountOf(userId, async () => {
   // A session that never used the account's second factor may not take its tokens away either.
   requireFactorUsed(userId);
   await apiTokens.revoke(userId, id);
@@ -1063,12 +1102,12 @@ export async function revokeApiToken(userId: string, id: string): Promise<void> 
  * an account that is not active. `scope` is `read` for a token that may only read.
  */
 export async function apiTokenUser(token: string): Promise<{ user: PublicUser; scope: 'read' | 'write' } | null> {
-  return accounts(async () => {
+  return accountByToken(() => accounts(async () => {
   const verified = await apiTokens.verify(token);
   if (!verified) return null;
   const user = await userById(verified.userId);
   return user ? { user, scope: verified.scope } : null;
-  });
+  }), value => value === null);
 }
 
 /**
@@ -1077,7 +1116,7 @@ export async function apiTokenUser(token: string): Promise<{ user: PublicUser; s
  * send_email binding is not configured, this is a graceful no-op.
  */
 export async function requestPasswordReset(email: string, resetBaseUrl: string): Promise<void> {
-  return accounts(async () => {
+  return accountByEmail(email, () => accounts(async () => {
   // Beyond the limits per email and per address nothing is sent, and the answer is the same.
   const key = await security.sha256Hex(email.trim().toLowerCase());
   if (!(await security.attempt('reset', `e:${key}`, security.RESET_REQUESTS.perEmail, security.RESET_REQUESTS.windowMs))
@@ -1089,11 +1128,11 @@ export async function requestPasswordReset(email: string, resetBaseUrl: string):
   const resetUrl = `${resetBaseUrl.replace(/\/$/, '')}/auth/reset-password?token=${token}`;
   await mail.send({ to: email, subject: 'Reset your password',
     text: `We received a request to reset your password. Choose a new one here; the link works for one hour:\n${resetUrl}\n\nIf you did not ask for it, ignore this email.` });
-  });
+  }));
 }
 
 export async function resetPassword(token: string, newPassword: string): Promise<boolean> {
-  return accounts(async () => {
+  return accountByToken(() => accounts(async () => {
   const userId = await consumePasswordResetToken(token);
   if (!userId) return false;
   const passwordHash = await hashPassword(newPassword);
@@ -1102,7 +1141,7 @@ export async function resetPassword(token: string, newPassword: string): Promise
   await endSessionsEverywhere(userId);
   await Session.delete({ userId });
   return true;
-  });
+  }), value => value === false);
 }
 
 // --- Logout ----------------------------------------------------------------
@@ -1302,7 +1341,7 @@ export async function deleteOwnAccount(c: Context, userId: string, password: str
  * flood for one address or from one client stops after a few. Without a mail sender, nothing is sent.
  */
 export async function requestMagicLink(email: string, _requestOrigin?: string): Promise<void> {
-  return accounts(async () => {
+  return accountByEmail(email, () => accounts(async () => {
   const [mail, origin] = [mailer(), linkOrigin()];
   if (!origin) return;
   const key = await security.sha256Hex(email.trim().toLowerCase());
@@ -1315,16 +1354,16 @@ export async function requestMagicLink(email: string, _requestOrigin?: string): 
   const title = await siteName().catch(() => '');
   await mail.send({ to: account.email, subject: `Sign in to ${title || 'the site'}`,
     text: `Open this link to sign in; it works once, for fifteen minutes:\n${origin}/auth/magic?token=${token}\n\nIf you did not ask for it, ignore this email.` });
-  });
+  }));
 }
 
 /** Spend a sign-in link: the account's ID, or null for a link that is unknown, spent or expired. */
 export async function consumeMagicLink(token: string): Promise<string | null> {
-  return accounts(async () => {
+  return accountByToken(() => accounts(async () => {
   const userId = await takeLink('magic', token);
   if (!userId) return null;
   return (await User.findOne({ where: { id: userId } }))?.status === 'active' ? userId : null;
-  });
+  }), value => value === null);
 }
 
 // --- OAuth -------------------------------------------------------------------
@@ -1537,4 +1576,19 @@ export async function completeTenantHandoff(c: Context, code: string): Promise<H
   const { headers } = await authSessions.create(row.userId, c);
   return headers;
   });
+}
+
+/** On the main host: the sign-in page of the tenant at `host`, or null when the host is no active tenant's. */
+export async function tenantSignInUrl(c: Context, host: string): Promise<string | null> {
+  return asMainAccount(() => accounts(async () => {
+  const name = hostName(`http://${host}`);
+  if (!sharedSignIn || currentTenant() || !name || name === mainHost()) return null;
+  const tenant = await tenantOfHost(name);
+  if (!tenant || tenant.status !== 'active') return null;
+  const url = new URL(c.req.url);
+  url.hostname = name;
+  url.pathname = '/auth/login';
+  url.search = '';
+  return url.toString();
+  }));
 }

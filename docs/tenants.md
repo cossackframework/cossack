@@ -58,10 +58,21 @@ Dashboard → Tenants, on the main host, for network administrators:
   it and returns what it forgot, so a schedule of yours can drop each database.
 - **Turn the network off**: only the main host answers, and tenants keep their data.
 
+### A tenant's own accounts
+
+An account can also belong to one tenant only. Its password, second factors, application
+passwords and sessions are in that tenant's database, and it signs in on that tenant's host
+and nowhere else. Such an account is made when someone registers on the tenant's host, and
+when the tenant's administrator adds a user whose email no main account has. The tenant's
+administrators manage it fully. A member with a main account is managed by its owner; the
+tenant chooses its roles.
+
+Passkey sign-in and OAuth are for main accounts only today.
+
 An account that is not a member of a tenant cannot sign in on its host. A network
 administrator can, on every tenant, with every permission: it is a flag on the account (the
 first account has it), set on the Tenants screen, and the last one cannot lose it. Only
-network administrators see the Tenants screen. Registration and the setup page are on the main host only.
+network administrators see the Tenants screen. The setup page is on the main host only.
 A tenant's administrators choose a member's roles; a member's profile, password and sign-in
 methods belong to the account's owner.
 
@@ -74,10 +85,12 @@ tenants: { enabled: true, signIn: 'shared' }
 
 - **`host`**: each tenant's host has its own sign-in page. A person signs in once per host,
   with the same account.
-- **`shared`**: people sign in on the main host only. A tenant's sign-in page sends the
-  visitor there; a signed-in member comes back with a one-time code (one minute, one use, and
-  only in the browser that started), and the tenant's host makes its own session from it.
-  Signing out on any host ends the session on the main host and on every tenant's host.
+- **`shared`**: people with a main account sign in on the main host. A tenant's host sends a
+  visitor there once on its own: someone signed in there comes back with a one-time code
+  (one minute, one use, and only in the browser that started), and the tenant's host makes
+  its own session from it. Anyone else comes back to the tenant's sign-in page, which signs
+  in the tenant's own accounts and links to the main host's sign-in. Signing out on any host
+  ends the session on the main host and on every tenant's host.
 
 Accounts are in the main database in both modes, so the setting can change later. A
 tenant's sessions are in its own database; with shared sign-in the main database records
@@ -132,7 +145,7 @@ The database user needs the right to create tables in each tenant's database.
 
 - A member's email and name in a tenant are copied when they join and are not updated when
   the account changes.
-- Tenant-only accounts and self-service tenant registration are not built. Nothing purges
+- Self-service tenant registration is not built. Nothing purges
   deleted tenants on a schedule or drops their databases.
 - Uploaded files are not separated by tenant.
 - The Workers bindings (D1, Hyperdrive, RomeDB Cloud) are written and not yet run in a test.

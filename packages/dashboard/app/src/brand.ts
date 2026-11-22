@@ -1,3 +1,5 @@
+import { currentTenant, mainHost, sharedSignIn } from './tenants';
+
 /** The site's name and logo, for the dashboard's sidebar and the sign-in pages. The CMS replaces this module with its General settings. */
 
 export async function siteName(): Promise<string> {
@@ -28,5 +30,10 @@ export interface SignInBrand {
 }
 
 export async function signInBrand(): Promise<SignInBrand> {
-    return { name: await siteName(), logo: await siteLogo(), logoOnly: await siteHasLogo(), home: '/', network: '', networkSignIn: null };
+    // On a tenant's host with shared sign-in: its page signs in the tenant's own accounts, and
+    // people with a main account follow the link to the main host.
+    const tenant = currentTenant();
+    const network = tenant && sharedSignIn ? mainHost() : '';
+    return { name: tenant?.name ?? await siteName(), logo: await siteLogo(), logoOnly: await siteHasLogo(), home: '/', network: '',
+        networkSignIn: network ? { href: '/auth/tenant/start', name: network } : null };
 }

@@ -3,7 +3,9 @@ import { ClientVisibleError } from '@cossackframework/core';
 import { uuidv7 } from '../lib/uuid';
 import { hashPassword, type PublicUser } from '../auth';
 import { accounts, currentTenant } from '../tenants';
-import { forgetMemberships, joinCurrentTenant, leaveCurrentTenant, requireAnotherNetworkAdmin } from './tenants';
+import { forgetMemberships, joinCurrentTenant, leaveCurrentTenant, requireAnotherNetworkAdmin, tenantOwnAccount } from './tenants';
+import * as security from './security';
+import * as apiTokens from './api-tokens';
 import { User } from '@/models/User';
 import { UserRole } from '@/models/UserRole';
 import { Role } from '@/models/Role';
@@ -173,8 +175,8 @@ export async function getUser(id: string): Promise<UserDetail | null> {
     createdAt: user.createdAt.toISOString(),
     lastSignedInAt: (await lastSignIns([id])).get(id) ?? null,
     roles: parseRoles(await roleRowsForUsers([id])),
-    // In a tenant the row is a member: the account is shared, so only its owner changes it.
-    ...(currentTenant() ? { lockedProfile: 'This account is shared with other tenants: only its owner changes the profile, password and sign-in methods. This tenant chooses its roles.' } : {}),
+    // In a tenant a member's account is shared, so only its owner changes it. The tenant's own accounts are its to manage.
+    ...(currentTenant() && !user.tenantAccount ? { lockedProfile: 'This account is shared with other tenants: only its owner changes the profile, password and sign-in methods. This tenant chooses its roles.' } : {}),
   };
 }
 
@@ -216,12 +218,12 @@ export async function createUser(input: CreateUserInput): Promise<PublicUser> {
 const SHARED_ACCOUNT = 'This account is shared with other tenants: only its owner changes it.';
 
 export async function updateUser(id: string, patch: UpdateUserInput): Promise<void> {
-  if (currentTenant()) throw new ClientVisibleError(SHARED_ACCOUNT);
+  if (currentTenant() && !await tenantOwnAccount(id)) throw new ClientVisibleError(SHARED_ACCOUNT);
   if (Object.keys(patch).length) await User.update({ id }, patch);
 }
 
 export async function changeUserPassword(id: string, newPassword: string): Promise<void> {
-  if (currentTenant()) throw new ClientVisibleError(SHARED_ACCOUNT);
+  if (currentTenant() && !await tenantOwnAccount(id)) throw new ClientVisibleError(SHARED_ACCOUNT);
   if (!(await User.exists({ id }))) throw new ClientVisibleError('User not found.');
   await User.update({ id }, { passwordHash: await hashPassword(newPassword) });
 }
@@ -243,7 +245,15 @@ async function requireAnotherAdmin(userId: string, change: string, keeps = false
 
 export async function deleteUser(id: string): Promise<void> {
   await requireAnotherAdmin(id, 'removed');
-  // In a tenant: the member leaves, and the account stays.
+  // In a tenant: a member leaves, and the account stays. The tenant's own account goes, with what belongs to it.
+  if (currentTenant() && await tenantOwnAccount(id)) {
+    await sql`DELETE FROM sessions WHERE user_id = ${id}`;
+    await apiTokens.revokeAll(id);
+    await security.reset(id);
+    await UserRole.delete({ userId: id });
+    await User.delete({ id });
+    return;
+  }
   if (currentTenant()) return leaveCurrentTenant(id);
   await requireAnotherNetworkAdmin(id, 'removed');
   await UserRole.delete({ userId: id });

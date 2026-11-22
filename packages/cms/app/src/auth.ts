@@ -1230,3 +1230,4 @@ export async function networkRunning(): Promise<boolean> { return false; }
 export async function setNetworkRunning(_on: boolean): Promise<void> { return noTenants(); }
 export async function verifyTenantDomain(_id: string, _host: string): Promise<void> { return noTenants(); }
 export async function setPrimaryTenantDomain(_id: string, _host: string): Promise<void> { return noTenants(); }
+export async function tenantSignInUrl(_c: Context, _host: string): Promise<string | null> { return null; }

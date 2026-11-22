@@ -1,6 +1,6 @@
 # The CMS on the dashboard's accounts and tenants
 
-Status: decided 2026-11-22 (below); step 1 and the first part of step 2 built. Steps are committed one by one. It replaces "step 6" of `specs/romedb-orm.md`,
+Status: decided 2026-11-22 (below); steps 1 and 2 built. Steps are committed one by one. It replaces "step 6" of `specs/romedb-orm.md`,
 which was built in part and reverted on 2026-11-21, before the dashboard had tenants
 (`specs/dashboard-tenants.md`) and before a user's field values were documents
 (`specs/cms-field-values.md`).
@@ -63,7 +63,17 @@ for it the same day. On 4, `network_admin` stays a flag on the account.
      `tenant_sessions` in the main database records which tenants a main session reached, so
      ending one ends the family. A new password and a removed account end the account's
      sessions on every host it is a member of. Migration `0015`.
-   - Open: tenant-only accounts (`users.tenant_account` exists; nothing sets it yet).
+   - **Done:** an account of one tenant only (`users.tenant_account` in the tenant's database):
+     its password, second factors, tokens, links and sessions are there. It is made by
+     registering on the tenant's host, or by the tenant's administrator for an email no main
+     account has, and signs in on that host only. `accounts()` follows the account
+     (`accountOf`, `accountByEmail`, `accountByToken` in `auth.ts`).
+   - **Done:** shared sign-in as the CMS's: the tenant's sign-in page stays, for its own
+     accounts; a visitor is sent to the main host once on their own (`auto=1`) and comes back
+     signed in or to that page, which links to the main host's sign-in.
+   - Not done for a tenant's own accounts: passkey sign-in (a passkey challenge is made in
+     the main database) and OAuth. Converting an account between the two kinds, as the CMS's
+     `moveTo` does, comes with step 5.
    - **Done:** domains are verified before they serve (`/.well-known/cossack-tenant`;
      `tenants.verifyDomains: false` trusts them), one may be primary and the tenant's other
      hosts redirect to it with 301; `deleted` (404, restorable for 30 days,

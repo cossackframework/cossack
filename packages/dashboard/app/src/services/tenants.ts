@@ -1,9 +1,9 @@
 // Tenants: the list, their domains and their members. Rows are in the main database; a
 // tenant's roles and member rows are in its own. See src/tenants.ts for the two scopes.
 import { ClientVisibleError, getRequestContext } from '@cossackframework/core';
-import { TENANT_DATABASE } from '@cossackframework/database';
+import { sql, TENANT_DATABASE } from '@cossackframework/database';
 import { uuidv7 } from '../lib/uuid';
-import { accounts, currentTenant, forgetTenantHosts, inTenant, mainHost, RESERVED_SLUGS, setTenantsRunning, TENANT_SLUG, tenantsEnabled, tenantsRunning, withTenant, type TenantInfo } from '../tenants';
+import { accounts, asMainAccount, currentTenant, forgetTenantHosts, inTenant, mainHost, RESERVED_SLUGS, setTenantsRunning, TENANT_SLUG, tenantsEnabled, tenantsRunning, withTenant, type TenantInfo } from '../tenants';
 import { authOptions } from '../auth-options';
 import { Tenant } from '@/models/Tenant';
 import { TenantDomain } from '@/models/TenantDomain';
@@ -299,26 +299,32 @@ export async function listTenantMembers(id: string): Promise<TenantMemberSummary
 export async function joinCurrentTenant(input: { email: string; name?: string; passwordHash: string | null }): Promise<{ id: string; created: boolean }> {
   const tenant = currentTenant();
   if (!tenant) throw new Error('Not a tenant request.');
-  const { account, created } = await accounts(async () => {
-    const existing = await User.findOne({ where: { email: input.email } });
-    if (existing) return { account: existing, created: false };
+  if (await inTenant(() => User.exists({ email: input.email }))) throw new ClientVisibleError('An account with this email is already here.');
+  // The main account with this email becomes a member. Without one, the new account is this tenant's own.
+  const account = await asMainAccount(() => accounts(() => User.findOne({ where: { email: input.email } })));
+  if (!account) {
     if (!input.passwordHash) throw new ClientVisibleError('Set a password for the new account.');
     const id = uuidv7();
-    await User.insert({ id, email: input.email, name: input.name ?? null, passwordHash: input.passwordHash, avatar: null, meta: null, status: 'active', createdAt: new Date() });
-    return { account: (await User.findOne({ where: { id } }))!, created: true };
-  });
-  if (await inTenant(() => User.exists({ id: account.id }))) throw new ClientVisibleError('This account is already a member.');
+    await inTenant(() => User.insert({ id, email: input.email, name: input.name ?? null, passwordHash: input.passwordHash, avatar: null, meta: null, status: 'active', tenantAccount: true, createdAt: new Date() }));
+    return { id, created: true };
+  }
   await inTenant(() => joinHere(account, []));
-  await accounts(() => TenantMember.upsert({ tenantId: tenant.id, userId: account.id, createdAt: new Date() }, ['tenantId', 'userId']));
-  return { id: account.id, created };
+  await asMainAccount(() => accounts(() => TenantMember.upsert({ tenantId: tenant.id, userId: account.id, createdAt: new Date() }, ['tenantId', 'userId'])));
+  return { id: account.id, created: false };
+}
+
+/** In a tenant's request: whether the user is an account of this tenant only (not a member with a main account). */
+export async function tenantOwnAccount(userId: string): Promise<boolean> {
+  if (!currentTenant()) return false;
+  return inTenant(async () => (await User.findOne({ where: { id: userId } }))?.tenantAccount === true);
 }
 
 /** In a tenant's request: the account stops being a member. The account itself stays. */
 export async function leaveCurrentTenant(userId: string): Promise<void> {
   const tenant = currentTenant();
   if (!tenant) throw new Error('Not a tenant request.');
-  await inTenant(() => leaveHere(userId));
-  await accounts(() => TenantMember.delete({ tenantId: tenant.id, userId }));
+  await inTenant(async () => { await sql`DELETE FROM sessions WHERE user_id = ${userId}`; await leaveHere(userId); });
+  await asMainAccount(() => accounts(() => TenantMember.delete({ tenantId: tenant.id, userId })));
 }
 
 /** In the main database: forget an account's memberships, when the account is deleted. */

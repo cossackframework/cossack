@@ -5,6 +5,7 @@
 // the tenant's database. Account code steps back to the main database with `accounts()`.
 // With tenants off, or on the main host, both are the same database and these do nothing.
 import { tenantORM } from '@/orm/factory';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Context } from 'hono';
 import type { ORM } from '@cossackframework/database';
 import { getRequestContext } from '@cossackframework/core';
@@ -55,8 +56,36 @@ export function currentTenant(c: Context | undefined = getRequestContext()): Ten
  * the list of tenants. Inside a tenant's request it steps out of the tenant's database.
  */
 export function accounts<T>(work: () => Promise<T>): Promise<T> {
-  const main = getRequestContext()?.get(MAIN_ORM as never) as ORM | undefined;
+  const c = getRequestContext();
+  // A tenant's own account keeps everything in the tenant's database.
+  if ((accountHome.getStore() ?? c?.get(ACCOUNT_HOME as never)) === 'tenant') return inTenant(work);
+  const main = c?.get(MAIN_ORM as never) as ORM | undefined;
   return main ? main.run(work) : work();
+}
+
+// Where the account that the running code is about lives: the main database, or the tenant's
+// own for an account of that tenant only. Unset: the signed-in user's, else the main one.
+const accountHome = new AsyncLocalStorage<'tenant' | 'main'>();
+const ACCOUNT_HOME = 'tenant:account-home';
+
+/** Run code about an account of this tenant only: `accounts()` inside it reaches the tenant's database. */
+export function asTenantAccount<T>(work: () => Promise<T>): Promise<T> {
+  return currentTenant() ? accountHome.run('tenant', work) : work();
+}
+
+/** Run code about an account of the main database, whoever is signed in. */
+export function asMainAccount<T>(work: () => Promise<T>): Promise<T> {
+  return accountHome.run('main', work);
+}
+
+/** Whether the running code is about an account of this tenant only. */
+export function tenantAccountHome(): boolean {
+  return currentTenant() !== null && (accountHome.getStore() ?? getRequestContext()?.get(ACCOUNT_HOME as never)) === 'tenant';
+}
+
+/** @internal The signed-in user of this request is an account of this tenant only. */
+export function markTenantAccountRequest(c: Context): void {
+  c.set(ACCOUNT_HOME as never, 'tenant' as never);
 }
 
 /** Run code against the request's tenant database again, from inside `accounts()`. */
