@@ -1206,6 +1206,12 @@ export const SESSION_COOKIE_NAME = SESSION_COOKIE;
 export async function deleteOwnAccount(c: Context, userId: string, password: string): Promise<{ headers: Headers }> {
   return accounts(async () => {
   if (!(await passwordMatches(userId, password))) throw new ClientVisibleError('The password is not right.');
+  // The application keeps an administrator.
+  const lastAdmin = (await sql<{ total: number }>`
+    SELECT COUNT(*) AS total FROM user_roles ur INNER JOIN roles r ON r.id = ur.role_id INNER JOIN users u ON u.id = ur.user_id
+    WHERE r.name = 'admin' AND u.status = 'active' AND ur.user_id <> ${userId}
+  `).rows[0];
+  if ((await rolesHere(userId)).some((role) => role.name === 'admin') && !Number(lastAdmin?.total ?? 0)) throw new ClientVisibleError('The last administrator cannot delete their account. Give someone else the admin role first.');
   await revokeSessionsOf(c, userId);
   const { headers } = await logout(c);
   await removeAccount(userId);

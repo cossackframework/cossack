@@ -1,7 +1,8 @@
 import { Like, Not, sql } from '@cossackframework/database';
-import { ClientVisibleError } from '@cossackframework/core';
+import { ClientVisibleError, getRequestContext } from '@cossackframework/core';
 import { uuidv7 } from '../lib/uuid';
-import { PERMISSIONS, type Permission } from '../lib/permissions';
+import { holdsAll, validPermission } from '../lib/permissions';
+import { permissionsOf } from './rbac';
 import { Role } from '@/models/Role';
 import { UserRole } from '@/models/UserRole';
 
@@ -30,21 +31,32 @@ export interface ListRolesResult {
 
 export interface CreateRoleInput {
   name: string;
-  permissions?: Permission[];
+  /** Permissions of the list, `*`, or patterns over the list such as `user:*`. */
+  permissions?: string[];
 }
 
 export interface UpdateRoleInput {
   name?: string;
-  permissions?: Permission[];
+  permissions?: string[];
 }
 
-function validatePermissions(permissions: string[]): Permission[] {
-  const known = new Set<string>(PERMISSIONS);
-  const invalid = permissions.filter((permission) => !known.has(permission));
+/** Who changes a role: with one, the role gets only permissions the actor holds. */
+export interface RoleActor { roles: readonly { name: string; permissions: readonly string[] }[] }
+
+/** The signed-in user of this request changes the role, unless the caller names another actor. A seeder or a command has none. */
+function requestActor(): RoleActor | undefined {
+  return getRequestContext()?.get('user' as never) as RoleActor | undefined;
+}
+
+function validatePermissions(permissions: string[], actor?: RoleActor): string[] {
+  const invalid = permissions.filter((permission) => !validPermission(permission));
   if (invalid.length) {
     throw new ClientVisibleError(`Unknown permission(s): ${invalid.join(', ')}`);
   }
-  return permissions as Permission[];
+  // A role manager gives only permissions they hold.
+  const missing = actor ? permissions.filter((permission) => !holdsAll(permissionsOf(actor), [permission])) : [];
+  if (missing.length) throw new ClientVisibleError(`You cannot give a role permissions you do not have: ${missing.join(', ')}.`);
+  return [...new Set(permissions)].sort();
 }
 
 function toDetail(role: Role): RoleDetail {
@@ -101,12 +113,13 @@ export async function getRole(id: string): Promise<RoleDetail | null> {
   return role ? toDetail(role) : null;
 }
 
-export async function createRole(input: CreateRoleInput): Promise<RoleDetail> {
+export async function createRole(input: CreateRoleInput, actor: RoleActor | undefined = requestActor()): Promise<RoleDetail> {
+  if (input.name === ADMIN_ROLE) throw new ClientVisibleError('admin is the administrators\' role; choose another name.');
   if (await Role.exists({ name: input.name })) {
     throw new ClientVisibleError('A role with this name already exists.');
   }
   const now = new Date();
-  const permissions = validatePermissions([...(input.permissions ?? [])]);
+  const permissions = validatePermissions([...(input.permissions ?? [])], actor);
   await Role.insert({
     id: uuidv7(),
     name: input.name,
@@ -118,11 +131,15 @@ export async function createRole(input: CreateRoleInput): Promise<RoleDetail> {
   return toDetail(role);
 }
 
-export async function updateRole(id: string, patch: UpdateRoleInput): Promise<void> {
+export async function updateRole(id: string, patch: UpdateRoleInput, actor: RoleActor | undefined = requestActor()): Promise<void> {
   const values: Partial<Role> = {};
-  if (patch.name !== undefined && patch.name !== ADMIN_ROLE && (await Role.findOne({ where: { id } }))?.name === ADMIN_ROLE) {
-    throw new ClientVisibleError('The admin role cannot be renamed.');
-  }
+  const current = await Role.findOne({ where: { id } });
+  if (!current) throw new ClientVisibleError('Role not found.');
+  // The admin role holds everything and stays as it is: changing it could lock everyone out.
+  if (current.name === ADMIN_ROLE) throw new ClientVisibleError('The admin role cannot be changed.');
+  if (patch.name === ADMIN_ROLE) throw new ClientVisibleError('admin is the administrators\' role; choose another name.');
+  // Nobody weakens or renames a role that holds permissions they lack.
+  if (actor && !holdsAll(permissionsOf(actor), current.permissions ?? [])) throw new ClientVisibleError('This role has permissions you do not have, so you cannot change it.');
   if (patch.name !== undefined) {
     if (await Role.exists({ id: Not(id), name: patch.name })) {
       throw new ClientVisibleError('A role with this name already exists.');
@@ -130,7 +147,7 @@ export async function updateRole(id: string, patch: UpdateRoleInput): Promise<vo
     values.name = patch.name;
   }
   if (patch.permissions !== undefined) {
-    values.permissions = validatePermissions([...patch.permissions]);
+    values.permissions = validatePermissions([...patch.permissions], actor);
   }
   if (Object.keys(values).length) await Role.update({ id }, values);
 }

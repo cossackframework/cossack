@@ -1,3 +1,4 @@
+import { tenantORM } from '@/orm/factory';
 import { defineServerMiddleware } from '@cossackframework/core';
 import type { ORM } from '@cossackframework/database';
 import { getCookie, deleteCookie, setCookie } from 'hono/cookie';
@@ -49,7 +50,6 @@ export const tenantMiddleware = defineServerMiddleware(async (c, next) => {
         url.search = query.toString();
         return c.redirect(url.toString());
     }
-    const { tenantORM } = await import('@/orm/factory');
     const opened = await tenantORM(c.env, tenant);
     try {
         markTenantRequest(c, tenant, c.get('orm' as never) as ORM, opened.orm);

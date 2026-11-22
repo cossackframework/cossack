@@ -1,0 +1,68 @@
+# The CMS on the dashboard's accounts and tenants
+
+Status: decided 2026-11-22 (below); step 1 built. Steps are committed one by one. It replaces "step 6" of `specs/romedb-orm.md`,
+which was built in part and reverted on 2026-11-21, before the dashboard had tenants
+(`specs/dashboard-tenants.md`) and before a user's field values were documents
+(`specs/cms-field-values.md`).
+
+## What the survey found (2026-11-22)
+
+- **The coupling is contained.** No content query joins the account tables. Outside
+  `accounts.ts` and `users.ts`, RomeQL names them in `security.ts` (37), `stores.ts` (22),
+  `handoffs.ts` (15), `api-tokens.ts` (6), `sites.ts` (3), and site export and import.
+- **`Principal` is everywhere** (about 1,900 mentions in 120 files). It stays. Only where it
+  is built from a user changes (`CmsUsers.resolve`).
+- **The CMS has no ORM dependency**, and its served files may import from a project only
+  what `cossack.host` lists (`cms.config.ts`, `stores.client.ts` today).
+- **The two packages already export almost the same names** from `auth.ts` and
+  `services/{users,roles,rbac}.ts`.
+- **The dashboard lacks:** invitations, avatar uploads, held accounts, tenant-only accounts
+  and their conversion, self-service tenant registration, recovery mode, permissions with
+  wildcards and grant checks (`checkGrant`), the last-administrator rule, user hooks and
+  outbox events, author slugs and field values.
+- **Tenants and sites disagree on:** domain verification and a primary domain with
+  redirects, a `deleted` state with a purge, the runtime on/off switch, the creation steps,
+  where a site's sessions live (site database or main), and who reaches every site
+  (`network_admin` on the account, or the main tenant's `admin` role).
+
+## Decisions (user, 2026-11-22)
+
+All four accepted. On 3, the user's answer was "the dashboard adopts the CMS's behaviour": where
+the two differ, the CMS's wins, sessions included. `tenants.signIn` stays, as the user asked
+for it the same day. On 4, `network_admin` stays a flag on the account.
+
+1. **Tables.** The CMS uses the dashboard's tables (`users`, `roles`, `user_roles`,
+   `sessions`, security, tokens, `tenants`, `tenant_domains`, `tenant_members`) and drops
+   `cms_accounts`, `cms_users`, `cms_roles`, `cms_user_roles`, `cms_auth_sessions`,
+   `cms_memberships`, `cms_sites`, `cms_site_domains`, `cms_handoffs`, `cms_session_sites`
+   and the security and token tables. Alpha, no converter: an existing CMS site loses its
+   accounts and sites list.
+2. **Dependency.** `@cossackframework/cms` depends on `@cossackframework/database`, and a
+   CMS project gets the account models and migrations (`src/models`, `src/migrations`) that
+   a dashboard project has. Each site database holds ORM tables beside the CMS's own.
+3. **Which model wins where they disagree.** Proposed: the dashboard takes the CMS's
+   behaviour for domains (verification, primary, redirects), the `deleted` state, tenant-only
+   accounts, wildcard permissions and grant checks. The CMS takes the dashboard's for
+   sessions (all in the main database) and for sign-in (`tenants.signIn`).
+4. **`network_admin`.** Kept as a flag on the account, or replaced by the main tenant's
+   `admin` role.
+
+## Order (each step ships and is tested alone)
+
+1. Dashboard: permissions with wildcards, grant checks, the last-administrator rule. **Done**:
+   `lib/permissions.ts` (`permissionMatches`, `holds`, `holdsAll`, `validPermission`),
+   `services/rbac.ts` (`permissionsOf`; the admin role holds everything and cannot change),
+   role changes check the acting user's permissions, the last administrator stays. The
+   last-administrator check reads, then writes: two requests at once can both pass.
+2. Dashboard: tenant-only accounts, domains (verify, primary), `deleted` and purge, the
+   runtime switch, hooks for the creation steps.
+3. Dashboard: invitations, avatar uploads through a storage hook, held accounts, recovery
+   mode, tenant registration.
+4. CMS: sessions, second factors and tokens on the dashboard's stores (what was built and
+   reverted, now with tenants).
+5. CMS: accounts, members and roles; `Principal` from the dashboard's user; slugs and field
+   values stay CMS documents beside the member row.
+6. CMS: sites on tenants; site export and import; the network screens.
+7. Remove the CMS's own stores, tables and host steps. Docs.
+
+Done when the CMS unit suite, the CMS runtime suites and `pnpm test:cms:packed` pass.

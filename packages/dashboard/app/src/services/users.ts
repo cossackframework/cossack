@@ -226,7 +226,23 @@ export async function changeUserPassword(id: string, newPassword: string): Promi
   await User.update({ id }, { passwordHash: await hashPassword(newPassword) });
 }
 
+/**
+ * Refuse a change that would leave nobody active with the admin role here (in this tenant, or
+ * in the application without tenants). `keeps` says whether the user still has the role after it.
+ */
+async function requireAnotherAdmin(userId: string, change: string, keeps = false): Promise<void> {
+  if (keeps) return;
+  const admin = await Role.findOne({ where: { name: 'admin' } });
+  if (!admin || !await UserRole.exists({ userId, roleId: admin.id })) return;
+  const others = (await sql<{ total: number }>`
+    SELECT COUNT(*) AS total FROM user_roles ur INNER JOIN users u ON u.id = ur.user_id
+    WHERE ur.role_id = ${admin.id} AND ur.user_id <> ${userId} AND u.status = 'active'
+  `).rows[0];
+  if (!Number(others?.total ?? 0)) throw new ClientVisibleError(`The last administrator cannot be ${change}.`);
+}
+
 export async function deleteUser(id: string): Promise<void> {
+  await requireAnotherAdmin(id, 'removed');
   // In a tenant: the member leaves, and the account stays.
   if (currentTenant()) return leaveCurrentTenant(id);
   await UserRole.delete({ userId: id });
@@ -242,10 +258,13 @@ export async function assignRole(userId: string, roleId: string): Promise<void> 
 }
 
 export async function removeRole(userId: string, roleId: string): Promise<void> {
+  if ((await Role.findOne({ where: { id: roleId } }))?.name === 'admin') await requireAnotherAdmin(userId, 'left without the admin role');
   await UserRole.delete({ userId, roleId });
 }
 
 export async function syncUserRoles(userId: string, roleIds: string[]): Promise<void> {
+  const admin = await Role.findOne({ where: { name: 'admin' } });
+  await requireAnotherAdmin(userId, 'left without the admin role', !!admin && roleIds.includes(admin.id));
   await UserRole.delete({ userId });
   if (roleIds.length) {
     const createdAt = new Date();

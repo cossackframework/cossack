@@ -4,6 +4,7 @@
 // A request for a tenant's host runs in that tenant's ORM scope, so models and services reach
 // the tenant's database. Account code steps back to the main database with `accounts()`.
 // With tenants off, or on the main host, both are the same database and these do nothing.
+import { tenantORM } from '@/orm/factory';
 import type { Context } from 'hono';
 import type { ORM } from '@cossackframework/database';
 import { getRequestContext } from '@cossackframework/core';
@@ -63,7 +64,6 @@ export function inTenant<T>(work: () => Promise<T>): Promise<T> {
 
 /** Run code against one tenant's database, whatever the request's host: the main host's Tenants screen uses it. */
 export async function withTenant<T>(tenant: Pick<TenantInfo, 'database' | 'slug'>, work: () => Promise<T>): Promise<T> {
-  const { tenantORM } = await import('@/orm/factory');
   const c = getRequestContext();
   const opened = await tenantORM(c?.env, tenant);
   const before = c ? [c.get(MAIN_ORM as never), c.get(TENANT_ORM as never)] as const : undefined;
