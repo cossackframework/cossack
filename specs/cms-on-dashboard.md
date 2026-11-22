@@ -206,8 +206,9 @@ What the rest of the CMS calls on the stores today (inventory of 2026-11-22):
 
 ## Left
 
-- Not run: `pnpm test:cms:packed`, `pnpm test:databases`, `pnpm test:desktop`, the Workers
-  variants of the dashboard's tenants, PostgreSQL, MySQL and Turso tenants.
+- `pnpm test:cms:packed`, `pnpm test:databases` and `pnpm test:desktop` pass (2026-11-23). The
+  packed run found six shell files the CMS package did not ship (`app/.npmignore`).
+- Not run: the Workers variants of the dashboard's tenants, PostgreSQL, MySQL and Turso tenants.
 - Nothing purges deleted tenants of a plain dashboard project on a schedule or drops their
   databases; no command migrates every tenant; the dashboard's `security.purgeExpired()` is
   not scheduled.
