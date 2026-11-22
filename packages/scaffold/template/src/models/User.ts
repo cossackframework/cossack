@@ -52,6 +52,13 @@ export class User extends BaseEntity {
   @Column({ type: 'boolean', name: 'network_admin', default: false })
   declare networkAdmin: boolean;
 
+  /**
+   * In a tenant's database: an account of this tenant only, with its password, second factors
+   * and tokens here. False for a member row, whose account is in the main database.
+   */
+  @Column({ type: 'boolean', name: 'tenant_account', default: false })
+  declare tenantAccount: boolean;
+
   @CreateDateColumn({ name: 'created_at' })
   declare createdAt: Date;
 

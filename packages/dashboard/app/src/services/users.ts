@@ -84,13 +84,13 @@ function parseRoles(rows: readonly RoleRow[]): RoleAssignment[] {
 /** Each user's newest auth session start. Sign-out deletes the session, and with it this time. */
 async function lastSignIns(userIds: readonly string[]): Promise<Map<string, string>> {
   if (!userIds.length) return new Map();
-  // Sessions are the accounts', in the main database.
-  const rows = (await accounts(async () => sql<{ userId: string; lastSignedInAt: string | null }>`
+  // The sessions of this host: a tenant's are in its own database.
+  const rows = (await sql<{ userId: string; lastSignedInAt: string | null }>`
     SELECT user_id AS userId, MAX(created_at) AS lastSignedInAt
     FROM sessions
     WHERE user_id IN (${userIds}) AND meta = ${JSON.stringify({ type: 'auth' })}
     GROUP BY user_id
-  `)).rows;
+  `).rows;
   const times = new Map<string, string>();
   for (const row of rows) {
     const at = row.lastSignedInAt ? new Date(row.lastSignedInAt) : null;

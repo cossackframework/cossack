@@ -58,9 +58,12 @@ for it the same day. On 4, `network_admin` stays a flag on the account.
    - **Done:** network administration is the account's flag (`users.network_admin`, migration
      `0013`): every permission in every tenant, the Tenants screen, and the last active one
      stays. The main tenant's `admin` role no longer reaches other tenants.
-   - Open: tenant-only accounts and a tenant's sessions in its own database (the CMS keeps a
-     site's sessions in the site's database and ends them through `cms_session_sites`; the
-     dashboard keeps every session in the main database today).
+   - **Done** (user, 2026-11-22: "as the CMS"): a tenant's sessions are in its own database.
+     A session made from a main one names its public ID (`sessions.parent_id`), and
+     `tenant_sessions` in the main database records which tenants a main session reached, so
+     ending one ends the family. A new password and a removed account end the account's
+     sessions on every host it is a member of. Migration `0015`.
+   - Open: tenant-only accounts (`users.tenant_account` exists; nothing sets it yet).
    - **Done:** domains are verified before they serve (`/.well-known/cossack-tenant`;
      `tenants.verifyDomains: false` trusts them), one may be primary and the tenant's other
      hosts redirect to it with 301; `deleted` (404, restorable for 30 days,

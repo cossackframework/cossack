@@ -3,6 +3,7 @@
 import { afterEach, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { cleanupRoots, project, cossack, vite, productionServer, routeId as servedRouteId } from './fixtures/generated-app.js';
 import { browserless } from './fixtures/cms-client.js';
 
@@ -49,6 +50,11 @@ async function tenants(database) {
     expect((await acme.action(login, 'login', [{ email: admin.email, password: admin.password }])).error ?? '').toBe('');
     expect(acme.jar.has('session_id')).toBe(true);
     expect(await acme.page('/dashboard/users')).toContain(admin.email);
+    // A tenant keeps its sessions in its own database: the main one has only the main host's.
+    if (database === 'sqlite') {
+      const count = file => { const db = new DatabaseSync(path.join(root, file), { readOnly: true }); try { return db.prepare("SELECT COUNT(*) AS total FROM sessions WHERE meta LIKE '%auth%'").get().total; } finally { db.close(); } };
+      expect([count('database.sqlite'), count('tenants/acme.sqlite')]).toEqual([1, 1]);
+    }
     // Tenants are managed on the main host only.
     expect((await acme.request('/dashboard/tenants')).status).toBe(404);
 

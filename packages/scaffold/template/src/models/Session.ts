@@ -43,7 +43,7 @@ export class Session extends BaseEntity {
   @Column({ type: 'boolean', name: 'second_factor', default: false })
   declare secondFactor: boolean;
 
-  /** The main host's session this one was made from, with shared sign-in across tenants. */
+  /** In a tenant's database: the public ID of the main host's session this one was made from (shared sign-in). */
   @Index('sessions_parent_id')
   @Column({ type: 'varchar', name: 'parent_id', length: 191, nullable: true })
   declare parentId: string | null;

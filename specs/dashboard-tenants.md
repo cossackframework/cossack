@@ -17,7 +17,8 @@ CMS, and the CMS could later run on the dashboard's accounts (`specs/romedb-orm.
 - **Every database has the same schema.** A tenant's database gets every migration of the
   project. So services, pages and the project's own models run unchanged inside a tenant.
   The main database is also the main tenant's, and holds what is shared.
-- **Shared, in the main database:** accounts (`users` with the password), sessions, OAuth
+- **Shared, in the main database:** accounts (`users` with the password), the main host's
+  sessions (a tenant's are in its own database since 2026-11-22), OAuth
   accounts, second factors, passkeys, application passwords, and three new tables:
   `tenants`, `tenant_domains`, `tenant_members`.
 - **Per tenant:** a member row in the tenant's `users` under the account's ID (email, name

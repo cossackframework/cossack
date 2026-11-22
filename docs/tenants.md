@@ -25,8 +25,8 @@ give it on the Tenants screen. Without `APP_URL` every request is the main tenan
 | In the main database | In each tenant's database |
 | --- | --- |
 | Accounts (`users`, with the password) | A member row in `users` under the account's ID: email and name copied, no password |
-| Sessions, OAuth accounts, second factors, passkeys, application passwords | `roles` and `user_roles` |
-| `tenants`, `tenant_domains`, `tenant_members` | Your own tables |
+| The main host's sessions, OAuth accounts, second factors, passkeys, application passwords | The tenant's sessions, `roles` and `user_roles` |
+| `tenants`, `tenant_domains`, `tenant_members`, `tenant_sessions` | Your own tables |
 
 Every database has the same schema: each gets all of the project's migrations. A request
 for a tenant's host runs in that tenant's database, so your models and services need no
@@ -79,8 +79,9 @@ tenants: { enabled: true, signIn: 'shared' }
   only in the browser that started), and the tenant's host makes its own session from it.
   Signing out on any host ends the session on the main host and on every tenant's host.
 
-Accounts and sessions are in the main database in both modes, so the setting can change
-later. Shared sign-in works for subdomains and for a tenant's own domain, because each host
+Accounts are in the main database in both modes, so the setting can change later. A
+tenant's sessions are in its own database; with shared sign-in the main database records
+which tenants a session reached. Shared sign-in works for subdomains and for a tenant's own domain, because each host
 keeps its own cookie.
 
 ## Where a tenant's database is

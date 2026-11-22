@@ -49,8 +49,10 @@ async function generatedAuth() {
     '@/models/TenantMember': { TenantMember: { delete: vi.fn() } },
     // Tenants are off: account code runs where it is, and every request is the main tenant's.
     './tenants': { accounts: work => work(), inTenant: work => work(), currentTenant: () => null, tenantOrigin: () => null,
-      sharedSignIn: false, hostName: () => '', mainHost: () => '', tenantOfHost: async () => null },
+      sharedSignIn: false, hostName: () => '', mainHost: () => '', tenantOfHost: async () => null, withTenant: (_tenant, work) => work() },
     '@/models/TenantHandoff': { TenantHandoff: {} },
+    '@/models/TenantSession': { TenantSession: { find: async () => [], delete: vi.fn(), upsert: vi.fn() } },
+    '@/models/Tenant': { Tenant: { findOne: async () => null } },
     './services/tenants': {},
   };
   const module = { exports: {} };

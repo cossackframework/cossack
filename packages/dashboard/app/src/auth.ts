@@ -25,6 +25,9 @@ import { uuidv7 } from './lib/uuid';
 import { authOptions } from './auth-options';
 import { accounts, currentTenant, hostName, inTenant, mainHost, sharedSignIn, tenantOfHost } from './tenants';
 import { TenantHandoff } from '@/models/TenantHandoff';
+import { TenantSession } from '@/models/TenantSession';
+import { Tenant } from '@/models/Tenant';
+import { withTenant } from './tenants';
 import { ALL_PERMISSIONS } from './lib/permissions';
 import { siteName } from './brand';
 import * as security from './services/security';
@@ -167,6 +170,57 @@ function authSession(row: Session | null): AuthSessionRecord | null {
     createdAt: row.createdAt.getTime(), expiresAt: row.expiresAt.getTime() };
 }
 
+/**
+ * Run session code where this request's sessions are: a tenant keeps its sessions in its own
+ * database, and the main host in the main one. `auth.sessionHome` set to `main` reads the main
+ * host's sessions from a tenant's request (the shared sign-in's code names one).
+ */
+function sessions<T>(work: () => Promise<T>): Promise<T> {
+  return getRequestContext()?.get('auth.sessionHome' as never) === 'main' ? accounts(work) : inTenant(work);
+}
+
+const AUTH_PURPOSE = JSON.stringify({ type: 'auth' });
+
+/** End the sessions that tenants' hosts made from a main session, named by its public ID. Called in any scope. */
+async function endReached(publicId: string): Promise<void> {
+  await accounts(async () => {
+    const reached = await TenantSession.find({ where: { sessionPublicId: publicId }, take: 500 });
+    for (const entry of reached) {
+      const tenant = await Tenant.findOne({ where: { id: entry.tenantId } });
+      if (tenant) await withTenant(tenant, async () => { await sql`DELETE FROM sessions WHERE parent_id = ${publicId} AND meta = ${AUTH_PURPOSE}`; }).catch((error) => console.warn(`[tenants] could not end the sessions of ${tenant.slug}`, error));
+    }
+    if (reached.length) await TenantSession.delete({ sessionPublicId: publicId });
+  });
+}
+
+/**
+ * On the main host, after sessions of a user were ended there: end what tenants' hosts made
+ * from them. The session `keptId` (the caller's own) and what was made from it stay.
+ */
+async function endReachedOfUser(userId: string, keptId: string): Promise<void> {
+  if (currentTenant() || !authOptions.tenants.enabled) return;
+  await accounts(async () => {
+    const kept = keptId ? (await Session.findOne({ where: { id: keptId } }))?.publicId ?? null : null;
+    const reached = new Set((await TenantSession.find({ where: { userId }, take: 2000 })).map(entry => entry.sessionPublicId));
+    for (const publicId of reached) if (publicId !== kept) await endReached(publicId);
+  });
+}
+
+/**
+ * End an account's sessions on every host: the main one and each tenant it is a member of.
+ * For a changed password and a removed account. Called in the main database's scope.
+ */
+async function endSessionsEverywhere(userId: string): Promise<void> {
+  await sql`DELETE FROM sessions WHERE user_id = ${userId} AND meta = ${AUTH_PURPOSE}`;
+  if (!authOptions.tenants.enabled) return;
+  const memberships = await TenantMember.find({ where: { userId }, take: 500 });
+  for (const membership of memberships) {
+    const tenant = await Tenant.findOne({ where: { id: membership.tenantId } });
+    if (tenant) await withTenant(tenant, async () => { await sql`DELETE FROM sessions WHERE user_id = ${userId} AND meta = ${AUTH_PURPOSE}`; }).catch((error) => console.warn(`[tenants] could not end the sessions of ${tenant.slug}`, error));
+  }
+  await TenantSession.delete({ userId });
+}
+
 export const authSessions = createSessionManager({
   ttlSeconds: SESSION_TTL_SECONDS,
   cookie: { name: SESSION_COOKIE },
@@ -175,20 +229,23 @@ export const authSessions = createSessionManager({
       // A tenant's host signs in its members only.
       if (!await allowedHere(record.userId)) throw new SignInMemberError(currentTenant()!.name);
       const { ip, userAgent, location } = captureRequestInfo(c);
-      await accounts(() => Session.insert({ id: record.id, publicId: crypto.randomUUID(), userId: record.userId, data: null,
+      // Set by completeTenantHandoff(): the public ID of the main host's session this one is made from.
+      const parent = (c.get('auth.sessionParent') as string | undefined) ?? null;
+      await sessions(() => Session.insert({ id: record.id, publicId: crypto.randomUUID(), userId: record.userId, data: null,
         createdAt: new Date(record.createdAt), expiresAt: new Date(record.expiresAt),
         meta: { type: 'auth' }, ipAddress: ip, userAgent, location,
         // Set by createSession() for the session it is about to store.
-        secondFactor: c.get('auth.signInSecondFactor') === true,
-        // Set by completeTenantHandoff(): the main host's session this one was made from.
-        parentId: (c.get('auth.sessionParent') as string | undefined) ?? null }));
+        secondFactor: c.get('auth.signInSecondFactor') === true, parentId: parent }));
+      // The main database remembers which tenants the main session reached, to end them with it.
+      const tenant = currentTenant();
+      if (parent && tenant) await accounts(() => TenantSession.upsert({ sessionPublicId: parent, tenantId: tenant.id, userId: record.userId, createdAt: new Date() }, ['sessionPublicId', 'tenantId']));
     },
-    async read(id) { return authSession(await accounts(() => Session.findOne({ where: { id } }))); },
+    async read(id) { return authSession(await sessions(() => Session.findOne({ where: { id } }))); },
     async replace(expected, replacement, now) {
       // One SQL statement owns rotation. Match the complete prior record and
       // auth purpose so concurrent rotation or revocation can have only one winner.
       // Pass Date values: the sql tag encodes them in the column's stored format.
-      const result = await accounts(async () => sql`
+      const result = await sessions(async () => sql`
         UPDATE sessions SET id = ${replacement.id},
           created_at = ${new Date(replacement.createdAt)},
           expires_at = ${new Date(replacement.expiresAt)}
@@ -198,20 +255,18 @@ export const authSessions = createSessionManager({
           AND expires_at > ${new Date(Math.max(now, Date.now()))}
           AND meta = ${JSON.stringify({ type: 'auth' })}
       `);
-      if (result.meta.rowsAffected !== 1) return false;
-      // Sessions that tenants' hosts made from this one follow its new ID.
-      if (sharedSignIn) await accounts(async () => sql`UPDATE sessions SET parent_id = ${replacement.id} WHERE parent_id = ${expected.id}`);
-      return true;
+      // Sessions made from this one name its public ID, which stays.
+      return result.meta.rowsAffected === 1;
     },
     async revoke(id) {
-      await accounts(async () => {
-        const purpose = JSON.stringify({ type: 'auth' });
-        if (!sharedSignIn) { await sql`DELETE FROM sessions WHERE id = ${id} AND meta = ${purpose}`; return; }
-        // With shared sign-in, signing out anywhere ends the main host's session and every session made from it.
-        const row = await Session.findOne({ where: { id } });
-        const root = row?.parentId ?? id;
-        await sql`DELETE FROM sessions WHERE (id = ${id} OR id = ${root} OR parent_id = ${root}) AND meta = ${purpose}`;
-      });
+      const row = authOptions.tenants.enabled ? await sessions(() => Session.findOne({ where: { id } })) : null;
+      await sessions(async () => sql`DELETE FROM sessions WHERE id = ${id} AND meta = ${AUTH_PURPOSE}`);
+      if (!row || parseMeta(row.meta)?.type !== 'auth') return;
+      // Signing out anywhere ends the main host's session and every session made from it.
+      const made = currentTenant() ? row.parentId : null;
+      if (made) await accounts(async () => sql`DELETE FROM sessions WHERE public_id = ${made} AND meta = ${AUTH_PURPOSE}`);
+      const family = made ?? (currentTenant() ? null : row.publicId);
+      if (family) await endReached(family);
     },
   },
 });
@@ -219,7 +274,7 @@ export const authSessions = createSessionManager({
 export const auth = createAuth<PublicUser>({
   realtime: {
     key: 'cossack.session',
-    capture: (sessionId, userId) => accounts(async () => {
+    capture: (sessionId, userId) => sessions(async () => {
       const stored = await Session.findOne({ where: { id: sessionId } });
       const row = stored ? await sessionWithReference(stored, userId) : null;
       if (!row) throw new Error('Session ended before subscription.');
@@ -230,7 +285,7 @@ export const auth = createAuth<PublicUser>({
       const { reference, fingerprint } = data as { reference?: unknown; fingerprint?: unknown };
       if (typeof reference !== 'string' || !PUBLIC_SESSION_REFERENCE.test(reference) ||
           typeof fingerprint !== 'string' || !/^[0-9a-f]{64}$/.test(fingerprint)) return null;
-      const row = await accounts(() => Session.findOne({ where: { publicId: reference } }));
+      const row = await sessions(() => Session.findOne({ where: { publicId: reference } }));
       const active = row ? await authSessions.validate(row.id, c) : null;
       if (!active || await sessionFingerprint(active.id) !== fingerprint) return null;
       return active.userId;
@@ -242,7 +297,7 @@ export const auth = createAuth<PublicUser>({
       const session = await authSessions.validate(sessionId, c);
       // Read only while two-step sign-in is required: whether this session used a second factor.
       if (session && authOptions.security.requireTwoFactor) {
-        c.set('auth.sessionSecondFactor', (await accounts(() => Session.findOne({ where: { id: session.id } })))?.secondFactor === true);
+        c.set('auth.sessionSecondFactor', (await sessions(() => Session.findOne({ where: { id: session.id } })))?.secondFactor === true);
       }
       return session?.userId ?? null;
     } catch (error) {
@@ -552,6 +607,7 @@ export async function registerUser(email: string, password: string, name?: strin
 
 /** Remove an account with what belongs to it: sessions and links, roles, second factors. */
 async function removeAccount(userId: string): Promise<void> {
+  await endSessionsEverywhere(userId);
   await Session.delete({ userId });
   await apiTokens.revokeAll(userId);
   await sql`DELETE FROM user_roles WHERE user_id = ${userId}`;
@@ -826,7 +882,7 @@ async function factorAdded(userId: string, hadFactor: boolean): Promise<void> {
   if (!c || !id || user?.id !== userId) return;
   // Only the account's first factor counts for the session that set it up.
   if (hadFactor && c.get('auth.sessionSecondFactor') !== true) return;
-  await Session.update({ id, userId }, { secondFactor: true });
+  await sessions(() => Session.update({ id, userId }, { secondFactor: true }));
   c.set('auth.sessionSecondFactor', true);
 }
 
@@ -1042,6 +1098,8 @@ export async function resetPassword(token: string, newPassword: string): Promise
   if (!userId) return false;
   const passwordHash = await hashPassword(newPassword);
   await User.update({ id: userId }, { passwordHash });
+  // A new password ends every session of the account, on every host.
+  await endSessionsEverywhere(userId);
   await Session.delete({ userId });
   return true;
   });
@@ -1127,7 +1185,7 @@ async function currentSessionReference(userId: string, currentId: string): Promi
 
 /** Lists only the authenticated caller's active auth sessions as safe DTOs. */
 export async function listUserSessions(c: Context): Promise<SessionInfo[]> {
-  return accounts(async () => {
+  return sessions(async () => {
   return sessionsOf(c, sessionOwner(c).userId);
   });
 }
@@ -1137,7 +1195,7 @@ export async function listUserSessions(c: Context): Promise<SessionInfo[]> {
  * them; the caller's own session is marked current.
  */
 export async function sessionsOf(c: Context, userId: string): Promise<SessionInfo[]> {
-  return accounts(async () => {
+  return sessions(async () => {
   const currentId = getCookie(c, SESSION_COOKIE);
   const rows = await Session.find({
     where: { userId, expiresAt: MoreThan(new Date()) },
@@ -1163,7 +1221,7 @@ export async function sessionsOf(c: Context, userId: string): Promise<SessionInf
 
 /** Revoke one other auth session owned by the authenticated caller. */
 export async function revokeSession(c: Context, reference: string): Promise<boolean> {
-  return accounts(async () => {
+  return sessions(async () => {
   const { userId, currentId } = sessionOwner(c);
   if (typeof reference !== 'string' || !PUBLIC_SESSION_REFERENCE.test(reference)) return false;
   const currentReference = await currentSessionReference(userId, currentId);
@@ -1172,33 +1230,37 @@ export async function revokeSession(c: Context, reference: string): Promise<bool
       AND public_id <> ${currentReference}
       AND meta = ${JSON.stringify({ type: 'auth' })}
       AND expires_at > ${new Date()}`;
+  // A session of the main host takes the sessions tenants' hosts made from it.
+  if (result.meta.rowsAffected === 1 && !currentTenant()) await endReached(reference);
   return result.meta.rowsAffected === 1;
   });
 }
 
 /** End one of a user's auth sessions, never the caller's own. */
 export async function revokeSessionOf(c: Context, userId: string, reference: string): Promise<boolean> {
-  return accounts(async () => {
+  return sessions(async () => {
   if (typeof reference !== 'string' || !PUBLIC_SESSION_REFERENCE.test(reference)) return false;
   const result = await sql`DELETE FROM sessions
     WHERE public_id = ${reference} AND user_id = ${userId} AND id <> ${getCookie(c, SESSION_COOKIE) ?? ''}
       AND meta = ${JSON.stringify({ type: 'auth' })}
       AND expires_at > ${new Date()}`;
+  if (result.meta.rowsAffected === 1 && !currentTenant()) await endReached(reference);
   return result.meta.rowsAffected === 1;
   });
 }
 
 /** End all of a user's auth sessions except the caller's own. */
 export async function revokeSessionsOf(c: Context, userId: string): Promise<void> {
-  return accounts(async () => {
+  return sessions(async () => {
   await sql`DELETE FROM sessions WHERE user_id = ${userId} AND id <> ${getCookie(c, SESSION_COOKIE) ?? ''}
     AND meta = ${JSON.stringify({ type: 'auth' })}`;
+  await endReachedOfUser(userId, getCookie(c, SESSION_COOKIE) ?? '');
   });
 }
 
 /** Revoke the caller's auth rows. Reset and OAuth-state rows remain separate. */
 export async function revokeAllUserSessions(c: Context, keepCurrent = false): Promise<void> {
-  return accounts(async () => {
+  return sessions(async () => {
   const { userId, currentId } = sessionOwner(c);
   if (keepCurrent) {
     const currentReference = await currentSessionReference(userId, currentId);
@@ -1208,6 +1270,7 @@ export async function revokeAllUserSessions(c: Context, keepCurrent = false): Pr
   } else {
     await sql`DELETE FROM sessions WHERE user_id = ${userId} AND meta = ${JSON.stringify({ type: 'auth' })}`;
   }
+  await endReachedOfUser(userId, keepCurrent ? currentId : '');
   });
 }
 
@@ -1459,9 +1522,18 @@ export async function completeTenantHandoff(c: Context, code: string): Promise<H
   // One conditional delete owns the code: a second request with it finds nothing.
   const taken = await TenantHandoff.delete({ id, tenantId: tenant.id });
   if (!row || row.tenantId !== tenant.id || taken.meta.rowsAffected !== 1 || row.expiresAt.getTime() <= Date.now()) return null;
-  const parent = await authSessions.validate(row.sessionId, c);
-  if (!parent || parent.userId !== row.userId) return null;
-  c.set('auth.sessionParent' as never, parent.id as never);
+  // The code names a session of the main host, which must still be alive.
+  c.set('auth.sessionHome' as never, 'main' as never);
+  let reference: string | null;
+  try {
+    const parent = await authSessions.validate(row.sessionId, c);
+    if (!parent || parent.userId !== row.userId) return null;
+    const stored = await Session.findOne({ where: { id: parent.id } });
+    reference = stored ? (await sessionWithReference(stored, row.userId))?.publicId ?? null : null;
+  } finally { c.set('auth.sessionHome' as never, undefined as never); }
+  if (!reference) return null;
+  // The tenant's own session, in its database, made from that one.
+  c.set('auth.sessionParent' as never, reference as never);
   const { headers } = await authSessions.create(row.userId, c);
   return headers;
   });
