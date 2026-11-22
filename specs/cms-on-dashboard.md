@@ -1,7 +1,7 @@
 # The CMS on the dashboard's accounts and tenants
 
-Status: decided 2026-11-22 (below); steps 1 to 3 built (the dashboard's side). Steps 4 to 7
-change the CMS and are not started. Steps are committed one by one. It replaces "step 6" of `specs/romedb-orm.md`,
+Status: decided 2026-11-22 (below); steps 1 to 3 built (the dashboard's side) and step 4 (the
+port). Steps 5 to 8 change the CMS's code and are not started. Steps are committed one by one. It replaces "step 6" of `specs/romedb-orm.md`,
 which was built in part and reverted on 2026-11-21, before the dashboard had tenants
 (`specs/dashboard-tenants.md`) and before a user's field values were documents
 (`specs/cms-field-values.md`).
@@ -95,11 +95,37 @@ for it the same day. On 4, `network_admin` stays a flag on the account.
      accounts (in the CMS a network account made by a site's registration waits "held"; with
      a tenant's own accounts a registration on a tenant's host makes such an account instead).
    - No command wraps the recovery request yet.
-4. CMS: sessions, second factors and tokens on the dashboard's stores (what was built and
-   reverted, now with tenants).
-5. CMS: accounts, members and roles; `Principal` from the dashboard's user; slugs and field
-   values stay CMS documents beside the member row.
-6. CMS: sites on tenants; site export and import; the network screens.
-7. Remove the CMS's own stores, tables and host steps. Docs.
+The CMS's side (user, 2026-11-22: "use a port"). The CMS library drops its account stores
+and takes users through `PeoplePort` (`packages/cms/src/server/people.ts`), which the
+application fills from the dashboard's services. Slugs and field values stay CMS documents.
+
+What the rest of the CMS calls on the stores today (inventory of 2026-11-22):
+
+- Library: `users.get/roles/role/resolve/principal/findByEmail/list/create/update/setSystemMeta/
+  defineRole/addMember/setRoles`, `accounts.count/existing/join/leave/get`, `security.attempt/
+  release` (forms), `apiTokens.verify`, the session store handed to `server/auth.ts`, and raw
+  RomeQL on the account tables in `site-import.ts`.
+- Application, outside the six files that are replaced: `users.getMany` (20 places), `get`
+  (15), `roles`, `list`, `authors`, `count`, `bySlug`, `withSlugs`, `usingFile`,
+  `setSystemMeta`; ten network screens; `CmsNetwork` for the host of each site and for what
+  is not about accounts (plugin and theme policy, network settings, export requests, updates).
+- Tests: 17 files test the stores directly, 9 use users as fixtures, 66 do not touch them.
+
+4. **Done:** the port and its in-memory version (`memoryPeople`), with tests. Nothing uses it yet.
+5. `CmsUsers` becomes a class over the port: identity and roles from the port, slug and field
+   values from the CMS's documents. First with the present RomeDB code behind the port, so
+   every suite stays green; the nine fixture test files move to `memoryPeople`.
+6. The application's port over the dashboard's services; a CMS project gets the account
+   models and migrations; the CMS's `auth.ts`, `services/{users,roles,rbac}.ts`,
+   `cms/handoff.ts` and `cms/middlewares.ts` give way to the dashboard's. Roles need a
+   display name beside the name the CMS uses as their ID (`roles.label`). Avatar uploads and
+   held accounts are decided here.
+7. Sites on tenants: `CmsNetwork` keeps the host of each site and the network's policy,
+   settings, exports and updates, and takes sites, domains and members from the tenants
+   service. Site export and import. The network screens give way to the Tenants screen where
+   they overlap.
+8. Remove `accounts.ts`, `security.ts`, `api-tokens.ts`, `handoffs.ts`, `sites.ts`, the
+   session stores, their tables and host steps, and the 17 test files that tested them.
+   Rebuild that coverage in the CMS runtime suites. Docs.
 
 Done when the CMS unit suite, the CMS runtime suites and `pnpm test:cms:packed` pass.

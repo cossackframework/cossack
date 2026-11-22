@@ -11,6 +11,7 @@ export { collectionSpec, searchTextPath, defineFieldRql, indexRql, readCatalog, 
 export { HOST_STEPS, HOST_TABLES, unknownHostSteps } from './host-schema';
 export { Outbox, type DispatchReport, type OutboxOptions } from './outbox';
 export { CmsUsers, type CmsUser, type CmsMember, type CmsRole, type UserPage } from './users';
+export { memoryPeople, personPermissions, type PeoplePort, type Person, type PersonRole, type PersonInput, type PeopleListOptions } from './people';
 export { CmsAccounts, normalizeEmail, type CmsAccount, type AccountProfile } from './accounts';
 export { CmsSites, MAIN_SITE, siteHost, type SiteRecord, type SiteDomain, type SiteStatus } from './sites';
 export { CmsNetwork, MAIN, networkSite, prefixedStorage, type NetworkSite, type SiteResolution, type CmsNetworkOptions, type NewSite, type NetworkSettings, type SiteExportPolicy, type ExportRequest, type SiteRegistration, SITE_REGISTRATIONS } from './network';
