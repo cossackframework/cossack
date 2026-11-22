@@ -78,6 +78,7 @@
       "models/TenantDomain.ts",
       "models/TenantMember.ts",
       "models/TenantHandoff.ts",
+      "models/TenantNetwork.ts",
       "orm/factory.ts"
     ],
     "hostTemplate": "0.9.0"

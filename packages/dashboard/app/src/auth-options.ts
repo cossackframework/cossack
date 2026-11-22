@@ -26,6 +26,7 @@ export const authOptions: Required<Omit<DashboardConfig, 'security' | 'registrat
     tenants: {
         enabled: dashboard.tenants?.enabled === true,
         signIn: dashboard.tenants?.signIn === 'shared' ? 'shared' : 'host',
+        verifyDomains: dashboard.tenants?.verifyDomains !== false,
     },
     security: {
         requireTwoFactor: dashboard.security?.requireTwoFactor === true,

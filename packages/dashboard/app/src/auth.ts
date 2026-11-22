@@ -1397,8 +1397,9 @@ export async function handleOAuthUser(
 /** Whether the project runs tenants (src/dashboard.config.ts: `tenants`). The CMS has sites instead. */
 export const tenantsAvailable = authOptions.tenants.enabled;
 export {
-  addTenantDomain, addTenantMember, createTenant, listNetworkAdmins, listTenantMembers, listTenants, removeTenantDomain, removeTenantMember, setNetworkAdmin, setTenantStatus,
-  type NetworkAdminSummary, type TenantMemberSummary, type TenantSummary,
+  addTenantDomain, addTenantMember, createTenant, listNetworkAdmins, listTenantMembers, listTenants, networkRunning, removeTenantDomain, removeTenantMember,
+  setNetworkAdmin, setNetworkRunning, setPrimaryTenantDomain, setTenantStatus, verifyTenantDomain,
+  type NetworkAdminSummary, type TenantDomainSummary, type TenantMemberSummary, type TenantSummary,
 } from './services/tenants';
 export { tenantOrigin } from './tenants';
 

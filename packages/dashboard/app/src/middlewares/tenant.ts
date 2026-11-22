@@ -2,7 +2,7 @@ import { tenantORM } from '@/orm/factory';
 import { defineServerMiddleware } from '@cossackframework/core';
 import type { ORM } from '@cossackframework/database';
 import { getCookie, deleteCookie, setCookie } from 'hono/cookie';
-import { hostName, mainHost, markTenantRequest, sharedSignIn, tenantOfHost, tenantsEnabled } from '../tenants';
+import { hostName, mainHost, markTenantRequest, sharedSignIn, tenantClaimingHost, tenantOfHost, tenantsEnabled, tenantsRunning } from '../tenants';
 import { returnPath } from '../auth-input';
 import { SESSION_COOKIE_NAME } from '../auth';
 
@@ -17,6 +17,7 @@ import { SESSION_COOKIE_NAME } from '../auth';
 // The cookies of shared sign-in; the endpoints under src/pages/auth/tenant read them.
 const TENANT_STATE = 'tenant_state';
 const TENANT_RETURN = 'tenant_return';
+const WELL_KNOWN = '/.well-known/cossack-tenant';
 const TENANTS_SCREEN = /^\/dashboard\/tenants(?:\/|$)/;
 
 export const tenantMiddleware = defineServerMiddleware(async (c, next) => {
@@ -35,8 +36,21 @@ export const tenantMiddleware = defineServerMiddleware(async (c, next) => {
         return next();
     }
     if (screen) return c.notFound();
+    // A domain proves it points here by answering with the ID of the tenant that asked for it.
+    if (c.req.path === WELL_KNOWN) {
+        const claimed = await tenantClaimingHost(host);
+        return claimed ? c.text(claimed) : c.notFound();
+    }
+    // While the network is off, only the main host answers.
+    if (!await tenantsRunning()) return c.notFound();
     const tenant = await tenantOfHost(host, main);
-    if (!tenant || tenant.status === 'creating') return c.notFound();
+    if (!tenant || tenant.status === 'creating' || tenant.status === 'deleted') return c.notFound();
+    // The tenant's other hosts lead to its primary domain.
+    if (tenant.primaryHost && host !== tenant.primaryHost && (c.req.method === 'GET' || c.req.method === 'HEAD')) {
+        const url = new URL(c.req.url);
+        url.hostname = tenant.primaryHost;
+        return c.redirect(url.toString(), 301);
+    }
     if (tenant.status === 'archived') return c.text('This site is archived.', 503);
     // Shared sign-in: people sign in on the main host, which sends them back with a one-time code.
     if (sharedSignIn && c.req.method === 'GET' && c.req.path === '/auth/login') {

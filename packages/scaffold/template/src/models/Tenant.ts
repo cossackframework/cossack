@@ -20,9 +20,15 @@ export class Tenant extends BaseEntity {
   @Column({ type: 'varchar', name: 'database', length: 191, unique: true })
   declare database: string;
 
-  /** `creating` until its database is ready; `archived` answers 503 and keeps its data. */
+  /**
+   * `creating` until its database is ready. `archived` answers 503 and keeps its data.
+   * `deleted` answers 404 and can be restored for 30 days; then it is purged.
+   */
   @Column({ type: 'varchar', name: 'status', length: 16, default: 'creating' })
-  declare status: 'creating' | 'active' | 'archived';
+  declare status: 'creating' | 'active' | 'archived' | 'deleted';
+
+  @Column({ type: 'datetime', name: 'deleted_at', nullable: true })
+  declare deletedAt: Date | null;
 
   @Column({ type: 'datetime', name: 'created_at' })
   declare createdAt: Date;

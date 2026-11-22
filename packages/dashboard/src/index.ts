@@ -54,6 +54,12 @@ export interface DashboardConfig {
          * on APP_URL's host, and a tenant's host gets its session from there.
          */
         signIn?: 'host' | 'shared';
+        /**
+         * A tenant's own domain serves only after it was shown to point at this application: the
+         * Tenants screen asks the domain for `/.well-known/cossack-tenant`. Default: true. False
+         * trusts every domain a network administrator adds.
+         */
+        verifyDomains?: boolean;
     };
     /** Two-step sign-in. Every user can turn it on for their account; this makes it required. */
     security?: {

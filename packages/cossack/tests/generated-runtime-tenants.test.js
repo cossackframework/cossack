@@ -101,9 +101,33 @@ async function tenants(database) {
     expect((await owner.action(screen, 'archive', [made.tenants[0].id, false])).error).toBe('');
     expect((await acme.request('/dashboard')).status).toBe(200);
 
-    // A domain of its own reaches the tenant.
-    expect((await owner.action(screen, 'addDomain', [made.tenants[0].id, 'app.acme.test'])).error).toBe('');
-    expect((await on('app.acme.test').request('/auth/login')).status).toBe(200);
+    // A domain of its own reaches the tenant once it is shown to point here. Until then it only
+    // answers the check, with the ID of the tenant that asked for it.
+    const id = made.tenants[0].id;
+    const withDomain = await owner.action(screen, 'addDomain', [id, 'app.acme.test']);
+    expect(withDomain.error).toBe('');
+    expect(withDomain.tenants[0].domains).toEqual([{ host: 'app.acme.test', primary: false, verified: false }]);
+    expect((await on('app.acme.test').request('/auth/login')).status).toBe(404);
+    const check = await on('app.acme.test').request('/.well-known/cossack-tenant');
+    expect([check.status, await check.text()]).toEqual([200, id]);
+    expect((await on('other.acme.test').request('/.well-known/cossack-tenant')).status).toBe(404);
+    // The name does not resolve in this test, so the check fails and says what to do.
+    expect((await owner.action(screen, 'verifyDomain', [id, 'app.acme.test'])).error).toContain('does not point at this application yet');
+    expect((await owner.action(screen, 'primaryDomain', [id, 'app.acme.test'])).error).toContain('Verify the domain');
+
+    // A deleted tenant answers 404, shows when it is purged, and can be restored.
+    const deleted = await owner.action(screen, 'remove', [id, true]);
+    expect(deleted.tenants[0]).toMatchObject({ status: 'deleted', purgedAt: expect.stringMatching(/^\d{4}-/) });
+    expect((await acme.request('/auth/login')).status).toBe(404);
+    expect((await owner.action(screen, 'remove', [id, false])).tenants[0].status).toBe('active');
+    expect((await acme.request('/dashboard')).status).toBe(200);
+
+    // With the network off, only the main host answers; tenants keep their data.
+    expect((await owner.action(screen, 'run', [false])).running).toBe(false);
+    expect((await acme.request('/dashboard')).status).toBe(404);
+    expect((await owner.request('/dashboard')).status).toBe(200);
+    expect((await owner.action(screen, 'run', [true])).running).toBe(true);
+    expect((await acme.request('/dashboard')).status).toBe(200);
   } finally { await server.close(); }
 }
 
@@ -115,7 +139,7 @@ it('signs in once for every host with shared sign-in', async () => {
   const root = await project('node', ['dashboard'], { database: 'sqlite' });
   const configFile = path.join(root, 'src/dashboard.config.ts');
   await fs.writeFile(configFile, (await fs.readFile(configFile, 'utf8')).replace('export const dashboard: DashboardConfig = {',
-    "export const dashboard: DashboardConfig = {\n  tenants: { enabled: true, signIn: 'shared' },"));
+    "export const dashboard: DashboardConfig = {\n  tenants: { enabled: true, signIn: 'shared', verifyDomains: false },"));
   await cossack(root, ['migration', 'up', '--json']);
   await vite(root, []);
   await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
@@ -179,5 +203,16 @@ it('signs in once for every host with shared sign-in', async () => {
     expect((await tenantSide.request('/dashboard')).status).toBe(302);
     // The administrator's sessions are untouched.
     expect((await acme.request('/dashboard')).status).toBe(200);
+
+    // Without verification (the project's choice), a domain serves at once. As the primary
+    // domain it is the tenant's address: the subdomain redirects there.
+    const id = (await main.action(screen, 'open', [''])).tenants[0].id;
+    expect((await main.action(screen, 'addDomain', [id, 'app.acme.test'])).tenants[0].domains).toEqual([{ host: 'app.acme.test', primary: false, verified: true }]);
+    expect((await on('app.acme.test').request('/auth/tenant/callback')).status).toBe(400);
+    const primary = await main.action(screen, 'primaryDomain', [id, 'app.acme.test']);
+    expect(primary.error).toBe('');
+    expect(primary.tenants[0]).toMatchObject({ address: `http://app.acme.test:${port}`, domains: [{ host: 'app.acme.test', primary: true, verified: true }] });
+    const moved = await acme.request('/dashboard/users?page=2');
+    expect([moved.status, moved.headers.get('location')]).toEqual([301, `http://app.acme.test:${port}/dashboard/users?page=2`]);
   } finally { await server.close(); }
 }, 300000);

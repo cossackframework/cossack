@@ -5,7 +5,7 @@ import { html, component } from '@cossackframework/renderer';
 import { notice, pageHeader } from '@cossackframework/ui/blocks';
 import {
     addTenantDomain, addTenantMember, createTenant, listNetworkAdmins, listTenantMembers, listTenants, onMainHost, removeTenantDomain, removeTenantMember,
-    setNetworkAdmin, setTenantStatus, tenantOrigin, tenantsAvailable, type NetworkAdminSummary, type PublicUser, type TenantMemberSummary, type TenantSummary,
+    networkRunning, setNetworkAdmin, setNetworkRunning, setPrimaryTenantDomain, setTenantStatus, tenantOrigin, tenantsAvailable, verifyTenantDomain, type NetworkAdminSummary, type PublicUser, type TenantMemberSummary, type TenantSummary,
 } from '#app/auth';
 import { guard } from '#app/services/rbac';
 
@@ -30,6 +30,8 @@ export default class TenantsPage extends Cossack {
     @State() email = '';
     @State() admins: NetworkAdminSummary[] = [];
     @State() adminEmail = '';
+    /** Whether tenants' hosts answer. */
+    @State() running = true;
 
     head(): HeadValue {
         return { title: 'Tenants' };
@@ -44,6 +46,7 @@ export default class TenantsPage extends Cossack {
         this.tenants = (await listTenants()).map(tenant => ({ ...tenant, address: tenantOrigin(tenant) }));
         this.members = this.selected ? await listTenantMembers(this.selected) : [];
         this.admins = await listNetworkAdmins();
+        this.running = await networkRunning();
     }
 
     private async act(work: () => Promise<void>, done: string) {
@@ -78,6 +81,26 @@ export default class TenantsPage extends Cossack {
     }
 
     @Server({ input: input.args(text(200), text(191)) })
+    async verifyDomain(id: string, host: string) {
+        await this.act(() => verifyTenantDomain(id, host), 'The domain points here: it reaches the tenant now.');
+    }
+
+    @Server({ input: input.args(text(200), text(191)) })
+    async primaryDomain(id: string, host: string) {
+        await this.act(() => setPrimaryTenantDomain(id, host), host ? 'This is the tenant\'s address now: its other hosts redirect to it.' : 'The tenant has no primary domain.');
+    }
+
+    @Server({ input: input.args(text(200), input.boolean()) })
+    async remove(id: string, deleted: boolean) {
+        await this.act(() => setTenantStatus(id, deleted ? 'deleted' : 'active'), deleted ? 'Deleted: its hosts answer 404. It can be restored for 30 days.' : 'The tenant is back.');
+    }
+
+    @Server({ input: input.args(input.boolean()) })
+    async run(on: boolean) {
+        await this.act(() => setNetworkRunning(on), on ? 'Tenants\' hosts answer again.' : 'The network is off: only the main host answers. Tenants keep their data.');
+    }
+
+    @Server({ input: input.args(text(200), text(191)) })
     async removeDomain(id: string, host: string) {
         await this.act(() => removeTenantDomain(id, host), 'Removed the domain.');
     }
@@ -101,8 +124,13 @@ export default class TenantsPage extends Cossack {
         return html`<div class="space-y-4 border-t border-border px-4 py-4 text-sm" data-testid="tenant-details">
             <div class="space-y-2">
                 <h3 class="font-medium text-foreground">${__('Domains')}</h3>
-                ${tenant.domains.length ? html`<ul class="space-y-1">${tenant.domains.map(host => html`<li class="flex items-center justify-between gap-2"><span>${host}</span>
-                    ${component(Button, { size: 'sm', variant: 'outline', '@click': () => this.removeDomain(tenant.id, host) }, __('Remove'))}</li>`)}</ul>` : html`<p class="text-muted-foreground">${__('No domain of its own.')}</p>`}
+                ${tenant.domains.length ? html`<ul class="space-y-1" data-testid="tenant-domains">${tenant.domains.map(domain => html`<li class="flex flex-wrap items-center justify-between gap-2">
+                    <span>${domain.host} ${domain.primary ? component(Badge, { variant: 'secondary' }, __('Primary')) : null} ${domain.verified ? null : component(Badge, { variant: 'outline' }, __('Not verified'))}</span>
+                    <span class="flex gap-2">
+                        ${domain.verified ? null : component(Button, { size: 'sm', '@click': () => this.verifyDomain(tenant.id, domain.host) }, __('Verify'))}
+                        ${domain.verified ? component(Button, { size: 'sm', variant: 'outline', '@click': () => this.primaryDomain(tenant.id, domain.primary ? '' : domain.host) }, domain.primary ? __('Not primary') : __('Make primary')) : null}
+                        ${component(Button, { size: 'sm', variant: 'outline', '@click': () => this.removeDomain(tenant.id, domain.host) }, __('Remove'))}
+                    </span></li>`)}</ul>` : html`<p class="text-muted-foreground">${__('No domain of its own.')}</p>`}
                 <form class="flex flex-wrap gap-2" @submit=${(event: Event) => { event.preventDefault(); void this.addDomain(tenant.id, this.domain); }}>
                     <input class=${FIELD} name="domain" aria-label=${__('Domain')} placeholder="app.example.com" .value=${this.domain} @input=${(event: Event) => { this.domain = (event.target as HTMLInputElement).value; }}>
                     ${component(Button, { size: 'sm', type: 'submit' }, __('Add domain'))}
@@ -127,6 +155,8 @@ export default class TenantsPage extends Cossack {
             ${pageHeader(__('Tenants'), { description: __('Organizations with their own database, members and roles.') })}
             ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}
+            ${this.running ? null : notice(__('The network is off: only the main host answers.'), 'info')}
+            <div>${component(Button, { size: 'sm', variant: 'outline', '@click': () => this.run(!this.running) }, this.running ? __('Turn the network off') : __('Turn the network on'))}</div>
             ${component(Card, {}, [component(CardHeader, {}, html`<h2 class="text-sm font-medium">${__('New tenant')}</h2>`), component(CardBody, {}, html`
                 <form class="flex flex-wrap items-end gap-2" data-testid="new-tenant" @submit=${(event: Event) => { event.preventDefault(); void this.create(this.name, this.slug); }}>
                     <input class=${FIELD} name="name" aria-label=${__('Name')} placeholder=${__('Name')} .value=${this.name} @input=${(event: Event) => { this.name = (event.target as HTMLInputElement).value; }}>
@@ -138,10 +168,12 @@ export default class TenantsPage extends Cossack {
                     <span><span class="font-medium text-foreground">${tenant.name}</span>
                         ${tenant.address ? html`<a class="ml-2 text-muted-foreground underline" href=${tenant.address}>${tenant.address.replace(/^https?:\/\//, '')}</a>` : html`<span class="ml-2 text-muted-foreground">${tenant.slug}</span>`}
                         <span class="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">${tenant.members} ${__('members')}
-                            ${tenant.status === 'active' ? null : component(Badge, { variant: 'outline' }, tenant.status === 'archived' ? __('Archived') : __('Not ready'))}</span></span>
+                            ${tenant.status === 'active' ? null : component(Badge, { variant: 'outline' }, tenant.status === 'archived' ? __('Archived') : tenant.status === 'deleted' ? __('Deleted') : __('Not ready'))}
+                            ${tenant.purgedAt ? html`<span>${__('Purged on')} ${tenant.purgedAt.slice(0, 10)}</span>` : null}</span></span>
                     <span class="flex gap-2">
                         ${component(Button, { size: 'sm', variant: 'outline', '@click': () => this.open(tenant.id) }, this.selected === tenant.id ? __('Close') : __('Manage'))}
-                        ${tenant.status === 'creating' ? null : component(Button, { size: 'sm', variant: 'outline', '@click': () => this.archive(tenant.id, tenant.status === 'active') }, tenant.status === 'active' ? __('Archive') : __('Restore'))}
+                        ${tenant.status === 'creating' || tenant.status === 'deleted' ? null : component(Button, { size: 'sm', variant: 'outline', '@click': () => this.archive(tenant.id, tenant.status === 'active') }, tenant.status === 'active' ? __('Archive') : __('Restore'))}
+                        ${tenant.status === 'creating' ? null : component(Button, { size: 'sm', variant: 'outline', '@click': () => this.remove(tenant.id, tenant.status !== 'deleted') }, tenant.status === 'deleted' ? __('Restore') : __('Delete'))}
                     </span>
                 </div>
                 ${this.selected === tenant.id ? this.details(tenant) : null}

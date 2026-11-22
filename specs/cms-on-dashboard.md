@@ -61,8 +61,13 @@ for it the same day. On 4, `network_admin` stays a flag on the account.
    - Open: tenant-only accounts and a tenant's sessions in its own database (the CMS keeps a
      site's sessions in the site's database and ends them through `cms_session_sites`; the
      dashboard keeps every session in the main database today).
-   - Open: domains (verification, a primary domain, redirects from the others).
-   - Open: the `deleted` state and its purge; the runtime switch; hooks for the creation steps.
+   - **Done:** domains are verified before they serve (`/.well-known/cossack-tenant`;
+     `tenants.verifyDomains: false` trusts them), one may be primary and the tenant's other
+     hosts redirect to it with 301; `deleted` (404, restorable for 30 days,
+     `purgeDeletedTenants()`); the network's on/off switch (`tenant_network`). Migration `0014`.
+   - Open: nothing calls `purgeDeletedTenants()` on a schedule, and it does not drop a
+     tenant's database; hooks for the creation steps (the CMS seeds settings, a theme and
+     plugins) come with step 6.
 3. Dashboard: invitations, avatar uploads through a storage hook, held accounts, recovery
    mode, tenant registration.
 4. CMS: sessions, second factors and tokens on the dashboard's stores (what was built and

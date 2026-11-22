@@ -10,6 +10,14 @@ export class TenantDomain extends BaseEntity {
   @Column({ type: 'varchar', name: 'tenant_id', length: 191 })
   declare tenantId: string;
 
+  /** The tenant's address: its other hosts redirect here. At most one per tenant. */
+  @Column({ type: 'boolean', name: 'is_primary', default: false })
+  declare isPrimary: boolean;
+
+  /** When the host was shown to point at this application. Only a verified domain reaches the tenant. */
+  @Column({ type: 'datetime', name: 'verified_at', nullable: true })
+  declare verifiedAt: Date | null;
+
   @Column({ type: 'datetime', name: 'created_at' })
   declare createdAt: Date;
 }

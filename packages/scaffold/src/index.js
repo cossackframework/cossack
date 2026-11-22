@@ -318,6 +318,7 @@ const AUTH_ORM_PATHS = new Set([
   'src/migrations/0011_create_api_tokens.ts',
   'src/migrations/0012_create_tenants.ts',
   'src/migrations/0013_add_network_admin.ts',
+  'src/migrations/0014_tenant_lifecycle.ts',
   'src/services/api-tokens.ts',
   'src/services/tenants.ts',
   'src/tenants.ts',
@@ -327,6 +328,7 @@ const AUTH_ORM_PATHS = new Set([
   'src/models/TenantDomain.ts',
   'src/models/TenantMember.ts',
   'src/models/TenantHandoff.ts',
+  'src/models/TenantNetwork.ts',
   'src/models/User.ts',
   'src/models/Session.ts',
   'src/models/OAuthAccount.ts',
@@ -1234,11 +1236,11 @@ extendCacheDriver('database', () => createDatabaseCacheStore());
 }
 
 /** The entities of sign-in on the ORM. Roles are part of it: the served auth.ts reads them for every user. */
-const ACCOUNT_MODELS = ['User', 'Session', 'OAuthAccount', 'UserSecurity', 'Passkey', 'AuthChallenge', 'AuthAttempt', 'ApiToken', 'Tenant', 'TenantDomain', 'TenantMember', 'TenantHandoff', 'Role', 'UserRole'];
+const ACCOUNT_MODELS = ['User', 'Session', 'OAuthAccount', 'UserSecurity', 'Passkey', 'AuthChallenge', 'AuthAttempt', 'ApiToken', 'Tenant', 'TenantDomain', 'TenantMember', 'TenantHandoff', 'TenantNetwork', 'Role', 'UserRole'];
 /** Their migrations, in the order they apply. */
 const ACCOUNT_MIGRATIONS = [
   '0001_create_users.ts', '0002_create_sessions.ts', '0003_create_roles.ts', '0005_create_oauth_accounts.ts', '0007_create_user_roles.ts',
-  '0008_add_session_public_id.ts', '0009_create_account_security.ts', '0010_add_user_status.ts', '0011_create_api_tokens.ts', '0012_create_tenants.ts', '0013_add_network_admin.ts',
+  '0008_add_session_public_id.ts', '0009_create_account_security.ts', '0010_add_user_status.ts', '0011_create_api_tokens.ts', '0012_create_tenants.ts', '0013_add_network_admin.ts', '0014_tenant_lifecycle.ts',
 ];
 
 function modelsBarrel(recipe, names = accountBarrelNames(recipe)) {

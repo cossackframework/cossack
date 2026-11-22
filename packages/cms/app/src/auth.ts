@@ -1206,7 +1206,8 @@ export async function handleOAuthUser(_provider: string, oauthUser: OAuthUser, _
 // The dashboard package's tenants are not used with the CMS, which has a network of sites
 // (Settings → Network). The shared Tenants screen is never reached here.
 export const tenantsAvailable = false;
-export interface TenantSummary { id: string; slug: string; name: string; database: string; status: 'creating' | 'active' | 'archived'; createdAt: string; members: number; domains: string[] }
+export interface TenantDomainSummary { host: string; primary: boolean; verified: boolean }
+export interface TenantSummary { id: string; slug: string; name: string; database: string; status: 'creating' | 'active' | 'archived' | 'deleted'; primaryHost?: string; createdAt: string; members: number; domains: TenantDomainSummary[]; purgedAt?: string }
 export interface TenantMemberSummary { id: string; email: string; name: string; roles: string[] }
 const noTenants = (): never => { throw new ClientVisibleError('Tenants are not available with the CMS: use its network of sites.'); };
 export function onMainHost(): boolean { return true; }
@@ -1214,7 +1215,7 @@ export function tenantOrigin(_tenant: { slug: string } | null): string | null { 
 export async function listTenants(): Promise<TenantSummary[]> { return []; }
 export async function listTenantMembers(_id: string): Promise<TenantMemberSummary[]> { return []; }
 export async function createTenant(_input: { name: string; slug: string }, _creator: { id: string }): Promise<TenantSummary> { return noTenants(); }
-export async function setTenantStatus(_id: string, _status: 'active' | 'archived'): Promise<void> { return noTenants(); }
+export async function setTenantStatus(_id: string, _status: 'active' | 'archived' | 'deleted'): Promise<void> { return noTenants(); }
 export async function addTenantDomain(_id: string, _host: string): Promise<void> { return noTenants(); }
 export async function removeTenantDomain(_id: string, _host: string): Promise<void> { return noTenants(); }
 export async function addTenantMember(_id: string, _email: string, _roles: readonly string[] = []): Promise<void> { return noTenants(); }
@@ -1225,3 +1226,7 @@ export async function completeTenantHandoff(_c: Context, _code: string): Promise
 export interface NetworkAdminSummary { id: string; email: string; name: string }
 export async function listNetworkAdmins(): Promise<NetworkAdminSummary[]> { return []; }
 export async function setNetworkAdmin(_email: string, _admin: boolean): Promise<void> { return noTenants(); }
+export async function networkRunning(): Promise<boolean> { return false; }
+export async function setNetworkRunning(_on: boolean): Promise<void> { return noTenants(); }
+export async function verifyTenantDomain(_id: string, _host: string): Promise<void> { return noTenants(); }
+export async function setPrimaryTenantDomain(_id: string, _host: string): Promise<void> { return noTenants(); }

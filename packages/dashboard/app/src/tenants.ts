@@ -11,6 +11,7 @@ import { getRequestContext } from '@cossackframework/core';
 import { authOptions } from './auth-options';
 import { Tenant } from '@/models/Tenant';
 import { TenantDomain } from '@/models/TenantDomain';
+import { TenantNetwork } from '@/models/TenantNetwork';
 
 /** The tenant a request is for. */
 export interface TenantInfo {
@@ -18,7 +19,9 @@ export interface TenantInfo {
   readonly slug: string;
   readonly name: string;
   readonly database: string;
-  readonly status: 'creating' | 'active' | 'archived';
+  readonly status: 'creating' | 'active' | 'archived' | 'deleted';
+  /** The tenant's primary domain, when it has one: its other hosts redirect there. */
+  readonly primaryHost?: string;
 }
 
 const TENANT = 'tenant';
@@ -78,8 +81,32 @@ export async function withTenant<T>(tenant: Pick<TenantInfo, 'database' | 'slug'
   }
 }
 
-function info(row: Tenant): TenantInfo {
-  return { id: row.id, slug: row.slug, name: row.name, database: row.database, status: row.status };
+function info(row: Tenant, primaryHost?: string): TenantInfo {
+  return { id: row.id, slug: row.slug, name: row.name, database: row.database, status: row.status, ...(primaryHost ? { primaryHost } : {}) };
+}
+
+// Whether the network of tenants runs: a setting in the main database, remembered for half a minute.
+let running: { at: number; value: boolean } | undefined;
+
+/** Whether tenants' hosts answer. A network administrator turns the network off and on; off, only the main host answers. Called in the main database's scope. */
+export async function tenantsRunning(): Promise<boolean> {
+  if (!tenantsEnabled) return false;
+  if (running && Date.now() - running.at < LOOKUP_MS) return running.value;
+  const row = await TenantNetwork.findOne({ where: { key: 'enabled' } });
+  running = { at: Date.now(), value: row?.value !== 'false' };
+  return running.value;
+}
+
+/** Turn the network of tenants on or off. Tenants keep their data while it is off. */
+export async function setTenantsRunning(on: boolean): Promise<void> {
+  await TenantNetwork.upsert({ key: 'enabled', value: on ? 'true' : 'false', updatedAt: new Date() }, ['key']);
+  running = undefined;
+  forgetTenantHosts();
+}
+
+/** The tenant that asked for this host as a domain, verified or not: its ID answers `/.well-known/cossack-tenant`. */
+export async function tenantClaimingHost(host: string): Promise<string | null> {
+  return (await TenantDomain.findOne({ where: { host } }))?.tenantId ?? null;
 }
 
 // Which tenant a host is, remembered for half a minute.
@@ -102,20 +129,22 @@ export async function tenantOfHost(host: string, main = mainHost()): Promise<Ten
   }
   if (!row) {
     const domain = await TenantDomain.findOne({ where: { host } });
-    if (domain) row = await Tenant.findOne({ where: { id: domain.tenantId } });
+    // A domain reaches its tenant once it was verified.
+    if (domain?.verifiedAt) row = await Tenant.findOne({ where: { id: domain.tenantId } });
   }
-  const tenant = row ? info(row) : null;
+  const primary = row ? await TenantDomain.findOne({ where: { tenantId: row.id, isPrimary: true } }) : null;
+  const tenant = row ? info(row, primary?.verifiedAt ? primary.host : undefined) : null;
   if (lookups.size > 2000) lookups.clear();
   lookups.set(host, { at: Date.now(), tenant });
   return tenant;
 }
 
 /** The address of a tenant's host (or the main host for null), with APP_URL's scheme and port. */
-export function tenantOrigin(tenant: Pick<TenantInfo, 'slug'> | null): string | null {
+export function tenantOrigin(tenant: Pick<TenantInfo, 'slug' | 'primaryHost'> | null): string | null {
   const configured = env('APP_URL', '');
   if (!configured) return null;
   const url = new URL(configured);
-  if (tenant) url.hostname = `${tenant.slug}.${url.hostname}`;
+  if (tenant) url.hostname = tenant.primaryHost ?? `${tenant.slug}.${url.hostname}`;
   return url.origin;
 }
 

@@ -3,7 +3,8 @@
 import { ClientVisibleError, getRequestContext } from '@cossackframework/core';
 import { TENANT_DATABASE } from '@cossackframework/database';
 import { uuidv7 } from '../lib/uuid';
-import { accounts, currentTenant, forgetTenantHosts, inTenant, mainHost, RESERVED_SLUGS, TENANT_SLUG, tenantsEnabled, withTenant, type TenantInfo } from '../tenants';
+import { accounts, currentTenant, forgetTenantHosts, inTenant, mainHost, RESERVED_SLUGS, setTenantsRunning, TENANT_SLUG, tenantsEnabled, tenantsRunning, withTenant, type TenantInfo } from '../tenants';
+import { authOptions } from '../auth-options';
 import { Tenant } from '@/models/Tenant';
 import { TenantDomain } from '@/models/TenantDomain';
 import { TenantMember } from '@/models/TenantMember';
@@ -14,8 +15,15 @@ import { UserRole } from '@/models/UserRole';
 export interface TenantSummary extends TenantInfo {
   readonly createdAt: string;
   readonly members: number;
-  readonly domains: string[];
+  readonly domains: TenantDomainSummary[];
+  /** When a deleted tenant is purged. */
+  readonly purgedAt?: string;
 }
+
+export interface TenantDomainSummary { readonly host: string; readonly primary: boolean; readonly verified: boolean }
+
+/** How long a deleted tenant can be restored. */
+export const TENANT_PURGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 export interface TenantMemberSummary {
   readonly id: string;
@@ -71,11 +79,15 @@ export async function listTenants(): Promise<TenantSummary[]> {
     TenantMember.find({ take: 20_000 }),
     TenantDomain.find({ take: 5000 }),
   ]);
+  const primaryOf = (id: string) => domains.find(domain => domain.tenantId === id && domain.isPrimary && domain.verifiedAt)?.host;
   return rows.map(row => ({
     ...info(row),
+    ...(primaryOf(row.id) ? { primaryHost: primaryOf(row.id)! } : {}),
     createdAt: row.createdAt.toISOString(),
     members: members.filter(member => member.tenantId === row.id).length,
-    domains: domains.filter(domain => domain.tenantId === row.id).map(domain => domain.host).sort(),
+    domains: domains.filter(domain => domain.tenantId === row.id).map(domain => ({ host: domain.host, primary: domain.isPrimary, verified: domain.verifiedAt !== null }))
+      .sort((a, b) => a.host < b.host ? -1 : 1),
+    ...(row.status === 'deleted' && row.deletedAt ? { purgedAt: new Date(row.deletedAt.getTime() + TENANT_PURGE_MS).toISOString() } : {}),
   }));
 }
 
@@ -124,13 +136,43 @@ export async function createTenant(input: { name: string; slug: string }, creato
   return { ...tenant, status: 'active' };
 }
 
-/** Archive a tenant (its hosts answer 503, its data stays) or bring it back. */
-export async function setTenantStatus(id: string, status: 'active' | 'archived'): Promise<void> {
+/**
+ * Archive a tenant (its hosts answer 503, its data stays), delete it (its hosts answer 404; it
+ * can be restored for 30 days) or bring it back.
+ */
+export async function setTenantStatus(id: string, status: 'active' | 'archived' | 'deleted'): Promise<void> {
   required();
   const row = await Tenant.findOne({ where: { id } });
   if (!row || row.status === 'creating') throw new ClientVisibleError('Tenant not found.');
-  await Tenant.update({ id }, { status });
+  await Tenant.update({ id }, { status, deletedAt: status === 'deleted' ? new Date() : null });
   forgetTenantHosts();
+}
+
+/**
+ * Forget the tenants that were deleted more than 30 days ago: their rows, domains and
+ * memberships. Their databases are not dropped here: a file or a database is yours to remove.
+ * Returns what was purged, so a schedule or a script can remove each database.
+ */
+export async function purgeDeletedTenants(now = Date.now()): Promise<TenantInfo[]> {
+  const due = (await Tenant.find({ where: { status: 'deleted' }, take: 500 })).filter(row => row.deletedAt && row.deletedAt.getTime() + TENANT_PURGE_MS <= now);
+  for (const row of due) {
+    await TenantMember.delete({ tenantId: row.id });
+    await TenantDomain.delete({ tenantId: row.id });
+    await Tenant.delete({ id: row.id, status: 'deleted' });
+  }
+  if (due.length) forgetTenantHosts();
+  return due.map(info);
+}
+
+/** Whether tenants' hosts answer (the Tenants screen's switch). */
+export async function networkRunning(): Promise<boolean> {
+  required();
+  return tenantsRunning();
+}
+
+export async function setNetworkRunning(on: boolean): Promise<void> {
+  required();
+  await setTenantsRunning(on);
 }
 
 /** Give a tenant a host name of its own. The name must point at this application. */
@@ -142,7 +184,42 @@ export async function addTenantDomain(id: string, host: string): Promise<void> {
   if (main && (name === main || name.endsWith(`.${main}`))) throw new ClientVisibleError(`Names under ${main} are tenants' own addresses.`);
   if (!await Tenant.exists({ id })) throw new ClientVisibleError('Tenant not found.');
   if (await TenantDomain.exists({ host: name })) throw new ClientVisibleError('This host name is already in use.');
-  await TenantDomain.insert({ host: name, tenantId: id, createdAt: new Date() });
+  // Without verification (src/dashboard.config.ts), a network administrator's word is enough.
+  await TenantDomain.insert({ host: name, tenantId: id, isPrimary: false, verifiedAt: authOptions.tenants.verifyDomains ? null : new Date(), createdAt: new Date() });
+  forgetTenantHosts();
+}
+
+/**
+ * Check that a domain points at this application: it must answer
+ * `/.well-known/cossack-tenant` with the tenant's ID, which this application does for every
+ * host a tenant asked for. The domain reaches the tenant from then on.
+ */
+export async function verifyTenantDomain(id: string, host: string): Promise<void> {
+  required();
+  const domain = await TenantDomain.findOne({ where: { host, tenantId: id } });
+  if (!domain) throw new ClientVisibleError('Domain not found.');
+  if (domain.verifiedAt) return;
+  const base = new URL(env('APP_URL', '') || 'https://localhost');
+  let answer = '';
+  try {
+    const response = await fetch(`${base.protocol}//${host}${base.port ? `:${base.port}` : ''}/.well-known/cossack-tenant`, { redirect: 'manual', signal: AbortSignal.timeout(8000) });
+    answer = response.ok ? (await response.text()).trim().slice(0, 200) : '';
+  } catch { /* unreachable: not verified */ }
+  if (answer !== id) throw new ClientVisibleError(`${host} does not point at this application yet. Point its DNS here and try again.`);
+  await TenantDomain.update({ host, tenantId: id }, { verifiedAt: new Date() });
+  forgetTenantHosts();
+}
+
+/** Make a verified domain the tenant's address (its other hosts redirect there), or none with an empty host. */
+export async function setPrimaryTenantDomain(id: string, host: string): Promise<void> {
+  required();
+  if (host) {
+    const domain = await TenantDomain.findOne({ where: { host, tenantId: id } });
+    if (!domain) throw new ClientVisibleError('Domain not found.');
+    if (!domain.verifiedAt) throw new ClientVisibleError('Verify the domain before making it the primary one.');
+  }
+  await TenantDomain.update({ tenantId: id }, { isPrimary: false });
+  if (host) await TenantDomain.update({ host, tenantId: id }, { isPrimary: true });
   forgetTenantHosts();
 }
 

@@ -47,8 +47,16 @@ Dashboard → Tenants, on the main host, for network administrators:
   migrations run, the main tenant's roles are copied, and you become its administrator.
 - **Members**: add an account by its email. On the tenant's own host, Users → Add user does
   the same, and makes the account when the email has none.
-- **Domains**: add a host name of the tenant's own, and point it at the application.
+- **Domains**: add a host name of the tenant's own and point it at the application. Press
+  **Verify**: the application asks the domain for `/.well-known/cossack-tenant` and expects
+  the tenant's ID, which it answers itself for every host a tenant asked for. A verified
+  domain reaches the tenant. **Make primary** makes it the tenant's address: its other hosts
+  redirect there. `tenants: { verifyDomains: false }` skips the check.
 - **Archive**: the tenant's hosts answer 503 and its data stays.
+- **Delete**: its hosts answer 404. It can be restored for 30 days. After that
+  `purgeDeletedTenants()` (from `@cossackframework/dashboard/app/services/tenants`) forgets
+  it and returns what it forgot, so a schedule of yours can drop each database.
+- **Turn the network off**: only the main host answers, and tenants keep their data.
 
 An account that is not a member of a tenant cannot sign in on its host. A network
 administrator can, on every tenant, with every permission: it is a flag on the account (the
@@ -123,6 +131,7 @@ The database user needs the right to create tables in each tenant's database.
 
 - A member's email and name in a tenant are copied when they join and are not updated when
   the account changes.
-- Deleting a tenant, tenant-only accounts and self-service tenant registration are not built.
+- Tenant-only accounts and self-service tenant registration are not built. Nothing purges
+  deleted tenants on a schedule or drops their databases.
 - Uploaded files are not separated by tenant.
 - The Workers bindings (D1, Hyperdrive, RomeDB Cloud) are written and not yet run in a test.
