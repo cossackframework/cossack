@@ -4,8 +4,8 @@ import { Badge, Button, Card, CardBody, CardHeader } from '@cossackframework/ui'
 import { html, component } from '@cossackframework/renderer';
 import { notice, pageHeader } from '@cossackframework/ui/blocks';
 import {
-    addTenantDomain, addTenantMember, createTenant, listTenantMembers, listTenants, onMainHost, removeTenantDomain, removeTenantMember,
-    setTenantStatus, tenantOrigin, tenantsAvailable, type PublicUser, type TenantMemberSummary, type TenantSummary,
+    addTenantDomain, addTenantMember, createTenant, listNetworkAdmins, listTenantMembers, listTenants, onMainHost, removeTenantDomain, removeTenantMember,
+    setNetworkAdmin, setTenantStatus, tenantOrigin, tenantsAvailable, type NetworkAdminSummary, type PublicUser, type TenantMemberSummary, type TenantSummary,
 } from '#app/auth';
 import { guard } from '#app/services/rbac';
 
@@ -14,7 +14,7 @@ const FIELD = 'h-9 rounded-md border border-input bg-background px-3 text-sm';
 
 /**
  * Tenants: organizations with their own database, members and roles (src/dashboard.config.ts:
- * `tenants`). The main host's administrators make and archive them here, give them domains
+ * `tenants`). Network administrators make and archive them here, give them domains
  * and choose their members. A tenant's own Users and Roles screens are on its host.
  */
 @Page({ transport: 'http', middlewares: [guard.requireRole('admin')] })
@@ -28,6 +28,8 @@ export default class TenantsPage extends Cossack {
     @State() slug = '';
     @State() domain = '';
     @State() email = '';
+    @State() admins: NetworkAdminSummary[] = [];
+    @State() adminEmail = '';
 
     head(): HeadValue {
         return { title: 'Tenants' };
@@ -41,6 +43,7 @@ export default class TenantsPage extends Cossack {
     private async load() {
         this.tenants = (await listTenants()).map(tenant => ({ ...tenant, address: tenantOrigin(tenant) }));
         this.members = this.selected ? await listTenantMembers(this.selected) : [];
+        this.admins = await listNetworkAdmins();
     }
 
     private async act(work: () => Promise<void>, done: string) {
@@ -87,6 +90,11 @@ export default class TenantsPage extends Cossack {
     @Server({ input: input.args(text(200), text(200)) })
     async removeMember(id: string, userId: string) {
         await this.act(() => removeTenantMember(id, userId), 'Removed the member. Their account stays.');
+    }
+
+    @Server({ input: input.args(text(320), input.boolean()) })
+    async networkAdmin(email: string, admin: boolean) {
+        await this.act(async () => { await setNetworkAdmin(email, admin); this.adminEmail = ''; }, admin ? 'They are a network administrator now.' : 'They are no network administrator any more.');
     }
 
     private details(tenant: TenantSummary) {
@@ -138,6 +146,15 @@ export default class TenantsPage extends Cossack {
                 </div>
                 ${this.selected === tenant.id ? this.details(tenant) : null}
             </li>`)}</ul>` : html`<p class="px-4 py-6 text-sm text-muted-foreground">${__('No tenant yet.')}</p>`))}
+            ${component(Card, {}, [component(CardHeader, {}, html`<h2 class="text-sm font-medium">${__('Network administrators')}</h2>`), component(CardBody, { class: 'space-y-3 text-sm' }, html`
+                <p class="text-muted-foreground">${__('They reach every tenant with every permission, and manage this list.')}</p>
+                <ul class="space-y-1" data-testid="network-admins">${this.admins.map(admin => html`<li class="flex flex-wrap items-center justify-between gap-2">
+                    <span><span class="font-medium text-foreground">${admin.name || admin.email}</span> <span class="text-muted-foreground">${admin.email}</span></span>
+                    ${component(Button, { size: 'sm', variant: 'outline', '@click': () => this.networkAdmin(admin.email, false) }, __('Remove'))}</li>`)}</ul>
+                <form class="flex flex-wrap gap-2" @submit=${(event: Event) => { event.preventDefault(); void this.networkAdmin(this.adminEmail, true); }}>
+                    <input class=${FIELD} type="email" name="admin" aria-label=${__('Email of an account')} placeholder="person@example.com" .value=${this.adminEmail} @input=${(event: Event) => { this.adminEmail = (event.target as HTMLInputElement).value; }}>
+                    ${component(Button, { size: 'sm', type: 'submit' }, __('Add'))}
+                </form>`)])}
         </div>`;
     }
 }

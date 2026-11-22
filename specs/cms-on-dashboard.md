@@ -1,6 +1,6 @@
 # The CMS on the dashboard's accounts and tenants
 
-Status: decided 2026-11-22 (below); step 1 built. Steps are committed one by one. It replaces "step 6" of `specs/romedb-orm.md`,
+Status: decided 2026-11-22 (below); step 1 and the first part of step 2 built. Steps are committed one by one. It replaces "step 6" of `specs/romedb-orm.md`,
 which was built in part and reverted on 2026-11-21, before the dashboard had tenants
 (`specs/dashboard-tenants.md`) and before a user's field values were documents
 (`specs/cms-field-values.md`).
@@ -54,8 +54,15 @@ for it the same day. On 4, `network_admin` stays a flag on the account.
    `services/rbac.ts` (`permissionsOf`; the admin role holds everything and cannot change),
    role changes check the acting user's permissions, the last administrator stays. The
    last-administrator check reads, then writes: two requests at once can both pass.
-2. Dashboard: tenant-only accounts, domains (verify, primary), `deleted` and purge, the
-   runtime switch, hooks for the creation steps.
+2. Dashboard tenants take the CMS's behaviour. In parts:
+   - **Done:** network administration is the account's flag (`users.network_admin`, migration
+     `0013`): every permission in every tenant, the Tenants screen, and the last active one
+     stays. The main tenant's `admin` role no longer reaches other tenants.
+   - Open: tenant-only accounts and a tenant's sessions in its own database (the CMS keeps a
+     site's sessions in the site's database and ends them through `cms_session_sites`; the
+     dashboard keeps every session in the main database today).
+   - Open: domains (verification, a primary domain, redirects from the others).
+   - Open: the `deleted` state and its purge; the runtime switch; hooks for the creation steps.
 3. Dashboard: invitations, avatar uploads through a storage hook, held accounts, recovery
    mode, tenant registration.
 4. CMS: sessions, second factors and tokens on the dashboard's stores (what was built and

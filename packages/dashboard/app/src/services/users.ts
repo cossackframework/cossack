@@ -3,7 +3,7 @@ import { ClientVisibleError } from '@cossackframework/core';
 import { uuidv7 } from '../lib/uuid';
 import { hashPassword, type PublicUser } from '../auth';
 import { accounts, currentTenant } from '../tenants';
-import { forgetMemberships, joinCurrentTenant, leaveCurrentTenant } from './tenants';
+import { forgetMemberships, joinCurrentTenant, leaveCurrentTenant, requireAnotherNetworkAdmin } from './tenants';
 import { User } from '@/models/User';
 import { UserRole } from '@/models/UserRole';
 import { Role } from '@/models/Role';
@@ -245,6 +245,7 @@ export async function deleteUser(id: string): Promise<void> {
   await requireAnotherAdmin(id, 'removed');
   // In a tenant: the member leaves, and the account stays.
   if (currentTenant()) return leaveCurrentTenant(id);
+  await requireAnotherNetworkAdmin(id, 'removed');
   await UserRole.delete({ userId: id });
   await User.delete({ id });
   await forgetMemberships(id);

@@ -44,6 +44,14 @@ export class User extends BaseEntity {
   @Column({ type: 'varchar', name: 'status', length: 16, default: 'active' })
   declare status: 'active' | 'unconfirmed' | 'pending' | 'disabled';
 
+  /**
+   * A network administrator: reaches every tenant with every permission, and manages the list
+   * of tenants. It is the account's own flag, not a role, so a tenant's role changes and a
+   * tenant's import cannot give or take it. Read in the main database only.
+   */
+  @Column({ type: 'boolean', name: 'network_admin', default: false })
+  declare networkAdmin: boolean;
+
   @CreateDateColumn({ name: 'created_at' })
   declare createdAt: Date;
 

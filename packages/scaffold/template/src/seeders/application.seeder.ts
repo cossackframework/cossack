@@ -35,6 +35,8 @@ export default defineSeeder({
         passwordHash: await hashPassword(adminPassword),
         avatar: null,
         meta: null,
+        // With tenants, the first account also manages them and reaches each one.
+        networkAdmin: true,
         createdAt: now,
       });
       adminUser = await User.findOne({ where: { id } });

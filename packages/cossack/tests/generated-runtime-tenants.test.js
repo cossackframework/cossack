@@ -80,6 +80,20 @@ async function tenants(database) {
     expect((await member.request('/dashboard')).status).toBe(302);
     expect((await second.request('/dashboard')).status).toBe(200);
 
+    // Reaching every tenant is the account's own flag. The first account has it; the last one keeps it.
+    expect((await owner.action(screen, 'open', [''])).admins).toMatchObject([{ email: admin.email }]);
+    expect((await owner.action(screen, 'networkAdmin', [admin.email, false])).error).toContain('last network administrator');
+    // Grace is no member of Acme any more, and no administrator anywhere: the Tenants screen is not hers.
+    expect((await second.request('/dashboard/tenants')).status).toBe(302);
+    expect((await owner.action(screen, 'networkAdmin', [grace.email, true])).admins.map(entry => entry.email).sort()).toEqual([admin.email, grace.email]);
+    // Now she signs in on Acme's host without being its member, with every permission.
+    const reach = on('acme.app.test');
+    expect((await reach.action(login, 'login', [{ email: grace.email, password: grace.password }])).error ?? '').toBe('');
+    expect(await reach.page('/dashboard/users')).toContain(admin.email);
+    expect((await second.request('/dashboard/tenants')).status).toBe(200);
+    expect((await owner.action(screen, 'networkAdmin', [grace.email, false])).error).toBe('');
+    expect((await reach.request('/dashboard')).status).toBe(302);
+
     // An archived tenant answers 503 and comes back.
     expect((await owner.action(screen, 'archive', [made.tenants[0].id, true])).error).toBe('');
     // Hosts are remembered for half a minute in a process; the server that changed it forgets at once.

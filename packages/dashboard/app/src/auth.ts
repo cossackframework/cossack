@@ -77,14 +77,22 @@ export interface PublicUser {
   avatar: string | null;
   meta: Record<string, unknown> | null;
   roles: RoleAssignment[];
+  /** A network administrator: every permission in every tenant, and the list of tenants. */
+  networkAdmin?: boolean;
   /** Set by `registerUser` when the account waits for the email's confirmation link instead of signing in. */
   verification?: 'sent';
   /** The account waits for an administrator's approval before it can sign in. */
   approval?: 'pending';
 }
 
+/** The role a network administrator holds everywhere. It is not stored: the account's flag gives it. */
+export const NETWORK_ADMIN_ROLE: RoleAssignment = Object.freeze({ id: 'network_admin', name: 'network_admin', permissions: ['*'] }) as RoleAssignment;
+
+/** `u` is the account's row, from the main database. */
 function publicUser(u: User, roles: RoleAssignment[] = []): PublicUser {
-  return { id: u.id, email: u.email, name: u.name ?? '', avatar: u.avatar, meta: u.meta, roles };
+  const admin = u.networkAdmin === true;
+  return { id: u.id, email: u.email, name: u.name ?? '', avatar: u.avatar, meta: u.meta,
+    roles: admin ? [...roles.filter((role) => role.id !== NETWORK_ADMIN_ROLE.id), NETWORK_ADMIN_ROLE] : roles, ...(admin ? { networkAdmin: true } : {}) };
 }
 
 // --- Roles -----------------------------------------------------------------
@@ -116,15 +124,18 @@ function parsePermissions(raw: string | null): string[] {
 }
 
 /**
- * A user's roles where the request is. With tenants, a tenant's member has the roles the
- * tenant gave them; an administrator of the main tenant has their main roles in every
- * tenant; anyone else has none there.
+ * A user's stored roles where the request is. With tenants, a tenant's member has the roles
+ * the tenant gave them, and anyone else has none there. A network administrator's role comes
+ * from the account (`publicUser`).
  */
 async function loadUserRoles(userId: string): Promise<RoleAssignment[]> {
   if (!currentTenant()) return rolesHere(userId);
-  if (await memberOfTenant(userId)) return inTenant(() => rolesHere(userId));
-  const main = await accounts(() => rolesHere(userId));
-  return main.some((role) => role.name === 'admin') ? main : [];
+  return await memberOfTenant(userId) ? inTenant(() => rolesHere(userId)) : [];
+}
+
+/** Whether the account is a network administrator: its own flag, in the main database. */
+async function isNetworkAdmin(userId: string): Promise<boolean> {
+  return accounts(async () => (await User.findOne({ where: { id: userId } }))?.networkAdmin === true);
 }
 
 /** Whether the tenant of this request has the account as an active member. Always true without a tenant. */
@@ -133,10 +144,10 @@ async function memberOfTenant(userId: string): Promise<boolean> {
   return inTenant(async () => (await User.findOne({ where: { id: userId } }))?.status === 'active');
 }
 
-/** Whether the account may act where the request is: a member of the tenant, or an administrator of the main tenant. */
+/** Whether the account may act where the request is: a member of the tenant, or a network administrator. */
 async function allowedHere(userId: string): Promise<boolean> {
   if (!currentTenant() || await memberOfTenant(userId)) return true;
-  return (await accounts(() => rolesHere(userId))).some((role) => role.name === 'admin');
+  return isNetworkAdmin(userId);
 }
 
 // --- Session create / validate / resolve ----------------------------------
@@ -412,7 +423,8 @@ export async function completeSetup(code: string, account: { email: string; pass
   if (!role) throw new Error('Unable to create the admin role.');
   const id = uuidv7();
   const email = account.email.trim().toLowerCase();
-  await User.insert({ id, email, name: account.name?.trim() || null, passwordHash: await hashPassword(account.password), avatar: null, meta: null, status: 'active', createdAt: now });
+  // The first account administers the application and, with tenants, the network.
+  await User.insert({ id, email, name: account.name?.trim() || null, passwordHash: await hashPassword(account.password), avatar: null, meta: null, status: 'active', networkAdmin: true, createdAt: now });
   await UserRole.insert({ userId: id, roleId: role.id, createdAt: now });
   return (await userById(id))!;
   });
@@ -1206,6 +1218,9 @@ export const SESSION_COOKIE_NAME = SESSION_COOKIE;
 export async function deleteOwnAccount(c: Context, userId: string, password: string): Promise<{ headers: Headers }> {
   return accounts(async () => {
   if (!(await passwordMatches(userId, password))) throw new ClientVisibleError('The password is not right.');
+  if ((await User.findOne({ where: { id: userId } }))?.networkAdmin && (await User.find({ where: { networkAdmin: true, status: 'active' }, take: 2 })).every((other) => other.id === userId)) {
+    throw new ClientVisibleError('The last network administrator cannot delete their account. Make someone else one first.');
+  }
   // The application keeps an administrator.
   const lastAdmin = (await sql<{ total: number }>`
     SELECT COUNT(*) AS total FROM user_roles ur INNER JOIN roles r ON r.id = ur.role_id INNER JOIN users u ON u.id = ur.user_id
@@ -1382,8 +1397,8 @@ export async function handleOAuthUser(
 /** Whether the project runs tenants (src/dashboard.config.ts: `tenants`). The CMS has sites instead. */
 export const tenantsAvailable = authOptions.tenants.enabled;
 export {
-  addTenantDomain, addTenantMember, createTenant, listTenantMembers, listTenants, removeTenantDomain, removeTenantMember, setTenantStatus,
-  type TenantMemberSummary, type TenantSummary,
+  addTenantDomain, addTenantMember, createTenant, listNetworkAdmins, listTenantMembers, listTenants, removeTenantDomain, removeTenantMember, setNetworkAdmin, setTenantStatus,
+  type NetworkAdminSummary, type TenantMemberSummary, type TenantSummary,
 } from './services/tenants';
 export { tenantOrigin } from './tenants';
 
@@ -1416,7 +1431,7 @@ export async function issueTenantHandoff(c: Context, host: string, state: string
   const tenant = name === mainHost() ? null : await tenantOfHost(name);
   if (!tenant || tenant.status !== 'active') return { error: 'There is no such site.', status: 404 as const };
   const member = await TenantMember.exists({ tenantId: tenant.id, userId: user.id });
-  if (!member && !user.roles.some((role) => role.name === 'admin')) return { error: `This account is not a member of ${tenant.name}.`, status: 403 as const };
+  if (!member && !user.networkAdmin) return { error: `This account is not a member of ${tenant.name}.`, status: 403 as const };
   const code = randomToken();
   await TenantHandoff.delete({ expiresAt: LessThan(new Date()) });
   await TenantHandoff.insert({ id: await handoffId(code), sessionId, userId: user.id, tenantId: tenant.id, expiresAt: new Date(Date.now() + HANDOFF_MS) });

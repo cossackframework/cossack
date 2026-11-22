@@ -16,7 +16,8 @@ import { holds, holdsAll } from '../lib/permissions';
 export type { RoleAssignment } from '@/models/User';
 
 export const guard = createAuthorizer<PublicUser>({
-    hasRole: (user, role) => user.roles.some((r) => r.name === role),
+    // A network administrator stands in for every role.
+    hasRole: (user, role) => user.networkAdmin === true || user.roles.some((r) => r.name === role),
     hasPermission: (user, permission) => holds(permissionsOf(user), permission),
     // Unauthenticated → login page. Forbidden (logged-in, lacks the role) →
     // their own dashboard, which is friendlier than a bare 403.
@@ -33,7 +34,7 @@ export const ADMIN_ROLE = 'admin';
  */
 export function permissionsOf(user: { roles: readonly { name: string; permissions: readonly string[] }[] } | null | undefined): string[] {
     if (!user) return [];
-    if (user.roles.some((r) => r.name === ADMIN_ROLE)) return ['*'];
+    if ((user as { networkAdmin?: boolean }).networkAdmin || user.roles.some((r) => r.name === ADMIN_ROLE)) return ['*'];
     return [...new Set(user.roles.flatMap((r) => r.permissions))];
 }
 

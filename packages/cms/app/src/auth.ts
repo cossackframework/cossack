@@ -1222,3 +1222,6 @@ export async function removeTenantMember(_id: string, _userId: string): Promise<
 export const sharedSignInAvailable = false;
 export async function issueTenantHandoff(_c: Context, _host: string, _state: string, _next: string | null): Promise<{ url: string } | { error: string; status: 400 | 403 | 404 }> { return { error: 'Not found.', status: 404 }; }
 export async function completeTenantHandoff(_c: Context, _code: string): Promise<Headers | null> { return null; }
+export interface NetworkAdminSummary { id: string; email: string; name: string }
+export async function listNetworkAdmins(): Promise<NetworkAdminSummary[]> { return []; }
+export async function setNetworkAdmin(_email: string, _admin: boolean): Promise<void> { return noTenants(); }

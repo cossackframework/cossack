@@ -1,6 +1,6 @@
 // Tenants: the list, their domains and their members. Rows are in the main database; a
 // tenant's roles and member rows are in its own. See src/tenants.ts for the two scopes.
-import { ClientVisibleError } from '@cossackframework/core';
+import { ClientVisibleError, getRequestContext } from '@cossackframework/core';
 import { TENANT_DATABASE } from '@cossackframework/database';
 import { uuidv7 } from '../lib/uuid';
 import { accounts, currentTenant, forgetTenantHosts, inTenant, mainHost, RESERVED_SLUGS, TENANT_SLUG, tenantsEnabled, withTenant, type TenantInfo } from '../tenants';
@@ -26,9 +26,37 @@ export interface TenantMemberSummary {
 
 const HOST = /^(?=.{1,191}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
 
+/** Tenants are managed on the main host, by network administrators. A seeder or a command has no request and may. */
 function required(): void {
   if (!tenantsEnabled) throw new ClientVisibleError('Tenants are not turned on (src/dashboard.config.ts).');
   if (currentTenant()) throw new ClientVisibleError('Tenants are managed on the main host.');
+  const c = getRequestContext();
+  if (c && (c.get('user' as never) as { networkAdmin?: boolean } | undefined)?.networkAdmin !== true) throw new ClientVisibleError('Only a network administrator manages tenants.');
+}
+
+export interface NetworkAdminSummary { readonly id: string; readonly email: string; readonly name: string }
+
+/** The accounts that reach every tenant. */
+export async function listNetworkAdmins(): Promise<NetworkAdminSummary[]> {
+  required();
+  return (await User.find({ where: { networkAdmin: true }, order: { email: 'asc' }, take: 500 })).map(user => ({ id: user.id, email: user.email, name: user.name ?? '' }));
+}
+
+/** Make the account with this email a network administrator, or stop it being one. The last active one stays. */
+export async function setNetworkAdmin(email: string, admin: boolean): Promise<void> {
+  required();
+  const account = await User.findOne({ where: { email: email.trim().toLowerCase() } });
+  if (!account) throw new ClientVisibleError('No account has this email.');
+  if (!admin) await requireAnotherNetworkAdmin(account.id, 'left without the role');
+  await User.update({ id: account.id }, { networkAdmin: admin });
+}
+
+/** In the main database: refuse a change that would leave no active network administrator. */
+export async function requireAnotherNetworkAdmin(userId: string, change: string): Promise<void> {
+  const account = await User.findOne({ where: { id: userId } });
+  if (!account?.networkAdmin) return;
+  const others = (await User.find({ where: { networkAdmin: true, status: 'active' }, take: 2 })).filter(user => user.id !== userId);
+  if (!others.length) throw new ClientVisibleError(`The last network administrator cannot be ${change}.`);
 }
 
 function info(row: Tenant): TenantInfo {

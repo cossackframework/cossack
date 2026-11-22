@@ -41,7 +41,7 @@ const total = await accounts(() => User.count());
 
 ## Managing tenants
 
-Dashboard → Tenants, on the main host, for administrators:
+Dashboard → Tenants, on the main host, for network administrators:
 
 - **Create** a tenant from a name and an address (`acme`). Its database is opened, the
   migrations run, the main tenant's roles are copied, and you become its administrator.
@@ -50,8 +50,10 @@ Dashboard → Tenants, on the main host, for administrators:
 - **Domains**: add a host name of the tenant's own, and point it at the application.
 - **Archive**: the tenant's hosts answer 503 and its data stays.
 
-An account that is not a member of a tenant cannot sign in on its host. Administrators of the
-main tenant can, on every tenant. Registration and the setup page are on the main host only.
+An account that is not a member of a tenant cannot sign in on its host. A network
+administrator can, on every tenant, with every permission: it is a flag on the account (the
+first account has it), set on the Tenants screen, and the last one cannot lose it. Only
+network administrators see the Tenants screen. Registration and the setup page are on the main host only.
 A tenant's administrators choose a member's roles; a member's profile, password and sign-in
 methods belong to the account's owner.
 
