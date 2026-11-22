@@ -36,6 +36,20 @@ export function devMailTransport(site: string, transport: MailTransport | undefi
     };
 }
 
+/** The hosts whose only transport is the development one: their mail is kept and printed, and sent nowhere. */
+const keptOnly = new WeakSet<object>();
+
+/** Note that this host has no transport of its own. Returns the host. */
+export function markMailKeptOnly<T extends object>(host: T): T {
+    keptOnly.add(host);
+    return host;
+}
+
+/** Whether the host's mail is only kept for `GET /api/cms/dev/mail`, because no sender is configured. */
+export function mailKeptOnly(host: object): boolean {
+    return keptOnly.has(host);
+}
+
 /** The mail kept so far, oldest first; `to` keeps one recipient's. */
 export function devMail(to?: string): DevMail[] {
     const wanted = to?.trim().toLowerCase();

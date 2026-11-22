@@ -10,7 +10,7 @@ import { modules, options as projectOptions, resources, storage as projectStorag
 import { announceNoteEvent } from './notes-announce';
 import { reservedRouteSegments } from './reserved-paths';
 import { requestCallsSignal } from './request-calls';
-import { devMailTransport } from './dev-mail';
+import { devMailTransport, markMailKeptOnly } from './dev-mail';
 import registry from 'virtual:cossack-pages';
 
 /**
@@ -121,7 +121,9 @@ export function networkFor(env: CmsBindings): CmsNetwork {
               // GET /api/cms/dev/mail and printed (cms/dev-mail.ts), with or without a transport.
               const transport = project.mail ?? (mail ? { send: (message: Parameters<NonNullable<typeof mail>['send']>[0]) => mail.send(message) } : undefined);
               const siteMail = localAddress(env.APP_URL) ? devMailTransport(site.id, transport) : transport;
-              return createCMS({
+              // Health still reports a missing sender while development keeps the mail.
+              const made = (host: CmsHost) => siteMail && !transport ? markMailKeptOnly(host) : host;
+              return made(createCMS({
                 db: siteDb, network: db, site: site.id, modules, resources, plugins,
                 // A site whose APP_URL is this machine is in development: its webhooks may stay local. No APP_URL is no exception.
                 localWebhooks: localAddress(env.APP_URL),
@@ -147,7 +149,7 @@ export function networkFor(env: CmsBindings): CmsNetwork {
                 // An entry's slug cannot take the address of a page: the CMS's routes, every page file of the
                 // application (the project's, the CMS's and plugins'), and what the project names itself.
                 reservedPaths: [...new Set([...DEFAULT_RESERVED_PATHS, ...reservedRouteSegments(Object.keys(registry.pages)), ...(project.reservedPaths ?? [])])],
-              });
+              }));
             },
         });
         current = { key, network };

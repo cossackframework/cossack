@@ -7,6 +7,7 @@ import { ANONYMOUS, ARTICLE_TYPES, CmsError, CRAWLER_GROUPS, hasPermission, isCm
 import type { CrawlerVisits, NotFoundRow } from '@cossackframework/cms/server';
 import { requireAny } from '#app/cms/guards';
 import { siteOrigin } from '#app/cms/seo';
+import { mailKeptOnly } from '#app/cms/dev-mail';
 import { notice, pageHeader, shortDate } from '#app/cms/ui';
 
 interface Finding { id: string; tone: 'ok' | 'warn' | 'info'; title: string; detail: string; href?: string; items?: { title: string; href: string }[] }
@@ -63,7 +64,9 @@ export default class HealthPage extends Cossack {
         const findings: Finding[] = [];
         const origin = siteOrigin(this.c);
         if (settings['reading.discourageSearchEngines']) findings.push({ id: 'hidden', tone: 'warn', title: __('The site is hidden from search engines'), detail: __('Settings → Reading asks every engine to stay away; nothing below matters until that is off.'), href: settingsSectionHref('reading') });
-        if (!cms.mail) findings.push({ id: 'mail', tone: 'warn', title: __('No email sender'), detail: __('Password resets, form notifications, comment and note emails are not sent. Bind EMAIL (Cloudflare Email Service), or set SMTP_HOST, SMTP_USER and SMTP_PASS on Node, and MAIL_FROM for the sender.') });
+        // In development the mail is kept and printed without a sender: say what a deployment would lack.
+        if (mailKeptOnly(cms)) findings.push({ id: 'mail', tone: 'warn', title: __('No email sender'), detail: __('Emails are kept for development only (GET /api/cms/dev/mail and the terminal) and reach nobody. Bind EMAIL (Cloudflare Email Service), or set SMTP_HOST, SMTP_USER and SMTP_PASS on Node, and MAIL_FROM for the sender.') });
+        else if (!cms.mail) findings.push({ id: 'mail', tone: 'warn', title: __('No email sender'), detail: __('Password resets, form notifications, comment and note emails are not sent. Bind EMAIL (Cloudflare Email Service), or set SMTP_HOST, SMTP_USER and SMTP_PASS on Node, and MAIL_FROM for the sender.') });
         else if (cms.mailFrom === 'no-reply@example.com') findings.push({ id: 'mail-from', tone: 'info', title: __('MAIL_FROM is not set'), detail: __('Emails go out from no-reply@example.com, which receivers may refuse. Set MAIL_FROM to an address on a domain you send from.') });
         if (!cms.ai) findings.push({ id: 'ai', tone: 'info', title: __('No AI provider'), detail: __('Set ANTHROPIC_API_KEY (and ANTHROPIC_MODEL), or bind Workers AI as AI, for the editor\'s Assistant and for plugins that ask for ai.') });
         if (!env('APP_URL', '')) findings.push({ id: 'app-url', tone: 'warn', title: __('APP_URL is not set'), detail: `${__('Canonical URLs, structured data and IndexNow pings use the request\'s origin instead; set APP_URL to the public address')} (${origin}).` });
