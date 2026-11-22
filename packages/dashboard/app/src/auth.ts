@@ -18,11 +18,13 @@ import {
   type AuthenticationResponseJSON, type PasskeyConfig, type PublicKeyCredentialCreationOptionsJSON, type PublicKeyCredentialRequestOptionsJSON, type RegistrationResponseJSON,
 } from '@cossackframework/auth/passkeys';
 export { hashPassword, verifyPassword } from '@cossackframework/auth';
-import { In, MoreThan, sql } from '@cossackframework/database';
+import { In, LessThan, MoreThan, sql } from '@cossackframework/database';
 import { ClientVisibleError, getClientIp, getRequestContext } from '@cossackframework/core';
 import { renderSVG } from 'uqr';
 import { uuidv7 } from './lib/uuid';
 import { authOptions } from './auth-options';
+import { accounts, currentTenant, hostName, inTenant, mainHost, sharedSignIn, tenantOfHost } from './tenants';
+import { TenantHandoff } from '@/models/TenantHandoff';
 import { ALL_PERMISSIONS } from './lib/permissions';
 import { siteName } from './brand';
 import * as security from './services/security';
@@ -34,6 +36,7 @@ import { Role } from '@/models/Role';
 import { UserRole } from '@/models/UserRole';
 import { Session } from '@/models/Session';
 import { OAuthAccount } from '@/models/OAuthAccount';
+import { TenantMember } from '@/models/TenantMember';
 
 const SESSION_COOKIE = 'session_id';
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
@@ -88,7 +91,7 @@ function publicUser(u: User, roles: RoleAssignment[] = []): PublicUser {
 // Reads a user's assigned roles (with parsed permissions) by joining
 // user_roles -> roles. Used by resolveUserById so c.get('user').roles is
 // available to the authorizer (src/services/rbac.ts) and the dashboard nav.
-async function loadUserRoles(userId: string): Promise<RoleAssignment[]> {
+async function rolesHere(userId: string): Promise<RoleAssignment[]> {
   const rows = (await sql<{ id: string; name: string; permissions: string | null }>`
     SELECT roles.id, roles.name, roles.permissions
     FROM user_roles
@@ -110,6 +113,30 @@ function parsePermissions(raw: string | null): string[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * A user's roles where the request is. With tenants, a tenant's member has the roles the
+ * tenant gave them; an administrator of the main tenant has their main roles in every
+ * tenant; anyone else has none there.
+ */
+async function loadUserRoles(userId: string): Promise<RoleAssignment[]> {
+  if (!currentTenant()) return rolesHere(userId);
+  if (await memberOfTenant(userId)) return inTenant(() => rolesHere(userId));
+  const main = await accounts(() => rolesHere(userId));
+  return main.some((role) => role.name === 'admin') ? main : [];
+}
+
+/** Whether the tenant of this request has the account as an active member. Always true without a tenant. */
+async function memberOfTenant(userId: string): Promise<boolean> {
+  if (!currentTenant()) return true;
+  return inTenant(async () => (await User.findOne({ where: { id: userId } }))?.status === 'active');
+}
+
+/** Whether the account may act where the request is: a member of the tenant, or an administrator of the main tenant. */
+async function allowedHere(userId: string): Promise<boolean> {
+  if (!currentTenant() || await memberOfTenant(userId)) return true;
+  return (await accounts(() => rolesHere(userId))).some((role) => role.name === 'admin');
 }
 
 // --- Session create / validate / resolve ----------------------------------
@@ -134,19 +161,23 @@ export const authSessions = createSessionManager({
   cookie: { name: SESSION_COOKIE },
   store: {
     async create(record, c) {
+      // A tenant's host signs in its members only.
+      if (!await allowedHere(record.userId)) throw new SignInMemberError(currentTenant()!.name);
       const { ip, userAgent, location } = captureRequestInfo(c);
-      await Session.insert({ id: record.id, publicId: crypto.randomUUID(), userId: record.userId, data: null,
+      await accounts(() => Session.insert({ id: record.id, publicId: crypto.randomUUID(), userId: record.userId, data: null,
         createdAt: new Date(record.createdAt), expiresAt: new Date(record.expiresAt),
         meta: { type: 'auth' }, ipAddress: ip, userAgent, location,
         // Set by createSession() for the session it is about to store.
-        secondFactor: c.get('auth.signInSecondFactor') === true });
+        secondFactor: c.get('auth.signInSecondFactor') === true,
+        // Set by completeTenantHandoff(): the main host's session this one was made from.
+        parentId: (c.get('auth.sessionParent') as string | undefined) ?? null }));
     },
-    async read(id) { return authSession(await Session.findOne({ where: { id } })); },
+    async read(id) { return authSession(await accounts(() => Session.findOne({ where: { id } }))); },
     async replace(expected, replacement, now) {
       // One SQL statement owns rotation. Match the complete prior record and
       // auth purpose so concurrent rotation or revocation can have only one winner.
       // Pass Date values: the sql tag encodes them in the column's stored format.
-      const result = await sql`
+      const result = await accounts(async () => sql`
         UPDATE sessions SET id = ${replacement.id},
           created_at = ${new Date(replacement.createdAt)},
           expires_at = ${new Date(replacement.expiresAt)}
@@ -155,11 +186,21 @@ export const authSessions = createSessionManager({
           AND expires_at = ${new Date(expected.expiresAt)}
           AND expires_at > ${new Date(Math.max(now, Date.now()))}
           AND meta = ${JSON.stringify({ type: 'auth' })}
-      `;
-      return result.meta.rowsAffected === 1;
+      `);
+      if (result.meta.rowsAffected !== 1) return false;
+      // Sessions that tenants' hosts made from this one follow its new ID.
+      if (sharedSignIn) await accounts(async () => sql`UPDATE sessions SET parent_id = ${replacement.id} WHERE parent_id = ${expected.id}`);
+      return true;
     },
     async revoke(id) {
-      await sql`DELETE FROM sessions WHERE id = ${id} AND meta = ${JSON.stringify({ type: 'auth' })}`;
+      await accounts(async () => {
+        const purpose = JSON.stringify({ type: 'auth' });
+        if (!sharedSignIn) { await sql`DELETE FROM sessions WHERE id = ${id} AND meta = ${purpose}`; return; }
+        // With shared sign-in, signing out anywhere ends the main host's session and every session made from it.
+        const row = await Session.findOne({ where: { id } });
+        const root = row?.parentId ?? id;
+        await sql`DELETE FROM sessions WHERE (id = ${id} OR id = ${root} OR parent_id = ${root}) AND meta = ${purpose}`;
+      });
     },
   },
 });
@@ -167,18 +208,18 @@ export const authSessions = createSessionManager({
 export const auth = createAuth<PublicUser>({
   realtime: {
     key: 'cossack.session',
-    async capture(sessionId, userId) {
+    capture: (sessionId, userId) => accounts(async () => {
       const stored = await Session.findOne({ where: { id: sessionId } });
       const row = stored ? await sessionWithReference(stored, userId) : null;
       if (!row) throw new Error('Session ended before subscription.');
       return { reference: row.publicId, fingerprint: await sessionFingerprint(sessionId) };
-    },
+    }),
     async validate(data, c) {
       if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
       const { reference, fingerprint } = data as { reference?: unknown; fingerprint?: unknown };
       if (typeof reference !== 'string' || !PUBLIC_SESSION_REFERENCE.test(reference) ||
           typeof fingerprint !== 'string' || !/^[0-9a-f]{64}$/.test(fingerprint)) return null;
-      const row = await Session.findOne({ where: { publicId: reference } });
+      const row = await accounts(() => Session.findOne({ where: { publicId: reference } }));
       const active = row ? await authSessions.validate(row.id, c) : null;
       if (!active || await sessionFingerprint(active.id) !== fingerprint) return null;
       return active.userId;
@@ -190,7 +231,7 @@ export const auth = createAuth<PublicUser>({
       const session = await authSessions.validate(sessionId, c);
       // Read only while two-step sign-in is required: whether this session used a second factor.
       if (session && authOptions.security.requireTwoFactor) {
-        c.set('auth.sessionSecondFactor', (await Session.findOne({ where: { id: session.id } }))?.secondFactor === true);
+        c.set('auth.sessionSecondFactor', (await accounts(() => Session.findOne({ where: { id: session.id } })))?.secondFactor === true);
       }
       return session?.userId ?? null;
     } catch (error) {
@@ -200,9 +241,11 @@ export const auth = createAuth<PublicUser>({
   },
   resolveUserById: async (userId) => {
     try {
-      const row = await User.findOne({ where: { id: userId } });
+      const row = await accounts(() => User.findOne({ where: { id: userId } }));
       // An account that was turned off, or waits again, is a guest even with a live session.
       if (!row || row.status !== 'active') return null;
+      // So is an account on the host of a tenant it does not belong to.
+      if (!await allowedHere(userId)) return null;
       const roles = await loadUserRoles(userId);
       return publicUser(row, roles);
     } catch (error) {
@@ -211,7 +254,7 @@ export const auth = createAuth<PublicUser>({
     }
   },
   createSession: async (user, c) => {
-    const full = await User.findOne({ where: { id: user.id } });
+    const full = await accounts(() => User.findOne({ where: { id: user.id } }));
     if (!full) throw new Error('User not found');
     return authSessions.create(full.id, c);
   },
@@ -238,6 +281,7 @@ const credentials = createCredentialVerifier<User, PublicUser>({
  * address before the password is checked, so guesses sent at once meet the limit too.
  */
 export async function loginUser(email: string, password: string, address = clientAddress()): Promise<PublicUser | null> {
+  return accounts(async () => {
   const allowed = await security.signInBegin(email, address);
   if (!allowed.ok) throw new SignInLockedError(allowed.retryAfterMs);
   const user = await credentials.verify(email, password);
@@ -246,7 +290,19 @@ export async function loginUser(email: string, password: string, address = clien
   // Only an active account signs in. One that waits for approval hears so, once its password is right.
   const status = (await User.findOne({ where: { id: user.id } }))?.status;
   if (status === 'pending') throw new SignInPendingError();
-  return status === 'active' ? user : null;
+  if (status !== 'active') return null;
+  // The password matched: on a tenant's host, the visitor is told when the account is not its member.
+  if (!await allowedHere(user.id)) throw new SignInMemberError(currentTenant()!.name);
+  return user;
+  });
+}
+
+/** The account is right, but it is not a member of the tenant whose host this is. Thrown after the password matched. */
+export class SignInMemberError extends ClientVisibleError {
+  constructor(tenant: string) {
+    super(`This account is not a member of ${tenant}.`);
+    this.name = 'SignInMemberError';
+  }
 }
 
 /** The password matched an account that waits for an administrator's approval. */
@@ -292,6 +348,7 @@ const PASSWORD_CHECKS = { max: 10, windowMs: 15 * 60_000 };
  * counted per account, so an open session cannot guess its way to the password.
  */
 export async function passwordMatches(userId: string, password: string): Promise<boolean> {
+  return accounts(async () => {
   if (!(await security.attempt('password-check', userId, PASSWORD_CHECKS.max, PASSWORD_CHECKS.windowMs))) {
     throw new ClientVisibleError('Too many wrong passwords. Wait a few minutes, then try again.');
   }
@@ -300,11 +357,15 @@ export async function passwordMatches(userId: string, password: string): Promise
   // Only wrong passwords count against the account.
   if (matches) await security.release('password-check', userId);
   return matches;
+  });
 }
 
 /** Whether visitors may create accounts on /auth/register (src/dashboard.config.ts: `registration.open`). */
 export async function registrationOpen(): Promise<boolean> {
-  return authOptions.registration.open;
+  return accounts(async () => {
+  // Accounts are made on the main host; a tenant's administrators add its members.
+  return authOptions.registration.open && !currentTenant();
+  });
 }
 
 /**
@@ -313,9 +374,11 @@ export async function registrationOpen(): Promise<boolean> {
  * comes from the seeder.
  */
 export async function setupRequired(): Promise<boolean> {
-  if (!env('SETUP_CODE', '')) return false;
+  return accounts(async () => {
+  if (!env('SETUP_CODE', '') || currentTenant()) return false;
   try { return (await User.count()) === 0; }
   catch { return false; }
+  });
 }
 
 /** Compare digests, so the time taken does not depend on how much of the code matches. */
@@ -333,6 +396,7 @@ async function sameSecret(candidate: string, expected: string): Promise<boolean>
  * account exists.
  */
 export async function completeSetup(code: string, account: { email: string; password: string; name?: string }): Promise<PublicUser> {
+  return accounts(async () => {
   // Wrong codes are counted per address: the code is the only thing between a visitor and the site.
   if (!(await security.attempt('setup', clientAddress(), 5, 60_000))) throw new ClientVisibleError('Too many attempts. Wait a minute, then try again.');
   const expected = env('SETUP_CODE', '');
@@ -351,6 +415,7 @@ export async function completeSetup(code: string, account: { email: string; pass
   await User.insert({ id, email, name: account.name?.trim() || null, passwordHash: await hashPassword(account.password), avatar: null, meta: null, status: 'active', createdAt: now });
   await UserRole.insert({ userId: id, roleId: role.id, createdAt: now });
   return (await userById(id))!;
+  });
 }
 
 /**
@@ -422,9 +487,11 @@ async function takeLink(kind: LinkKind, token: string): Promise<string | null> {
  * it would sign them into. Null for a link that is not valid.
  */
 export async function linkAccountEmail(kind: LinkKind, token: string): Promise<string | null> {
+  return accounts(async () => {
   const row = await liveLink(kind, token);
   if (!row?.userId) return null;
   return (await User.findOne({ where: { id: row.userId } }))?.email ?? null;
+  });
 }
 
 async function sendVerification(user: { id: string; email: string; name: string | null }): Promise<void> {
@@ -442,8 +509,9 @@ async function sendVerification(user: { id: string; email: string; name: string 
  * that order: the account then waits, and the result says which.
  */
 export async function registerUser(email: string, password: string, name?: string): Promise<PublicUser> {
+  return accounts(async () => {
   const options = authOptions.registration;
-  if (!options.open) throw new ClientVisibleError('Registration is closed on this site.');
+  if (!options.open || currentTenant()) throw new ClientVisibleError('Registration is closed on this site.');
   // With a sender and the project asking for it, the account waits for the email's link.
   const verify = options.verifyEmail && mailer() !== null;
   // Without the site's address no link can be sent: the account is not created active instead.
@@ -467,6 +535,7 @@ export async function registerUser(email: string, password: string, name?: strin
     return { ...user, verification: 'sent' };
   }
   return options.approve ? { ...user, approval: 'pending' } : user;
+  });
 }
 
 /** Remove an account with what belongs to it: sessions and links, roles, second factors. */
@@ -475,6 +544,7 @@ async function removeAccount(userId: string): Promise<void> {
   await apiTokens.revokeAll(userId);
   await sql`DELETE FROM user_roles WHERE user_id = ${userId}`;
   await security.reset(userId);
+  await TenantMember.delete({ userId });
   await User.delete({ id: userId });
 }
 
@@ -483,25 +553,31 @@ async function removeAccount(userId: string): Promise<void> {
  * an administrator's approval (`pending`). Null for an unknown, spent or expired link.
  */
 export async function verifyEmail(token: string): Promise<{ user: string; pending: boolean } | null> {
+  return accounts(async () => {
   const userId = await takeLink('verify', token);
   if (!userId) return null;
   const pending = authOptions.registration.approve;
   // Only an account still waiting for this link changes: one an administrator disabled since stays as it is.
   const updated = await User.update({ id: userId, status: 'unconfirmed' }, { status: pending ? 'pending' : 'active' });
   return updated.meta.rowsAffected === 1 ? { user: userId, pending } : null;
+  });
 }
 
 /** Whether new accounts wait for an administrator's approval. */
 export async function registrationApproval(): Promise<boolean> {
+  return accounts(async () => {
   return authOptions.registration.approve;
+  });
 }
 
 export interface Registration { id: string; name: string; email: string; verified: boolean; createdAt: number }
 
 /** The accounts that wait: for approval (`verified`), or still for their email's confirmation. */
 export async function registrations(): Promise<Registration[]> {
+  return accounts(async () => {
   const rows = await User.find({ where: { status: In(['pending', 'unconfirmed']) }, order: { createdAt: 'asc' }, take: 200 });
   return rows.map(row => ({ id: row.id, name: row.name ?? '', email: row.email, verified: row.status === 'pending', createdAt: row.createdAt.getTime() }));
+  });
 }
 
 /**
@@ -509,6 +585,7 @@ export async function registrations(): Promise<Registration[]> {
  * when it was not waiting for approval.
  */
 export async function approveRegistration(userId: string): Promise<boolean> {
+  return accounts(async () => {
   const updated = await User.update({ id: userId, status: 'pending' }, { status: 'active' });
   if (updated.meta.rowsAffected !== 1) return false;
   const [user, mail, origin] = [await User.findOne({ where: { id: userId } }), mailer(), linkOrigin()];
@@ -519,14 +596,17 @@ export async function approveRegistration(userId: string): Promise<boolean> {
       text: `Hello ${user.name || user.email},\n\nAn administrator approved your account.${where}` }).catch(() => undefined);
   }
   return true;
+  });
 }
 
 /** Delete an account that waits for approval or confirmation. False when it does not wait. */
 export async function deleteRegistration(userId: string): Promise<boolean> {
+  return accounts(async () => {
   const user = await User.findOne({ where: { id: userId } });
   if (!user || (user.status !== 'pending' && user.status !== 'unconfirmed')) return false;
   await removeAccount(userId);
   return true;
+  });
 }
 
 // --- Profile updates -------------------------------------------------------
@@ -537,7 +617,9 @@ export async function deleteRegistration(userId: string): Promise<boolean> {
 export const avatarUploads = false;
 
 export async function uploadAvatar(_userId: string, _file: File): Promise<string> {
+  return accounts(async () => {
   throw new ClientVisibleError('Picture uploads need file storage. Enter an image URL instead.');
+  });
 }
 
 export interface ProfileUpdate {
@@ -548,12 +630,14 @@ export interface ProfileUpdate {
 
 /** Update editable profile fields. */
 export async function updateUserProfile(userId: string, patch: ProfileUpdate): Promise<void> {
+  return accounts(async () => {
   const values: Partial<User> = {};
   if (patch.name !== undefined) values.name = patch.name;
   if (patch.avatar !== undefined) values.avatar = patch.avatar;
   if (patch.meta !== undefined) values.meta = patch.meta;
   if (Object.keys(values).length === 0) return;
   await User.update({ id: userId }, values);
+  });
 }
 
 // --- Password reset (uses the sessions table for tokens) -------------------
@@ -620,9 +704,11 @@ declare module 'hono' {
  * signed in with a password alone stays limited even after its account gains a factor.
  */
 export async function createSession(userId: string, c: Context, options: { secondFactor?: boolean } = {}) {
+  return accounts(async () => {
   c.set('auth.signInSecondFactor', options.secondFactor === true);
   try { return await authSessions.create(userId, c); }
   finally { c.set('auth.signInSecondFactor', false); }
+  });
 }
 
 async function userById(userId: string): Promise<PublicUser | null> {
@@ -647,10 +733,12 @@ function twoFactorAsked(user: Pick<PublicUser, 'roles'>): boolean {
  * not having used it: throws SignInPasskeyError.
  */
 export async function beginTwoFactor(userId: string): Promise<string | null> {
+  return accounts(async () => {
   if (await security.requiresCode(userId)) return security.createChallenge('signin', userId, 'password');
   const user = await userById(userId);
   if (user && twoFactorAsked(user) && await security.hasSecondFactor(userId)) throw new SignInPasskeyError();
   return null;
+  });
 }
 
 /**
@@ -658,6 +746,7 @@ export async function beginTwoFactor(userId: string): Promise<string | null> {
  * code is checked, on the pending sign-in and on the account, so codes sent at once count too.
  */
 export async function completeTwoFactor(challengeId: string, code: string): Promise<{ user: PublicUser; recovery: boolean } | { error: string; expired: boolean }> {
+  return accounts(async () => {
   const expired = { error: 'The sign-in expired. Enter your password again.', expired: true };
   const pending = await security.challenge(challengeId, 'signin');
   if (!pending?.userId) return expired;
@@ -677,10 +766,13 @@ export async function completeTwoFactor(challengeId: string, code: string): Prom
   const user = await userById(pending.userId);
   if (!user) return { error: 'This account cannot sign in.', expired: true };
   return { user, recovery: used === 'recovery' };
+  });
 }
 
 export async function securityStatus(userId: string): Promise<SecurityStatus> {
+  return accounts(async () => {
   return security.status(userId);
+  });
 }
 
 /**
@@ -690,8 +782,10 @@ export async function securityStatus(userId: string): Promise<SecurityStatus> {
  * with the factor), so a factor added later does not trust a session that never used it.
  */
 export async function secondFactorRequired(user: PublicUser, c: Context | undefined = getRequestContext()): Promise<boolean> {
+  return accounts(async () => {
   if (!twoFactorAsked(user)) return false;
   return c?.get('auth.sessionSecondFactor') !== true;
+  });
 }
 
 /**
@@ -745,37 +839,47 @@ async function checkAccountCode(userId: string, code: string): Promise<void> {
 
 /** A new authenticator secret, its `otpauth://` URI and a QR code of it as SVG. */
 export async function startAuthenticator(user: PublicUser): Promise<{ secret: string; uri: string; qr: string }> {
+  return accounts(async () => {
   await requireFactorSetupAllowed(user.id);
   const secret = await security.startTotp(user.id);
   const uri = totpUri({ secret, issuer: await siteName().catch(() => 'Cossack'), account: user.email });
   return { secret, uri, qr: renderSVG(uri, { border: 1 }) };
+  });
 }
 
 /** Confirm the authenticator with a code from it; returns the recovery codes, shown once. */
 export async function confirmAuthenticator(userId: string, code: string): Promise<string[]> {
+  return accounts(async () => {
   await requireFactorSetupAllowed(userId);
   const hadFactor = await security.hasSecondFactor(userId);
   const codes = await security.confirmTotp(userId, code);
   await factorAdded(userId, hadFactor);
   return codes;
+  });
 }
 
 /** Turning the authenticator off needs one of its codes, or a recovery code. */
 export async function disableAuthenticator(userId: string, code: string): Promise<void> {
+  return accounts(async () => {
   requireFactorUsed(userId);
   await checkAccountCode(userId, code);
   await security.disableTotp(userId);
+  });
 }
 
 export async function newRecoveryCodes(userId: string, code: string): Promise<string[]> {
+  return accounts(async () => {
   requireFactorUsed(userId);
   await checkAccountCode(userId, code);
   return security.regenerateRecoveryCodes(userId);
+  });
 }
 
 /** Remove a user's second factors, for a user manager helping someone who lost their device. The page checks who may. */
 export async function resetSecondFactors(userId: string): Promise<void> {
+  return accounts(async () => {
   await security.reset(userId);
+  });
 }
 
 /** The site's relying party for passkeys: this host, and the origins the browser may report. */
@@ -789,14 +893,17 @@ async function passkeySite(c: Context): Promise<PasskeyConfig> {
 }
 
 export async function passkeyRegistration(c: Context, user: PublicUser): Promise<{ challenge: string; options: PublicKeyCredentialCreationOptionsJSON }> {
+  return accounts(async () => {
   await requireFactorSetupAllowed(user.id);
   const existing = await security.passkeys(user.id);
   const options = await passkeyRegistrationOptions(await passkeySite(c), { id: user.id, name: user.email, displayName: user.name },
     existing.map(passkey => ({ ...passkey, transports: passkey.transports ?? undefined })));
   return { challenge: await security.createChallenge('passkey-register', user.id, options.challenge), options };
+  });
 }
 
 export async function addPasskey(c: Context, user: PublicUser, challengeId: string, response: RegistrationResponseJSON, name: string): Promise<void> {
+  return accounts(async () => {
   const pending = await security.challenge(challengeId, 'passkey-register');
   if (!pending || pending.userId !== user.id || !(await security.takeChallenge(challengeId, 'passkey-register'))) {
     throw new ClientVisibleError('The passkey request expired. Try again.');
@@ -807,11 +914,14 @@ export async function addPasskey(c: Context, user: PublicUser, challengeId: stri
   const hadFactor = await security.hasSecondFactor(user.id);
   await security.addPasskey(user.id, passkey, name);
   await factorAdded(user.id, hadFactor);
+  });
 }
 
 export async function removePasskey(userId: string, id: string): Promise<void> {
+  return accounts(async () => {
   requireFactorUsed(userId);
   await security.removePasskey(userId, id);
+  });
 }
 
 /**
@@ -821,16 +931,19 @@ export async function removePasskey(userId: string, id: string): Promise<void> {
 export const PASSKEY_CHALLENGES = Object.freeze({ windowMs: 10 * 60_000, perAddress: 30, perHost: 2000 });
 
 export async function passkeySignIn(c: Context): Promise<{ challenge: string; options: PublicKeyCredentialRequestOptionsJSON }> {
+  return accounts(async () => {
   if (!(await security.attempt('passkey-options', `a:${clientAddress()}`, PASSKEY_CHALLENGES.perAddress, PASSKEY_CHALLENGES.windowMs))
     || !(await security.attempt('passkey-options', 'host', PASSKEY_CHALLENGES.perHost, PASSKEY_CHALLENGES.windowMs))) {
     throw new ClientVisibleError('Too many passkey sign-ins were started. Try again in a few minutes, or sign in with your password.');
   }
   const options = await passkeyAuthenticationOptions(await passkeySite(c));
   return { challenge: await security.createChallenge('passkey-signin', null, options.challenge), options };
+  });
 }
 
 /** The user a passkey signs in, after checking its signature against the challenge. */
 export async function completePasskeySignIn(c: Context, challengeId: string, response: AuthenticationResponseJSON): Promise<PublicUser | null> {
+  return accounts(async () => {
   const pending = await security.challenge(challengeId, 'passkey-signin');
   if (!pending || !(await security.takeChallenge(challengeId, 'passkey-signin'))) return null;
   const passkey = await security.passkey(response?.id);
@@ -838,7 +951,9 @@ export async function completePasskeySignIn(c: Context, challengeId: string, res
   const verified = await verifyPasskeyAuthentication(await passkeySite(c), response, pending.challenge, { ...passkey, transports: passkey.transports ?? undefined });
   if (!verified) return null;
   await security.usePasskey(passkey.id, verified.counter);
+  if (!await allowedHere(passkey.userId)) throw new SignInMemberError(currentTenant()!.name);
   return userById(passkey.userId);
+  });
 }
 
 // --- Application passwords -------------------------------------------------
@@ -846,11 +961,14 @@ export async function completePasskeySignIn(c: Context, challengeId: string, res
 export const apiTokensAvailable = true;
 
 export async function listApiTokens(userId: string): Promise<ApiToken[]> {
+  return accounts(async () => {
   return apiTokens.list(userId);
+  });
 }
 
 /** A new application password; the token is shown once. */
 export async function createApiToken(userId: string, name: string, scope: 'read' | 'write', expiresInDays: number | null = null): Promise<string> {
+  return accounts(async () => {
   // An application password signs in without a second factor: an account that must have one
   // gets passwords only once it does, and only from a session that used it.
   const owner = await userById(userId);
@@ -860,12 +978,15 @@ export async function createApiToken(userId: string, name: string, scope: 'read'
   }
   const expiresAt = expiresInDays && expiresInDays > 0 ? Date.now() + Math.trunc(expiresInDays) * 86_400_000 : null;
   return (await apiTokens.create(userId, { name, scope, expiresAt })).token;
+  });
 }
 
 export async function revokeApiToken(userId: string, id: string): Promise<void> {
+  return accounts(async () => {
   // A session that never used the account's second factor may not take its tokens away either.
   requireFactorUsed(userId);
   await apiTokens.revoke(userId, id);
+  });
 }
 
 /**
@@ -874,10 +995,12 @@ export async function revokeApiToken(userId: string, id: string): Promise<void> 
  * an account that is not active. `scope` is `read` for a token that may only read.
  */
 export async function apiTokenUser(token: string): Promise<{ user: PublicUser; scope: 'read' | 'write' } | null> {
+  return accounts(async () => {
   const verified = await apiTokens.verify(token);
   if (!verified) return null;
   const user = await userById(verified.userId);
   return user ? { user, scope: verified.scope } : null;
+  });
 }
 
 /**
@@ -886,6 +1009,7 @@ export async function apiTokenUser(token: string): Promise<{ user: PublicUser; s
  * send_email binding is not configured, this is a graceful no-op.
  */
 export async function requestPasswordReset(email: string, resetBaseUrl: string): Promise<void> {
+  return accounts(async () => {
   // Beyond the limits per email and per address nothing is sent, and the answer is the same.
   const key = await security.sha256Hex(email.trim().toLowerCase());
   if (!(await security.attempt('reset', `e:${key}`, security.RESET_REQUESTS.perEmail, security.RESET_REQUESTS.windowMs))
@@ -897,15 +1021,18 @@ export async function requestPasswordReset(email: string, resetBaseUrl: string):
   const resetUrl = `${resetBaseUrl.replace(/\/$/, '')}/auth/reset-password?token=${token}`;
   await mail.send({ to: email, subject: 'Reset your password',
     text: `We received a request to reset your password. Choose a new one here; the link works for one hour:\n${resetUrl}\n\nIf you did not ask for it, ignore this email.` });
+  });
 }
 
 export async function resetPassword(token: string, newPassword: string): Promise<boolean> {
+  return accounts(async () => {
   const userId = await consumePasswordResetToken(token);
   if (!userId) return false;
   const passwordHash = await hashPassword(newPassword);
   await User.update({ id: userId }, { passwordHash });
   await Session.delete({ userId });
   return true;
+  });
 }
 
 // --- Logout ----------------------------------------------------------------
@@ -915,7 +1042,9 @@ export async function resetPassword(token: string, newPassword: string): Promise
  * by the caller (mirrors `auth.createSession`'s `{ headers }` contract).
  */
 export async function logout(c: Context): Promise<{ headers: Headers }> {
+  return accounts(async () => {
   return { headers: await authSessions.revoke(getCookie(c, SESSION_COOKIE) ?? '', c) };
+  });
 }
 
 /** Clear the same cookie policy used for creation and rotation. */
@@ -986,7 +1115,9 @@ async function currentSessionReference(userId: string, currentId: string): Promi
 
 /** Lists only the authenticated caller's active auth sessions as safe DTOs. */
 export async function listUserSessions(c: Context): Promise<SessionInfo[]> {
+  return accounts(async () => {
   return sessionsOf(c, sessionOwner(c).userId);
+  });
 }
 
 /**
@@ -994,6 +1125,7 @@ export async function listUserSessions(c: Context): Promise<SessionInfo[]> {
  * them; the caller's own session is marked current.
  */
 export async function sessionsOf(c: Context, userId: string): Promise<SessionInfo[]> {
+  return accounts(async () => {
   const currentId = getCookie(c, SESSION_COOKIE);
   const rows = await Session.find({
     where: { userId, expiresAt: MoreThan(new Date()) },
@@ -1014,10 +1146,12 @@ export async function sessionsOf(c: Context, userId: string): Promise<SessionInf
     });
   }
   return sessions;
+  });
 }
 
 /** Revoke one other auth session owned by the authenticated caller. */
 export async function revokeSession(c: Context, reference: string): Promise<boolean> {
+  return accounts(async () => {
   const { userId, currentId } = sessionOwner(c);
   if (typeof reference !== 'string' || !PUBLIC_SESSION_REFERENCE.test(reference)) return false;
   const currentReference = await currentSessionReference(userId, currentId);
@@ -1027,26 +1161,32 @@ export async function revokeSession(c: Context, reference: string): Promise<bool
       AND meta = ${JSON.stringify({ type: 'auth' })}
       AND expires_at > ${new Date()}`;
   return result.meta.rowsAffected === 1;
+  });
 }
 
 /** End one of a user's auth sessions, never the caller's own. */
 export async function revokeSessionOf(c: Context, userId: string, reference: string): Promise<boolean> {
+  return accounts(async () => {
   if (typeof reference !== 'string' || !PUBLIC_SESSION_REFERENCE.test(reference)) return false;
   const result = await sql`DELETE FROM sessions
     WHERE public_id = ${reference} AND user_id = ${userId} AND id <> ${getCookie(c, SESSION_COOKIE) ?? ''}
       AND meta = ${JSON.stringify({ type: 'auth' })}
       AND expires_at > ${new Date()}`;
   return result.meta.rowsAffected === 1;
+  });
 }
 
 /** End all of a user's auth sessions except the caller's own. */
 export async function revokeSessionsOf(c: Context, userId: string): Promise<void> {
+  return accounts(async () => {
   await sql`DELETE FROM sessions WHERE user_id = ${userId} AND id <> ${getCookie(c, SESSION_COOKIE) ?? ''}
     AND meta = ${JSON.stringify({ type: 'auth' })}`;
+  });
 }
 
 /** Revoke the caller's auth rows. Reset and OAuth-state rows remain separate. */
 export async function revokeAllUserSessions(c: Context, keepCurrent = false): Promise<void> {
+  return accounts(async () => {
   const { userId, currentId } = sessionOwner(c);
   if (keepCurrent) {
     const currentReference = await currentSessionReference(userId, currentId);
@@ -1056,6 +1196,7 @@ export async function revokeAllUserSessions(c: Context, keepCurrent = false): Pr
   } else {
     await sql`DELETE FROM sessions WHERE user_id = ${userId} AND meta = ${JSON.stringify({ type: 'auth' })}`;
   }
+  });
 }
 
 /** The session cookie name, exported so pages/middleware can read it. */
@@ -1063,11 +1204,13 @@ export const SESSION_COOKIE_NAME = SESSION_COOKIE;
 
 /** A person deletes their own account: the password confirms it, every session ends, and the row goes. Returns the headers that clear the browser's session. */
 export async function deleteOwnAccount(c: Context, userId: string, password: string): Promise<{ headers: Headers }> {
+  return accounts(async () => {
   if (!(await passwordMatches(userId, password))) throw new ClientVisibleError('The password is not right.');
   await revokeSessionsOf(c, userId);
   const { headers } = await logout(c);
   await removeAccount(userId);
   return { headers };
+  });
 }
 
 /**
@@ -1075,6 +1218,7 @@ export async function deleteOwnAccount(c: Context, userId: string, password: str
  * flood for one address or from one client stops after a few. Without a mail sender, nothing is sent.
  */
 export async function requestMagicLink(email: string, _requestOrigin?: string): Promise<void> {
+  return accounts(async () => {
   const [mail, origin] = [mailer(), linkOrigin()];
   if (!origin) return;
   const key = await security.sha256Hex(email.trim().toLowerCase());
@@ -1087,13 +1231,16 @@ export async function requestMagicLink(email: string, _requestOrigin?: string): 
   const title = await siteName().catch(() => '');
   await mail.send({ to: account.email, subject: `Sign in to ${title || 'the site'}`,
     text: `Open this link to sign in; it works once, for fifteen minutes:\n${origin}/auth/magic?token=${token}\n\nIf you did not ask for it, ignore this email.` });
+  });
 }
 
 /** Spend a sign-in link: the account's ID, or null for a link that is unknown, spent or expired. */
 export async function consumeMagicLink(token: string): Promise<string | null> {
+  return accounts(async () => {
   const userId = await takeLink('magic', token);
   if (!userId) return null;
   return (await User.findOne({ where: { id: userId } }))?.status === 'active' ? userId : null;
+  });
 }
 
 // --- OAuth -------------------------------------------------------------------
@@ -1132,16 +1279,16 @@ function oauthUnavailable(c: Context, error: OAuthError): Response {
 
 export const oauthStateStore: OAuthStateStore = {
   async create(record) {
-    await Session.insert({ id: record.key, userId: null, data: null,
+    await accounts(() => Session.insert({ id: record.key, userId: null, data: null,
       meta: { type: 'oauth_state', provider: record.provider },
       createdAt: new Date(record.createdAt), expiresAt: new Date(record.expiresAt),
-      location: null, userAgent: null, ipAddress: null });
+      location: null, userAgent: null, ipAddress: null }));
   },
   async consume(key, provider, now) {
     // One conditional write owns callback replay. Never read then delete.
-    const result = await sql`DELETE FROM sessions WHERE id = ${key}
+    const result = await accounts(async () => sql`DELETE FROM sessions WHERE id = ${key}
       AND user_id IS NULL AND meta = ${JSON.stringify({ type: 'oauth_state', provider })}
-      AND expires_at > ${new Date(Math.max(now, Date.now()))}`;
+      AND expires_at > ${new Date(Math.max(now, Date.now()))}`);
     return result.meta.rowsAffected === 1;
   },
 };
@@ -1180,6 +1327,7 @@ export async function handleOAuthUser(
   _tokens: TokenSet,
   c: Context,
 ) {
+  return accounts(async () => {
   const account = await OAuthAccount.findOne({
     where: { provider, providerUserId: oauthUser.id },
   });
@@ -1220,4 +1368,79 @@ export async function handleOAuthUser(
     headers.forEach((value, key) => c.header(key, value));
   }
   return c.redirect(config('auth.redirectAfterLogin'));
+  });
+}
+
+
+// --- Tenants ---------------------------------------------------------------
+/** Whether the project runs tenants (src/dashboard.config.ts: `tenants`). The CMS has sites instead. */
+export const tenantsAvailable = authOptions.tenants.enabled;
+export {
+  addTenantDomain, addTenantMember, createTenant, listTenantMembers, listTenants, removeTenantDomain, removeTenantMember, setTenantStatus,
+  type TenantMemberSummary, type TenantSummary,
+} from './services/tenants';
+export { tenantOrigin } from './tenants';
+
+/** Whether this request is on the main host, where tenants are managed. */
+export function onMainHost(): boolean {
+  return !currentTenant();
+}
+
+// Shared sign-in (`tenants.signIn: 'shared'`): people sign in on the main host, and a tenant's
+// host gets a session of its own from a one-time code. src/middlewares/tenant.ts sends
+// visitors here; the two endpoints are /auth/tenant/redirect and /auth/tenant/callback.
+export const sharedSignInAvailable = sharedSignIn;
+const HANDOFF_MS = 60_000;
+
+async function handoffId(code: string): Promise<string> {
+  return sessionFingerprint(`tenant-handoff:${code}`);
+}
+
+/**
+ * On the main host, for a signed-in account: a one-time code for the tenant at `host`, and the
+ * address on that host which trades it for a session. `error` says why there is none.
+ */
+export async function issueTenantHandoff(c: Context, host: string, state: string, next: string | null): Promise<{ url: string } | { error: string; status: 400 | 403 | 404 }> {
+  return accounts(async () => {
+  if (!sharedSignIn || currentTenant()) return { error: 'Not found.', status: 404 as const };
+  const user = c.get('user') as PublicUser | undefined;
+  const sessionId = getCookie(c, SESSION_COOKIE);
+  const name = hostName(`http://${host}`);
+  if (!user || !sessionId || !name || !/^[A-Za-z0-9_-]{16,128}$/.test(state)) return { error: 'The request is not complete.', status: 400 as const };
+  const tenant = name === mainHost() ? null : await tenantOfHost(name);
+  if (!tenant || tenant.status !== 'active') return { error: 'There is no such site.', status: 404 as const };
+  const member = await TenantMember.exists({ tenantId: tenant.id, userId: user.id });
+  if (!member && !user.roles.some((role) => role.name === 'admin')) return { error: `This account is not a member of ${tenant.name}.`, status: 403 as const };
+  const code = randomToken();
+  await TenantHandoff.delete({ expiresAt: LessThan(new Date()) });
+  await TenantHandoff.insert({ id: await handoffId(code), sessionId, userId: user.id, tenantId: tenant.id, expiresAt: new Date(Date.now() + HANDOFF_MS) });
+  // The tenant's host, with the scheme and port of this request.
+  const url = new URL(c.req.url);
+  url.hostname = name;
+  url.pathname = '/auth/tenant/callback';
+  url.search = new URLSearchParams({ code, state, ...(next ? { next } : {}) }).toString();
+  return { url: url.toString() };
+  });
+}
+
+/**
+ * On a tenant's host: trade the code for a session there, linked to the main host's session.
+ * The code works once, for this tenant, for a minute, and only while that session is alive.
+ * Returns the response headers that set the cookie, or null.
+ */
+export async function completeTenantHandoff(c: Context, code: string): Promise<Headers | null> {
+  return accounts(async () => {
+  const tenant = currentTenant();
+  if (!sharedSignIn || !tenant || !/^[A-Za-z0-9_-]{16,128}$/.test(code)) return null;
+  const id = await handoffId(code);
+  const row = await TenantHandoff.findOne({ where: { id } });
+  // One conditional delete owns the code: a second request with it finds nothing.
+  const taken = await TenantHandoff.delete({ id, tenantId: tenant.id });
+  if (!row || row.tenantId !== tenant.id || taken.meta.rowsAffected !== 1 || row.expiresAt.getTime() <= Date.now()) return null;
+  const parent = await authSessions.validate(row.sessionId, c);
+  if (!parent || parent.userId !== row.userId) return null;
+  c.set('auth.sessionParent' as never, parent.id as never);
+  const { headers } = await authSessions.create(row.userId, c);
+  return headers;
+  });
 }

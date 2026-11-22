@@ -24,7 +24,7 @@ import type {
 } from "./metadata/types.js";
 import { In, type DeleteOptions, type EntityShape } from "./query/types.js";
 import { dialectFor } from "./dialect/dialects.js";
-import { registerORM, unregisterORM } from "./scope.js";
+import { currentORM, registerORM, unregisterORM } from "./scope.js";
 import type { OrmSchema } from "./schema/types.js";
 import { compileSQL, SQLFragment } from "./sql/fragment.js";
 import { createSQLTag, type SQLTag } from "./sql/tag.js";
@@ -125,8 +125,13 @@ export class ORM {
   run<T>(callback: () => T): T {
     this.assertOpen();
     const current = this.context();
-    if (current?.root === this) return callback();
-    const context: ScopeContext = { sequence: ++scopeSequence, root: this, orm: this, driver: this.driver, transactionDepth: 0 };
+    // Already in this ORM's scope, and no other ORM's scope was opened inside it.
+    if (current?.root === this && currentORM() === current.orm) return callback();
+    // Inside another ORM's scope that was opened within this one (a tenant's database inside
+    // the application's): the same scope again, in front, so models reach this ORM.
+    const context: ScopeContext = current?.root === this
+      ? { ...current, sequence: ++scopeSequence }
+      : { sequence: ++scopeSequence, root: this, orm: this, driver: this.driver, transactionDepth: 0 };
     if (this.scope) return this.scope.run(context, callback);
     this.fallbackScopes.push(context);
     let result: T;

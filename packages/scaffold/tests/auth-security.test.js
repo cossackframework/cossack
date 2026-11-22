@@ -28,7 +28,7 @@ async function generatedAuth() {
     '@cossackframework/auth': { createAuth: (options) => { provider = options; return { createSession }; }, createOAuth: vi.fn(), OAuthError,
       createCredentialVerifier, createSessionManager, hashPassword, verifyPassword, totpUri: vi.fn() },
     '@cossackframework/auth/passkeys': {},
-    '@cossackframework/database': { MoreThan: (value) => value, In: (values) => values, sql },
+    '@cossackframework/database': { MoreThan: (value) => value, LessThan: (value) => value, In: (values) => values, sql },
     '@cossackframework/core': { ClientVisibleError: Error, getClientIp: () => '203.0.113.7', getRequestContext: () => undefined },
     uqr: { renderSVG: vi.fn() },
     './brand': { siteName: async () => 'Test' },
@@ -42,10 +42,16 @@ async function generatedAuth() {
     // The project's choices, as src/dashboard.config.ts states them for this recipe.
     './auth-options': { authOptions: { authMethods: ['credentials', 'oauth'], oauth: ['github'], modules: ['sessions'], dashboard: true, redirectAfterLogin: '/dashboard',
       registration: { open: true, verifyEmail: false, approve: false, defaultRole: '' },
-      security: { requireTwoFactor: false, twoFactorRoles: [] } } },
+      security: { requireTwoFactor: false, twoFactorRoles: [] }, tenants: { enabled: false, signIn: 'host' } } },
     '@/models/User': { User },
     '@/models/Session': { Session },
     '@/models/OAuthAccount': { OAuthAccount },
+    '@/models/TenantMember': { TenantMember: { delete: vi.fn() } },
+    // Tenants are off: account code runs where it is, and every request is the main tenant's.
+    './tenants': { accounts: work => work(), inTenant: work => work(), currentTenant: () => null, tenantOrigin: () => null,
+      sharedSignIn: false, hostName: () => '', mainHost: () => '', tenantOfHost: async () => null },
+    '@/models/TenantHandoff': { TenantHandoff: {} },
+    './services/tenants': {},
   };
   const module = { exports: {} };
   // Execute the generated module, with only its database/provider boundary mocked.

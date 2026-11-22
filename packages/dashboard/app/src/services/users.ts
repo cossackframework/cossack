@@ -2,6 +2,8 @@ import { In, sql } from '@cossackframework/database';
 import { ClientVisibleError } from '@cossackframework/core';
 import { uuidv7 } from '../lib/uuid';
 import { hashPassword, type PublicUser } from '../auth';
+import { accounts, currentTenant } from '../tenants';
+import { forgetMemberships, joinCurrentTenant, leaveCurrentTenant } from './tenants';
 import { User } from '@/models/User';
 import { UserRole } from '@/models/UserRole';
 import { Role } from '@/models/Role';
@@ -82,12 +84,13 @@ function parseRoles(rows: readonly RoleRow[]): RoleAssignment[] {
 /** Each user's newest auth session start. Sign-out deletes the session, and with it this time. */
 async function lastSignIns(userIds: readonly string[]): Promise<Map<string, string>> {
   if (!userIds.length) return new Map();
-  const rows = (await sql<{ userId: string; lastSignedInAt: string | null }>`
+  // Sessions are the accounts', in the main database.
+  const rows = (await accounts(async () => sql<{ userId: string; lastSignedInAt: string | null }>`
     SELECT user_id AS userId, MAX(created_at) AS lastSignedInAt
     FROM sessions
     WHERE user_id IN (${userIds}) AND meta = ${JSON.stringify({ type: 'auth' })}
     GROUP BY user_id
-  `).rows;
+  `)).rows;
   const times = new Map<string, string>();
   for (const row of rows) {
     const at = row.lastSignedInAt ? new Date(row.lastSignedInAt) : null;
@@ -170,10 +173,23 @@ export async function getUser(id: string): Promise<UserDetail | null> {
     createdAt: user.createdAt.toISOString(),
     lastSignedInAt: (await lastSignIns([id])).get(id) ?? null,
     roles: parseRoles(await roleRowsForUsers([id])),
+    // In a tenant the row is a member: the account is shared, so only its owner changes it.
+    ...(currentTenant() ? { lockedProfile: 'This account is shared with other tenants: only its owner changes the profile, password and sign-in methods. This tenant chooses its roles.' } : {}),
   };
 }
 
 export async function createUser(input: CreateUserInput): Promise<PublicUser> {
+  // In a tenant: the account with this email becomes a member; a new account is made when there is none.
+  if (currentTenant()) {
+    const joined = await joinCurrentTenant({ email: input.email, ...(input.name ? { name: input.name } : {}), passwordHash: input.password ? await hashPassword(input.password) : null });
+    const roleIds = [...new Set(input.roleIds ?? [])];
+    if (roleIds.length) {
+      const known = await Role.find({ where: { id: In(roleIds) } });
+      if (known.length !== roleIds.length) throw new ClientVisibleError('Choose roles that exist.');
+      await syncUserRoles(joined.id, roleIds);
+    }
+    return { id: joined.id, email: input.email, name: input.name ?? '', avatar: null, meta: null, roles: [] };
+  }
   if (!input.password) throw new ClientVisibleError('Set a password: this site cannot send invitations.');
   if (await User.exists({ email: input.email })) {
     throw new ClientVisibleError('An account with this email already exists.');
@@ -197,18 +213,25 @@ export async function createUser(input: CreateUserInput): Promise<PublicUser> {
   return { id, email: input.email, name: input.name ?? '', avatar: null, meta: null, roles: [] };
 }
 
+const SHARED_ACCOUNT = 'This account is shared with other tenants: only its owner changes it.';
+
 export async function updateUser(id: string, patch: UpdateUserInput): Promise<void> {
+  if (currentTenant()) throw new ClientVisibleError(SHARED_ACCOUNT);
   if (Object.keys(patch).length) await User.update({ id }, patch);
 }
 
 export async function changeUserPassword(id: string, newPassword: string): Promise<void> {
+  if (currentTenant()) throw new ClientVisibleError(SHARED_ACCOUNT);
   if (!(await User.exists({ id }))) throw new ClientVisibleError('User not found.');
   await User.update({ id }, { passwordHash: await hashPassword(newPassword) });
 }
 
 export async function deleteUser(id: string): Promise<void> {
+  // In a tenant: the member leaves, and the account stays.
+  if (currentTenant()) return leaveCurrentTenant(id);
   await UserRole.delete({ userId: id });
   await User.delete({ id });
+  await forgetMemberships(id);
 }
 
 export async function assignRole(userId: string, roleId: string): Promise<void> {

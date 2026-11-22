@@ -109,7 +109,9 @@ describe("several ORMs", () => {
         expect(currentORM()).toBe(first);
         await second.run(async () => {
           expect(currentORM()).toBe(second);
-          await first.run(async () => { expect(currentORM()).toBe(second); });
+          // Back to the outer ORM in front of the inner one, as account code does inside a tenant's scope.
+          await first.run(async () => { expect(currentORM()).toBe(first); });
+          expect(currentORM()).toBe(second);
         });
         expect(currentORM()).toBe(first);
       });

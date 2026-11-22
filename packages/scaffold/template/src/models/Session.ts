@@ -43,6 +43,11 @@ export class Session extends BaseEntity {
   @Column({ type: 'boolean', name: 'second_factor', default: false })
   declare secondFactor: boolean;
 
+  /** The main host's session this one was made from, with shared sign-in across tenants. */
+  @Index('sessions_parent_id')
+  @Column({ type: 'varchar', name: 'parent_id', length: 191, nullable: true })
+  declare parentId: string | null;
+
   @CreateDateColumn({ name: 'created_at', default: '' })
   declare createdAt: Date;
 

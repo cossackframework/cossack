@@ -93,6 +93,7 @@ export {
 } from "./schema/types.js";
 export { MigrationRunner } from "./migration/runner.js";
 export { applyPendingMigrations } from "./migration/startup.js";
+export { createTenantORMs, tenantUrl, TENANT_DATABASE, type TenantDatabase, type TenantORM, type TenantORMs, type TenantORMsOptions } from "./tenants.js";
 export type {
   Migration,
   MigrationContext,

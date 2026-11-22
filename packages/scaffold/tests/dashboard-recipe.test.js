@@ -22,7 +22,8 @@ describe('dashboard recipe', () => {
       expect(files.has(rel), rel).toBe(true);
     // The session and the guard are one list from the package, after the ORM's request scope.
     expect(text(files, 'src/bootstrap/middlewares.ts')).toContain(`import { authMiddlewares } from '${DASHBOARD_PACKAGE}/app/middlewares/auth';`);
-    expect(text(files, 'src/bootstrap/middlewares.ts')).toMatch(/ormRequestMiddleware,\n {2}\.\.\.authMiddlewares,/);
+    // The database, then the request's tenant (which does nothing while tenants are off), then sign-in.
+    expect(text(files, 'src/bootstrap/middlewares.ts')).toMatch(/ormRequestMiddleware,\n {2}tenantMiddleware,\n {2}\.\.\.authMiddlewares,/);
     // Tailwind scans the served files, and the seeder takes plain helpers from the package.
     expect(text(files, 'src/style.css')).toContain(`@source "../node_modules/${DASHBOARD_PACKAGE}/app/src";`);
     expect(text(files, 'src/seeders/application.seeder.ts')).toContain(`from '${DASHBOARD_PACKAGE}/app/lib/permissions';`);

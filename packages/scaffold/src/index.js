@@ -316,8 +316,16 @@ const AUTH_ORM_PATHS = new Set([
   'src/migrations/0009_create_account_security.ts',
   'src/migrations/0010_add_user_status.ts',
   'src/migrations/0011_create_api_tokens.ts',
+  'src/migrations/0012_create_tenants.ts',
   'src/services/api-tokens.ts',
+  'src/services/tenants.ts',
+  'src/tenants.ts',
+  'src/middlewares/tenant.ts',
   'src/models/ApiToken.ts',
+  'src/models/Tenant.ts',
+  'src/models/TenantDomain.ts',
+  'src/models/TenantMember.ts',
+  'src/models/TenantHandoff.ts',
   'src/models/User.ts',
   'src/models/Session.ts',
   'src/models/OAuthAccount.ts',
@@ -507,7 +515,10 @@ function middlewareRegistry(recipe) {
     entries.push('  ...cmsMiddlewares,');
   } else if (recipe.resolvedFeatures.includes('auth')) {
     // The session and the sign-in guard, from the package that serves the sign-in pages.
+    // The request's tenant first (src/dashboard.config.ts: `tenants`; it does nothing while they are off).
+    imports.push(`import { tenantMiddleware } from '${DASHBOARD_PACKAGE}/app/middlewares/tenant';`);
     imports.push(`import { authMiddlewares } from '${DASHBOARD_PACKAGE}/app/middlewares/auth';`);
+    entries.push('  tenantMiddleware,');
     entries.push('  ...authMiddlewares,');
   }
   return `${imports.join('\n')}\n\nconst middlewares: MiddlewareHandler[] = [\n${entries.join('\n')}\n];\n\nexport default middlewares;\n`;
@@ -766,7 +777,9 @@ function romedbOrmFactory(recipe) {
       : `async function serverDatabase(env: ORMEnvironment): Promise<RomeDB> {
   return getRomeDB(env);
 }`;
-    return `import { applyPendingMigrations, createORM, type ORM } from '@cossackframework/database';
+    return `import { mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { applyPendingMigrations, createORM, createTenantORMs, tenantUrl, type ORM, type TenantDatabase, type TenantORM } from '@cossackframework/database';
 import { createRomeDB, type RomeDB } from '@cossackframework/romedb';
 import { connectNode, FilePendingWriteStore, isServiceUrl } from '@cossackframework/romedb/node';
 import { romedb } from '@cossackframework/romedb/orm';
@@ -817,6 +830,30 @@ export function getORM(env: ORMEnvironment = process.env): Promise<ORM> {
   singleton.catch(() => { singleton = undefined; });
   return singleton;
 }
+
+const tenants = createTenantORMs({
+  // A file beside the main one, or TENANT_DATABASE_URL with {tenant} in it for a service.
+  adapter: (tenant) => {
+    const main = process.env.ROMEDB_URL || 'storage/romedb/app.romedb';
+    const service = isServiceUrl(main);
+    const url = service ? tenantUrl(process.env.TENANT_DATABASE_URL, tenant) : join(dirname(main), 'tenants', \`\${tenant.database}.romedb\`);
+    const token = service ? process.env.TENANT_DATABASE_TOKEN ?? process.env.ROMEDB_TOKEN : undefined;
+    if (!service) mkdirSync(dirname(url), { recursive: true });
+    return romedb(createRomeDB({
+      url,
+      ...(token ? { token } : {}),
+      connect: () => connectNode({ url, ...(token ? { token } : {}) }),
+      pending: new FilePendingWriteStore(join(process.env.ROMEDB_PENDING_DIR ?? '.cossack/romedb-pending', 'tenants', tenant.database)),
+    }));
+  },
+  entities: models,
+  migrations,
+});
+
+/** The ORM of a tenant's database, for \`tenants\` in src/dashboard.config.ts. Its migrations apply when it is first opened. */
+export function tenantORM(_env: unknown, tenant: TenantDatabase): Promise<TenantORM> {
+  return tenants.open(tenant);
+}
 `;
   }
   const instance = cms
@@ -860,7 +897,7 @@ export function getRomeDB(env: ORMEnvironment, pending?: PendingWriteStore): Rom
   return db;
 }`;
   return `import { AsyncLocalStorage } from 'node:async_hooks';
-import { applyPendingMigrations, createORM } from '@cossackframework/database';
+import { applyPendingMigrations, createORM, createTenantORMs, tenantUrl, type TenantDatabase, type TenantORM } from '@cossackframework/database';
 import type { Adapter } from '@cossackframework/database';
 import { createAsyncLocalScope } from '@cossackframework/database/adapter';
 import type { RomeDB } from '@cossackframework/romedb';
@@ -887,6 +924,32 @@ export async function createRequestORM(env: ORMEnvironment) {
   await migrated;
   return orm;
 }
+${cms ? `
+/** A CMS project's tenants are the CMS's sites. */
+export function tenantORM(_env: unknown, _tenant: TenantDatabase): Promise<TenantORM> {
+  throw new Error('Tenants of the dashboard package are not used with the CMS: use its network of sites.');
+}` : `
+const tenants = createTenantORMs({
+  // TENANT_DATABASE_URL has {tenant} in it: a RomeDB Cloud database per tenant.
+  adapter: async (tenant) => {
+    const env = tenantEnvironment.getStore()!;
+    const adapter = await romedb(createRomeDB({
+      url: tenantUrl(env.TENANT_DATABASE_URL, tenant),
+      token: required(env.TENANT_DATABASE_TOKEN ?? env.ROMEDB_TOKEN, 'ROMEDB_TOKEN'),
+      pending: new DurableObjectPendingWriteStore(required(env.ROMEDB_PENDING, 'ROMEDB_PENDING'), { name: \`tenant:\${tenant.database}\` }),
+    }));
+    return { ...adapter, scope: createAsyncLocalScope(new AsyncLocalStorage()) };
+  },
+  entities: models,
+  migrations,
+  perRequest: true,
+});
+const tenantEnvironment = new AsyncLocalStorage<ORMEnvironment & { TENANT_DATABASE_URL?: string; TENANT_DATABASE_TOKEN?: string }>();
+
+/** The ORM of a tenant's database for this request, for tenants in src/dashboard.config.ts. Release it after the request. */
+export function tenantORM(env: unknown, tenant: TenantDatabase): Promise<TenantORM> {
+  return tenantEnvironment.run(env as ORMEnvironment, () => tenants.open(tenant));
+}`}
 `;
 }
 
@@ -909,8 +972,25 @@ function ormFactory(recipe) {
         : provider === 'postgres'
           ? "postgres(required(env.DATABASE_URL, 'DATABASE_URL'))"
           : "mysql(required(env.DATABASE_URL, 'DATABASE_URL'))";
-    return `import { createORM, type ORM } from '@cossackframework/database';
+    // A tenant's database: a file beside the main one, or TENANT_DATABASE_URL with {tenant} in it.
+    const tenantAdapter = provider === 'sqlite'
+      ? `(tenant) => {
+    const directory = join(dirname(process.env.DB_PATH ?? './database.sqlite'), 'tenants');
+    mkdirSync(directory, { recursive: true });
+    return nodeSQLite({ filename: join(directory, \`\${tenant.database}.sqlite\`) });
+  }`
+      : provider === 'turso'
+        ? `(tenant) => turso({
+    url: tenantUrl(process.env.TENANT_DATABASE_URL, tenant),
+    authToken: process.env.TENANT_DATABASE_TOKEN ?? process.env.TURSO_AUTH_TOKEN,
+  })`
+        : `(tenant) => ${provider}(tenantUrl(process.env.TENANT_DATABASE_URL, tenant))`;
+    const tenantImports = provider === 'sqlite'
+      ? "import { mkdirSync } from 'node:fs';\nimport { dirname, join } from 'node:path';\nimport { createORM, createTenantORMs, type ORM, type TenantDatabase, type TenantORM } from '@cossackframework/database';"
+      : "import { createORM, createTenantORMs, tenantUrl, type ORM, type TenantDatabase, type TenantORM } from '@cossackframework/database';";
+    return `${tenantImports}
 import { ${adapterImport} } from '@cossackframework/database/node';
+import { migrations } from '../migrations';
 import { models } from '../models';
 
 export type ORMEnvironment = Record<string, string | undefined>;
@@ -929,6 +1009,17 @@ let singleton: Promise<ORM> | undefined;
 export function getORM(env: ORMEnvironment = process.env): Promise<ORM> {
   return singleton ??= createToolingAdapter(env).then((adapter) =>
     createORM({ adapter, entities: models }));
+}
+
+const tenants = createTenantORMs({
+  adapter: ${tenantAdapter},
+  entities: models,
+  migrations,
+});
+
+/** The ORM of a tenant's database, for \`tenants\` in src/dashboard.config.ts. Its migrations apply when it is first opened. */
+export function tenantORM(_env: unknown, tenant: TenantDatabase): Promise<TenantORM> {
+  return tenants.open(tenant);
 }
 `;
   }
@@ -950,6 +1041,17 @@ export function getORM(env: ORMEnvironment = process.env): Promise<ORM> {
       : provider === 'hyperdrive-postgres'
         ? 'hyperdrivePostgres(env.HYPERDRIVE)'
         : 'hyperdriveMySQL(env.HYPERDRIVE)';
+  // A tenant's database: a binding per tenant (D1, Hyperdrive), or TENANT_DATABASE_URL with {tenant} in it (Turso).
+  const tenantAdapterExpression = provider === 'd1'
+    ? `d1(binding<D1Database>(env, 'DB', tenant))`
+    : provider === 'turso'
+      ? `turso({
+      url: tenantUrl((env as { TENANT_DATABASE_URL?: string }).TENANT_DATABASE_URL, tenant),
+      authToken: (env as { TENANT_DATABASE_TOKEN?: string }).TENANT_DATABASE_TOKEN ?? env.TURSO_AUTH_TOKEN,
+    })`
+      : provider === 'hyperdrive-postgres'
+        ? `hyperdrivePostgres(binding<Hyperdrive>(env, 'HYPERDRIVE', tenant))`
+        : `hyperdriveMySQL(binding<Hyperdrive>(env, 'HYPERDRIVE', tenant))`;
   const runtimeModule = provider === 'turso'
     ? '@cossackframework/database/cloudflare-turso'
     : '@cossackframework/database/cloudflare';
@@ -959,10 +1061,11 @@ export function getORM(env: ORMEnvironment = process.env): Promise<ORM> {
       ? 'TURSO_DATABASE_URL?: string;\n  TURSO_AUTH_TOKEN?: string;'
       : 'HYPERDRIVE: Hyperdrive;';
   return `import { AsyncLocalStorage } from 'node:async_hooks';
-import { createORM } from '@cossackframework/database';
+import { createORM, createTenantORMs, tenantUrl, type TenantDatabase, type TenantORM } from '@cossackframework/database';
 import type { Adapter } from '@cossackframework/database';
 import { createAsyncLocalScope } from '@cossackframework/database/adapter';
 import { ${runtimeImport} } from '${runtimeModule}';
+import { migrations } from '../migrations';
 import { models } from '../models';
 
 export interface ORMEnvironment {
@@ -984,6 +1087,32 @@ export async function createRequestORM(env: ORMEnvironment) {
     adapter: { ...adapter, scope: createAsyncLocalScope(new AsyncLocalStorage()) },
     entities: models,
   });
+}
+
+/** A tenant's own binding, such as DB_ACME for the tenant \`acme\`. */
+function binding<T>(env: ORMEnvironment, prefix: string, tenant: TenantDatabase): T {
+  const name = \`\${prefix}_\${tenant.slug.toUpperCase().replaceAll('-', '_')}\`;
+  const value = (env as unknown as Record<string, unknown>)[name];
+  if (!value) throw new Error(\`The tenant \${tenant.slug} needs the binding \${name}.\`);
+  return value as T;
+}
+
+const tenantEnvironment = new AsyncLocalStorage<ORMEnvironment>();
+const tenants = createTenantORMs({
+  adapter: async (tenant) => {
+    const env = tenantEnvironment.getStore()!;
+    void tenantUrl; void binding;
+    const adapter = await ${tenantAdapterExpression};
+    return { ...adapter, scope: createAsyncLocalScope(new AsyncLocalStorage()) };
+  },
+  entities: models,
+  migrations,
+  perRequest: true,
+});
+
+/** The ORM of a tenant's database for this request, for \`tenants\` in src/dashboard.config.ts. Release it after the request. */
+export function tenantORM(env: unknown, tenant: TenantDatabase): Promise<TenantORM> {
+  return tenantEnvironment.run(env as ORMEnvironment, () => tenants.open(tenant));
 }
 `;
 }
@@ -1104,11 +1233,11 @@ extendCacheDriver('database', () => createDatabaseCacheStore());
 }
 
 /** The entities of sign-in on the ORM. Roles are part of it: the served auth.ts reads them for every user. */
-const ACCOUNT_MODELS = ['User', 'Session', 'OAuthAccount', 'UserSecurity', 'Passkey', 'AuthChallenge', 'AuthAttempt', 'ApiToken', 'Role', 'UserRole'];
+const ACCOUNT_MODELS = ['User', 'Session', 'OAuthAccount', 'UserSecurity', 'Passkey', 'AuthChallenge', 'AuthAttempt', 'ApiToken', 'Tenant', 'TenantDomain', 'TenantMember', 'TenantHandoff', 'Role', 'UserRole'];
 /** Their migrations, in the order they apply. */
 const ACCOUNT_MIGRATIONS = [
   '0001_create_users.ts', '0002_create_sessions.ts', '0003_create_roles.ts', '0005_create_oauth_accounts.ts', '0007_create_user_roles.ts',
-  '0008_add_session_public_id.ts', '0009_create_account_security.ts', '0010_add_user_status.ts', '0011_create_api_tokens.ts',
+  '0008_add_session_public_id.ts', '0009_create_account_security.ts', '0010_add_user_status.ts', '0011_create_api_tokens.ts', '0012_create_tenants.ts',
 ];
 
 function modelsBarrel(recipe, names = accountBarrelNames(recipe)) {

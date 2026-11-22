@@ -19,7 +19,7 @@ const OAUTH_REFUSALS: Record<string, string> = {
 };
 
 /** Sign-in failures the visitor is told about, after the password matched or before it is checked; see auth.ts. */
-const TOLD = new Set(['SignInLockedError', 'SignInPendingError', 'SignInPasskeyError']);
+const TOLD = new Set(['SignInLockedError', 'SignInPendingError', 'SignInPasskeyError', 'SignInMemberError']);
 import { usePasskey } from '#app/passkeys.client';
 
 interface LoginForm {

@@ -41,6 +41,20 @@ export interface DashboardConfig {
         /** The name of the role a new account gets. Default: none. */
         defaultRole?: string;
     };
+    /**
+     * Tenants: organizations that each have their own database, members and roles, reached at
+     * `<slug>.<APP_URL's host>` or a domain of their own. Accounts and sessions are shared, in
+     * the application's own database. Default: off (one database). See docs/tenants.md.
+     */
+    tenants?: {
+        /** Default: false. */
+        enabled?: boolean;
+        /**
+         * `host` (default): each tenant's host has its own sign-in. `shared`: people sign in once,
+         * on APP_URL's host, and a tenant's host gets its session from there.
+         */
+        signIn?: 'host' | 'shared';
+    };
     /** Two-step sign-in. Every user can turn it on for their account; this makes it required. */
     security?: {
         /** Users must sign in with a second factor (an authenticator app or a passkey) before they can act. Default: false. */

@@ -6,7 +6,8 @@ import { dashboard } from '@/dashboard.config';
 
 const showsDashboard = dashboard.dashboard !== false;
 
-export const authOptions: Required<Omit<DashboardConfig, 'security' | 'registration'>> & {
+export const authOptions: Required<Omit<DashboardConfig, 'security' | 'registration' | 'tenants'>> & {
+    tenants: Required<NonNullable<DashboardConfig['tenants']>>;
     registration: Required<NonNullable<DashboardConfig['registration']>>;
     security: Required<NonNullable<DashboardConfig['security']>>;
 } = {
@@ -21,6 +22,10 @@ export const authOptions: Required<Omit<DashboardConfig, 'security' | 'registrat
         verifyEmail: dashboard.registration?.verifyEmail === true,
         approve: dashboard.registration?.approve === true,
         defaultRole: dashboard.registration?.defaultRole ?? '',
+    },
+    tenants: {
+        enabled: dashboard.tenants?.enabled === true,
+        signIn: dashboard.tenants?.signIn === 'shared' ? 'shared' : 'host',
     },
     security: {
         requireTwoFactor: dashboard.security?.requireTwoFactor === true,

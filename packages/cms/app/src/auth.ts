@@ -1200,3 +1200,25 @@ export async function handleOAuthUser(_provider: string, oauthUser: OAuthUser, _
   headers.forEach((value, key) => c.header(key, value, { append: key.toLowerCase() === 'set-cookie' }));
   return c.redirect(config('auth.redirectAfterLogin'));
 }
+
+
+// --- Tenants ---------------------------------------------------------------
+// The dashboard package's tenants are not used with the CMS, which has a network of sites
+// (Settings → Network). The shared Tenants screen is never reached here.
+export const tenantsAvailable = false;
+export interface TenantSummary { id: string; slug: string; name: string; database: string; status: 'creating' | 'active' | 'archived'; createdAt: string; members: number; domains: string[] }
+export interface TenantMemberSummary { id: string; email: string; name: string; roles: string[] }
+const noTenants = (): never => { throw new ClientVisibleError('Tenants are not available with the CMS: use its network of sites.'); };
+export function onMainHost(): boolean { return true; }
+export function tenantOrigin(_tenant: { slug: string } | null): string | null { return null; }
+export async function listTenants(): Promise<TenantSummary[]> { return []; }
+export async function listTenantMembers(_id: string): Promise<TenantMemberSummary[]> { return []; }
+export async function createTenant(_input: { name: string; slug: string }, _creator: { id: string }): Promise<TenantSummary> { return noTenants(); }
+export async function setTenantStatus(_id: string, _status: 'active' | 'archived'): Promise<void> { return noTenants(); }
+export async function addTenantDomain(_id: string, _host: string): Promise<void> { return noTenants(); }
+export async function removeTenantDomain(_id: string, _host: string): Promise<void> { return noTenants(); }
+export async function addTenantMember(_id: string, _email: string, _roles: readonly string[] = []): Promise<void> { return noTenants(); }
+export async function removeTenantMember(_id: string, _userId: string): Promise<void> { return noTenants(); }
+export const sharedSignInAvailable = false;
+export async function issueTenantHandoff(_c: Context, _host: string, _state: string, _next: string | null): Promise<{ url: string } | { error: string; status: 400 | 403 | 404 }> { return { error: 'Not found.', status: 404 }; }
+export async function completeTenantHandoff(_c: Context, _code: string): Promise<Headers | null> { return null; }

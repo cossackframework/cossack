@@ -73,7 +73,12 @@
       "models/Passkey.ts",
       "models/AuthChallenge.ts",
       "models/AuthAttempt.ts",
-      "models/ApiToken.ts"
+      "models/ApiToken.ts",
+      "models/Tenant.ts",
+      "models/TenantDomain.ts",
+      "models/TenantMember.ts",
+      "models/TenantHandoff.ts",
+      "orm/factory.ts"
     ],
     "hostTemplate": "0.9.0"
   }
