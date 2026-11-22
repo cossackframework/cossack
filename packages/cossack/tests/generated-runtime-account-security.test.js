@@ -10,7 +10,8 @@ import { totpCode, totpStep } from '../../auth/src/two-factor.ts';
 afterEach(cleanupRoots);
 
 const PAGES = ['auth/register/index.ts', 'auth/login/index.ts', 'auth/two-factor/index.ts', 'dashboard/profile/security/index.ts',
-  'auth/setup/index.ts', 'auth/verify/index.ts', 'auth/magic/index.ts', 'dashboard/users/registrations/index.ts'];
+  'auth/setup/index.ts', 'auth/verify/index.ts', 'auth/magic/index.ts', 'dashboard/users/registrations/index.ts',
+  'dashboard/users/new/index.ts', 'auth/reset-password/index.ts'];
 const account = { email: 'ada@example.test', password: 'test-password-123' };
 
 async function accountSecurity(database) {
@@ -105,7 +106,7 @@ async function registration(database) {
   const routeIds = Object.fromEntries(PAGES.map(page => [`/src/pages/${page}`, servedRouteId(manifest, `/src/pages/${page}`)]));
   const mails = async () => (await fs.readFile(path.join(root, 'mails.jsonl'), 'utf8').catch(() => '')).split('\n').filter(Boolean).map(line => JSON.parse(line));
   const tokenOf = mail => /token=([A-Za-z0-9_-]+)/.exec(mail.text)[1];
-  const server = await productionServer(root, { APP_SECRET: 'generated-account-security-test-secret', SETUP_CODE: 'setup-code-for-tests' });
+  const server = await productionServer(root, { APP_SECRET: 'generated-account-security-test-secret', SETUP_CODE: 'setup-code-for-tests', RECOVERY_CODE: 'recovery-code-for-the-tests-0123' });
   try {
     const { origin } = server;
     const client = () => browserless(origin, routeIds, server.diagnostics);
@@ -164,6 +165,30 @@ async function registration(database) {
     expect((await linked.action(magic, 'signIn', [tokenOf(sent[2])]))._cossack_redirect).toBe('/dashboard');
     expect(linked.jar.has('session_id')).toBe(true);
     expect((await client().action(magic, 'signIn', [tokenOf(sent[2])])).failed).toBe(true);
+
+    // An invitation: the administrator adds a user without a password, who gets a link to set one.
+    const invited = { email: 'ivy@example.test', password: 'test-password-789' };
+    expect((await owner.action('dashboard/users/new/index.ts', 'create', ['Ivy', invited.email, '', [], true])).error ?? '').toBe('');
+    const invitation = (await mails())[3];
+    expect(invitation).toMatchObject({ to: invited.email, subject: expect.stringContaining('You are invited to') });
+    expect(invitation.text).toContain('within seven days');
+    const reset = await client().action('auth/reset-password/index.ts', 'doReset', [{ token: tokenOf(invitation), password: invited.password, confirm: invited.password }]);
+    expect(reset.error ?? '').toBe('');
+    expect((await client().action(login, 'login', [invited])).error ?? '').toBe('');
+
+    // Recovery mode: with the environment's code, a reset link for a locked-out account.
+    const recover = (code, body) => fetch(`${origin}/auth/recovery`, { method: 'POST', headers: { 'content-type': 'application/json', ...(code ? { authorization: `Bearer ${code}` } : {}) }, body: JSON.stringify(body) });
+    expect((await recover('wrong-code-wrong-code-wrong-code', { email: admin.email })).status).toBe(401);
+    expect((await recover('recovery-code-for-the-tests-0123', { email: 'nobody@example.test' })).status).toBe(404);
+    const recovered = await recover('recovery-code-for-the-tests-0123', { email: admin.email });
+    expect(recovered.status).toBe(200);
+    const { resetUrl, secondFactorsCleared } = await recovered.json();
+    expect([resetUrl.startsWith(`${origin}/auth/reset-password?token=`), secondFactorsCleared]).toEqual([true, false]);
+    const fresh = 'a-new-password-456';
+    expect((await client().action('auth/reset-password/index.ts', 'doReset', [{ token: new URL(resetUrl).searchParams.get('token'), password: fresh, confirm: fresh }])).error ?? '').toBe('');
+    expect((await client().action(login, 'login', [{ email: admin.email, password: fresh }])).error ?? '').toBe('');
+    // The new password ended the administrator's other sessions.
+    expect((await owner.request('/dashboard')).status).toBe(302);
   } finally { await server.close(); }
 }
 

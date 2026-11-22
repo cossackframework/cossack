@@ -1231,3 +1231,8 @@ export async function setNetworkRunning(_on: boolean): Promise<void> { return no
 export async function verifyTenantDomain(_id: string, _host: string): Promise<void> { return noTenants(); }
 export async function setPrimaryTenantDomain(_id: string, _host: string): Promise<void> { return noTenants(); }
 export async function tenantSignInUrl(_c: Context, _host: string): Promise<string | null> { return null; }
+export interface RecoveryResult { email: string; resetUrl: string; expiresAt: number; secondFactorsCleared: boolean }
+/** The CMS's recovery mode is `POST /api/cms/recovery` (CMS_RECOVERY_CODE), with `cossack cms password reset`. */
+export async function recoverAccount(_code: unknown, _email: unknown, _clearSecondFactors = false): Promise<RecoveryResult | { error: string; status: 400 | 401 | 403 | 404 | 429 }> {
+  return { error: 'Use POST /api/cms/recovery.', status: 404 };
+}

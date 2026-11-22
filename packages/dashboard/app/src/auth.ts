@@ -751,13 +751,13 @@ function randomToken(): string {
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-async function createPasswordResetToken(email: string): Promise<string | null> {
+async function createPasswordResetToken(email: string, ttlMs = 60 * 60 * 1000): Promise<string | null> {
   const user = await User.findOne({ where: { email } });
   if (!user) return null; // do NOT leak whether the email exists
   // A secret: 256 random bits, never a UUIDv7, whose time part is readable and leaves 74 random bits.
   const token = randomToken();
   const now = new Date();
-  const expiresAt = new Date(now.getTime() + 60 * 60 * 1000); // 1 hour
+  const expiresAt = new Date(now.getTime() + ttlMs); // one hour, or an invitation's seven days
   const meta: SessionMeta = { type: 'password_reset' };
   await Session.insert({
     id: token,
@@ -1590,5 +1590,71 @@ export async function tenantSignInUrl(c: Context, host: string): Promise<string 
   url.pathname = '/auth/login';
   url.search = '';
   return url.toString();
+  }));
+}
+
+// --- Invitations -------------------------------------------------------------
+/** Whether an invitation can be sent: it needs an email sender and the site's address (APP_URL). */
+export function canInvite(): boolean {
+  return mailer() !== null && linkOrigin() !== null;
+}
+
+/**
+ * Email an account a link to set its password, good for seven days: an administrator made the
+ * account without choosing a password. False when no email could be sent.
+ */
+export async function sendInvitation(userId: string): Promise<boolean> {
+  return accountOf(userId, async () => {
+  const [user, mail, origin] = [await User.findOne({ where: { id: userId } }), mailer(), linkOrigin()];
+  if (!user || !mail || !origin) return false;
+  const token = await createPasswordResetToken(user.email, 7 * 24 * 60 * 60 * 1000);
+  if (!token) return false;
+  const title = currentTenant()?.name ?? await siteName().catch(() => '');
+  await mail.send({ to: user.email, subject: `You are invited to ${title || 'the site'}`,
+    text: `Hello ${user.name || user.email},\n\nAn account was made for you on ${title || origin}. Set your password here within seven days:\n${origin}/auth/reset-password?token=${token}\n\nIf you were not expecting this, ignore this email.` });
+  return true;
+  });
+}
+
+// --- Recovery mode -----------------------------------------------------------
+/** The shortest recovery code that turns recovery mode on. */
+export const RECOVERY_CODE_MIN_LENGTH = 24;
+const RECOVERY_ATTEMPTS = Object.freeze({ max: 5, windowMs: 15 * 60_000 });
+
+export interface RecoveryResult {
+  email: string;
+  /** Open it within the hour to choose a new password. */
+  resetUrl: string;
+  expiresAt: number;
+  /** The authenticator app, recovery codes and passkeys were removed too. */
+  secondFactorsCleared: boolean;
+}
+
+/**
+ * Recovery mode, for someone who can change the environment and is locked out of the
+ * dashboard: with RECOVERY_CODE set (24 characters or more), `POST /auth/recovery` with that
+ * code makes a one-hour reset link for an active account, and can remove its second factors.
+ * The account is told by email when the site can send one. `status` says why there is no link.
+ */
+export async function recoverAccount(code: unknown, email: unknown, clearSecondFactors = false): Promise<RecoveryResult | { error: string; status: 400 | 401 | 403 | 404 | 429 }> {
+  const address = typeof email === 'string' ? email.trim().toLowerCase() : '';
+  return accountByEmail(address, () => accounts(async () => {
+  const expected = env('RECOVERY_CODE', '').trim();
+  if (!expected) return { error: 'Recovery mode is off: set RECOVERY_CODE in the environment to turn it on.', status: 403 as const };
+  if (expected.length < RECOVERY_CODE_MIN_LENGTH) return { error: `RECOVERY_CODE must be at least ${RECOVERY_CODE_MIN_LENGTH} characters.`, status: 403 as const };
+  if (!(await security.attempt('recovery', `a:${clientAddress()}`, RECOVERY_ATTEMPTS.max, RECOVERY_ATTEMPTS.windowMs))) return { error: 'Too many recovery attempts. Wait fifteen minutes.', status: 429 as const };
+  if (typeof code !== 'string' || !(await sameSecret(code, expected))) return { error: 'The recovery code is not correct.', status: 401 as const };
+  if (!address || address.length > 254 || !address.includes('@')) return { error: 'Give the email address of the account.', status: 400 as const };
+  const origin = linkOrigin();
+  const user = await User.findOne({ where: { email: address } });
+  if (!user || user.status !== 'active') return { error: 'No active account has this email.', status: 404 as const };
+  if (!origin) return { error: 'Set APP_URL: without the site\'s address no reset link can be made.', status: 400 as const };
+  const token = await createPasswordResetToken(address);
+  if (!token) return { error: 'No active account has this email.', status: 404 as const };
+  if (clearSecondFactors) await security.reset(user.id);
+  console.warn(`[Cossack Auth] recovery mode made a reset link for ${user.id}${clearSecondFactors ? ' and removed its second factors' : ''}`);
+  await mailer()?.send({ to: user.email, subject: 'A password reset link was made for your account',
+    text: `Someone with access to the site's settings used recovery mode to make a password reset link for your account${clearSecondFactors ? ', and removed its second factors' : ''}. If this was not you or your administrator, tell the site's owner.` }).catch(() => undefined);
+  return { email: user.email, resetUrl: `${origin}/auth/reset-password?token=${token}`, expiresAt: Date.now() + 60 * 60 * 1000, secondFactorsCleared: clearSecondFactors };
   }));
 }

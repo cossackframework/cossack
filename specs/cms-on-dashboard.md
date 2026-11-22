@@ -81,8 +81,13 @@ for it the same day. On 4, `network_admin` stays a flag on the account.
    - Open: nothing calls `purgeDeletedTenants()` on a schedule, and it does not drop a
      tenant's database; hooks for the creation steps (the CMS seeds settings, a theme and
      plugins) come with step 6.
-3. Dashboard: invitations, avatar uploads through a storage hook, held accounts, recovery
-   mode, tenant registration.
+3. Dashboard account features the CMS has. In parts:
+   - **Done:** invitations (`createUser({ invite: true })` emails a seven-day link to set the
+     password; `canInvite`, `sendInvitation`), and recovery mode (`RECOVERY_CODE`,
+     `POST /auth/recovery`, `recoverAccount`: a one-hour reset link, optionally without the
+     account's second factors).
+   - Open: avatar uploads through a storage hook; accounts held for a tenant's approval;
+     self-service tenant registration. No command wraps the recovery request yet.
 4. CMS: sessions, second factors and tokens on the dashboard's stores (what was built and
    reverted, now with tenants).
 5. CMS: accounts, members and roles; `Principal` from the dashboard's user; slugs and field

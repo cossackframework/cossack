@@ -1,7 +1,7 @@
 import { In, sql } from '@cossackframework/database';
 import { ClientVisibleError } from '@cossackframework/core';
 import { uuidv7 } from '../lib/uuid';
-import { hashPassword, type PublicUser } from '../auth';
+import { canInvite, hashPassword, sendInvitation, type PublicUser } from '../auth';
 import { accounts, currentTenant } from '../tenants';
 import { forgetMemberships, joinCurrentTenant, leaveCurrentTenant, requireAnotherNetworkAdmin, tenantOwnAccount } from './tenants';
 import * as security from './security';
@@ -50,7 +50,7 @@ export interface CreateUserInput {
   email: string;
   /** Required unless `invite` is set. */
   password?: string;
-  /** Invitations need an email sender, which the CMS provides; here they are refused. */
+  /** Email a link to set the password instead of setting one here. It needs an email sender and APP_URL. */
   invite?: boolean;
   name?: string;
   /** Roles chosen by someone who may assign them; otherwise none. */
@@ -180,7 +180,15 @@ export async function getUser(id: string): Promise<UserDetail | null> {
   };
 }
 
+/** A password nobody knows, for an account that is invited to set its own. */
+function unknownPassword(): string {
+  return btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));
+}
+
 export async function createUser(input: CreateUserInput): Promise<PublicUser> {
+  if (!input.invite && !input.password) throw new ClientVisibleError('Set a password or send an invitation.');
+  if (input.invite && !canInvite()) throw new ClientVisibleError('No email sender is configured, so invitations cannot be sent. Set a password instead.');
+  if (input.invite) input = { ...input, password: unknownPassword() };
   // In a tenant: the account with this email becomes a member; a new account is made when there is none.
   if (currentTenant()) {
     const joined = await joinCurrentTenant({ email: input.email, ...(input.name ? { name: input.name } : {}), passwordHash: input.password ? await hashPassword(input.password) : null });
@@ -190,9 +198,10 @@ export async function createUser(input: CreateUserInput): Promise<PublicUser> {
       if (known.length !== roleIds.length) throw new ClientVisibleError('Choose roles that exist.');
       await syncUserRoles(joined.id, roleIds);
     }
+    // A member with a main account has its password already.
+    if (input.invite && joined.created) await sendInvitation(joined.id);
     return { id: joined.id, email: input.email, name: input.name ?? '', avatar: null, meta: null, roles: [] };
   }
-  if (!input.password) throw new ClientVisibleError('Set a password: this site cannot send invitations.');
   if (await User.exists({ email: input.email })) {
     throw new ClientVisibleError('An account with this email already exists.');
   }
@@ -201,7 +210,7 @@ export async function createUser(input: CreateUserInput): Promise<PublicUser> {
     id,
     email: input.email,
     name: input.name ?? null,
-    passwordHash: await hashPassword(input.password),
+    passwordHash: await hashPassword(input.password!),
     avatar: null,
     meta: null,
     createdAt: new Date(),
@@ -212,6 +221,7 @@ export async function createUser(input: CreateUserInput): Promise<PublicUser> {
     if (known.length !== roleIds.length) throw new ClientVisibleError('Choose roles that exist.');
     await syncUserRoles(id, roleIds);
   }
+  if (input.invite) await sendInvitation(id);
   return { id, email: input.email, name: input.name ?? '', avatar: null, meta: null, roles: [] };
 }
 
