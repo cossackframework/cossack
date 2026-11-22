@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { contentModule, createCMS, field, systemPrincipal, userPrincipal, type CmsHost } from '../src/server/index';
+import { contentModule, createCMS, field, systemPrincipal, userPrincipal, type CmsHost, memoryPeople } from '../src/server/index';
 import { live, romedbService } from './helpers';
 
 const admin = systemPrincipal('automation tests');
@@ -12,7 +12,7 @@ describe.skipIf(!live)('automations', () => {
     let cms: CmsHost;
 
     beforeAll(async () => {
-        cms = createCMS({
+        cms = createCMS({ people: memoryPeople(), 
             db: service.database(), modules: [contentModule], mail: { send: async ({ html, ...message }) => { if (mailDown) throw new Error('The mail service is down.'); expect(html).toContain(message.subject); sent.push(message); } }, mailFrom: 'site@example.com', siteUrl: 'https://auto.example',
         });
         expect((await cms.migrate()).failed).toBeUndefined();
@@ -68,7 +68,7 @@ describe.skipIf(!live)('automations', () => {
         sent.length = 0;
         mailDown = false;
         await cms.saveCollection({ name: 'staff', label: 'Staff', singular: 'Person', icon: 'user', path: null, fields: { salary: field.string({ access: { read: 'cms:hr' } }) } }, admin);
-        const role = await cms.users.createRole({ name: 'Writer', permissions: ['cms:dashboard', 'cms/*'] });
+        const role = await cms.users.defineRole({ id: 'writer', name: 'Writer', permissions: ['cms:dashboard', 'cms/*'] });
         const writer = await cms.users.create({ email: 'writer@example.com', name: 'Writer', password: 'a long password', roles: [role.id] });
         const editor = (await cms.users.principal(writer.id))!;
         const copy = await cms.automations.save({ name: 'Pay copy', event: 'entry.created', conditions: { collection: 'staff' }, action: { kind: 'email', to: 'writer@example.com', subject: 'Staff', text: 'Pay: {{ $.record.salary }}.' } }, { principal: editor });

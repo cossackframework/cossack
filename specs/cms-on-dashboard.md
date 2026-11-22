@@ -118,9 +118,12 @@ What the rest of the CMS calls on the stores today (inventory of 2026-11-22):
      author slug (`cms_authors`, host step 16) and the field values are the CMS's. What is
      about accounts and sign-in is refused there (`CMS_UNAVAILABLE`). Without `people` the
      present store is used, so every suite stays as it was. Test: `tests/people-users.test.ts`.
-   - Open: the host's other uses of the old stores with a port (`tokenPrincipal`,
-     `uploadAvatar`, the `$user` of automations, forms' rate limits); the nine fixture test
-     files move to `memoryPeople`.
+   - **Done:** the nine test files that only need users as fixtures run on `memoryPeople`
+     (automations, capabilities, field groups, form files, forms, seed, site search,
+     isolation, round trips). With a port, `tokenPrincipal` answers null (application
+     passwords are the application's) and an automation's `$user` is the member.
+   - Stays the CMS's: the counters of forms and comments (`security.attempt` on
+     `cms_attempts`), which step 8 moves out of `security.ts`.
 6. The application's port over the dashboard's services; a CMS project gets the account
    models and migrations; the CMS's `auth.ts`, `services/{users,roles,rbac}.ts`,
    `cms/handoff.ts` and `cms/middlewares.ts` give way to the dashboard's. Roles need a

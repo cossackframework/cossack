@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { contentModule, createCMS, DEFAULT_ROLES, field, type Block, type CmsHost, type CollectionDefinition, type FieldGroup, type Principal } from '../src/server/index';
+import { contentModule, createCMS, DEFAULT_ROLES, field, type Block, type CmsHost, type CollectionDefinition, type FieldGroup, type Principal, memoryPeople } from '../src/server/index';
 import { romedbService, live } from './helpers';
 
 const admin: Principal = { kind: 'user', id: 'admin-1', roles: ['admin'], permissions: ['*'] };
@@ -57,7 +57,7 @@ describe.skipIf(!live)('field groups', () => {
     let cms: CmsHost;
 
     beforeAll(async () => {
-        cms = createCMS({ db: service.database(), modules: [contentModule] });
+        cms = createCMS({ people: memoryPeople(),  db: service.database(), modules: [contentModule] });
         expect((await cms.migrate()).failed).toBeUndefined();
         await cms.ready();
     }, 30_000);
@@ -200,9 +200,9 @@ describe.skipIf(!live)('field groups', () => {
         await expect(cms.users.update(bob.id, { meta: { handle: 'ada', team: 'core' } })).rejects.toMatchObject({ code: 'CMS_CONFLICT' });
         expect((await cms.users.get(bob.id))!.meta).toEqual({ team: 'core' });
 
-        // The database filters by an indexed field, joins the member row, and follows the reference.
-        const core = await cms.db.read([{ rql: `SELECT u.email FROM cms_users u JOIN ${storage} d ON record::id(d.id) = u.id WHERE d."team" = $team ORDER BY u.email`, params: { $team: 'core' } }]);
-        expect(core.results[0]!.rows.map(row => row[0])).toEqual(['ada@example.com', 'bob@example.com']);
+        // The database filters by an indexed field (the document's key is the user's ID), and follows the reference.
+        const core = await cms.db.read([{ rql: `SELECT record::id(d.id) FROM ${storage} d WHERE d."team" = $team`, params: { $team: 'core' } }]);
+        expect(core.results[0]!.rows.map(row => row[0]).sort()).toEqual([ada.id, bob.id].sort());
         const followed = await cms.db.read([{ rql: `SELECT record::id(d."favourite") FROM ${storage} d WHERE record::id(d.id) = $id`, params: { $id: ada.id } }]);
         expect(followed.results[0]!.rows[0]![0]).toBe(post.id);
 
@@ -326,7 +326,7 @@ describe.skipIf(!live)('editor layouts and plugin field groups', () => {
     let cms: CmsHost;
 
     beforeAll(async () => {
-        cms = createCMS({ db: service.database(), modules: [contentModule], plugins: [shop] });
+        cms = createCMS({ people: memoryPeople(),  db: service.database(), modules: [contentModule], plugins: [shop] });
         expect((await cms.migrate()).failed).toBeUndefined();
         await cms.ready();
         await cms.saveCollection(products, admin);
@@ -337,7 +337,7 @@ describe.skipIf(!live)('editor layouts and plugin field groups', () => {
         const saved = await cms.saveCollection({ ...products, editor: layout }, admin);
         expect(saved.editor).toEqual(layout);
         expect(cms.collection('products').editor).toEqual(layout);
-        const other = createCMS({ db: service.database(), modules: [contentModule], plugins: [shop] });
+        const other = createCMS({ people: memoryPeople(),  db: service.database(), modules: [contentModule], plugins: [shop] });
         await other.ready();
         expect(other.collection('products').editor).toEqual(layout);
         await expect(cms.saveCollection({ ...products, editor: { tabs: [{ _id: 'main', type: 'editor/tab', data: { label: 'Main' } }], sidebar: [] } }, admin))

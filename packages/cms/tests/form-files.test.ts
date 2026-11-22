@@ -2,8 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { createHookRegistry } from '@cossackframework/core/hooks';
 import {
     ANONYMOUS, contentModule, createCMS, DEFAULT_ROLES, formsModule, formSubmitted, formValidate,
-    type Block, type CmsHost, type FormFile, type FormSubmittedEvent, type FormValues, type Principal,
-} from '../src/server/index';
+    type Block, type CmsHost, type FormFile, type FormSubmittedEvent, type FormValues, type Principal, memoryPeople } from '../src/server/index';
 import { live, memoryStorage, pngBytes, romedbService } from './helpers';
 
 const admin: Principal = { kind: 'user', id: 'admin-1', roles: ['admin'], permissions: ['*'] };
@@ -39,7 +38,7 @@ describe.skipIf(!live)('form file uploads', () => {
 
     beforeAll(async () => {
         const hooks = createHookRegistry();
-        cms = createCMS({
+        cms = createCMS({ people: memoryPeople(), 
             db: service.database(), modules: [contentModule, formsModule], hooks, now: () => clock, storage, mailFrom: 'site@example.com',
             mail: { async send(message) { sent.push(message); } }, fetch: async () => new Response('ok'),
         });

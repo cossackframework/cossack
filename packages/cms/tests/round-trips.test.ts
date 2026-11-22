@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { RomeDB } from '@cossackframework/romedb';
-import { contentModule, createCMS, DEFAULT_ROLES, type CmsHost } from '../src/server/index';
+import { contentModule, createCMS, DEFAULT_ROLES, type CmsHost, memoryPeople } from '../src/server/index';
 import { live, romedbService } from './helpers';
 
 /**
@@ -36,7 +36,7 @@ describe.skipIf(!live)('round trips', () => {
 
     beforeAll(async () => {
         reads = overlapping(service.database());
-        cms = createCMS({ db: reads.db, modules: [contentModule], now: () => clock });
+        cms = createCMS({ people: memoryPeople(),  db: reads.db, modules: [contentModule], now: () => clock });
         expect((await cms.migrate()).failed).toBeUndefined();
         await cms.ready({ force: true });
         for (const role of DEFAULT_ROLES) await cms.users.defineRole({ ...role, permissions: [...role.permissions] });
@@ -47,8 +47,8 @@ describe.skipIf(!live)('round trips', () => {
         const bob = await cms.users.create({ email: 'bob@example.com', name: 'Bob', roles: ['editor'] });
         reads.reset();
         const found = await cms.users.getMany([ada.id, bob.id, 'nobody']);
-        // Rows, field values, role assignments and roles.
-        expect(reads.most()).toBe(4);
+        // Who they are comes from the people port; the CMS reads their field values and slugs side by side.
+        expect(reads.most()).toBe(2);
         expect([...found.keys()].sort()).toEqual([ada.id, bob.id].sort());
         expect(found.get(ada.id)!.roles).toEqual(['author', 'editor']);
         expect(found.get(bob.id)!.assignments.map(role => role.id)).toEqual(['editor']);

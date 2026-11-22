@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { afterCommit, beforeWrite, DEFAULT_ROLES, PERMISSIONS, userPrincipal, type CmsPluginManifest } from '../src/index';
-import { createCMS, systemPrincipal, type CmsHost, type PluginContext } from '../src/server/index';
+import { createCMS, systemPrincipal, type CmsHost, type PluginContext, memoryPeople } from '../src/server/index';
 import { live, romedbService } from './helpers';
 import { inProcessRunner, isolatedRegistration } from './isolation-runner';
 
@@ -47,7 +47,7 @@ describe.skipIf(!live)('isolated plugins in the host', () => {
     const { runner, calls } = inProcessRunner({ desk: { module: deskModule, manifest: desk } }, () => cms);
 
     beforeAll(async () => {
-        cms = createCMS({
+        cms = createCMS({ people: memoryPeople(), 
             db: service.database(), runner,
             plugins: [isolatedRegistration(desk), { name: 'audit', version: '1.0.0', manifest: audit, module: { register(context: PluginContext) { context.hooks.addFilter(beforeWrite, draft => draft.subject === undefined ? draft : { ...draft, subject: `${String(draft.subject)}?` }); } } }],
         });
@@ -98,7 +98,7 @@ describe.skipIf(!live)('isolated plugins in the host', () => {
     });
 
     it('stays off without a runner, never in the application', async () => {
-        const bare = createCMS({ db: service.database(), plugins: [isolatedRegistration(desk)] });
+        const bare = createCMS({ people: memoryPeople(),  db: service.database(), plugins: [isolatedRegistration(desk)] });
         await bare.ready();
         const status = (await bare.status()).plugins.find(plugin => plugin.name === 'desk')!;
         expect(status.reason).toContain('no Worker Loader binding (LOADER)');
@@ -106,7 +106,7 @@ describe.skipIf(!live)('isolated plugins in the host', () => {
     });
 
     it('names data that cannot be copied into the Worker', async () => {
-        const failing = createCMS({
+        const failing = createCMS({ people: memoryPeople(), 
             db: service.database(), plugins: [isolatedRegistration(desk)],
             runner: { run: async () => { throw Object.assign(new Error('function could not be cloned.'), { name: 'DataCloneError' }); } },
         });

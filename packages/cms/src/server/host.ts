@@ -548,6 +548,8 @@ export class CmsHost {
     /** Code-declared resources: modules, the application and plugins. */
     readonly #static = new Map<string, Resource>();
     /** Static resources and the current collections. */
+    /** Accounts, roles and sign-in are the application's (`CmsOptions.people`). */
+    readonly #withPeople: boolean;
     #resources = new Map<string, Resource>();
     /** The stores of terms' field values, by taxonomy. */
     readonly #termFields = new Map<string, FieldValues>();
@@ -643,6 +645,7 @@ export class CmsHost {
             now: this.#now,
         });
         const userOptions: ConstructorParameters<typeof CmsUsers>[1] = { accounts: this.accounts, ...(this.siteAccounts ? { siteAccounts: this.siteAccounts } : {}), ...(options.site ? { site: options.site } : {}), now: this.#now, fields: this.userFields, checkMeta: (meta, previous, principal) => this.#checkMeta({ kind: 'users' }, meta, previous, principal) };
+        this.#withPeople = options.people !== undefined;
         this.users = options.people ? new PeopleUsers(this.db, { ...userOptions, people: options.people }) : new CmsUsers(this.db, userOptions);
         this.redirects = new CmsRedirects(this.db, { now: this.#now, changed: () => this.#purgeSite('redirects') });
         this.traffic = new CmsTraffic(this.db, { now: this.#now });
@@ -1119,6 +1122,8 @@ export class CmsHost {
     }
 
     async tokenPrincipal(token: string): Promise<{ principal: Principal; scope: ApiTokenScope; userId: string } | null> {
+        // With the people port, application passwords are the application's: it resolves a token to a user itself.
+        if (this.#withPeople) return null;
         const verified = await this.siteApiTokens?.verify(token) ?? await this.apiTokens.verify(token);
         if (!verified) return null;
         const user = await this.users.resolve(verified.userId);
@@ -2903,7 +2908,9 @@ export class CmsHost {
     /** What `$site` and `$user` read in an automation's templates: the site's public settings and the account that acted, when a user did. */
     async #automationScopes(actor?: WriteActor): Promise<Omit<BindingScopes, 'entry'>> {
         const settings = await this.settings.all().catch(() => null);
-        const account = actor?.kind === 'user' ? await this.accounts.get(actor.id).catch(() => null) : null;
+        // The user who acted: a member of the site, or with the CMS's own accounts a network account that is none.
+        const account = actor?.kind !== 'user' ? null
+            : await this.users.get(actor.id).catch(() => null) ?? (this.#withPeople ? null : await this.accounts.get(actor.id).catch(() => null));
         return { site: settings ? siteBindingScope(settings) : null, user: account ? { name: account.name, email: account.email } : null };
     }
 

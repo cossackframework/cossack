@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { DEFAULT_ROLES, nextCronTime, SYSTEM_META } from '../src/index';
-import { createCMS, systemPrincipal, type CmsHost, type PluginContext } from '../src/server/index';
+import { createCMS, systemPrincipal, type CmsHost, type PluginContext, memoryPeople } from '../src/server/index';
 import { live, memoryStorage, pngBytes, romedbService } from './helpers';
 
 const admin = systemPrincipal('capability tests');
@@ -30,7 +30,7 @@ describe.skipIf(!live)('plugin capabilities', () => {
             },
         },
     });
-    const host = () => createCMS({
+    const host = () => createCMS({ people: memoryPeople(), 
         db: service.database(), plugins: [plugin()], storage: memoryStorage(), now: () => clock,
         // Each message carries the HTML layout beside its text.
         mail: { send: async ({ html, ...message }) => { expect(html).toContain('<!doctype html>'); sent.push(message); } }, mailFrom: 'site@example.com',
