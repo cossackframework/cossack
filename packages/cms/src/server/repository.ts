@@ -15,6 +15,7 @@ import { blockId, blockMedia, blocksPlain, flattenBlocks, htmlBlocksChanged, tex
 import { fieldVisibility, indexedRowField, rowIndexPath, rowsPlain, rowsSearchable, rowUniqueProblem, withRowIds } from '../field-groups';
 import { normalizeRichText, richTextBlocks, richTextMedia, richTextPlain, withRichTextBlocks, type RichTextDoc } from '../richtext';
 import { searchedAsText, searchTextPath } from './schema';
+import { publicValue, storedJson, storedValue } from './field-values';
 import { isSearchSyntaxError, searchQuery } from '../search';
 import { afterCommit, beforeWrite, type Draft, type ResourceEvent, type WriteActor } from '../hooks';
 import { sharedOp, type SharedFieldsEvent } from './shared-fields';
@@ -1167,18 +1168,8 @@ export class ResourceRepository {
         return { ...(context.signal ? { signal: context.signal } : {}), workLimits: this.#host.readLimits };
     }
 
-    #store(name: string, declaration: FieldDeclaration, value: unknown): Value {
-        if (value === null) return null;
-        // A multiple field stores its items as the kind stores one.
-        if (declaration.multiple) return (value as unknown[]).map(item => this.#store(name, { ...declaration, multiple: false }, item));
-        switch (declaration.kind) {
-            case 'bigint': return BigInt(value as string | bigint);
-            case 'number': return new Float64(value as number);
-            case 'reference': return new RecordId(this.#host.resourceById(declaration.target!).storage, value as string);
-            case 'vector': return Vector.float32(value as number[]);
-            case 'json': case 'blocks': case 'richtext': case 'rows': return storedJson(value);
-            default: return value as Value;
-        }
+    #store(_name: string, declaration: FieldDeclaration, value: unknown): Value {
+        return storedValue(declaration, value, id => this.#host.resourceById(id).storage);
     }
 
     /** Plain text of the draft's searchable rich text, blocks, rows and multiple fields, at their search paths. */
@@ -1239,44 +1230,8 @@ export class ResourceRepository {
 
 type Document = { [field: string]: Value };
 
-function publicValue(declaration: FieldDeclaration, value: Value): unknown {
-    if (value === null) return null;
-    if (declaration.multiple) return Array.isArray(value) ? value.map(item => publicValue({ ...declaration, multiple: false }, item)) : [];
-    switch (declaration.kind) {
-        case 'integer': case 'datetime': return Number(value as bigint);
-        case 'bigint': return String(value);
-        case 'number': return value instanceof Float64 ? value.value : Number(value as bigint);
-        case 'reference': return value instanceof RecordId ? String(value.key) : null;
-        case 'json': case 'blocks': case 'richtext': case 'rows': return toJson(value);
-        case 'vector': {
-            const bytes = (value as Vector).bytes;
-            return [...new Float32Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 4))];
-        }
-        default: return value;
-    }
-}
-
-/** Plain JSON for storage: fractional numbers become explicit floats, integers stay int64. */
-function storedJson(value: unknown): Value {
-    if (typeof value === 'number') return Number.isInteger(value) ? value : new Float64(value);
-    if (Array.isArray(value)) return value.map(storedJson);
-    if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, storedJson(entry)]));
-    return value as Value;
-}
-
-function toJson(value: Value): unknown {
-    if (typeof value === 'bigint') return Number(value);
-    if (value instanceof Float64) return value.value;
-    if (value instanceof RecordId) return `${value.table}:${String(value.key)}`;
-    if (Array.isArray(value)) return value.map(toJson);
-    if (value && typeof value === 'object' && !(value instanceof Uint8Array) && !(value instanceof Vector)) {
-        return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, toJson(entry)]));
-    }
-    return value;
-}
-
 /** Media IDs in a group field's media subfields. */
-function groupMedia(declaration: FieldDeclaration, value: { readonly [key: string]: unknown }): string[] {
+export function groupMedia(declaration: FieldDeclaration, value: { readonly [key: string]: unknown }): string[] {
     return Object.entries(declaration.fields ?? {}).filter(([, nested]) => nested.media).flatMap(([key]) => {
         const entry = value[key];
         return typeof entry === 'string' && entry ? [entry] : Array.isArray(entry) ? entry.filter((item): item is string => typeof item === 'string') : [];

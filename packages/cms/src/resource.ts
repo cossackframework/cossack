@@ -87,6 +87,12 @@ export interface ResourceDeclaration {
     readonly schemaless?: boolean;
     readonly migrations?: readonly MigrationStep[];
     /**
+     * The host's own storage, such as the field values of users: the schema planner keeps its
+     * indexes like any resource's, but it has no repository, no permissions of its own and is
+     * not listed with the resources people browse.
+     */
+    readonly internal?: boolean;
+    /**
      * The field groups' blocks that lay the fields out, for the conditions on them: a field a
      * condition hides is not required and is cleared on write. Set by the host for collections.
      */

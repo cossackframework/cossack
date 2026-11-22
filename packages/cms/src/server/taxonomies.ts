@@ -13,6 +13,7 @@ import type { TaxonomyDeclaration, TermShape } from '../taxonomy';
 import { containsPattern, inList } from './users';
 import { uuidv7 } from '@cossackframework/core';
 import { readBatches, readByIds, readPaged } from './budget';
+import { uniqueFieldOf, type FieldValues } from './field-values';
 
 export type { TaxonomyDeclaration, TermShape };
 
@@ -42,7 +43,7 @@ export type MetaCheck = (meta: unknown, previous: { readonly [field: string]: un
 const ID = /^[A-Za-z0-9_-]{1,80}$/;
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const WRITE = { kind: 'cms.terms', retryConflicts: 5 } as const;
-const COLUMNS = 'id, taxonomy, name, slug, description, parent_id, path, depth, created_at, updated_at, icon, meta';
+const COLUMNS = 'id, taxonomy, name, slug, description, parent_id, path, depth, created_at, updated_at, icon';
 const ICON = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_TERMS = 1000;
 
@@ -55,6 +56,7 @@ export class CmsTaxonomies {
     readonly #slugChanged: ((taxonomy: TaxonomyDeclaration, from: string, to: string, guard: { rql: string; params: { [key: string]: Value } }) => Statement[]) | undefined;
     readonly #beforeSave: ((draft: TermDraft, input: TermWriteInput) => Promise<TermDraft>) | undefined;
     readonly #checkMeta: ((taxonomy: string) => MetaCheck) | undefined;
+    readonly #fields: ((taxonomy: string) => FieldValues | null) | undefined;
     readonly #changed: (() => void | Promise<void>) | undefined;
 
     constructor(db: RomeDB, options: {
@@ -69,6 +71,8 @@ export class CmsTaxonomies {
         beforeSave?: (draft: TermDraft, input: TermWriteInput) => Promise<TermDraft>;
         /** The meta check for a taxonomy's field groups. */
         checkMeta?: (taxonomy: string) => MetaCheck;
+        /** Where a taxonomy's terms keep their field values: a document beside each term. Null while the taxonomy has no fields. */
+        fields?: (taxonomy: string) => FieldValues | null;
         /** Called after a committed change, for the host to purge the site's pages: terms show on entries and in menus. */
         changed?: () => void | Promise<void>;
         now?: () => number;
@@ -81,6 +85,7 @@ export class CmsTaxonomies {
         this.#slugChanged = options.slugChanged;
         this.#beforeSave = options.beforeSave;
         this.#checkMeta = options.checkMeta;
+        this.#fields = options.fields;
         this.#changed = options.changed;
     }
 
@@ -104,7 +109,7 @@ export class CmsTaxonomies {
         if (!wanted.length) return new Map();
         // Terms hold a description and meta: many may come in smaller reads.
         const rows = await readByIds(this.#db, wanted, slice => { const list = inList('t', slice); return { rql: `SELECT ${COLUMNS} FROM cms_terms WHERE id IN ${list.rql}`, params: list.params }; });
-        return new Map(rows.map(row => { const term = termOf(row); return [term.id, term]; }));
+        return new Map((await this.#terms(rows)).map(term => [term.id, term]));
     }
 
     async bySlug(taxonomy: string, slug: string): Promise<TermShape | null> {
@@ -112,7 +117,7 @@ export class CmsTaxonomies {
         if (!SLUG.test(slug)) return null;
         const result = await this.#db.read([{ rql: `SELECT ${COLUMNS} FROM cms_terms WHERE taxonomy = $taxonomy AND slug = $slug`, params: { $taxonomy: taxonomy, $slug: slug } }]);
         const row = result.results[0]!.rows[0];
-        return row ? termOf(row) : null;
+        return row ? (await this.#terms([row]))[0]! : null;
     }
 
     /** Terms by name, with search and pagination. */
@@ -124,13 +129,32 @@ export class CmsTaxonomies {
         const counted = await this.#db.read([{ rql: `SELECT count(*) FROM cms_terms WHERE ${where}`, params }]);
         const rows = await readPaged(this.#db, (size, at) => ({ rql: `SELECT ${COLUMNS} FROM cms_terms WHERE ${where} ORDER BY lower(name), id LIMIT $limit OFFSET $offset`, params: { ...params, $limit: size, $offset: at } }),
             Math.min(Math.max(options.limit ?? 50, 1), 200), Math.max(options.offset ?? 0, 0), { afterSequence: counted.sequence });
-        return { items: rows.map(termOf), total: Number(counted.results[0]!.rows[0]![0] as bigint) };
+        return { items: await this.#terms(rows), total: Number(counted.results[0]!.rows[0]![0] as bigint) };
+    }
+
+    /**
+     * Terms from their rows, with their field values. The values are documents beside the rows,
+     * one table per taxonomy that has fields: a taxonomy without fields costs no read.
+     */
+    async #terms(rows: readonly (readonly Value[])[]): Promise<TermShape[]> {
+        const byTaxonomy = new Map<string, string[]>();
+        for (const row of rows) byTaxonomy.set(row[1] as string, [...(byTaxonomy.get(row[1] as string) ?? []), row[0] as string]);
+        const values = new Map<string, { readonly [field: string]: unknown }>();
+        await Promise.all([...byTaxonomy].map(async ([taxonomy, ids]) => {
+            const store = this.#fields?.(taxonomy);
+            if (!store) return;
+            for (let at = 0; at < ids.length; at += 200) {
+                const found = store.decode(await readByIds(this.#db, ids.slice(at, at + 200), slice => store.readStatement(slice)));
+                for (const [id, entry] of found) values.set(id, entry);
+            }
+        }));
+        return rows.map(row => termOf(row, values.get(row[0] as string) ?? NO_VALUES));
     }
 
     /** Every term in tree order: each parent before its children, siblings by name. */
     async tree(taxonomy: string): Promise<TermShape[]> {
         this.declaration(taxonomy);
-        const terms = (await readPaged(this.#db, (size, at) => ({ rql: `SELECT ${COLUMNS} FROM cms_terms WHERE taxonomy = $taxonomy ORDER BY path LIMIT $limit OFFSET $offset`, params: { $taxonomy: taxonomy, $limit: size, $offset: at } }), MAX_TERMS, 0)).map(termOf);
+        const terms = await this.#terms(await readPaged(this.#db, (size, at) => ({ rql: `SELECT ${COLUMNS} FROM cms_terms WHERE taxonomy = $taxonomy ORDER BY path LIMIT $limit OFFSET $offset`, params: { $taxonomy: taxonomy, $limit: size, $offset: at } }), MAX_TERMS, 0));
         const children = new Map<string | null, TermShape[]>();
         const known = new Set(terms.map(term => term.id));
         for (const term of terms) {
@@ -192,11 +216,14 @@ export class CmsTaxonomies {
         const params = {
             $id: id, $taxonomy: taxonomy, $name: name, $slug: slug, $description: checkDescription(draft.description), $parent: parent?.id ?? null,
             $path: `${parent?.path ?? '/'}${id}/`, $depth: parent ? parent.depth + 1 : 0, $now: now, $parentPath: parent?.path ?? null, $icon: checkIcon(draft.icon),
-            $meta: JSON.stringify(draft.meta ?? {}),
         };
         // A parent that moved or disappeared since it was read inserts nothing.
         const guard = parent ? ' WHERE EXISTS (SELECT 1 FROM cms_terms WHERE id = $parent AND path = $parentPath)' : '';
-        const result = await this.#write([bound(`INSERT INTO cms_terms (${COLUMNS}) SELECT $id, $taxonomy, $name, $slug, $description, $parent, $path, $depth, $now, $now, $icon, $meta${guard}`, params)]);
+        const result = await this.#write([
+            bound(`INSERT INTO cms_terms (${COLUMNS}) SELECT $id, $taxonomy, $name, $slug, $description, $parent, $path, $depth, $now, $now, $icon${guard}`, params),
+            // The term's field values, in the same write and only when the term was made.
+            ...this.#values(taxonomy, id, draft.meta ?? {}, null, { rql: 'EXISTS (SELECT 1 FROM cms_terms WHERE id = $tId)', params: { $tId: id } }),
+        ]);
         if (result.results[0]!.affected !== 1n) throw new CmsError('CMS_CONFLICT', 'The parent changed while the term was saved. Try again.');
         return (await this.get(id))!;
     }
@@ -236,11 +263,14 @@ export class CmsTaxonomies {
                 $parent: parent?.id ?? null, $parentPath: parent?.path ?? null,
             }));
         }
-        statements.push({ rql: `UPDATE cms_terms SET name = $name, slug = $slug, description = $description, parent_id = $parentId, icon = $icon, meta = $meta, updated_at = $now WHERE id = $id AND path = $path`,
-            params: { $name: name, $slug: slug, $description: description, $parentId: parentId, $icon: icon, $meta: JSON.stringify(draft.meta ?? {}), $now: now, $id: id, $path: path } });
+        statements.push({ rql: `UPDATE cms_terms SET name = $name, slug = $slug, description = $description, parent_id = $parentId, icon = $icon, updated_at = $now WHERE id = $id AND path = $path`,
+            params: { $name: name, $slug: slug, $description: description, $parentId: parentId, $icon: icon, $now: now, $id: id, $path: path } });
         const own = statements.length - 1;
+        // The term's field values, in the same write and only when the term's own update applied.
+        const applied = { rql: 'EXISTS (SELECT 1 FROM cms_terms WHERE id = $tId AND slug = $tSlug AND updated_at = $tNow)', params: { $tId: id, $tSlug: slug, $tNow: now } };
+        if (draft.meta !== term.meta) statements.push(...this.#values(term.taxonomy, id, draft.meta ?? {}, term.meta, applied));
         if (slug !== term.slug && this.#slugChanged) {
-            statements.push(...this.#slugChanged(declaration, term.slug, slug, { rql: 'EXISTS (SELECT 1 FROM cms_terms WHERE id = $tId AND slug = $tSlug AND updated_at = $tNow)', params: { $tId: id, $tSlug: slug, $tNow: now } }));
+            statements.push(...this.#slugChanged(declaration, term.slug, slug, applied));
         }
         const result = await this.#write(statements);
         if (result.results[own]!.affected !== 1n) throw new CmsError('CMS_CONFLICT', 'The term changed while it was saved. Reload and try again.');
@@ -263,6 +293,7 @@ export class CmsTaxonomies {
             bound(`UPDATE cms_terms SET path = $parentPath || substr(path, $length + 1), depth = depth - 1, updated_at = $now
                 WHERE taxonomy = $taxonomy AND path LIKE $prefix AND id != $id AND ${guard}`, params),
             bound('DELETE FROM cms_terms WHERE id = $id AND path = $path', params),
+            ...this.#removed(term.taxonomy, id),
         ]);
         if (result.results[2]!.affected !== 1n) throw new CmsError('CMS_CONFLICT', 'The term changed while it was deleted. Reload and try again.');
     }
@@ -287,7 +318,7 @@ export class CmsTaxonomies {
                 const id = uuidv7();
                 bySlug.set(slug, id);
                 // A term another request created first wins; its ID is read back below.
-                return { rql: `INSERT INTO cms_terms (${COLUMNS}) VALUES ($id, $taxonomy, $name, $slug, '', NULL, $path, 0, $now, $now, '', '{}') ON CONFLICT (taxonomy, slug) DO NOTHING`,
+                return { rql: `INSERT INTO cms_terms (${COLUMNS}) VALUES ($id, $taxonomy, $name, $slug, '', NULL, $path, 0, $now, $now, '') ON CONFLICT (taxonomy, slug) DO NOTHING`,
                     params: { $id: id, $taxonomy: taxonomy, $name: checkName(name), $slug: SLUG.test(slug) ? slug : slugify(slug) || `term-${id.slice(0, 8)}`, $path: `/${id}/`, $now: now } };
             });
             await this.#write(statements);
@@ -310,6 +341,21 @@ export class CmsTaxonomies {
     }
 
     /** The draft after the before-save filter, when the host has one. */
+    /** Statements that store a term's field values, applied only while `guard` holds. Nothing for a taxonomy without fields. */
+    #values(taxonomy: string, id: string, values: { readonly [field: string]: unknown }, previous: { readonly [field: string]: unknown } | null, guard: { rql: string; params: { [key: string]: Value } }): Statement[] {
+        const store = this.#fields?.(taxonomy);
+        if (!store || (!Object.keys(values).length && !Object.keys(previous ?? {}).length)) return [];
+        return store.save(id, values, previous, crypto.randomUUID(), guard);
+    }
+
+    /** The statement that removes a deleted term's field values, once its row is gone. */
+    #removed(taxonomy: string, id: string): Statement[] {
+        const store = this.#fields?.(taxonomy);
+        if (!store) return [];
+        const remove = store.remove(id);
+        return [{ rql: `${remove.rql} AND NOT EXISTS (SELECT 1 FROM cms_terms WHERE id = $tId)`, params: { ...remove.params, $tId: id } }];
+    }
+
     /** The meta to store: the field groups' check, or the input as given when the taxonomy has none. */
     async #meta(taxonomy: string, meta: unknown, previous: { readonly [field: string]: unknown } | null, principal: Principal): Promise<{ readonly [field: string]: unknown }> {
         if (this.#checkMeta) return this.#checkMeta(taxonomy)(meta, previous, principal);
@@ -351,6 +397,9 @@ export class CmsTaxonomies {
             await this.#changed?.();
             return result;
         } catch (error) {
+            // A unique field of the term's document, or the term's slug.
+            const name = error instanceof ClientError && error.outcome === 'rolled-back' ? uniqueFieldOf(error.message) : undefined;
+            if (name !== undefined) throw new CmsError('CMS_CONFLICT', 'Another term has the same value in a unique field.', name ? { fields: { [name]: 'is taken.' } } : {});
             if (error instanceof ClientError && error.outcome === 'rolled-back' && /UNIQUE|constraint/i.test(error.message)) throw new CmsError('CMS_CONFLICT', 'A term with this slug already exists.', { fields: { slug: 'is taken.' } });
             throw error;
         }
@@ -369,12 +418,14 @@ function bound(rql: string, params: { readonly [key: string]: Value }): Statemen
     return used.length ? { rql, params: Object.fromEntries(used) } : { rql };
 }
 
-function termOf(row: readonly Value[]): TermShape {
+const NO_VALUES: { readonly [field: string]: unknown } = Object.freeze({});
+
+function termOf(row: readonly Value[], meta: { readonly [field: string]: unknown }): TermShape {
     return Object.freeze({
         id: row[0] as string, taxonomy: row[1] as string, name: row[2] as string, slug: row[3] as string, description: row[4] as string,
         parent: row[5] as string | null, path: row[6] as string, depth: Number(row[7] as bigint), createdAt: Number(row[8] as bigint), updatedAt: Number(row[9] as bigint),
         icon: typeof row[10] === 'string' ? row[10] : '',
-        meta: parseMeta(row[11]),
+        meta,
     });
 }
 

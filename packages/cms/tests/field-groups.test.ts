@@ -174,6 +174,90 @@ describe.skipIf(!live)('field groups', () => {
         expect(views[0]!.meta).toEqual({ color: 'blue' });
     });
 
+    it('keeps a user\'s field values as a document: unique and indexed fields, references, and one field per write', async () => {
+        const post = await cms.resource('cms/posts').create({ title: 'Favourite', status: 'published' }, { principal: admin });
+        await cms.saveFieldGroup({ id: 'staff', title: 'Staff', targets: [{ kind: 'users' }], blocks: [
+            fieldBlock('handle', 'text', { name: 'handle', label: 'Handle', unique: true, max: 40 }),
+            fieldBlock('team', 'text', { name: 'team', label: 'Team', index: true }),
+            fieldBlock('favourite', 'reference', { name: 'favourite', label: 'Favourite', target: 'posts' }),
+        ] }, admin);
+        // The fields are planned like a collection's: indexes on the users' document table.
+        const storage = cms.resourceById('cms/user_fields').storage;
+        const info = await cms.db.read([{ rql: `INFO FOR TABLE ${storage}` }]);
+        const indexes = (info.results[0]!.rows[0]![0] as { indexes: { name: string; unique?: boolean }[] }).indexes.map(index => index.name);
+        expect(indexes).toEqual(expect.arrayContaining([`${storage}__u_handle`, `${storage}__team`]));
+        // Internal: no API, no list of resources, no access rule to grant.
+        expect(cms.resources.map(resource => resource.id)).not.toContain('cms/user_fields');
+        expect(() => cms.resource('cms/user_fields')).toThrow();
+
+        const ada = await cms.users.create({ email: 'ada@example.com', name: 'Ada', meta: { handle: 'ada', team: 'core', favourite: post.id } });
+        const bob = await cms.users.create({ email: 'bob@example.com', name: 'Bob', meta: { team: 'core' } });
+        const cy = await cms.users.create({ email: 'cy@example.com', name: 'Cy', meta: { team: 'docs' } });
+        expect(ada.meta).toEqual({ handle: 'ada', team: 'core', favourite: post.id });
+        // A unique field refuses a second user with the same value, on create and on save; users without a value do not collide.
+        await expect(cms.users.create({ email: 'dup@example.com', name: 'Dup', meta: { handle: 'ada' } })).rejects.toMatchObject({ code: 'CMS_CONFLICT', fields: { handle: 'is taken.' } });
+        expect(await cms.users.findByEmail('dup@example.com')).toBeNull();
+        await expect(cms.users.update(bob.id, { meta: { handle: 'ada', team: 'core' } })).rejects.toMatchObject({ code: 'CMS_CONFLICT' });
+        expect((await cms.users.get(bob.id))!.meta).toEqual({ team: 'core' });
+
+        // The database filters by an indexed field, joins the member row, and follows the reference.
+        const core = await cms.db.read([{ rql: `SELECT u.email FROM cms_users u JOIN ${storage} d ON record::id(d.id) = u.id WHERE d."team" = $team ORDER BY u.email`, params: { $team: 'core' } }]);
+        expect(core.results[0]!.rows.map(row => row[0])).toEqual(['ada@example.com', 'bob@example.com']);
+        const followed = await cms.db.read([{ rql: `SELECT record::id(d."favourite") FROM ${storage} d WHERE record::id(d.id) = $id`, params: { $id: ada.id } }]);
+        expect(followed.results[0]!.rows[0]![0]).toBe(post.id);
+
+        // A cleared field is unset, and the others stay.
+        expect(await cms.users.update(ada.id, { meta: { handle: 'ada', team: null, favourite: post.id } })).toBe(true);
+        expect((await cms.users.get(ada.id))!.meta).toEqual({ handle: 'ada', favourite: post.id });
+        // A profile save and a value of the host's own at once: both are kept.
+        await Promise.all([
+            cms.users.update(cy.id, { meta: { team: 'design', handle: 'cy' } }),
+            cms.users.setSystemMeta(cy.id, '_recent_blocks', ['core/heading']),
+        ]);
+        expect((await cms.users.get(cy.id))!.meta).toEqual({ team: 'design', handle: 'cy', _recent_blocks: ['core/heading'] });
+        // Removing the member removes the document.
+        expect(await cms.users.delete(cy.id)).toBe(true);
+        const left = await cms.db.read([{ rql: `SELECT count(*) FROM ${storage} d WHERE record::id(d.id) = $id`, params: { $id: cy.id } }]);
+        expect(Number(left.results[0]!.rows[0]![0])).toBe(0);
+        await cms.deleteFieldGroup('staff', admin);
+    });
+
+    it('keeps a term\'s field values as a document of its taxonomy, which has a table only while groups are attached', async () => {
+        const tables = async () => ((await cms.db.read([{ rql: 'INFO FOR DB' }])).results[0]!.rows[0]![0] as { tables: { name: string }[] }).tables.map(table => table.name);
+        // Categories have the Extras group from above; tags have none, so no table and no read.
+        expect(await tables()).toContain('r__cms__tf_categories');
+        expect(await tables()).not.toContain('r__cms__tf_tags');
+        const plain = await cms.taxonomies.create('tags', { name: 'Plain' }, { principal: admin });
+        expect(plain.meta).toEqual({});
+        await cms.saveFieldGroup({ id: 'codes', title: 'Codes', targets: [{ kind: 'taxonomy', name: 'tags' }], blocks: [
+            fieldBlock('code', 'text', { name: 'code', label: 'Code', unique: true, max: 20 }),
+            fieldBlock('shelf', 'text', { name: 'shelf', label: 'Shelf', index: true }),
+        ] }, admin);
+        expect(await tables()).toContain('r__cms__tf_tags');
+        expect(cms.resources.map(resource => resource.id)).not.toContain('cms/tf_tags');
+        const first = await cms.taxonomies.create('tags', { name: 'First', meta: { code: 'A1', shelf: 'top' } }, { principal: admin });
+        expect(first.meta).toEqual({ code: 'A1', shelf: 'top' });
+        // A term made before the group has no document, and gets one with its first values.
+        expect((await cms.taxonomies.update(plain.id, { meta: { shelf: 'top' } }, { principal: admin })).meta).toEqual({ shelf: 'top' });
+        // Unique within the taxonomy: the term is not made, and a save is refused.
+        await expect(cms.taxonomies.create('tags', { name: 'Second', meta: { code: 'A1' } }, { principal: admin })).rejects.toMatchObject({ code: 'CMS_CONFLICT', fields: { code: 'is taken.' } });
+        expect(await cms.taxonomies.bySlug('tags', 'second')).toBeNull();
+        await expect(cms.taxonomies.update(plain.id, { meta: { code: 'A1' } }, { principal: admin })).rejects.toMatchObject({ code: 'CMS_CONFLICT' });
+        expect((await cms.taxonomies.get(plain.id))!.meta).toEqual({ shelf: 'top' });
+        // The database filters terms by an indexed field.
+        const top = await cms.db.read([{ rql: 'SELECT t.name FROM cms_terms t JOIN r__cms__tf_tags d ON record::id(d.id) = t.id WHERE d."shelf" = $shelf ORDER BY t.name', params: { $shelf: 'top' } }]);
+        expect(top.results[0]!.rows.map(row => row[0])).toEqual(['First', 'Plain']);
+        // A cleared field is unset; lists and trees carry the values; deleting the term removes its document.
+        expect((await cms.taxonomies.update(first.id, { name: 'First tag', meta: { shelf: null } }, { principal: admin })).meta).toEqual({ code: 'A1' });
+        expect((await cms.taxonomies.list('tags', { search: 'First' })).items[0]!.meta).toEqual({ code: 'A1' });
+        expect((await cms.taxonomies.tree('tags')).find(term => term.id === plain.id)!.meta).toEqual({ shelf: 'top' });
+        await cms.taxonomies.delete(first.id, { principal: admin });
+        const left = await cms.db.read([{ rql: 'SELECT count(*) FROM r__cms__tf_tags' }]);
+        expect(Number(left.results[0]!.rows[0]![0])).toBe(1);
+        await cms.deleteFieldGroup('codes', admin);
+        expect((await cms.taxonomies.get(plain.id))!.meta).toEqual({});
+    });
+
     it('checks blocks in meta as an entry\'s: Custom HTML needs cms:html, and invalid blocks are refused', async () => {
         await cms.saveFieldGroup({ id: 'panel', title: 'Panel', targets: [{ kind: 'menus' }], blocks: [fieldBlock('mega', 'blocks', { name: 'mega', label: 'Mega' })] }, admin);
         const designer: Principal = { kind: 'user', id: 'designer-1', roles: ['designer'], permissions: ['cms:dashboard', 'cms:appearance'] };

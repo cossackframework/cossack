@@ -13,6 +13,7 @@ import { parseMeta, type MetaCheck } from './taxonomies';
 import { ACCOUNT_ID, normalizeEmail, type AccountProfile, type CmsAccount, type CmsAccounts } from './accounts';
 import { MAIN_SITE } from './sites';
 import { readByIds, readPaged } from './budget';
+import { uniqueFieldOf, type FieldValues } from './field-values';
 
 export interface CmsUser {
     readonly id: string;
@@ -52,6 +53,7 @@ export interface UserPage {
 }
 
 const ID = ACCOUNT_ID;
+const NO_VALUES: { readonly [field: string]: unknown } = Object.freeze({});
 const PERMISSION = /^(?:\*|[a-z][a-z0-9:/._*-]{0,127})$/;
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const WRITE = { kind: 'cms.users', retryConflicts: 5 } as const;
@@ -81,18 +83,21 @@ export class CmsUsers {
     readonly #site: string;
     readonly #now: () => number;
     readonly #checkMeta: MetaCheck | undefined;
+    readonly #fields: FieldValues;
 
     /**
      * `accounts` are the network's; `siteAccounts`, on an added site, its own. `site` is this
      * site's ID in the network (default `main`), for the network's record of memberships.
      */
-    constructor(db: RomeDB, options: { accounts: CmsAccounts; siteAccounts?: CmsAccounts; site?: string; now?: () => number; checkMeta?: MetaCheck }) {
+    constructor(db: RomeDB, options: { accounts: CmsAccounts; siteAccounts?: CmsAccounts; site?: string; now?: () => number; checkMeta?: MetaCheck; fields: FieldValues }) {
         this.#db = db;
         this.#accounts = options.accounts;
         this.#siteAccounts = options.siteAccounts ?? null;
         this.#site = options.site ?? MAIN_SITE;
         this.#now = options.now ?? Date.now;
         this.#checkMeta = options.checkMeta;
+        // A member's field values are a document under the member's ID, written with the row.
+        this.#fields = options.fields;
     }
 
     /**
@@ -135,9 +140,9 @@ export class CmsUsers {
         const slug = await this.#freeSlug(account.name, account.id);
         try {
             await this.#db.write([{
-                rql: 'INSERT INTO cms_users (id, email, name, avatar, status, created_at, updated_at, meta, slug) VALUES ($id, $email, $name, $avatar, $status, $now, $now, $meta, $slug)',
-                params: { $id: account.id, $email: account.email, $name: account.name, $avatar: account.avatar, $status: approval ? 'disabled' : account.status, $now: now, $meta: JSON.stringify(meta), $slug: slug },
-            }, ...roleStatements(account.id, roles),
+                rql: 'INSERT INTO cms_users (id, email, name, avatar, status, created_at, updated_at, slug) VALUES ($id, $email, $name, $avatar, $status, $now, $now, $slug)',
+                params: { $id: account.id, $email: account.email, $name: account.name, $avatar: account.avatar, $status: approval ? 'disabled' : account.status, $now: now, $slug: slug },
+            }, ...this.#fields.save(account.id, meta, null, crypto.randomUUID()), ...roleStatements(account.id, roles),
             ...(approval ? [{ rql: 'INSERT INTO cms_registrations (user_id, verified, created_at) VALUES ($id, $verified, $now)', params: { $id: account.id, $verified: approval.verified ? 1 : 0, $now: now } }] : [])], WRITE);
         } catch (error) { throw memberError(error); }
         if (network) {
@@ -149,6 +154,7 @@ export class CmsUsers {
                     { rql: 'DELETE FROM cms_registrations WHERE user_id = $id', params: { $id: account.id } },
                     { rql: 'DELETE FROM cms_user_roles WHERE user_id = $id', params: { $id: account.id } },
                     { rql: 'DELETE FROM cms_users WHERE id = $id', params: { $id: account.id } },
+                    this.#fields.remove(account.id),
                 ], WRITE).catch(() => undefined);
                 throw error;
             }
@@ -176,11 +182,13 @@ export class CmsUsers {
         const list = inList('u', wanted);
         // Profiles hold their meta (bio, links) and roles their permission lists: many may come in smaller reads.
         // The users, which roles they hold, and those roles are read side by side, not one after another.
-        const [userRows, result, roleRows] = await Promise.all([
+        const [userRows, values, result, roleRows] = await Promise.all([
             readByIds(this.#db, wanted, slice => {
                 const part = inList('u', slice);
-                return { rql: `SELECT id, email, name, avatar, status, created_at, last_sign_in_at, meta, slug FROM cms_users WHERE id IN ${part.rql}`, params: part.params };
+                return { rql: `SELECT id, email, name, avatar, status, created_at, last_sign_in_at, slug FROM cms_users WHERE id IN ${part.rql}`, params: part.params };
             }),
+            // Their field values (bio, links) are documents: many may come in smaller reads.
+            readByIds(this.#db, wanted, slice => this.#fields.readStatement(slice)).then(rows => this.#fields.decode(rows)),
             this.#db.read([
                 // network_admin comes from the account alone (resolve): a site role row of that name, as a crafted import could add, grants nothing.
                 { rql: `SELECT user_id, role_id FROM cms_user_roles WHERE user_id IN ${list.rql} AND role_id <> $networkAdmin ORDER BY role_id`, params: { ...list.params, $networkAdmin: NETWORK_ADMIN } },
@@ -209,7 +217,7 @@ export class CmsUsers {
             const assignments = roles.get(row[0] as string) ?? [];
             users.set(row[0] as string, Object.freeze({
                 id: row[0] as string, email: row[1] as string, name: row[2] as string, avatar: row[3] as string | null,
-                status: row[4] as CmsUser['status'], createdAt: Number(row[5] as bigint), lastSignInAt: row[6] === null ? null : Number(row[6] as bigint), meta: parseMeta(row[7]), slug: (row[8] as string | null) ?? null,
+                status: row[4] as CmsUser['status'], createdAt: Number(row[5] as bigint), lastSignInAt: row[6] === null ? null : Number(row[6] as bigint), meta: values.get(row[0] as string) ?? NO_VALUES, slug: (row[7] as string | null) ?? null,
                 roles: Object.freeze(assignments.map(role => role.id)), assignments: Object.freeze(assignments),
                 permissions: Object.freeze([...new Set(assignments.flatMap(role => role.permissions))].sort()),
                 account: local.has(row[0] as string) ? 'site' : 'network',
@@ -222,11 +230,12 @@ export class CmsUsers {
     async usingFile(fileId: string): Promise<CmsUser[]> {
         if (!ID.test(fileId)) return [];
         const escaped = fileId.replace(/[\\%_]/g, character => `\\${character}`);
-        const result = await this.#db.read([{
-            rql: "SELECT id FROM cms_users WHERE avatar LIKE $avatar ESCAPE '\\' OR meta LIKE $meta ESCAPE '\\' ORDER BY created_at DESC LIMIT 50",
-            params: { $avatar: `/media/${escaped}/%`, $meta: `%"${escaped}"%` },
-        }]);
-        const ids = result.results[0]!.rows.map(row => row[0] as string);
+        const [result, named] = await Promise.all([
+            this.#db.read([{ rql: "SELECT id FROM cms_users WHERE avatar LIKE $avatar ESCAPE '\\' ORDER BY created_at DESC LIMIT 50", params: { $avatar: `/media/${escaped}/%` } }]),
+            // The files a member's field values name are kept beside them, so this is a filter, not a search of text.
+            this.#fields.usingFile(fileId),
+        ]);
+        const ids = [...new Set([...result.results[0]!.rows.map(row => row[0] as string), ...named])].slice(0, 50);
         const users = await this.getMany(ids);
         return ids.map(id => users.get(id)).filter((user): user is CmsUser => user !== undefined);
     }
@@ -295,8 +304,10 @@ export class CmsUsers {
         // A slug is chosen once, from the name, and kept: author URLs stay stable through renames. A given slug is checked and made unique.
         const slug = patch.slug !== undefined ? await this.#freeSlug(patch.slug, id) : current.slug ?? await this.#freeSlug(profile.name, id);
         try {
-            const result = await this.#db.write([{ rql: 'UPDATE cms_users SET name = $name, email = $email, avatar = $avatar, meta = $meta, slug = $slug, updated_at = $now WHERE id = $id',
-                params: { $name: profile.name, $email: profile.email, $avatar: profile.avatar, $meta: JSON.stringify(meta), $slug: slug, $now: this.#now(), $id: id } }], WRITE);
+            // The row and its field values change in one write. Fields the save clears are unset.
+            const result = await this.#db.write([{ rql: 'UPDATE cms_users SET name = $name, email = $email, avatar = $avatar, slug = $slug, updated_at = $now WHERE id = $id',
+                params: { $name: profile.name, $email: profile.email, $avatar: profile.avatar, $slug: slug, $now: this.#now(), $id: id } },
+                ...(patch.meta === undefined ? [] : this.#fields.save(id, meta, current.meta, crypto.randomUUID()))], WRITE);
             return result.results[0]!.affected === 1n;
         } catch (error) { throw memberError(error); }
     }
@@ -307,14 +318,13 @@ export class CmsUsers {
      */
     async setSystemMeta(id: string, key: string, value: unknown): Promise<boolean> {
         if (!SYSTEM_META.test(key)) throw new CmsError('CMS_VALIDATION', `${key} is not a system meta key.`);
-        const current = await this.get(id);
-        if (!current) return false;
-        const meta: { [field: string]: unknown } = { ...current.meta, [key]: value };
-        if (value === null || value === undefined) delete meta[key];
-        const json = JSON.stringify(meta);
-        if (json.length > 256 * 1024) throw new CmsError('CMS_LIMIT', 'The user\'s meta is too large.');
-        const result = await this.#db.write([{ rql: 'UPDATE cms_users SET meta = $meta WHERE id = $id', params: { $meta: json, $id: id } }], WRITE);
-        return result.results[0]!.affected === 1n;
+        if (!ID.test(id)) return false;
+        if (value !== null && value !== undefined && JSON.stringify(value).length > 256 * 1024) throw new CmsError('CMS_LIMIT', 'The value is too large.');
+        const found = await this.#db.read([{ rql: 'SELECT 1 FROM cms_users WHERE id = $id', params: { $id: id } }]);
+        if (!found.results[0]!.rows.length) return false;
+        // One field of the member's document: a profile save at the same moment keeps its own fields.
+        await this.#db.write(this.#fields.setOne(id, key, value, crypto.randomUUID()), WRITE);
+        return true;
     }
 
     /** The user with this author slug, or null. */
@@ -372,6 +382,7 @@ export class CmsUsers {
             { rql: 'DELETE FROM cms_user_roles WHERE user_id = $id', params },
             { rql: 'DELETE FROM cms_users WHERE id = $id', params },
             { rql: 'DELETE FROM cms_registrations WHERE user_id = $id', params },
+            this.#fields.remove(id),
         ], WRITE);
         if (user?.account === 'site') await this.#siteAccounts!.delete(id);
         else {
@@ -645,6 +656,9 @@ function checkRole(role: { id: string; name: string; permissions: readonly strin
 }
 
 function memberError(error: unknown): unknown {
+    // A unique field of the member's document: the engine names the document index, in hex.
+    const name = error instanceof ClientError && error.outcome === 'rolled-back' ? uniqueFieldOf(error.message) : undefined;
+    if (name !== undefined) return new CmsError('CMS_CONFLICT', 'Another user has the same value in a unique field.', name ? { fields: { [name]: 'is taken.' } } : {});
     if (error instanceof ClientError && error.outcome === 'rolled-back' && /UNIQUE/i.test(error.message)) return new CmsError('CMS_CONFLICT', 'A user with this email already exists.', { fields: { email: 'is taken.' } });
     if (error instanceof ClientError && error.outcome === 'rolled-back' && /FOREIGN|role/i.test(error.message)) return new CmsError('CMS_VALIDATION', 'Unknown role.');
     return error;

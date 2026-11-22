@@ -6,7 +6,7 @@ import type { UpdatesOptions } from '../updates';
 import { createHookRegistry, type ActionHandler, type ActionPoint, type ActionReport, type ExtensionPoint, type FilterContext, type FilterHandler, type FilterPoint, type HookRegistry, type InvokeOptions } from '@cossackframework/core/hooks';
 import type { StorageProvider } from '@cossackframework/core/storage';
 import { ClientError, MAX_STATEMENTS, type RomeDB, type Statement, type Value, type WorkLimits } from '@cossackframework/romedb';
-import { normalizeRichText, richTextBlocks, withRichTextBlocks } from '../richtext';
+import { normalizeRichText, richTextBlocks, richTextMedia, withRichTextBlocks, type RichTextDoc } from '../richtext';
 import { blockId, blockMedia, blockProblems, htmlBlocksChanged, textFieldProblem, validateBlocks, type Block, type BlockDeclaration } from '../blocks';
 import { blocksShapeProblem, type FieldDeclaration } from '../fields';
 import { collectionProblems, collectionResource, contentBlocks, entryUrl, extendCollection, languageName, LOCALE, translationGroupOf, orderedFields, RESERVED_FIELDS, type CollectionDefinition } from '../collections';
@@ -26,9 +26,10 @@ import { taxonomyProblems, type TaxonomyDeclaration, type TermShape } from '../t
 import { isPluginPoint, manifestProblems, providedPoints, requestedGrants, UNRESTRICTED_GRANT, type CmsPluginManifest, type PluginCommand, type SlotLink } from '../manifest';
 import { ANONYMOUS, evaluateRule, hasPermission, isNetworkAdmin, PERMISSIONS, principalId, systemPrincipal, type Principal } from '../permissions';
 import { AVATAR_TYPES, mediaUrl } from '../media';
-import { canonicalJson, declarationHash, memberRuleProblems, ResourceDeclarationError, resolveResource, type Resource, type ResourceAction, type ResourceDeclaration } from '../resource';
+import { canonicalJson, declarationHash, memberRuleProblems, ResourceDeclarationError, resolveResource, storageName, type Resource, type ResourceAction, type ResourceDeclaration } from '../resource';
 import { Outbox, type OutboxOptions } from './outbox';
-import { JOIN_GROUP, ResourceRepository, type BatchGuard, type BatchWrite, type FieldFilter, type ListOptions, type OperationContext } from './repository';
+import { FieldValues } from './field-values';
+import { groupMedia, JOIN_GROUP, ResourceRepository, type BatchGuard, type BatchWrite, type FieldFilter, type ListOptions, type OperationContext } from './repository';
 import { batchResource, writeBatch } from './batch';
 import { migrate, nextGenerationStatement, planSchema, readCatalog, type MigrationReport, type SchemaPlan } from './schema';
 import { FileService, type CmsFile, type FileServiceOptions, type ImageSettings, LIBRARY_KEYS } from './files';
@@ -105,6 +106,21 @@ export interface PluginRegistrationLike {
 }
 
 export type { CmsModule };
+
+/** The internal resource that stores the field values of users (`specs/cms-field-values.md`). */
+export const USER_FIELDS = 'cms/user_fields';
+
+/**
+ * The internal resource that stores the field values of a taxonomy's terms. It exists while
+ * groups are attached to the taxonomy. A taxonomy's name may have capitals and be longer
+ * than a resource's, so such a name is shortened and told apart by a hash.
+ */
+export function termFieldsId(taxonomy: string): string {
+    if (/^[a-z][a-z0-9]{0,37}$/.test(taxonomy)) return `cms/tf_${taxonomy}`;
+    let hash = 0x811c9dc5;
+    for (let index = 0; index < taxonomy.length; index++) hash = Math.imul(hash ^ taxonomy.charCodeAt(index), 0x01000193) >>> 0;
+    return `cms/tf_${taxonomy.toLowerCase().slice(0, 28)}_${hash.toString(16).padStart(8, '0')}`;
+}
 
 export interface CmsOptions {
     /** The site's database. */
@@ -452,6 +468,8 @@ export class CmsHost {
      * are the network's.
      */
     readonly siteAccounts: CmsAccounts | null;
+    /** The field group values of users: one document per member. */
+    readonly userFields: FieldValues;
     /** This site's members and roles. */
     readonly users: CmsUsers;
     readonly outbox: Outbox;
@@ -523,6 +541,8 @@ export class CmsHost {
     readonly #static = new Map<string, Resource>();
     /** Static resources and the current collections. */
     #resources = new Map<string, Resource>();
+    /** The stores of terms' field values, by taxonomy. */
+    readonly #termFields = new Map<string, FieldValues>();
     readonly #repositories = new Map<string, ResourceRepository>();
     readonly #plugins = new Map<string, HostedPlugin>();
     readonly #runner: PluginRunner | null;
@@ -607,7 +627,14 @@ export class CmsHost {
         const added = this.network !== this.db;
         // A site account's sessions are this site's: ending them ends nothing elsewhere.
         this.siteAccounts = added ? new CmsAccounts(this.db, { now: this.#now, sessionsEnded: async ended => { if ('user' in ended) await this.authSessions.revokeAllForUser(ended.user, ended.except); } }) : null;
-        this.users = new CmsUsers(this.db, { accounts: this.accounts, ...(this.siteAccounts ? { siteAccounts: this.siteAccounts } : {}), ...(options.site ? { site: options.site } : {}), now: this.#now, checkMeta: (meta, previous, principal) => this.#checkMeta({ kind: 'users' }, meta, previous, principal) });
+        // A user's field values are a document beside the member row, in the storage of an internal resource (specs/cms-field-values.md).
+        this.userFields = new FieldValues(this.db, {
+            resource: () => this.#resources.get(USER_FIELDS)!,
+            storageOf: id => this.resourceById(id).storage,
+            media: values => this.#valuesMedia(this.#resources.get(USER_FIELDS)!.fields, values),
+            now: this.#now,
+        });
+        this.users = new CmsUsers(this.db, { accounts: this.accounts, ...(this.siteAccounts ? { siteAccounts: this.siteAccounts } : {}), ...(options.site ? { site: options.site } : {}), now: this.#now, fields: this.userFields, checkMeta: (meta, previous, principal) => this.#checkMeta({ kind: 'users' }, meta, previous, principal) });
         this.redirects = new CmsRedirects(this.db, { now: this.#now, changed: () => this.#purgeSite('redirects') });
         this.traffic = new CmsTraffic(this.db, { now: this.#now });
         this.apiTokens = new CmsApiTokens(this.network, { now: this.#now });
@@ -698,6 +725,7 @@ export class CmsHost {
             now: this.#now,
             beforeSave: (draft, input) => this.hooks.applyFilters(termBeforeSave, draft, input),
             checkMeta: taxonomy => (meta, previous, principal) => this.#checkMeta({ kind: 'taxonomy', name: taxonomy }, meta, previous, principal),
+            fields: taxonomy => this.#termValues(taxonomy),
             usage: name => this.resources.flatMap(resource => Object.entries(resource.fields)
                 .filter(([, declaration]) => declaration.taxonomy === name).map(([field]) => ({ resource: resource.id, storage: resource.storage, field }))),
             canAssign: (principal, taxonomy) => this.taxonomies.usage(taxonomy.name).some(({ resource: id }) => {
@@ -764,7 +792,10 @@ export class CmsHost {
 
     now(): number { return this.#now(); }
 
-    get resources(): readonly Resource[] { return [...this.#resources.values()]; }
+    /** The resources people and plugins work with. Internal ones (a user's field values) are left out. */
+    get resources(): readonly Resource[] { return [...this.#resources.values()].filter(resource => !resource.internal); }
+    /** Every resource that has storage to plan and migrate, internal ones too. */
+    get #stored(): readonly Resource[] { return [...this.#resources.values()]; }
 
     /** Revisions of a dropped collection's entries written up to `before`. */
     async #deleteRevisions(resource: string, before: number): Promise<void> {
@@ -824,7 +855,8 @@ export class CmsHost {
     resource(id: string): ResourceRepository {
         let repository = this.#repositories.get(id);
         if (!repository) {
-            this.resourceById(id);
+            // The host's own storage has no repository: its rows are not records with revisions, owners and events.
+            if (this.resourceById(id).internal) throw new CmsError('CMS_NOT_FOUND', `Unknown resource ${id}.`);
             repository = new ResourceRepository(this, id);
             this.#repositories.set(id, repository);
         }
@@ -1836,10 +1868,18 @@ export class CmsHost {
         this.taxonomies.declaration(name);
         const users = this.collections().filter(collection => collection.taxonomies?.includes(name));
         if (users.length) throw new CmsError('CMS_CONFLICT', `${users.map(collection => collection.label).join(', ')} use this taxonomy.`);
+        // Its terms' field values go with it, whether or not groups are attached now.
+        const fields = termFieldsId(name);
+        const storage = storageName('cms', fields.slice(4));
+        const info = await this.db.read([{ rql: 'INFO FOR DB' }]);
+        const exists = ((info.results[0]!.rows[0]![0] as { tables?: { name: string }[] }).tables ?? []).some(table => table.name === storage);
+        const at = this.#now();
         await this.db.write([
             { rql: 'DELETE FROM cms_terms WHERE taxonomy = $name', params: { $name: name } },
             { rql: 'DELETE FROM cms_taxonomies WHERE name = $name', params: { $name: name } },
+            ...(exists ? [{ rql: `DROP TABLE ${storage}` }, { rql: 'DELETE FROM cms_schema_state WHERE resource = $id', params: { $id: fields } }, nextGenerationStatement(at)] : []),
         ], { kind: 'cms.collections' });
+        this.#termFields.delete(name);
         await this.ready({ force: true });
     }
 
@@ -1849,11 +1889,11 @@ export class CmsHost {
     }
 
     async plan(options: { signal?: AbortSignal } = {}): Promise<SchemaPlan> {
-        return planSchema(this.resources, await readCatalog(this.db, this.resources.map(resource => resource.storage), options));
+        return planSchema(this.#stored, await readCatalog(this.db, this.#stored.map(resource => resource.storage), options));
     }
 
     async migrate(options: { signal?: AbortSignal } = {}): Promise<MigrationReport> {
-        const report = await migrate(this.db, this.resources, { ...options, now: this.#now });
+        const report = await migrate(this.db, this.#stored, { ...options, now: this.#now });
         this.#activation = undefined;
         return report;
     }
@@ -2151,6 +2191,10 @@ export class CmsHost {
             const resource = this.#resources.get(`cms/${collection.name}`);
             if (resource && state.hashes.get(resource.id) !== await declarationHash(resource)) stale.push(resource.id);
         }
+        // The host's own storage follows the groups attached to it, as a collection does.
+        for (const resource of this.#resources.values()) {
+            if (resource.internal && state.hashes.get(resource.id) !== await declarationHash(resource)) stale.push(resource.id);
+        }
         // A plugin the network activates is migrated on every site as the site loads.
         const networkActive = [...this.#plugins.values()].filter(plugin => !plugin.problems.length && pluginState(state.policy, plugin.manifest.name) === 'network');
         for (const id of networkActive.flatMap(plugin => plugin.resources)) {
@@ -2158,7 +2202,7 @@ export class CmsHost {
             if (resource && !stale.includes(id) && state.hashes.get(id) !== await declarationHash(resource)) stale.push(id);
         }
         if (hostPending || stale.length) {
-            this.#upgrading ??= migrate(this.db, this.resources, { now: this.#now, only: stale }).then(report => {
+            this.#upgrading ??= migrate(this.db, this.#stored, { now: this.#now, only: stale }).then(report => {
                 if (report.failed) console.error(`[cms] could not upgrade the schema: ${report.failed.message}`);
             }).catch(error => console.error('[cms] could not upgrade the schema', error)).finally(() => {
                 this.#upgrading = undefined;
@@ -2212,7 +2256,53 @@ export class CmsHost {
         return groupsForTarget(this.#groups, target);
     }
 
-    /** A target's fields from its groups, after the group blocks are checked against the current types. */
+    /** Where a taxonomy's terms keep their field values, or null while no group is attached to it. */
+    #termValues(taxonomy: string): FieldValues | null {
+        const id = termFieldsId(taxonomy);
+        if (!this.#resources.has(id)) return null;
+        let store = this.#termFields.get(taxonomy);
+        if (!store) {
+            store = new FieldValues(this.db, {
+                resource: () => this.#resources.get(id)!,
+                storageOf: target => this.resourceById(target).storage,
+                media: values => this.#valuesMedia(this.#resources.get(id)!.fields, values),
+                now: this.#now,
+            });
+            this.#termFields.set(taxonomy, store);
+        }
+        return store;
+    }
+
+    /** The internal resource of a taxonomy's term fields, or null when its groups give none. */
+    #termFieldsResource(taxonomy: TaxonomyDeclaration): Resource | null {
+        let fields: { [name: string]: FieldDeclaration } = {};
+        try { fields = this.#groupFields({ kind: 'taxonomy', name: taxonomy.name }).fields; } catch { return null; }
+        if (!Object.keys(fields).length) return null;
+        return resolveResource({ name: termFieldsId(taxonomy.name).slice(4), label: `${taxonomy.label} fields`, schemaless: true, internal: true, revisions: false, fields }, 'cms');
+    }
+
+    /** The users' fields: the author profile and the fields of the groups attached to users. */
+    #userFieldsResource(): Resource {
+        // A group whose blocks no longer validate adds no fields, as on a collection.
+        let fields: { [name: string]: FieldDeclaration } = {};
+        try { fields = this.#groupFields({ kind: 'users' }).fields; } catch { /* the author profile alone */ }
+        return resolveResource({ name: USER_FIELDS.slice(4), label: 'User fields', schemaless: true, internal: true, revisions: false, fields: { ...AUTHOR_FIELDS, ...fields } }, 'cms');
+    }
+
+    /** The media files that values of these fields name: media fields, and files inside blocks, rich text and groups. */
+    #valuesMedia(fields: { readonly [name: string]: FieldDeclaration }, values: { readonly [field: string]: unknown }): string[] {
+        const files: string[] = [];
+        for (const [name, value] of Object.entries(values)) {
+            const declaration = Object.hasOwn(fields, name) ? fields[name] : undefined;
+            if (!declaration || value === null || value === undefined) continue;
+            files.push(...(declaration.media ? (Array.isArray(value) ? value as string[] : [value as string])
+                : declaration.kind === 'blocks' ? blockMedia(value as Block[], this.#blocks)
+                : declaration.kind === 'richtext' ? [...richTextMedia(value as RichTextDoc), ...blockMedia(richTextBlocks(value as RichTextDoc), this.#blocks)]
+                : declaration.fields ? groupMedia(declaration, value as { [key: string]: unknown }) : []));
+        }
+        return files.filter(file => typeof file === 'string' && file);
+    }
+
     #groupFields(target: FieldGroupTarget): { fields: { [name: string]: FieldDeclaration }; layout: Block[] } {
         const fields: { [name: string]: FieldDeclaration } = {};
         const layout: Block[] = [];
@@ -2337,7 +2427,7 @@ export class CmsHost {
     async #migrateTargets(group: FieldGroup, principal: Principal): Promise<void> {
         this.#activation = undefined;
         await this.ready({ force: true });
-        const ids = group.targets.filter(target => target.kind === 'collection').map(target => `cms/${(target as { name: string }).name}`).filter(id => this.#resources.has(id));
+        const ids = group.targets.flatMap(target => target.kind === 'collection' ? [`cms/${target.name}`] : target.kind === 'users' ? [USER_FIELDS] : target.kind === 'taxonomy' ? [termFieldsId(target.name)] : []).filter(id => this.#resources.has(id));
         if (!ids.length) return;
         const resources = [...this.#resources.values()];
         const plan = await planSchema(resources, await readCatalog(this.db, resources.filter(entry => ids.includes(entry.id)).map(entry => entry.storage)));
@@ -2366,6 +2456,17 @@ export class CmsHost {
         for (const [name, stored] of storedCollections) if (!this.#builtinCollections.has(name)) collections.set(name, { ...stored, builtin: false });
         const labels = Object.fromEntries([...taxonomies.values()].map(taxonomy => [taxonomy.name, taxonomy.label]));
         const resources = new Map(this.#static);
+        // Users' fields: the author profile and the groups attached to users.
+        const userFields = this.#userFieldsResource();
+        const sameFields = this.#resources.get(USER_FIELDS);
+        resources.set(USER_FIELDS, sameFields && canonicalJson(sameFields) === canonicalJson(userFields) && sameKeyOrder(sameFields.fields, userFields.fields) ? sameFields : userFields);
+        // Terms' fields: one resource for each taxonomy that has groups attached.
+        for (const taxonomy of taxonomies.values()) {
+            const termFields = this.#termFieldsResource(taxonomy);
+            if (!termFields) continue;
+            const previous = this.#resources.get(termFields.id);
+            resources.set(termFields.id, previous && canonicalJson(previous) === canonicalJson(termFields) && sameKeyOrder(previous.fields, termFields.fields) ? previous : termFields);
+        }
         const effective = new Map<string, CollectionDefinition>();
         for (const definition of collections.values()) {
             const known = { ...definition, taxonomies: (definition.taxonomies ?? []).filter(name => taxonomies.has(name)) };

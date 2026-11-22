@@ -47,7 +47,8 @@ describe.skipIf(!live)('round trips', () => {
         const bob = await cms.users.create({ email: 'bob@example.com', name: 'Bob', roles: ['editor'] });
         reads.reset();
         const found = await cms.users.getMany([ada.id, bob.id, 'nobody']);
-        expect(reads.most()).toBe(3);
+        // Rows, field values, role assignments and roles.
+        expect(reads.most()).toBe(4);
         expect([...found.keys()].sort()).toEqual([ada.id, bob.id].sort());
         expect(found.get(ada.id)!.roles).toEqual(['author', 'editor']);
         expect(found.get(bob.id)!.assignments.map(role => role.id)).toEqual(['editor']);

@@ -204,6 +204,14 @@ event, guarded by the operation ID so a stale edit writes nothing. After commit,
 delivers `cms.resource.after-commit` to plugins, webhooks and notifications, with retries
 per plugin.
 
+**Field values.** A field group attaches to collections, taxonomies, users and menus. On a
+collection its values are fields of the entry. A user's and a term's are fields of a document
+under the same ID as the row: `cms/user_fields` for users, `cms/tf_<taxonomy>` for a taxonomy
+that has groups. So `index`, `unique` and reference fields work there as on a collection, a
+save sets the fields that changed, and SQL can join them
+(`JOIN r__cms__user_fields d ON record::id(d.id) = u.id`). These resources are internal:
+Tools → Schema shows them, the API does not. A menu item's values stay inside its menu.
+
 **Search.** Each collection with `search` fields has a RomeDB full-text index over them, which
 the dashboard's lists and pickers and the content API's `q` read. The site's search reads one
 more index, `cms_search` (host steps 7 and 8): a document per entry visitors may read (published, not

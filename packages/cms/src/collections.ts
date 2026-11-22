@@ -200,7 +200,7 @@ export const RESERVED_FIELDS = Object.freeze([...CORE_FIELDS, ...FEATURE_FIELDS]
 const FEATURES = Object.freeze(['content', 'excerpt', 'featuredImage', 'revisions', 'password', 'members'] as const);
 /** A template an editor can choose for one entry: one of the active theme's `entry-*` templates. Empty for the default. */
 export const ENTRY_TEMPLATE = 'entry-[a-z][a-z0-9_-]{0,73}';
-const RESERVED = new Set(['media', 'users', 'roles', 'terms', 'settings', 'collections', 'taxonomies', 'blocks', 'plugins', 'schema', 'content', 'new']);
+const RESERVED = new Set(['media', 'users', 'user_fields', 'roles', 'terms', 'settings', 'collections', 'taxonomies', 'blocks', 'plugins', 'schema', 'content', 'new']);
 const PATH = /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)*$/;
 const ICON = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -211,6 +211,8 @@ export function collectionProblems(definition: CollectionDefinition): string[] {
     else if (RESERVED.has(definition.name)) problems.push(`${definition.name} is reserved.`);
     // Form submissions are stored as cms/form_<form id>.
     else if (definition.name.startsWith('form_')) problems.push('Names starting with form_ are reserved for form submissions.');
+    // Terms' field values are stored as cms/tf_<taxonomy>.
+    else if (definition.name.startsWith('tf_')) problems.push('Names starting with tf_ are reserved for the field values of terms.');
     for (const key of ['label', 'singular'] as const) {
         if (typeof definition?.[key] !== 'string' || !definition[key].trim() || definition[key].length > 60) problems.push(`The ${key === 'label' ? 'plural label' : 'singular label'} must be 1-60 characters.`);
     }

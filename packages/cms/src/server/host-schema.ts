@@ -303,6 +303,15 @@ export const HOST_STEPS: readonly HostStep[] = [{
         // A write batch (`CmsHost.batch`) inserts one row per condition, held = 1 when it holds, and deletes them in its last statement: a condition that does not hold fails the CHECK, and the whole batch rolls back. No row outlives its batch.
         { rql: 'CREATE TABLE cms_assertions (id TEXT PRIMARY KEY, held INTEGER NOT NULL CHECK (held = 1))' },
     ],
+}, {
+    version: 15,
+    description: 'Field values of users and terms are documents',
+    statements: [
+        // The values of the field groups attached to users are fields of a document under the member's ID, in the storage of the internal resource cms/user_fields: they can be indexed, kept unique and written one at a time. The JSON text they were kept in goes.
+        { rql: 'ALTER TABLE cms_users DROP COLUMN meta' },
+        // A term's, in the storage of its taxonomy's internal resource (cms/tf_<taxonomy>), which exists while groups are attached to the taxonomy.
+        { rql: 'ALTER TABLE cms_terms DROP COLUMN meta' },
+    ],
 }];
 
 /**
