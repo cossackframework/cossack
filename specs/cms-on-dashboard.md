@@ -1,6 +1,7 @@
 # The CMS on the dashboard's accounts and tenants
 
-Status: decided 2026-11-22 (below); steps 1 and 2 built. Steps are committed one by one. It replaces "step 6" of `specs/romedb-orm.md`,
+Status: decided 2026-11-22 (below); steps 1 to 3 built (the dashboard's side). Steps 4 to 7
+change the CMS and are not started. Steps are committed one by one. It replaces "step 6" of `specs/romedb-orm.md`,
 which was built in part and reverted on 2026-11-21, before the dashboard had tenants
 (`specs/dashboard-tenants.md`) and before a user's field values were documents
 (`specs/cms-field-values.md`).
@@ -86,8 +87,14 @@ for it the same day. On 4, `network_admin` stays a flag on the account.
      password; `canInvite`, `sendInvitation`), and recovery mode (`RECOVERY_CODE`,
      `POST /auth/recovery`, `recoverAccount`: a one-hour reset link, optionally without the
      account's second factors).
-   - Open: avatar uploads through a storage hook; accounts held for a tenant's approval;
-     self-service tenant registration. No command wraps the recovery request yet.
+   - **Done:** self-service tenant registration: a network administrator turns it on, and a
+     signed-in main account makes up to three tenants a day (`registerTenant`, the "Your
+     tenants" screen).
+   - Moved to step 5, where the CMS's own code decides them: avatar uploads (the CMS stores
+     pictures in its media library, so the upload stays a hook the CMS fills) and held
+     accounts (in the CMS a network account made by a site's registration waits "held"; with
+     a tenant's own accounts a registration on a tenant's host makes such an account instead).
+   - No command wraps the recovery request yet.
 4. CMS: sessions, second factors and tokens on the dashboard's stores (what was built and
    reverted, now with tenants).
 5. CMS: accounts, members and roles; `Principal` from the dashboard's user; slugs and field

@@ -1500,7 +1500,7 @@ export async function handleOAuthUser(
 export const tenantsAvailable = authOptions.tenants.enabled;
 export {
   addTenantDomain, addTenantMember, createTenant, listNetworkAdmins, listTenantMembers, listTenants, networkRunning, removeTenantDomain, removeTenantMember,
-  setNetworkAdmin, setNetworkRunning, setPrimaryTenantDomain, setTenantStatus, verifyTenantDomain,
+  registerTenant, setNetworkAdmin, setNetworkRunning, setPrimaryTenantDomain, setTenantRegistration, setTenantStatus, tenantRegistrationOpen, tenantsOf, verifyTenantDomain,
   type NetworkAdminSummary, type TenantDomainSummary, type TenantMemberSummary, type TenantSummary,
 } from './services/tenants';
 export { tenantOrigin } from './tenants';

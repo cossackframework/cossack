@@ -5,7 +5,7 @@ import { html, component } from '@cossackframework/renderer';
 import { notice, pageHeader } from '@cossackframework/ui/blocks';
 import {
     addTenantDomain, addTenantMember, createTenant, listNetworkAdmins, listTenantMembers, listTenants, onMainHost, removeTenantDomain, removeTenantMember,
-    networkRunning, setNetworkAdmin, setNetworkRunning, setPrimaryTenantDomain, setTenantStatus, tenantOrigin, tenantsAvailable, verifyTenantDomain, type NetworkAdminSummary, type PublicUser, type TenantMemberSummary, type TenantSummary,
+    networkRunning, setNetworkAdmin, setNetworkRunning, setPrimaryTenantDomain, setTenantRegistration, setTenantStatus, tenantRegistrationOpen, tenantOrigin, tenantsAvailable, verifyTenantDomain, type NetworkAdminSummary, type PublicUser, type TenantMemberSummary, type TenantSummary,
 } from '#app/auth';
 import { guard } from '#app/services/rbac';
 
@@ -32,6 +32,8 @@ export default class TenantsPage extends Cossack {
     @State() adminEmail = '';
     /** Whether tenants' hosts answer. */
     @State() running = true;
+    /** Whether signed-in accounts make tenants of their own (Your tenants). */
+    @State() registration = false;
 
     head(): HeadValue {
         return { title: 'Tenants' };
@@ -47,6 +49,7 @@ export default class TenantsPage extends Cossack {
         this.members = this.selected ? await listTenantMembers(this.selected) : [];
         this.admins = await listNetworkAdmins();
         this.running = await networkRunning();
+        this.registration = await tenantRegistrationOpen();
     }
 
     private async act(work: () => Promise<void>, done: string) {
@@ -93,6 +96,11 @@ export default class TenantsPage extends Cossack {
     @Server({ input: input.args(text(200), input.boolean()) })
     async remove(id: string, deleted: boolean) {
         await this.act(() => setTenantStatus(id, deleted ? 'deleted' : 'active'), deleted ? 'Deleted: its hosts answer 404. It can be restored for 30 days.' : 'The tenant is back.');
+    }
+
+    @Server({ input: input.args(input.boolean()) })
+    async register(on: boolean) {
+        await this.act(() => setTenantRegistration(on), on ? 'Signed-in accounts can make tenants of their own now, three a day each.' : 'Only network administrators make tenants now.');
     }
 
     @Server({ input: input.args(input.boolean()) })
@@ -156,7 +164,8 @@ export default class TenantsPage extends Cossack {
             ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}
             ${this.running ? null : notice(__('The network is off: only the main host answers.'), 'info')}
-            <div>${component(Button, { size: 'sm', variant: 'outline', '@click': () => this.run(!this.running) }, this.running ? __('Turn the network off') : __('Turn the network on'))}</div>
+            <div class="flex flex-wrap gap-2">${component(Button, { size: 'sm', variant: 'outline', '@click': () => this.run(!this.running) }, this.running ? __('Turn the network off') : __('Turn the network on'))}
+                ${component(Button, { size: 'sm', variant: 'outline', '@click': () => this.register(!this.registration) }, this.registration ? __('Close registration of tenants') : __('Let accounts register tenants'))}</div>
             ${component(Card, {}, [component(CardHeader, {}, html`<h2 class="text-sm font-medium">${__('New tenant')}</h2>`), component(CardBody, {}, html`
                 <form class="flex flex-wrap items-end gap-2" data-testid="new-tenant" @submit=${(event: Event) => { event.preventDefault(); void this.create(this.name, this.slug); }}>
                     <input class=${FIELD} name="name" aria-label=${__('Name')} placeholder=${__('Name')} .value=${this.name} @input=${(event: Event) => { this.name = (event.target as HTMLInputElement).value; }}>

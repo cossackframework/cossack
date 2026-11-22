@@ -156,6 +156,19 @@ async function tenants(database) {
     expect((await owner.request('/dashboard')).status).toBe(200);
     expect((await owner.action(screen, 'run', [true])).running).toBe(true);
     expect((await acme.request('/dashboard')).status).toBe(200);
+
+    // An account makes a tenant of its own once a network administrator allows it, and administers it.
+    const mine = 'dashboard/tenants/register/index.ts';
+    routeIds[`/src/pages/${mine}`] = servedRouteId(manifest, `/src/pages/${mine}`);
+    expect((await second.action(mine, 'register', ['Globex', 'globex'])).error).toContain('closed');
+    expect((await owner.action(screen, 'register', [true])).registration).toBe(true);
+    const registered = await second.action(mine, 'register', ['Globex', 'globex']);
+    expect([registered.error, registered.mine]).toEqual(['', [{ name: 'Globex', address: `http://globex.app.test:${port}` }]]);
+    const globex = on('globex.app.test');
+    expect((await globex.action(login, 'login', [{ email: grace.email, password: grace.password }])).error ?? '').toBe('');
+    expect(await globex.page('/dashboard/users')).toContain(grace.email);
+    // The Tenants screen stays the network administrators'.
+    expect((await second.request('/dashboard/tenants')).status).toBe(302);
   } finally { await server.close(); }
 }
 

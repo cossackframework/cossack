@@ -12,4 +12,13 @@ const descriptor: DashboardModule = {
   authorization: 'admin',
 };
 
+/** Your tenants: the ones an account belongs to, and making one while registration is on. */
+export const myTenants: DashboardModule = {
+  id: 'my-tenants',
+  label: 'Your tenants',
+  href: '/dashboard/tenants/register',
+  icon,
+  authorization: 'authenticated',
+};
+
 export default descriptor;

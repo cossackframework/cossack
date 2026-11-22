@@ -133,6 +133,15 @@ export async function setTenantsRunning(on: boolean): Promise<void> {
   forgetTenantHosts();
 }
 
+/** Whether a signed-in account may make a tenant of its own (the Tenants screen's setting). Off by default. */
+export async function tenantRegistrationOn(): Promise<boolean> {
+  return (await TenantNetwork.findOne({ where: { key: 'registration' } }))?.value === 'on';
+}
+
+export async function setTenantRegistrationOn(on: boolean): Promise<void> {
+  await TenantNetwork.upsert({ key: 'registration', value: on ? 'on' : 'off', updatedAt: new Date() }, ['key']);
+}
+
 /** The tenant that asked for this host as a domain, verified or not: its ID answers `/.well-known/cossack-tenant`. */
 export async function tenantClaimingHost(host: string): Promise<string | null> {
   return (await TenantDomain.findOne({ where: { host } }))?.tenantId ?? null;

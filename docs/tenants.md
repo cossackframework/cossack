@@ -57,6 +57,8 @@ Dashboard → Tenants, on the main host, for network administrators:
   `purgeDeletedTenants()` (from `@cossackframework/dashboard/app/services/tenants`) forgets
   it and returns what it forgot, so a schedule of yours can drop each database.
 - **Turn the network off**: only the main host answers, and tenants keep their data.
+- **Let accounts register tenants**: a signed-in account then makes tenants of its own on
+  Dashboard → Your tenants, at most three a day, and is each one's administrator.
 
 ### A tenant's own accounts
 
@@ -145,7 +147,7 @@ The database user needs the right to create tables in each tenant's database.
 
 - A member's email and name in a tenant are copied when they join and are not updated when
   the account changes.
-- Self-service tenant registration is not built. Nothing purges
+ Nothing purges
   deleted tenants on a schedule or drops their databases.
 - Uploaded files are not separated by tenant.
 - The Workers bindings (D1, Hyperdrive, RomeDB Cloud) are written and not yet run in a test.

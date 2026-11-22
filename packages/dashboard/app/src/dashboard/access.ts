@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 import { currentTenant, tenantsEnabled } from '../tenants';
-import tenants from './modules/tenants';
+import tenants, { myTenants } from './modules/tenants';
 import { dashboardModules } from './registry';
 import type { DashboardModule, DashboardNotice, DashboardStatus } from './types';
 
@@ -9,7 +9,8 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
     const user = c.get('user') as { roles?: { name: string; permissions?: string[] }[] } | undefined;
     const admin = !!user?.roles?.some(role => role.name === 'admin');
     // Tenants are managed on the main host, while they are on.
-    const modules = tenantsEnabled && !currentTenant(c) && (user as { networkAdmin?: boolean } | undefined)?.networkAdmin ? [...dashboardModules, tenants] : dashboardModules;
+    const modules = !tenantsEnabled || currentTenant(c) ? dashboardModules
+        : [...dashboardModules, (user as { networkAdmin?: boolean } | undefined)?.networkAdmin ? tenants : myTenants];
     return modules.filter(module => {
         const authorization = module.authorization;
         if (authorization === 'authenticated') return true;

@@ -1236,3 +1236,7 @@ export interface RecoveryResult { email: string; resetUrl: string; expiresAt: nu
 export async function recoverAccount(_code: unknown, _email: unknown, _clearSecondFactors = false): Promise<RecoveryResult | { error: string; status: 400 | 401 | 403 | 404 | 429 }> {
   return { error: 'Use POST /api/cms/recovery.', status: 404 };
 }
+export async function tenantRegistrationOpen(): Promise<boolean> { return false; }
+export async function setTenantRegistration(_on: boolean): Promise<void> { return noTenants(); }
+export async function registerTenant(_input: { name: string; slug: string }, _user: { id: string }): Promise<TenantSummary> { return noTenants(); }
+export async function tenantsOf(_userId: string): Promise<{ id: string; slug: string; name: string; primaryHost?: string }[]> { return []; }

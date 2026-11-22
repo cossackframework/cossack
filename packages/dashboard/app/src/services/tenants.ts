@@ -3,7 +3,8 @@
 import { ClientVisibleError, getRequestContext } from '@cossackframework/core';
 import { sql, TENANT_DATABASE } from '@cossackframework/database';
 import { uuidv7 } from '../lib/uuid';
-import { accounts, asMainAccount, currentTenant, forgetTenantHosts, inTenant, mainHost, RESERVED_SLUGS, setTenantsRunning, TENANT_SLUG, tenantsEnabled, tenantsRunning, withTenant, type TenantInfo } from '../tenants';
+import { accounts, asMainAccount, currentTenant, forgetTenantHosts, inTenant, mainHost, RESERVED_SLUGS, setTenantRegistrationOn, setTenantsRunning, TENANT_SLUG, tenantRegistrationOn, tenantsEnabled, tenantsRunning, withTenant, type TenantInfo } from '../tenants';
+import * as security from './security';
 import { authOptions } from '../auth-options';
 import { Tenant } from '@/models/Tenant';
 import { TenantDomain } from '@/models/TenantDomain';
@@ -104,6 +105,33 @@ export async function getTenant(id: string): Promise<TenantInfo | null> {
  */
 export async function createTenant(input: { name: string; slug: string }, creator: { id: string }): Promise<TenantInfo> {
   required();
+  return makeTenant(input, creator);
+}
+
+/** How many tenants one account registers in a day. */
+export const TENANT_REGISTRATIONS = Object.freeze({ max: 3, windowMs: 24 * 60 * 60 * 1000 });
+
+/** Whether signed-in accounts make tenants of their own, on the main host. A network administrator turns it on. */
+export async function tenantRegistrationOpen(): Promise<boolean> {
+  return tenantsEnabled && !currentTenant() && await tenantsRunning() && await tenantRegistrationOn();
+}
+
+export async function setTenantRegistration(on: boolean): Promise<void> {
+  required();
+  await setTenantRegistrationOn(on);
+}
+
+/**
+ * A signed-in main account makes a tenant of its own and is its administrator. It needs the
+ * network's registration setting; an account registers at most three a day.
+ */
+export async function registerTenant(input: { name: string; slug: string }, user: { id: string }): Promise<TenantInfo> {
+  if (!await tenantRegistrationOpen()) throw new ClientVisibleError('Registration of tenants is closed.');
+  if (!await security.attempt('tenant-registration', `u:${user.id}`, TENANT_REGISTRATIONS.max, TENANT_REGISTRATIONS.windowMs)) throw new ClientVisibleError('You registered three tenants today. Try again tomorrow.');
+  return makeTenant(input, user);
+}
+
+async function makeTenant(input: { name: string; slug: string }, creator: { id: string }): Promise<TenantInfo> {
   const name = input.name.trim();
   const slug = input.slug.trim().toLowerCase();
   if (!name || name.length > 120) throw new ClientVisibleError('Give the tenant a name of at most 120 characters.');
