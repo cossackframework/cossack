@@ -20,15 +20,8 @@ const LARGE = /SELECT\s+\*|SELECT\s+[^F]*\$\{|\b(data|content|meta|items|blocks|
  */
 const REVIEWED: Record<string, string> = {
     // Small columns: names, emails, dates, flags, hashes.
-    'src/server/accounts.ts: SELECT ${COLUMNS} FROM cms_accounts${where} ORDER BY': 'account columns are short',
-    'src/server/accounts.ts: SELECT ${MOVED.cms_accounts.join(': 'one account',
-    'src/server/accounts.ts: SELECT ${MOVED.cms_api_tokens.join(': 'token hashes and names',
-    'src/server/accounts.ts: SELECT ${MOVED.cms_user_security.join(': 'one row',
-    'src/server/api-tokens.ts: SELECT ${COLUMNS} FROM cms_api_tokens WHERE user_id': 'token names and dates',
     'src/server/redirects.ts: SELECT ${COLUMNS} FROM cms_redirects WHERE prefix = 1': 'paths of at most 2000 characters',
     'src/server/redirects.ts: SELECT ${COLUMNS} FROM cms_redirects${where} ORDER BY': 'paths of at most 2000 characters, 100 a page',
-    'src/server/security.ts: SELECT ${PASSKEY_COLUMNS} FROM cms_passkeys WHERE user_id': 'public keys of a few hundred bytes, 50 at most',
-    'src/server/sites.ts: SELECT ${COLUMNS} FROM cms_sites WHERE id IN': 'site names and states',
     'src/server/webhooks.ts: SELECT ${COLUMNS} FROM cms_webhooks ORDER BY': 'URLs and event names',
     'src/server/webhooks.ts: SELECT ${DELIVERY_COLUMNS} FROM cms_webhook_deliveries WHERE': 'statuses and short errors, no payload',
     'src/server/files.ts: SELECT key, ${id} FROM ${table} WHERE key >': 'storage keys',

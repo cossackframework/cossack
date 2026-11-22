@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { decodeValue, type RomeDB } from '@cossackframework/romedb';
-import { CmsNetwork, createCMS, NETWORK_ADMIN, siteExport, systemPrincipal, userPrincipal, type CmsHost, type Principal } from '../src/server/index';
-import { romedbService, live } from './helpers';
+import { CmsNetwork, createCMS, memorySites, siteExport, systemPrincipal, userPrincipal, type CmsHost, type Principal } from '../src/server/index';
+import { networkPeople, romedbService, live } from './helpers';
 
 describe.skipIf(!live)('adding, archiving and deleting sites', () => {
     const service = romedbService();
@@ -15,12 +15,14 @@ describe.skipIf(!live)('adding, archiving and deleting sites', () => {
     let failCreate = true;
     let answers: { [host: string]: string } = {};
     let now = Date.now();
+    const people = networkPeople();
+    const sites = memorySites({ now: () => now });
 
     beforeAll(async () => {
         other = await service.fresh();
         const db = service.database();
         network = new CmsNetwork({
-            db, open: () => other.db, networkHost: () => 'example.com', now: () => now,
+            db, open: () => other.db, networkHost: () => 'example.com', now: () => now, sites, memberSites: people.memberSites,
             directory: {
                 async create(name) {
                     if (failCreate) { failCreate = false; throw new Error('provider unavailable'); }
@@ -33,12 +35,11 @@ describe.skipIf(!live)('adding, archiving and deleting sites', () => {
                 const host = new URL(String(input)).hostname;
                 return answers[host] ? new Response(answers[host]) : new Response('Not found', { status: 404 });
             },
-            host: (site, siteDb) => createCMS({ db: siteDb, network: db, site: site.id }),
+            host: (site, siteDb) => createCMS({ db: siteDb, network: db, site: site.id, people: people.of(site.id) }),
         });
         main = network.main;
         expect((await main.migrate()).failed).toBeUndefined();
-        const account = await main.users.create({ email: 'owner@example.com', name: 'Owner', password: 'owns the place', networkRole: NETWORK_ADMIN });
-        owner = account.id;
+        owner = await people.admin(main, { email: 'owner@example.com', name: 'Owner' });
         admin = (await main.users.principal(owner))!;
     }, 60_000);
 
@@ -93,22 +94,13 @@ describe.skipIf(!live)('adding, archiving and deleting sites', () => {
         expect(await network.removeDomain('the-blog', 'blog.example.com', { principal: admin })).toBe(true);
     });
 
-    it('records memberships, lists accounts and deletes an account from every site', async () => {
+    it('lists the sites an account is a member of', async () => {
         const blog = network.hostOf((await network.resolve('www.theblog.test') as { site: Parameters<CmsNetwork['hostOf']>[0] }).site);
-        const writer = await blog.users.create({ email: 'writer@example.com', name: 'Writer', password: 'writes daily', roles: ['author'], network: true });
-        expect((await main.accounts.memberships([owner, writer.id])).get(owner)).toEqual(['main', 'the-blog']);
-        expect((await main.accounts.memberships([writer.id])).get(writer.id)).toEqual(['the-blog']);
-        expect((await main.accounts.memberCounts()).get('the-blog')).toBe(2);
+        const writer = await main.users.create({ email: 'writer@example.com', name: 'Writer' });
+        expect(await blog.users.addMember(writer.id, { roles: ['author'] })).toMatchObject({ email: 'writer@example.com', roles: ['author'] });
         expect((await network.memberSites(owner)).map(site => site.id)).toEqual(['main', 'the-blog']);
-        expect((await main.accounts.list({ search: 'writer' })).items.map(account => account.id)).toEqual([writer.id]);
-        expect((await main.accounts.list({ networkAdmins: true })).items.map(account => account.id)).toEqual([owner]);
-
-        await expect(network.deleteAccount(owner, { principal: admin })).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
-        expect(await blog.users.get(owner)).not.toBeNull();
-        expect(await network.deleteAccount(writer.id, { principal: admin })).toBe(true);
-        expect(await blog.users.get(writer.id)).toBeNull();
-        expect(await main.accounts.get(writer.id)).toBeNull();
-        expect((await main.accounts.memberships([writer.id])).get(writer.id)).toEqual([]);
+        expect((await network.memberSites(writer.id)).map(site => site.id)).toEqual(['main', 'the-blog']);
+        expect(await blog.users.addMember('nobody')).toBeNull();
     });
 
     it('keeps network settings and lists sites with schema steps to apply', async () => {
@@ -125,13 +117,22 @@ describe.skipIf(!live)('adding, archiving and deleting sites', () => {
     it('exports a site\'s database without credentials, in pages, with its values intact', async () => {
         const blog = network.hostOf((await network.resolve('www.theblog.test') as { site: Parameters<CmsNetwork['hostOf']>[0] }).site);
         await blog.settings.update('general', { tagline: 'Notes' }, { principal: systemPrincipal('test') });
+        // The application's account tables, as the dashboard package keeps them in a site's database.
+        await blog.db.write([
+            { rql: 'CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT NOT NULL, password_hash TEXT)' },
+            { rql: 'CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL)' },
+            { rql: "INSERT INTO users (id, email, password_hash) VALUES ('u1', 'reader@example.com', 'a hash')" },
+            { rql: "INSERT INTO sessions (id, user_id) VALUES ('token', 'u1')" },
+        ], { kind: 'test' });
         let text = '';
         for await (const chunk of siteExport(blog.db, { site: { id: 'the-blog', name: 'The Blog', host: 'www.theblog.test' }, now: () => 0, pageSize: 2 })) text += chunk;
         const exported = JSON.parse(text) as { format: string; version: number; exportedAt: string; site: unknown; skipped: string[]; tables: { name: string; model: string; columns?: string[]; rows: unknown[] }[] };
         expect(exported).toMatchObject({ format: 'cossack-site-export', version: 1, exportedAt: '1970-01-01T00:00:00.000Z', site: { id: 'the-blog', name: 'The Blog', host: 'www.theblog.test' } });
         const names = exported.tables.map(table => table.name);
-        expect(names).toEqual(expect.arrayContaining(['cms_settings', 'cms_users', 'cms_roles', 'cms_user_roles']));
-        for (const secret of ['cms_auth_sessions', 'cms_user_security', 'cms_passkeys', 'cms_api_tokens', 'cms_accounts', 'cms_network']) expect(names).not.toContain(secret);
+        expect(names).toEqual(expect.arrayContaining(['cms_settings', 'cms_authors', 'users']));
+        for (const secret of ['sessions', 'cms_network', 'cms_attempts']) expect(names).not.toContain(secret);
+        const users = exported.tables.find(table => table.name === 'users')!;
+        expect((users.rows as unknown[][]).map(row => row.map(value => decodeValue(value)))).toEqual([['u1', 'reader@example.com', null]]);
         // Rows come in key order across pages of two, as RomeDB's portable values.
         const settings = exported.tables.find(table => table.name === 'cms_settings')!;
         const rows = settings.rows.map(row => (row as unknown[]).map(value => decodeValue(value)));
@@ -139,8 +140,6 @@ describe.skipIf(!live)('adding, archiving and deleting sites', () => {
         expect(rows.map(row => row[0])).toEqual([...rows.map(row => row[0])].sort());
         expect(rows.find(row => row[0] === 'general.tagline')?.[settings.columns!.indexOf('value')]).toBe('"Notes"');
         expect(typeof rows[0]![settings.columns!.indexOf('updated_at')]).toBe('bigint');
-        const roles = exported.tables.find(table => table.name === 'cms_roles')!;
-        expect(roles.rows).toHaveLength((await blog.users.roles()).length);
     });
 
     it('lets a site download its export after a network admin approves its request, or at once when sites export themselves', async () => {
@@ -187,7 +186,7 @@ describe.skipIf(!live)('adding, archiving and deleting sites', () => {
                 return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
             },
         });
-        const second = new CmsNetwork({ db: racing, open: () => other.db, networkHost: () => 'example.com', now: () => now, host: (site, siteDb) => createCMS({ db: siteDb, network: racing, site: site.id }) });
+        const second = new CmsNetwork({ db: racing, open: () => other.db, networkHost: () => 'example.com', now: () => now, sites, memberSites: people.memberSites, host: (site, siteDb) => createCMS({ db: siteDb, network: racing, site: site.id, people: people.of(site.id) }) });
         await second.withdrawExport('the-blog', { principal: siteAdmin });
         expect(raced).toBe(true);
         expect([...(await network.exportRequests()).keys()]).toEqual(['other-site']);
@@ -207,13 +206,8 @@ describe.skipIf(!live)('adding, archiving and deleting sites', () => {
         expect(await network.purgeDeleted()).toEqual([]);
         expect(await network.setSiteStatus('the-blog', 'active', { principal: admin })).toMatchObject({ status: 'active', deletedAt: null });
         await network.setSiteStatus('the-blog', 'deleted', { principal: systemPrincipal('test') });
-        const member = await network.main.accounts.create({ email: 'purged-member@example.com', name: 'Purged member' });
-        await network.main.accounts.join(member.id, 'the-blog');
-        expect((await network.main.accounts.memberships([member.id])).get(member.id)).toEqual(['the-blog']);
         now += 31 * 24 * 60 * 60_000;
         expect(await network.purgeDeleted()).toEqual(['the-blog']);
-        // The purged site's memberships go with it: no "belongs to other sites", no stale My sites entry.
-        expect((await network.main.accounts.memberships([member.id])).get(member.id) ?? []).toEqual([]);
         expect(deleted).toEqual(['db-site-the-blog']);
         expect(await network.sites.get('the-blog')).toBeNull();
         expect(await network.sites.siteOf('www.theblog.test')).toBeNull();

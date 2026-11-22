@@ -1653,9 +1653,9 @@ export interface RecoveryResult {
 export async function recoverAccount(code: unknown, email: unknown, clearSecondFactors = false): Promise<RecoveryResult | { error: string; status: 400 | 401 | 403 | 404 | 429 }> {
   const address = typeof email === 'string' ? email.trim().toLowerCase() : '';
   return accountByEmail(address, () => accounts(async () => {
-  const expected = env('RECOVERY_CODE', '').trim();
-  if (!expected) return { error: 'Recovery mode is off: set RECOVERY_CODE in the environment to turn it on.', status: 403 as const };
-  if (expected.length < RECOVERY_CODE_MIN_LENGTH) return { error: `RECOVERY_CODE must be at least ${RECOVERY_CODE_MIN_LENGTH} characters.`, status: 403 as const };
+  const expected = env(authOptions.recoveryCodeVariable, '').trim();
+  if (!expected) return { error: `Recovery mode is off: set ${authOptions.recoveryCodeVariable} in the environment to turn it on.`, status: 403 as const };
+  if (expected.length < RECOVERY_CODE_MIN_LENGTH) return { error: `${authOptions.recoveryCodeVariable} must be at least ${RECOVERY_CODE_MIN_LENGTH} characters.`, status: 403 as const };
   if (!(await security.attempt('recovery', `a:${clientAddress()}`, RECOVERY_ATTEMPTS.max, RECOVERY_ATTEMPTS.windowMs))) return { error: 'Too many recovery attempts. Wait fifteen minutes.', status: 429 as const };
   if (typeof code !== 'string' || !(await sameSecret(code, expected))) return { error: 'The recovery code is not correct.', status: 401 as const };
   if (!address || address.length > 254 || !address.includes('@')) return { error: 'Give the email address of the account.', status: 400 as const };
@@ -1671,4 +1671,13 @@ export async function recoverAccount(code: unknown, email: unknown, clearSecondF
     text: `Someone with access to the site's settings used recovery mode to make a password reset link for your account${clearSecondFactors ? ', and removed its second factors' : ''}. If this was not you or your administrator, tell the site's owner.` }).catch(() => undefined);
   return { email: user.email, resetUrl: `${origin}/auth/reset-password?token=${token}`, expiresAt: Date.now() + 60 * 60 * 1000, secondFactorsCleared: clearSecondFactors };
   }), { error: 'Recover a main account on the main host.', status: 400 as const });
+}
+
+/** The newest sign-ins on this host that are still signed in (a session ends at sign-out), for an overview. */
+export async function recentSignIns(limit = 8): Promise<{ userId: string; createdAt: number; userAgent: string | null; ip: string | null }[]> {
+  return sessions(async () => {
+  const rows = (await Session.find({ where: { expiresAt: MoreThan(new Date()) }, order: { createdAt: 'desc' }, take: Math.min(Math.max(limit, 1), 50) * 3 }))
+    .filter((row) => row.userId && parseMeta(row.meta)?.type === 'auth').slice(0, limit);
+  return rows.map((row) => ({ userId: row.userId!, createdAt: row.createdAt.getTime(), userAgent: row.userAgent, ip: row.ipAddress }));
+  });
 }

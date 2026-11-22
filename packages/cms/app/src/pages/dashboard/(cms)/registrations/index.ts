@@ -2,7 +2,7 @@ import { Cossack, Page, State, flash, flashed, type HeadValue } from '@cossackfr
 import { Badge, Card, CardBody } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, isSameOriginPost, PERMISSIONS } from '@cossackframework/cms';
-import { approveRegistration } from '#app/auth';
+import { approveRegistration, deleteRegistration, registrations } from '#app/auth';
 import { requireAny } from '#app/cms/guards';
 import { notice, pageHeader, shortDate } from '#app/cms/ui';
 import { actionButton } from '#app/cms/network-view';
@@ -27,7 +27,8 @@ export default class RegistrationsPage extends Cossack {
     async init() {
         const cms = this.c.get('cms');
         this.required = await cms.settings.get('general.approveRegistrations');
-        this.waiting = (await cms.users.registrations({ limit: 200 })).map(({ user, verified, createdAt }) => ({ id: user.id, name: user.name, email: user.email, verified, createdAt }));
+        // Accounts and their approval are the dashboard package's.
+        this.waiting = await registrations();
         this.message = flashed<string>('registrations.message') ?? '';
         this.error = flashed<string>('registrations.error') ?? '';
     }
@@ -39,12 +40,12 @@ export default class RegistrationsPage extends Cossack {
         const id = String(form.get('id') ?? '');
         const cms = this.c.get('cms');
         try {
-            if (!(await cms.users.awaitingApproval(id))) throw new Error(__('This account does not wait for approval.'));
+            if (!(await registrations()).some(entry => entry.id === id && entry.verified)) throw new Error(__('This account does not wait for approval.'));
             if (action === 'approve') {
                 await approveRegistration(id);
                 flash('registrations.message', __('Approved. They can sign in now and got an email saying so.'));
             } else if (action === 'delete') {
-                await cms.users.delete(id);
+                await deleteRegistration(id);
                 flash('registrations.message', __('Deleted the account.'));
             } else throw new Error(__('Unknown action.'));
         } catch (error) {

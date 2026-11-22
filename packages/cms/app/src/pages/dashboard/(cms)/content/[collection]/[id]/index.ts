@@ -1916,7 +1916,7 @@ export default class EntryEditor extends Cossack {
         if (!['title', 'excerpt', 'summary'].includes(kind)) throw new ClientVisibleError(__('Unknown suggestion.'));
         await this.assertEditor();
         const principal = this.c.get('principal');
-        if (!(await cms.security.attempt('suggest', principalId(principal), SUGGESTIONS.max, SUGGESTIONS.windowMs))) throw new ClientVisibleError(__('Too many suggestions in a short time. Wait a minute and try again.'));
+        if (!(await cms.attempts.attempt('suggest', principalId(principal), SUGGESTIONS.max, SUGGESTIONS.windowMs))) throw new ClientVisibleError(__('Too many suggestions in a short time. Wait a minute and try again.'));
         const parts: string[] = [];
         for (const [name, value] of Object.entries(values)) {
             if (name === kind || parts.join(' ').length > 12_000) continue;

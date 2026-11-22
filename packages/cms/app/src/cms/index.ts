@@ -142,8 +142,6 @@ export function networkFor(env: CmsBindings): CmsNetwork {
                 ...(storage ? { storage: site.id === MAIN_SITE ? storage : prefixedStorage(storage, `sites/${site.id}/`) } : {}),
                 ...(images ? { images } : {}), siteUrl: () => siteUrl(env, site),
                 ...(siteMail ? { mailFrom: env.MAIL_FROM || 'no-reply@example.com' } : {}),
-                // Ending a network session ends the child sessions sites made from it.
-                sessionsEnded: ended => network.endSessions(ended),
                 // A note's webhooks and emails, from the outbox job its write queued.
                 announceNote: announceNoteEvent,
                 purgers: [...purgers(env, site), ...(project.purgers ?? [])],

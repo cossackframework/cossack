@@ -205,19 +205,11 @@ describe.skipIf(!live)('RomeDB limits', () => {
         for (let i = 0; i < 2 * count; i++) ids.push((await posts.create({ title: `Budgetword ${i}`, content: richContent(sections), status: 'published' }, { principal: admin })).id);
         expect(await posts.search('Budgetword', { limit: 2 * count }, { principal: admin })).toHaveLength(2 * count);
         expect((await posts.getMany(ids, { principal: admin })).size).toBe(2 * count);
-        await insert(i => ({ rql: "INSERT INTO cms_users (id, email, name, avatar, status, created_at, updated_at, last_sign_in_at, slug) VALUES ($id, $email, 'Wide', NULL, 'active', $at, $at, NULL, NULL)",
-            params: { $id: `wide-user-${i}`, $email: `wide${i}@example.com`, $at: clock + i } }));
-        // Their field values are documents beside the rows.
-        for (let i = 0; i < count; i++) await cms.db.write(cms.userFields.save(`wide-user-${i}`, { bio: text(i) }, null, crypto.randomUUID()) as never);
-        expect((await cms.users.getMany(Array.from({ length: count }, (_, i) => `wide-user-${i}`))).size).toBe(count);
-        // Roles with long permission lists: every user holding one reads it once, and the roles list pages.
-        const permissions = (i: number) => JSON.stringify(Array.from({ length: Math.ceil(size / 40) }, (_, j) => `cms/wide-${i}-${String(j).padStart(4, '0')}:read`));
-        await insert(i => ({ rql: 'INSERT INTO cms_roles (id, name, permissions, created_at) VALUES ($id, $name, $permissions, $at)',
-            params: { $id: `wide-role-${i}`, $name: `Wide role ${i}`, $permissions: permissions(i), $at: clock + i } }));
-        await insert(i => ({ rql: 'INSERT INTO cms_user_roles (user_id, role_id) VALUES ($user, $role)', params: { $user: `wide-user-${i}`, $role: 'wide-role-0' } }));
-        const holders = await cms.users.getMany(Array.from({ length: count }, (_, i) => `wide-user-${i}`));
-        expect([...holders.values()].every(user => user.assignments.some(role => role.id === 'wide-role-0'))).toBe(true);
-        expect((await cms.users.roles({ limit: 200 })).filter(role => role.id.startsWith('wide-role-'))).toHaveLength(count);
+        // Users are the application's; their field values are documents the CMS reads with them.
+        const wide: string[] = [];
+        for (let i = 0; i < count; i++) wide.push((await cms.users.create({ email: `wide${i}@example.com`, name: 'Wide' })).id);
+        for (const [i, id] of wide.entries()) await cms.db.write(cms.userFields.save(id, { bio: text(i) }, null, crypto.randomUUID()) as never);
+        expect((await cms.users.getMany(wide)).size).toBe(count);
         await insert(i => ({ rql: "INSERT INTO cms_comments (id, resource, record_id, parent_id, user_id, author_name, author_email, author_url, content, status, created_at, updated_at) VALUES ($id, 'cms/posts', $record, NULL, NULL, 'Spammer', 'spam@example.com', '', $content, 'pending', $at, $at)",
             params: { $id: `pending-${i}`, $record: ids[0]!, $content: text(i), $at: clock + i } }));
         expect((await cms.comments.list({ status: 'pending', limit: count })).items).toHaveLength(count);

@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { Hono, type Context } from 'hono';
 import { ClientError, type RomeDB, type Statement } from '@cossackframework/romedb';
 import { setRequestContextGetter } from '@cossackframework/core';
-import { CmsNetwork, MAIN, type CmsHost, type NetworkSite } from '../src/server/index';
+import { CmsNetwork, MAIN, memorySites, type CmsHost, type NetworkSite } from '../src/server/index';
 import { CmsSettings } from '../src/server/site-settings';
 import { readPagedTogether } from '../src/server/budget';
 import { answered, requestCallsSignal, withRequestCalls } from '../app/src/cms/request-calls';
@@ -62,25 +62,22 @@ describe('shared reads under a burst', () => {
             if (/cms_network/.test(statements[0]!.rql)) return fail ? full() : rows([[JSON.stringify(true)]]);
             return empty;
         });
-        const network = new CmsNetwork({ db, host: stubHost });
+        const network = new CmsNetwork({ db, host: stubHost, sites: memorySites() });
         await expect(network.enabled()).rejects.toMatchObject({ code: 'RDB_LIMIT' });
         fail = false;
         await expect(network.enabled()).resolves.toBe(true);
         // Before setup the table does not exist: the network is off.
-        const before = new CmsNetwork({ db: fakeDb(() => missing('cms_network')), host: stubHost });
+        const before = new CmsNetwork({ db: fakeDb(() => missing('cms_network')), host: stubHost, sites: memorySites() });
         await expect(before.enabled()).resolves.toBe(false);
     });
 
     it('answers the main site before setup, and fails rather than serve it when a lookup fails', async () => {
         const open = () => fakeDb(() => empty);
-        const before = new CmsNetwork({ db: fakeDb(() => missing('cms_sites')), host: stubHost, open });
+        const before = new CmsNetwork({ db: fakeDb(() => empty), host: stubHost, open, sites: memorySites() });
         await expect(before.resolve('blog.example.com')).resolves.toEqual({ kind: 'site', site: MAIN });
-        const busy = new CmsNetwork({ db: fakeDb(() => full()), host: stubHost, open });
+        // The registry is the application's: when it cannot count the sites, the request fails.
+        const busy = new CmsNetwork({ db: fakeDb(() => empty), host: stubHost, open, sites: { ...memorySites(), count: async () => { throw full(); } } });
         await expect(busy.resolve('blog.example.com')).rejects.toMatchObject({ code: 'RDB_LIMIT' });
-        // A lookup another request started and took with it is read again.
-        let attempt = 0;
-        const shared = new CmsNetwork({ db: fakeDb(() => ++attempt === 1 ? cancelled() : rows([[0n]])), host: stubHost, open });
-        await expect(shared.resolve('blog.example.com')).resolves.toEqual({ kind: 'site', site: MAIN });
     });
 
     it('reads several lists in one request, and one after another when the result is too large', async () => {

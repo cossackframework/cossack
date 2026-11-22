@@ -954,8 +954,8 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       const exported = await own.json();
       expect(exported).toMatchObject({ format: 'cossack-site-export', version: 1, site: { id: 'main', name: 'Workers Dev' } });
       expect(exported.tables.map(table => table.name)).toContain('cms_settings');
-      expect(exported.tables.map(table => table.name)).not.toContain('cms_accounts');
-      expect(exported.tables.map(table => table.name)).not.toContain('cms_auth_sessions');
+      expect(exported.tables.map(table => table.name)).not.toContain('tenant_members');
+      expect(exported.tables.map(table => table.name)).not.toContain('sessions');
       if (servesDirectories()) {
         const blogExport = await (await web.request('/api/cms/network/sites/blog/export')).json();
         expect(blogExport.site).toEqual({ id: 'blog', name: 'Blog', host: 'blog.localhost' });

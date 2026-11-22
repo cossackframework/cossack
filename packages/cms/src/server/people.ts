@@ -98,11 +98,10 @@ const ROLE_ID = /^[a-z][a-z0-9_-]{0,63}$/;
  * A people port that keeps everything in memory: for tests, and for trying the CMS without
  * an application around it. It follows the rules an application's port must follow.
  */
-export function memoryPeople(options: { now?: () => number } = {}): PeoplePort & { /** Mark a user as a network administrator, or as disabled. */ set(id: string, patch: { networkAdmin?: boolean; status?: 'active' | 'disabled'; lastSignInAt?: number | null }): void } {
+export function memoryPeople(options: { now?: () => number; /** The accounts a network shares, for a site of it: `join` makes one a member here. */ network?: PeoplePort } = {}): PeoplePort & { /** Mark a user as a network administrator, or as disabled. */ set(id: string, patch: { networkAdmin?: boolean; status?: 'active' | 'disabled'; lastSignInAt?: number | null }): void } {
     const now = options.now ?? Date.now;
     const users = new Map<string, Omit<Person, 'roles'> & { roles: string[] }>();
     const roles = new Map<string, PersonRole>();
-    let made = 0;
 
     const person = (id: string): Person | null => {
         const user = users.get(id);
@@ -152,7 +151,7 @@ export function memoryPeople(options: { now?: () => number } = {}): PeoplePort &
         async create(input) {
             const address = email(input.email);
             if ([...users.values()].some(user => user.email === address)) throw new CmsError('CMS_CONFLICT', 'A user with this email already exists.', { fields: { email: 'is taken.' } });
-            const id = input.id ?? `person-${String(++made).padStart(4, '0')}`;
+            const id = input.id ?? crypto.randomUUID();
             if (users.has(id)) throw new CmsError('CMS_CONFLICT', 'A user with this ID already exists.');
             users.set(id, { id, email: address, name: input.name.trim() || address, avatar: null, status: 'active', roles: checkRoles(input.roles ?? []), networkAdmin: false, account: 'site', createdAt: now(), lastSignInAt: null });
             return person(id)!;
@@ -171,6 +170,13 @@ export function memoryPeople(options: { now?: () => number } = {}): PeoplePort &
             users.set(id, { ...user, roles: checkRoles(ids) });
         },
         async delete(id) { return users.delete(id); },
+        async join(accountId, held) {
+            const account = options.network ? (await options.network.getMany([accountId])).get(accountId) : undefined;
+            if (!account) return person(accountId);
+            users.set(accountId, { id: account.id, email: account.email, name: account.name, avatar: account.avatar, status: account.status, roles: checkRoles(held), networkAdmin: account.networkAdmin, account: 'network', createdAt: now(), lastSignInAt: null });
+            return person(accountId);
+        },
+        async ownCount() { return [...users.values()].filter(user => user.account === 'site').length; },
         set(id, patch) {
             const user = users.get(id);
             if (user) users.set(id, { ...user, ...patch });

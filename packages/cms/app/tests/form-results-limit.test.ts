@@ -23,7 +23,7 @@ function app() {
                 return { confirmation: { kind: 'message', message: 'Thanks.' }, submission: { id: 's1' } };
             },
         },
-        security: {
+        attempts: {
             attempt: async (kind: string, key: string, max: number) => {
                 const next = (counts.get(`${kind}:${key}`) ?? 0) + 1;
                 counts.set(`${kind}:${key}`, Math.min(next, max));

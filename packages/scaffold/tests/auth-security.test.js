@@ -45,7 +45,7 @@ async function generatedAuth() {
     // The project's choices, as src/dashboard.config.ts states them for this recipe.
     './auth-options': { authOptions: { authMethods: ['credentials', 'oauth'], oauth: ['github'], modules: ['sessions'], dashboard: true, redirectAfterLogin: '/dashboard',
       registration: { open: true, verifyEmail: false, approve: false, defaultRole: '' },
-      security: { requireTwoFactor: false, twoFactorRoles: [] }, tenants: { enabled: false, signIn: 'host' }, tokenPrefix: 'app', setupCodeVariable: 'SETUP_CODE', accountLabels: { shared: 'Shared account', sharedNotice: 'Shared.' } } },
+      security: { requireTwoFactor: false, twoFactorRoles: [] }, tenants: { enabled: false, signIn: 'host' }, tokenPrefix: 'app', setupCodeVariable: 'SETUP_CODE', recoveryCodeVariable: 'RECOVERY_CODE', accountLabels: { shared: 'Shared account', sharedNotice: 'Shared.' } } },
     '@/models/User': { User },
     '@/models/Session': { Session },
     '@/models/OAuthAccount': { OAuthAccount },
@@ -65,7 +65,7 @@ async function generatedAuth() {
     if (!(name in modules)) throw new Error(`Unexpected dependency: ${name}`);
     return modules[name];
   }, module, module.exports);
-  return { api: module.exports, provider, Session, User, OAuthAccount, createSession, sql, files, security };
+  return { api: module.exports, provider, Session, User, OAuthAccount, createSession, sql, files, security, authOptions: modules['./auth-options'].authOptions };
 }
 
 const ownerContext = () => ({ cookie: 'CURRENT_PRIVATE_BEARER', get: () => ({ id: 'member' }),
@@ -419,6 +419,45 @@ describe('generated auth security', () => {
     expect(results.sort()).toEqual([false, true]);
     expect(User.update).toHaveBeenCalledOnce();
     expect(Session.delete).toHaveBeenCalledWith({ userId: 'member' });
+  });
+
+  it('counts wrong current passwords per account, and gives the try back for the right one', async () => {
+    const { api, User, security } = await generatedAuth();
+    const passwordHash = await hashPassword('the right password');
+    User.findOne.mockResolvedValue({ id: 'member', email: 'member@example.com', passwordHash, status: 'active' });
+    expect(await api.passwordMatches('member', 'a wrong password')).toBe(false);
+    expect(security.attempt).toHaveBeenCalledWith('password-check', 'member', expect.any(Number), expect.any(Number));
+    expect(security.release).not.toHaveBeenCalled();
+    expect(await api.passwordMatches('member', 'the right password')).toBe(true);
+    expect(security.release).toHaveBeenCalledWith('password-check', 'member');
+    // Out of tries: refused before the password is looked at.
+    security.attempt.mockResolvedValue(false);
+    User.findOne.mockClear();
+    await expect(api.passwordMatches('member', 'the right password')).rejects.toThrow('Too many wrong passwords');
+    expect(User.findOne).not.toHaveBeenCalledWith({ where: { id: 'member' } });
+  });
+
+  it('refuses a password alone when two-step sign-in is required and the second step is a passkey', async () => {
+    const { api, User, security, authOptions } = await generatedAuth();
+    User.findOne.mockResolvedValue({ id: 'member', email: 'member@example.com', status: 'active' });
+    security.hasSecondFactor.mockResolvedValue(true);
+    // Not required: the password signs in.
+    expect(await api.beginTwoFactor('member')).toBeNull();
+    authOptions.security.requireTwoFactor = true;
+    await expect(api.beginTwoFactor('member')).rejects.toMatchObject({ name: 'SignInPasskeyError' });
+    // An account with no second factor yet signs in, and is asked to set one up afterwards.
+    security.hasSecondFactor.mockResolvedValue(false);
+    expect(await api.beginTwoFactor('member')).toBeNull();
+  });
+
+  it('builds email links from APP_URL, and makes none without it outside this machine', async () => {
+    const { api } = await generatedAuth();
+    // The framework's global env() reads the deployment's variables; the request's Host is never read.
+    const variables = { APP_URL: 'https://site.example/' };
+    vi.stubGlobal('env', (name, fallback) => variables[name] ?? fallback);
+    expect(api.linkOrigin()).toBe('https://site.example');
+    delete variables.APP_URL;
+    expect(api.linkOrigin()).toBeNull();
   });
 
   it('does not link an unrecognized OAuth identity to an existing email account', async () => {

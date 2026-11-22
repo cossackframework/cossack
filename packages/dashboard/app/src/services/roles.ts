@@ -131,6 +131,7 @@ async function roleId(name: string): Promise<string> {
 }
 
 export async function createRole(input: CreateRoleInput, actor: RoleActor | undefined = requestActor()): Promise<RoleDetail> {
+  if (typeof input?.name !== 'string' || !input.name.trim() || input.name.length > 120) throw new ClientVisibleError('Enter a role name of at most 120 characters.');
   if (await Role.exists({ name: input.name })) {
     throw new ClientVisibleError('A role with this name already exists.');
   }
@@ -156,6 +157,7 @@ export async function updateRole(id: string, patch: UpdateRoleInput, actor: Role
   // Nobody weakens or renames a role that holds permissions they lack.
   if (actor && !holdsAll(permissionsOf(actor), current.permissions ?? [])) throw new ClientVisibleError('This role has permissions you do not have, so you cannot change it.');
   if (patch.name !== undefined) {
+    if (typeof patch.name !== 'string' || !patch.name.trim() || patch.name.length > 120) throw new ClientVisibleError('Enter a role name of at most 120 characters.');
     if (await Role.exists({ id: Not(id), name: patch.name })) {
       throw new ClientVisibleError('A role with this name already exists.');
     }

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { RomeDB } from '@cossackframework/romedb';
-import { CmsNetwork, contentModule, createCMS, field, formsModule, manifestProblems, NETWORK_ADMIN, networkSite, siteCreated, systemPrincipal, userPrincipal, type CmsHost, type PluginContext, type PluginRegistrationLike, type Principal, type SiteCreatedEvent } from '../src/server/index';
-import { romedbService, live } from './helpers';
+import { CmsNetwork, contentModule, createCMS, field, memorySites, formsModule, manifestProblems, NETWORK_ADMIN, networkSite, siteCreated, systemPrincipal, userPrincipal, type CmsHost, type PluginContext, type PluginRegistrationLike, type Principal, type SiteCreatedEvent } from '../src/server/index';
+import { networkPeople, romedbService, live } from './helpers';
 
 const networkAdmin: Principal = { kind: 'user', id: 'root', roles: ['admin', NETWORK_ADMIN], permissions: ['*'] };
 const system = systemPrincipal('tests');
@@ -50,11 +50,12 @@ describe.skipIf(!live)('site registration and new sites', () => {
     const added = new Map<string, { db: RomeDB; stop(): Promise<void> }>();
     let network: CmsNetwork;
     let ada: string;
+    const people = networkPeople();
 
     beforeAll(async () => {
         const db = service.database();
         network = new CmsNetwork({
-            db, open: site => added.get(site.database)!.db, networkHost: () => 'example.com',
+            db, open: site => added.get(site.database)!.db, networkHost: () => 'example.com', sites: memorySites(), memberSites: people.memberSites,
             directory: {
                 async create(name) {
                     if (!added.has(`db-${name}`)) added.set(`db-${name}`, await service.fresh());
@@ -62,12 +63,12 @@ describe.skipIf(!live)('site registration and new sites', () => {
                 },
                 async delete() {},
             },
-            host: (site, siteDb) => createCMS({ db: siteDb, network: db, site: site.id, modules: [contentModule, formsModule], plugins: [crew] }),
+            host: (site, siteDb) => createCMS({ db: siteDb, network: db, site: site.id, modules: [contentModule, formsModule], plugins: [crew], people: people.of(site.id) }),
         });
         expect((await network.main.migrate()).failed).toBeUndefined();
         await network.setEnabled(true, { principal: system });
         await network.setPluginState('crew', 'network', { principal: networkAdmin });
-        ada = (await network.main.accounts.create({ email: 'ada@example.com', name: 'Ada', password: 'long password 1' })).id;
+        ada = (await network.main.users.create({ email: 'ada@example.com', name: 'Ada' })).id;
     }, 60_000);
 
     afterAll(async () => {
@@ -94,7 +95,8 @@ describe.skipIf(!live)('site registration and new sites', () => {
 
     it('needs a signed-in account whose email is confirmed', async () => {
         await expect(network.registerSite({ name: 'Pho', host: 'pho.example.com' }, { principal: { kind: 'anonymous' } })).rejects.toMatchObject({ code: 'CMS_UNAUTHENTICATED' });
-        const waiting = (await network.main.accounts.create({ email: 'new@example.com', name: 'New', password: 'long password 2', status: 'disabled' })).id;
+        const waiting = (await network.main.users.create({ email: 'new@example.com', name: 'New' })).id;
+        people.main.set(waiting, { status: 'disabled' });
         await expect(network.registerSite({ name: 'Pho', host: 'pho.example.com' }, as(waiting))).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
         expect(await network.sites.get('pho')).toBeNull();
     });
@@ -125,7 +127,6 @@ describe.skipIf(!live)('site registration and new sites', () => {
         await network.setPluginState('crew', 'available', { principal: networkAdmin });
         const site = network.hostOf(networkSite((await network.sites.get('two'))!));
         await site.users.defineRole({ id: 'crew-staff', name: 'Crew', permissions: ['cms:dashboard'] });
-        await site.users.deleteRole('crew-manager');
         await site.grantPlugin('crew', system);
         expect(await site.users.role('crew-staff')).toMatchObject({ name: 'Crew', permissions: ['cms:dashboard'] });
         expect(await site.users.role('crew-manager')).toMatchObject({ name: 'Manager' });

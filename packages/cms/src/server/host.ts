@@ -29,8 +29,8 @@ import { AVATAR_TYPES, mediaUrl } from '../media';
 import { canonicalJson, declarationHash, memberRuleProblems, ResourceDeclarationError, resolveResource, storageName, type Resource, type ResourceAction, type ResourceDeclaration } from '../resource';
 import { Outbox, type OutboxOptions } from './outbox';
 import { FieldValues } from './field-values';
-import { PeopleUsers } from './people-users';
-import type { PeoplePort } from './people';
+import { CmsAttempts } from './attempts';
+import { memoryPeople, type PeoplePort } from './people';
 import { groupMedia, JOIN_GROUP, ResourceRepository, type BatchGuard, type BatchWrite, type FieldFilter, type ListOptions, type OperationContext } from './repository';
 import { batchResource, writeBatch } from './batch';
 import { migrate, nextGenerationStatement, planSchema, readCatalog, type MigrationReport, type SchemaPlan } from './schema';
@@ -48,18 +48,16 @@ import { sharedRead } from './shared-read';
 import { isLockedRecord, lockedView } from './locked';
 import { pluginState, readPolicy, type NetworkPluginState, type NetworkPolicy } from './network-policy';
 import { CmsSettings } from './site-settings';
-import { createAuthSessionStore, createJobStore, createNotificationStore, createOAuthStateStore, createSessionStore, type EndedSessions } from './stores';
+import { createJobStore, createNotificationStore } from './stores';
 import { CmsMenus } from './menus';
 import { CmsAreas } from './areas';
 import { CmsTaxonomies } from './taxonomies';
 import { CmsUsers } from './users';
-import { CmsAccounts } from './accounts';
 import { CmsPreviews, type PreviewLink } from './previews';
 import { CmsAutosaves, type Autosave } from './autosaves';
 import { CmsDrafts } from './drafts';
 import { CmsNotes } from './notes';
 import { CmsRedirects } from './redirects';
-import { CmsApiTokens, type ApiTokenScope } from './api-tokens';
 import { CmsWebhooks } from './webhooks';
 import { CmsIndexNow } from './indexnow';
 import { CmsPurge, type CachePurger } from './purge';
@@ -79,7 +77,6 @@ import type { PaymentEvent } from '../hooks';
 import { siteBindingScope, type BindingScopes } from '../bindings';
 import { CmsAutomations } from './automations';
 import { CmsComments, collectionDeleted, collectionDeletedStatement } from './comments';
-import { CmsSecurity } from './security';
 import type { ImageTransformer } from './images';
 import { checkComment, COMMENT_STATUSES, type CommentShape, type CommentStatus } from '../comments';
 import { sha256Hex } from './tokens';
@@ -151,8 +148,6 @@ export interface CmsOptions {
      * note's write queued, so a note that was saved is announced even after a crash.
      */
     readonly announceNote?: (host: CmsHost, event: NoteAnnouncedEvent) => Promise<void>;
-    /** Network sessions ended: end the child sessions that sites made from them. */
-    readonly sessionsEnded?: (ended: EndedSessions) => Promise<void>;
     /** This site's ID in the network; default `main`. */
     readonly site?: string;
     /** Application resources; owner defaults to `app`. */
@@ -454,12 +449,6 @@ interface Activation {
 export const PLUGIN_ENABLED = 'plugin:enabled';
 
 /** Where an account and what signs it in live: the site's own database, or the network's. */
-export interface AccountStores {
-    readonly kind: 'site' | 'network';
-    readonly accounts: CmsAccounts;
-    readonly security: CmsSecurity;
-    readonly apiTokens: CmsApiTokens;
-}
 
 export class CmsHost {
     readonly db: RomeDB;
@@ -468,22 +457,11 @@ export class CmsHost {
     /** This site's ID in the network: `main`, or the registry ID. */
     readonly site: string;
     readonly hooks: HookRegistry;
-    /** Network accounts: who signs in on the network host, on the network database. */
-    readonly accounts: CmsAccounts;
-    /**
-     * Site accounts: people who sign in on this site only, on its own database, with their own
-     * second factors, passkeys and application passwords. Null on the main site, whose accounts
-     * are the network's.
-     */
-    readonly siteAccounts: CmsAccounts | null;
     /** The field group values of users: one document per member. */
     readonly userFields: FieldValues;
     /** This site's members and roles. */
     readonly users: CmsUsers;
     readonly outbox: Outbox;
-    readonly authSessions: ReturnType<typeof createAuthSessionStore>;
-    readonly oauthStates: ReturnType<typeof createOAuthStateStore>;
-    readonly sessions: ReturnType<typeof createSessionStore>;
     readonly taxonomies: CmsTaxonomies;
     readonly settings: CmsSettings;
     readonly menus: CmsMenus;
@@ -498,7 +476,6 @@ export class CmsHost {
     /** Editors' review notes on entries, fields, blocks and passages. */
     readonly notes: CmsNotes;
     readonly redirects: CmsRedirects;
-    readonly apiTokens: CmsApiTokens;
     readonly webhooks: CmsWebhooks;
     readonly indexnow: CmsIndexNow;
     /** Purges of the caches in front of the site, queued by changes and sent from the outbox. */
@@ -531,12 +508,8 @@ export class CmsHost {
     readonly automations: CmsAutomations;
     readonly #secrets: (name: string) => string | undefined;
     readonly #env: Readonly<Record<string, unknown>>;
-    /** Second factors and passkeys of network accounts, on the network database. */
-    readonly security: CmsSecurity;
-    /** Second factors and passkeys of site accounts; null on the main site. */
-    readonly siteSecurity: CmsSecurity | null;
-    /** Application passwords of site accounts; null on the main site. */
-    readonly siteApiTokens: CmsApiTokens | null;
+    /** Counted attempts for the CMS's own limits: forms, comments, suggestions, site registrations. */
+    readonly attempts: CmsAttempts;
     /** Media files, when the host has object storage. */
     readonly files: FileService | null;
     /** A cache shared by every isolate, on RomeDB: values slow to compute, such as the library's summary. */
@@ -548,10 +521,8 @@ export class CmsHost {
     /** Code-declared resources: modules, the application and plugins. */
     readonly #static = new Map<string, Resource>();
     /** Static resources and the current collections. */
-    /** Accounts, roles and sign-in are the application's (`CmsOptions.people`). */
-    readonly #withPeople: boolean;
-    /** The people port, when the application keeps accounts; null with the CMS's own account tables. */
-    readonly people: PeoplePort | null;
+    /** Who keeps accounts, roles and sign-in: the application's port, or people kept in memory without one. */
+    readonly people: PeoplePort;
     #resources = new Map<string, Resource>();
     /** The stores of terms' field values, by taxonomy. */
     readonly #termFields = new Map<string, FieldValues>();
@@ -635,10 +606,7 @@ export class CmsHost {
         }
         this.#apply(new Map(), new Map());
         this.fieldGroups = new CmsFieldGroups(this.db, { now: this.#now });
-        this.accounts = new CmsAccounts(this.network, { now: this.#now, ...(options.sessionsEnded ? { sessionsEnded: options.sessionsEnded } : {}) });
         const added = this.network !== this.db;
-        // A site account's sessions are this site's: ending them ends nothing elsewhere.
-        this.siteAccounts = added ? new CmsAccounts(this.db, { now: this.#now, sessionsEnded: async ended => { if ('user' in ended) await this.authSessions.revokeAllForUser(ended.user, ended.except); } }) : null;
         // A user's field values are a document beside the member row, in the storage of an internal resource (specs/cms-field-values.md).
         this.userFields = new FieldValues(this.db, {
             resource: () => this.#resources.get(USER_FIELDS)!,
@@ -646,14 +614,11 @@ export class CmsHost {
             media: values => this.#valuesMedia(this.#resources.get(USER_FIELDS)!.fields, values),
             now: this.#now,
         });
-        const userOptions: ConstructorParameters<typeof CmsUsers>[1] = { accounts: this.accounts, ...(this.siteAccounts ? { siteAccounts: this.siteAccounts } : {}), ...(options.site ? { site: options.site } : {}), now: this.#now, fields: this.userFields, checkMeta: (meta, previous, principal) => this.#checkMeta({ kind: 'users' }, meta, previous, principal) };
-        this.#withPeople = options.people !== undefined;
-        this.people = options.people ?? null;
-        this.users = options.people ? new PeopleUsers(this.db, { ...userOptions, people: options.people }) : new CmsUsers(this.db, userOptions);
+        // Accounts, roles and sign-in are the application's (the dashboard package's in a CMS project). Without a port the host keeps people in memory: for tests, and for trying the CMS alone.
+        this.people = options.people ?? memoryPeople({ now: this.#now });
+        this.users = new CmsUsers(this.db, { people: this.people, now: this.#now, fields: this.userFields, checkMeta: (meta, previous, principal) => this.#checkMeta({ kind: 'users' }, meta, previous, principal) });
         this.redirects = new CmsRedirects(this.db, { now: this.#now, changed: () => this.#purgeSite('redirects') });
         this.traffic = new CmsTraffic(this.db, { now: this.#now });
-        this.apiTokens = new CmsApiTokens(this.network, { now: this.#now });
-        this.siteApiTokens = added ? new CmsApiTokens(this.db, { now: this.#now }) : null;
         this.webhooks = new CmsWebhooks(this.db, { now: this.#now, fetch: options.webhookFetch ?? this.#fetch, local: options.localWebhooks === true });
         this.comments = new CmsComments(this.db, { now: this.#now, changed: entries => this.#purgeLater('comments', { tags: entries.filter(entry => entry.resource.startsWith('cms/')).map(entry => this.purge.tag.entry(entry.resource.slice(4), entry.recordId)) }) });
         this.mailFrom = options.mailFrom ?? 'no-reply@example.com';
@@ -662,8 +627,7 @@ export class CmsHost {
             siteUrl: typeof options.siteUrl === 'function' ? options.siteUrl : () => options.siteUrl as string | undefined }) : null;
         const mail = this.mail;
         this.forms = new CmsForms(this, { ...(mail ? { mail: { send: message => mail.send({ ...message, kind: 'form' }) } } : {}), mailFrom: this.mailFrom });
-        this.security = new CmsSecurity(this.network, { now: this.#now });
-        this.siteSecurity = added ? new CmsSecurity(this.db, { now: this.#now }) : null;
+        this.attempts = new CmsAttempts(this.db, { now: this.#now });
         this.siteSearch = new SiteSearch(this);
         // Rebuilds of the site's search index run from the outbox, a round of entries at a time.
         this.hooks.addAction(searchRebuild, (event, context) => this.siteSearch.step(event, context.signal ? { signal: context.signal } : {}), { plugin: 'cms-search' });
@@ -731,10 +695,6 @@ export class CmsHost {
         this.hooks.addAction(formSubmitted, event => this.forms.notify(event), { plugin: 'cms' });
         this.hooks.addAction(formSubmitted, event => this.#queueFormWebhooks(event), { plugin: 'cms' });
         this.outbox = new Outbox(this.db, this.hooks, { now: this.#now, ...options.outbox });
-        // The main site's sessions are the network's; another site's are child sessions handed off from them.
-        this.authSessions = createAuthSessionStore(this.db, { now: this.#now, request: requestMetadata, ...(options.sessionsEnded ? { sessionsEnded: options.sessionsEnded } : {}) });
-        this.oauthStates = createOAuthStateStore(this.network);
-        this.sessions = createSessionStore(this.db, { now: this.#now });
         this.taxonomies = new CmsTaxonomies(this.db, {
             taxonomies: () => this.#taxonomies,
             now: this.#now,
@@ -1113,25 +1073,6 @@ export class CmsHost {
      * The stores that sign people in on this host: the site's own on an added site, the
      * network's on the main site. Sign-in by email, passkey or reset token starts here.
      */
-    get signIn(): AccountStores {
-        return this.siteAccounts ? { kind: 'site', accounts: this.siteAccounts, security: this.siteSecurity!, apiTokens: this.siteApiTokens! }
-            : { kind: 'network', accounts: this.accounts, security: this.security, apiTokens: this.apiTokens };
-    }
-
-    /** The stores holding a user's account: the site's for a site account, the network's otherwise. */
-    async storesOf(userId: string): Promise<AccountStores> {
-        return this.siteAccounts && await this.siteAccounts.get(userId) ? this.signIn
-            : { kind: 'network', accounts: this.accounts, security: this.security, apiTokens: this.apiTokens };
-    }
-
-    async tokenPrincipal(token: string): Promise<{ principal: Principal; scope: ApiTokenScope; userId: string } | null> {
-        // With the people port, application passwords are the application's: it resolves a token to a user itself.
-        if (this.#withPeople) return null;
-        const verified = await this.siteApiTokens?.verify(token) ?? await this.apiTokens.verify(token);
-        if (!verified) return null;
-        const user = await this.users.resolve(verified.userId);
-        return user ? { principal: user.principal, scope: verified.scope, userId: user.id } : null;
-    }
 
     /** Whether the site has discussions at all (Settings → Discussion → Allow discussions). Off hides every comment; stored ones are kept. */
     discussions(settings: SiteSettings): boolean {
@@ -1175,7 +1116,7 @@ export class CmsHost {
         }
         const ipHash = context.ip ? await sha256Hex(`cms-comment:${context.ip}`) : null;
         // One comment per address in 15 seconds, counted in one conditional write so a burst gets one through.
-        if (ipHash && !(await this.security.attempt('comment', ipHash, 1, 15_000))) throw new CmsError('CMS_LIMIT', 'You are posting comments too quickly. Wait a moment and try again.');
+        if (ipHash && !(await this.attempts.attempt('comment', ipHash, 1, 15_000))) throw new CmsError('CMS_LIMIT', 'You are posting comments too quickly. Wait a moment and try again.');
         // "An earlier approved comment" counts for signed-in users only: an anonymous commenter types any email.
         const status: CommentStatus = input.trap ? 'spam' : hasPermission(context.principal, PERMISSIONS.moderateComments) ? 'approved'
             : await commentStatus(fields, settings, async () => user !== null && await this.comments.hasApproved(fields.authorEmail));
@@ -2913,7 +2854,7 @@ export class CmsHost {
         const settings = await this.settings.all().catch(() => null);
         // The user who acted: a member of the site, or with the CMS's own accounts a network account that is none.
         const account = actor?.kind !== 'user' ? null
-            : await this.users.get(actor.id).catch(() => null) ?? (this.#withPeople ? null : await this.accounts.get(actor.id).catch(() => null));
+            : await this.users.get(actor.id).catch(() => null);
         return { site: settings ? siteBindingScope(settings) : null, user: account ? { name: account.name, email: account.email } : null };
     }
 

@@ -22,10 +22,10 @@ describe.skipIf(!live)('users over the people port', () => {
         const ada = await cms.users.create({ email: 'ada@example.com', name: 'Ada Lovelace', roles: ['editor'], meta: { handle: 'ada' } });
         expect(ada).toMatchObject({ email: 'ada@example.com', name: 'Ada Lovelace', status: 'active', roles: ['editor'], slug: 'ada-lovelace', meta: { handle: 'ada' }, account: 'site', createdAt: 5000 });
         expect(ada.permissions).toContain('cms/*');
-        // The account is the port's; no row of the CMS's own account tables was written.
+        // The account is the port's; the CMS keeps the slug.
         expect((await people.getMany([ada.id])).get(ada.id)).toMatchObject({ email: 'ada@example.com' });
-        const own = await cms.db.read([{ rql: 'SELECT count(*) FROM cms_users' }, { rql: 'SELECT count(*) FROM cms_accounts' }, { rql: 'SELECT slug FROM cms_authors WHERE user_id = $id', params: { $id: ada.id } }]);
-        expect([Number(own.results[0]!.rows[0]![0]), Number(own.results[1]!.rows[0]![0]), own.results[2]!.rows[0]![0]]).toEqual([0, 0, 'ada-lovelace']);
+        const own = await cms.db.read([{ rql: 'SELECT slug FROM cms_authors WHERE user_id = $id', params: { $id: ada.id } }]);
+        expect(own.results[0]!.rows[0]![0]).toBe('ada-lovelace');
 
         const bob = await cms.users.create({ email: 'bob@example.com', name: 'Ada Lovelace', roles: ['author'] });
         expect(bob.slug).toBe('ada-lovelace-2');
@@ -75,7 +75,5 @@ describe.skipIf(!live)('users over the people port', () => {
         expect([await cms.users.delete(bob.id), await cms.users.delete(bob.id)]).toEqual([true, false]);
         expect(await cms.users.bySlug('ada-lovelace-2')).toBeNull();
         expect((await people.getMany([bob.id])).size).toBe(0);
-        await expect(cms.users.setPassword(bob.id, 'whatever-123')).rejects.toMatchObject({ code: 'CMS_UNAVAILABLE' });
-        await expect(cms.users.createRole({ name: 'X', permissions: [] })).rejects.toMatchObject({ code: 'CMS_UNAVAILABLE' });
     });
 });

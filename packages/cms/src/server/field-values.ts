@@ -5,6 +5,7 @@
  */
 import { Float64, RecordId, Vector, type RomeDB, type Statement, type Value } from '@cossackframework/romedb';
 import { SYSTEM_META } from '../field-groups';
+import { readByIds } from './budget';
 import { validateValue, type FieldDeclaration } from '../fields';
 import type { Resource } from '../resource';
 
@@ -194,7 +195,8 @@ export class FieldValues {
 
     async read(keys: readonly string[]): Promise<Map<string, { readonly [field: string]: unknown }>> {
         if (!keys.length) return new Map();
-        return this.decode((await this.#db.read([this.readStatement(keys)])).results[0]!.rows);
+        // Documents can be large: the keys are read in as few requests as the result budget allows.
+        return this.decode(await readByIds(this.#db, keys, slice => this.readStatement(slice)));
     }
 
     /** The keys of the rows whose values name this media file, 50 at most. */

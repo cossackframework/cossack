@@ -1,7 +1,7 @@
 import { afterAll, beforeAll } from 'vitest';
 import { ClientError, createRomeDB, LOCAL_REQUEST_BYTES, MemoryPendingWriteStore, RequestTooLargeError, RESULT_BYTES, statementBytes, type RomeDB, type RomeDBOptions } from '@cossackframework/romedb';
 import { liveRomeDBTests, startRomeDBService, type RomeDBTestService } from '@cossackframework/romedb/testing';
-import { cmsReconcilers } from '../src/server/index';
+import { cmsReconcilers, memoryPeople, type CmsHost } from '../src/server/index';
 import type { StorageProvider } from '@cossackframework/core/storage';
 
 export const live = liveRomeDBTests();
@@ -77,4 +77,33 @@ export function pngBytes(width: number, height: number): Uint8Array<ArrayBuffer>
     new DataView(bytes.buffer).setUint32(16, width);
     new DataView(bytes.buffer).setUint32(20, height);
     return bytes;
+}
+
+/**
+ * The users of a test network: the accounts the network shares are the main site's users, and
+ * each added site has members of its own, which `join` copies from those accounts.
+ */
+export function networkPeople() {
+    const main = memoryPeople();
+    const sites = new Map<string, ReturnType<typeof memoryPeople>>();
+    const of = (site: string): ReturnType<typeof memoryPeople> => {
+        if (site === 'main') return main;
+        if (!sites.has(site)) sites.set(site, memoryPeople({ network: main }));
+        return sites.get(site)!;
+    };
+    return {
+        main, of,
+        /** The added sites an account is a member of, in ID order. */
+        async memberSites(accountId: string): Promise<string[]> {
+            const ids: string[] = [];
+            for (const [site, people] of [...sites].sort(([a], [b]) => a < b ? -1 : 1)) if ((await people.getMany([accountId])).has(accountId)) ids.push(site);
+            return ids;
+        },
+        /** An account on the main site that administers the network. */
+        async admin(host: CmsHost, input: { email: string; name: string; roles?: readonly string[] }): Promise<string> {
+            const user = await host.users.create(input);
+            main.set(user.id, { networkAdmin: true });
+            return user.id;
+        },
+    };
 }

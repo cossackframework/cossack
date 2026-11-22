@@ -5,6 +5,7 @@
  * an email and prints the one-hour reset link this answers with. The new password is chosen in
  * the browser, as with Forgot password, so it never passes through the command line.
  */
+import { recoverAccount as recoverByCode } from '#app/auth';
 import type { Context } from 'hono';
 import { getClientIp } from '@cossackframework/core';
 import { sha256Hex, timingSafeEqual, type CmsHost } from '@cossackframework/cms/server';
@@ -48,7 +49,7 @@ export async function recoverAccount(c: Context, input: { code: unknown; email: 
     if (expected.length < RECOVERY_CODE_MIN_LENGTH) throw new RecoveryError('CMS_RECOVERY_WEAK', `CMS_RECOVERY_CODE must be at least ${RECOVERY_CODE_MIN_LENGTH} characters.`, 403);
     const host: CmsHost = c.get('cms');
     const address = getClientIp(c) || 'unknown';
-    if (!(await host.security.attempt('recovery', `a:${address}`, RECOVERY_ATTEMPTS.max, RECOVERY_ATTEMPTS.windowMs)))
+    if (!(await host.attempts.attempt('recovery', `a:${address}`, RECOVERY_ATTEMPTS.max, RECOVERY_ATTEMPTS.windowMs)))
         throw new RecoveryError('CMS_RATE_LIMITED', 'Too many recovery attempts. Wait fifteen minutes.', 429);
     // Compared as digests, so the time taken says nothing about the code's length either.
     if (typeof input.code !== 'string' || !timingSafeEqual(await sha256Hex(input.code), await sha256Hex(expected))) throw new RecoveryError('CMS_UNAUTHENTICATED', 'The recovery code is not correct.', 401);
@@ -65,18 +66,12 @@ export async function recoverAccount(c: Context, input: { code: unknown; email: 
         throw new RecoveryError('CMS_UNAVAILABLE', 'The recovery could not be recorded in Tools → Activity, so it was not made. Try again.', 503);
     }
 
-    // A site account resets on its site; a network account on the network host, as Forgot password does.
-    let reset = await host.signIn.accounts.createPasswordReset(email);
-    let origin = siteOrigin(c);
-    if (!reset && host.siteAccounts && member?.account === 'network') {
-        reset = await host.accounts.createPasswordReset(email);
-        origin = (c.env as CmsBindings).APP_URL?.replace(/\/+$/, '') || siteOrigin(c);
+    // The reset link is the application's (the dashboard package's recovery mode): made where the
+    // account is, a site's own on the site and a network account's on the network host.
+    const result = await recoverByCode(input.code, email, secondFactorsCleared);
+    if ('error' in result) {
+        throw new RecoveryError(result.status === 404 ? 'CMS_NOT_FOUND' : result.status === 429 ? 'CMS_RATE_LIMITED' : result.status === 401 ? 'CMS_UNAUTHENTICATED' : result.status === 403 ? 'CMS_RECOVERY_OFF' : 'CMS_VALIDATION',
+            result.status === 404 ? `No active account with the email ${email} on this site.` : result.error, result.status);
     }
-    if (!reset) throw new RecoveryError('CMS_NOT_FOUND', `No active account with the email ${email} on this site.`, 404);
-    const userId = reset.account.id;
-    if (secondFactorsCleared) await (await host.storesOf(userId)).security.reset(userId);
-    await host.mail?.send({ kind: 'other', to: reset.account.email, subject: 'Your account was recovered',
-        text: `Someone with the site's recovery code asked for a password reset link for your account${secondFactorsCleared ? ' and removed its two-step sign-in' : ''}, from ${address}.\n\nIf that was not you or another administrator, tell whoever runs the site: the recovery code should be removed from its environment.` })
-        .catch(error => console.error('[cms] could not send the recovery notice', error));
-    return { email: reset.account.email, resetUrl: `${origin.replace(/\/$/, '')}/auth/reset-password?token=${reset.token}`, expiresAt: Date.now() + 60 * 60_000, secondFactorsCleared };
+    return result;
 }

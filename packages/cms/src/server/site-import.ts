@@ -124,11 +124,9 @@ async function importInto(host: CmsHost, source: ReadableStream<Uint8Array> | As
     // Unrestricted access is granted where it runs, and network admins are the network's: an export can make neither.
     await write([
         { rql: 'DELETE FROM cms_grants WHERE permission = $permission', params: { $permission: UNRESTRICTED_GRANT } },
-        { rql: 'DELETE FROM cms_user_roles WHERE role_id = $role', params: { $role: NETWORK_ADMIN } },
-        { rql: 'DELETE FROM cms_roles WHERE id = $role', params: { $role: NETWORK_ADMIN } },
     ]);
     if (!collections) await openCollections(host, options);
-    const members = await adoptMembers(host, before);
+    const members = await adoptPeople(host, before);
     await lease.release();
     forget(host);
     await host.ready({ force: true });
@@ -262,55 +260,17 @@ async function hasEntries(host: CmsHost): Promise<boolean> {
  */
 /** The accounts that are this site's own: an added site's site accounts, or on the main site any account. */
 async function ownAccounts(host: CmsHost): Promise<number> {
-    if (host.people) return host.people.ownCount ? host.people.ownCount() : host.people.count();
-    return (host.siteAccounts ?? host.accounts).count();
+    return host.people.ownCount ? host.people.ownCount() : host.people.count();
 }
 
 /** With accounts kept by the application: the imported users become people of this site, and the members from before stay. */
 async function adoptPeople(host: CmsHost, before: readonly { id: string; roles: readonly string[] }[]): Promise<SiteImportReport['members']> {
-    const counts = { ...(await host.people!.adopt?.() ?? { network: 0, site: 0, pending: 0 }) };
+    const counts = { ...(await host.people.adopt?.() ?? { network: 0, site: 0, pending: 0 }) };
     for (const member of before) {
         if (await host.users.get(member.id)) continue;
         const roles = [];
         for (const role of member.roles) if (await host.users.role(role)) roles.push(role);
         if (await host.users.addMember(member.id, { roles }).catch(() => null)) counts.network++;
-    }
-    return counts;
-}
-
-async function adoptMembers(host: CmsHost, before: readonly { id: string; roles: readonly string[] }[]): Promise<SiteImportReport['members']> {
-    if (host.people) return adoptPeople(host, before);
-    const counts = { network: 0, site: 0, pending: 0 };
-    const now = host.now();
-    for (let offset = 0; ; offset += 200) {
-        const ids = (await host.db.read([{ rql: 'SELECT id FROM cms_users ORDER BY id LIMIT 200 OFFSET $offset', params: { $offset: offset } }])).results[0]!.rows.map(row => row[0] as string);
-        if (!ids.length) break;
-        const network = await host.accounts.existing(ids);
-        const local = host.siteAccounts ? await host.siteAccounts.existing(ids) : new Set<string>();
-        for (const id of ids) if (network.has(id)) { await host.accounts.join(id, host.site); counts.network++; }
-        const orphans = ids.filter(id => !network.has(id) && !local.has(id));
-        if (host.siteAccounts && orphans.length) {
-            const params = Object.fromEntries(orphans.map((id, index) => [`$u${index}`, id]));
-            await host.db.write([{
-                rql: `INSERT INTO cms_accounts (id, email, name, password_hash, avatar, status, network_role, created_at, updated_at) SELECT id, email, name, NULL, avatar, status, NULL, created_at, $now FROM cms_users WHERE id IN (${orphans.map((_, index) => `$u${index}`).join(', ')}) ON CONFLICT (id) DO NOTHING`,
-                params: { ...params, $now: now },
-            }], WRITE);
-            counts.site += orphans.length;
-        } else counts.pending += orphans.length;
-        counts.site += [...local].length;
-        if (ids.length < 200) break;
-    }
-    for (const member of before) {
-        if (await host.users.get(member.id)) continue;
-        try { await host.users.addMember(member.id); }
-        catch {
-            await host.accounts.leave(member.id, host.site);
-            continue;
-        }
-        const roles = [];
-        for (const role of member.roles) if (await host.users.role(role)) roles.push(role);
-        await host.users.setRoles(member.id, roles);
-        counts.network++;
     }
     return counts;
 }

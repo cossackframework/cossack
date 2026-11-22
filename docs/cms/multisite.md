@@ -17,13 +17,13 @@ changes for a single-site install.
 | Part | Where it lives |
 | --- | --- |
 | **Main site** | The first database (`ROMEDB_URL`). It is also the *network database*. |
-| **Network accounts** | `cms_accounts` in the network database: email, password hash, status, profile and network role. Their sessions on the network host, second factors, reset tokens and application passwords live there too. |
-| **Site accounts** | `cms_accounts` in an added site's own database, with their sessions, second factors, passkeys, reset tokens and application passwords beside them in the same tables. The network database does not list them. |
-| **Site registry** | `cms_sites` and `cms_site_domains` in the network database. The main site has no row. |
-| **Members** | `cms_users` in each site's database. A member row has the account's ID, a copy of its name, email, avatar and status, and the site's own roles, author slug and profile fields. An email is one member per site, whichever kind its account is. |
+| **Network accounts** | `users` in the network database (the dashboard package's accounts, on the database ORM): email, password hash, status, profile and the network admin flag. Their sessions on the network host, second factors, passkeys, reset tokens and application passwords live there too. |
+| **Site accounts** | `users` in an added site's own database, marked as the site's own, with their sessions, second factors, reset tokens and application passwords beside them. The network database does not list them. |
+| **Site registry** | `tenants` and `tenant_domains` in the network database: a site is a tenant of the dashboard package ([Tenants](../tenants.md)). The main site has no row. |
+| **Members** | `users` in each site's database. A member row has the account's ID and a copy of its name, email, avatar and status; the site's roles are in `roles` and `user_roles`, and the CMS keeps the author slug (`cms_authors`) and profile fields beside them. An email is one member per site, whichever kind its account is. |
 | **Everything else** | Collections, entries, terms, menus, settings, files, comments, forms, redirects, webhooks and plugin grants stay in each site's own database. No query spans two databases. |
 
-A **network admin** (`network_admin`, the account that ran setup) has full access to every
+A **network admin** (a flag on the account; the account that ran setup has it) has full access to every
 site without being a member, and runs the network dashboard. Sites cannot define a role
 with that ID. The last active network admin cannot be suspended, demoted or deleted.
 
@@ -70,9 +70,9 @@ Subdirectory sites (`example.com/blog`) are not supported.
 
 ## Signing in
 
-An added site's own sign-in pages (`/auth/login`, registration, password reset, two-step
-codes and passkeys) sign in its **site accounts**. A site account's passkey is bound to the
-site's address, and its sessions are ordinary sessions in the site's database.
+An added site's own sign-in pages (`/auth/login`, registration, password reset and two-step
+codes) sign in its **site accounts**. Their sessions are ordinary sessions in the site's
+database. Site accounts have no passkeys or OAuth sign-in yet.
 
 **Network accounts** sign in only on the network host, so their passkeys work for every site.
 For the same reason they add and remove passkeys there: on an added site, the Security page
@@ -81,27 +81,26 @@ add or remove them. Authenticator apps are not bound to an address, so they chan
 The site's sign-in pages link *Network account? Sign in on <network>*, and the site gets its
 own session back:
 
-1. `blog.example.com/auth/handoff` (the link) redirects to `example.com/auth/handoff?site=blog&next=/dashboard`.
+1. `blog.example.com/auth/tenant/start` (the link) redirects to `example.com/auth/tenant/redirect`, naming the site and where to return.
 2. A visitor who is not signed in on the network signs in there as usual, with any method. The
    sign-in page shows the site's name and logo, and *Back to Home* returns to the site. The
-   handoff continues afterwards.
+   redirect continues afterwards.
 3. The network issues a one-use code for that site and session, valid for one minute, and
-   redirects to `blog.example.com/auth/handoff?code=…`.
-4. The site trades the code for a *child session* in its own database, holding the network
-   role at that moment. Later requests to the site read only the site's database. The child
+   redirects to `blog.example.com/auth/tenant/callback?code=…`.
+4. The site trades the code for a *child session* in its own database. Later requests to the site read only the site's database. The child
    session ends no later than the network session it came from.
 
 Opening an added site's dashboard without a session there goes through the same steps on its
 own, without the click: the site sends the visitor to the network with `auto=1`, and a network
 admin, or a member who is signed in on the network, arrives signed in. A visitor the network does
 not know, or who is not a member, comes back to the site's own sign-in, and the site does not try
-again for five minutes (the `cms_handoff_auto` cookie), so a site account signs in there as before.
+again for five minutes (the `tenant_auto` cookie), so a site account signs in there as before.
 
 A network account's password does not sign in on an added site's own form. *Forgot password*
 there sends a member with a network account the network's reset link.
 
 Signing out of any site signs out of the network and of every site the session reached.
-A password reset, a suspension, a new network role or deleting the account does the same.
+A password reset, a suspension, a change of the network admin flag or deleting the account does the same.
 Signing a site account out ends its session on that site only.
 
 "Anyone can register" stays a site setting. Registering on an added site creates a site
@@ -234,8 +233,8 @@ tables also list their `columns`, and their rows are arrays in that order, while
 tables' rows are whole documents. Values use RomeDB's portable encoding, so `decodeValue`
 from `@cossackframework/romedb` restores integers, record IDs and binary values exactly. Rows
 are read in key order, a page at a time. Sessions, sign-in challenges, reset tokens, second
-factors, passkeys, application passwords, preview links, handoffs, the cache and the
-network's own tables (accounts, the site registry) stay out, and webhook secrets are null.
+factors, passkeys, application passwords, preview links, sign-in codes between hosts, the cache and the
+network's own tables (the site registry and its members) stay out; password hashes and webhook secrets are null.
 Media files are not included; `cms_files` rows name their storage keys. The CMS's own tables
 come first, then the collections' (`r__cms__posts` and the rest), so an import has the
 collections' definitions before their records. In code, `siteExport(host.db, { site })` from
@@ -246,9 +245,9 @@ the site keeps running, on every runtime (`?format=romedb` on either address, *D
 database file* in the dashboard). Use it for sites too large to import.
 
 - **It keeps** the site's content, settings and members, and its own accounts with their
-  password hashes, passkeys and application passwords (stored as digests). Keep it private.
-- **It leaves out** sessions, sign-in challenges, reset tokens, preview links, handoffs and the
-  cache, authenticator apps and recovery codes (their secrets would make valid codes, so
+  password hashes. Keep it private.
+- **It leaves out** sessions, sign-in challenges, application passwords, preview links, sign-in codes
+  between hosts and the cache, authenticator apps and recovery codes (their secrets would make valid codes, so
   accounts set them up again), plus webhooks and pending work (the outbox, webhook deliveries,
   background jobs).
   RomeDB never reads these tables into the copy, so no part of the file holds their rows. Set

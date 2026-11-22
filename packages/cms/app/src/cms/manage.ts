@@ -10,8 +10,8 @@ import {
     BLOCK_ID, checkNoteRange, CmsError, CONTENT_STATUSES, findBlock, hasPermission, indexedRowField, isNetworkAdmin, MAIN_SITE, MENU_LIMITS, menuItemId, noteThreads, PERMISSIONS, recordSchema, recordTitle, richTextBlocks,
     ANONYMOUS, mediaKind, mediaUrl, type MediaKind, type SnippetPart,
     type Block, type FieldFilter, type MenuItem, type MenuShape, type Note, type NoteThread, type Principal, type RecordShape, type RichTextDoc, redirectProblems, type Redirect, type RedirectStatus, type FieldDeclaration, WEBHOOK_EVENTS, COMMENT_STATUSES, type Webhook, type CommentShape, type CommentStatus } from '@cossackframework/cms';
-import { networkSite, type ApiToken, type CmsHost, type NetworkSite, type SiteRecord } from '@cossackframework/cms/server';
-import { createApiToken, listApiTokens, revokeApiToken, type PublicUser } from '../auth';
+import { networkSite, type CmsHost, type NetworkSite, type SiteRecord } from '@cossackframework/cms/server';
+import { createApiToken, listApiTokens, revokeApiToken, type ApiToken, type PublicUser } from '../auth';
 import { userOfPrincipal } from './actor';
 import { canAssignRoles, canGrantRoles, canManageUser } from '../services/rbac';
 import { changeUserPassword, createUser, deleteUser, getUser, listUsers, setUserStatus, syncUserRoles, updateUser, type UserDetail, type UserSummary } from '../services/users';

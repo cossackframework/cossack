@@ -41,7 +41,7 @@ export async function registerSite(input: { site: SiteRegistration; name?: strin
     const c = getRequestContext();
     if (!c || !(await siteRegistrationOpen())) throw new ClientVisibleError('Site registration is closed on this network.');
     const network = networkFor(c.env as CmsBindings);
-    if (!(await network.main.security.attempt('site-registration', `address:${getClientIp(c) || 'unknown'}`, SITE_REGISTRATION_REQUESTS.perAddress, SITE_REGISTRATION_REQUESTS.windowMs))) {
+    if (!(await network.main.attempts.attempt('site-registration', `address:${getClientIp(c) || 'unknown'}`, SITE_REGISTRATION_REQUESTS.perAddress, SITE_REGISTRATION_REQUESTS.windowMs))) {
         throw new ClientVisibleError('Too many sites were registered from here. Try again in an hour.');
     }
     const site = await siteError(() => network.checkSiteRegistration(input.site));

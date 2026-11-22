@@ -16,6 +16,8 @@ export const authOptions: Required<Omit<DashboardConfig, 'security' | 'registrat
     accountLabels: { shared: string; sharedNotice: string };
     /** The environment variable that holds the setup code. */
     setupCodeVariable: string;
+    /** The environment variable that holds the recovery code. */
+    recoveryCodeVariable: string;
 } = {
     authMethods: dashboard.authMethods ?? ['credentials'],
     oauth: dashboard.oauth ?? [],
@@ -40,6 +42,7 @@ export const authOptions: Required<Omit<DashboardConfig, 'security' | 'registrat
         sharedNotice: 'This account is shared with other tenants: only its owner changes the profile, password and sign-in methods. This tenant chooses its roles.',
     },
     setupCodeVariable: 'SETUP_CODE',
+    recoveryCodeVariable: 'RECOVERY_CODE',
     security: {
         requireTwoFactor: dashboard.security?.requireTwoFactor === true,
         twoFactorRoles: dashboard.security?.twoFactorRoles ?? [],

@@ -1,12 +1,11 @@
 /**
- * The site registry on the network database. Each added site has its own database, named by
- * `database`, and answers on its domains: one primary, the rest aliases that redirect to it.
- * The main site is the network database itself; it has no row, but may own domains.
+ * A network's sites. Each added site has its own database, named by `database`, and answers
+ * on its domains: one primary, the rest aliases that redirect to it. The main site is the
+ * network database itself; it has no record, but may own domains. The registry is the
+ * application's (`SitesStore`).
  */
-import { ClientError, type RomeDB, type Value } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
 import { MAIN_SITE } from '../permissions';
-import { inList } from './users';
 
 /** The main site: the network database, with no registry row. */
 export { MAIN_SITE };
@@ -38,11 +37,7 @@ export interface SiteRecord {
 const ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
 /** IDs no added site takes: the main site's, and `new`, the dashboard's Add site address. */
 export const RESERVED_SITE_IDS: ReadonlySet<string> = new Set([MAIN_SITE, 'new']);
-const DATABASE = /^[A-Za-z0-9_-]{1,80}$/;
 const HOST = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
-const STATUSES: readonly SiteStatus[] = ['creating', 'active', 'archived', 'deleted'];
-const COLUMNS = 'id, name, database, status, step, created_at, updated_at, deleted_at';
-const WRITE = { kind: 'cms.sites', retryConflicts: 5 } as const;
 
 /** A host as the registry stores it: lowercase, without port or trailing dot. Empty when invalid. */
 export function siteHost(host: string): string {
@@ -50,197 +45,129 @@ export function siteHost(host: string): string {
     return HOST.test(name) ? name : '';
 }
 
-/** What the network needs from a registry of sites: `CmsSites` on the CMS's own tables, or the application's on the dashboard package's tenants. */
-export type SitesStore = Pick<CmsSites, 'count' | 'get' | 'getMany' | 'list' | 'inTurn' | 'siteOf' | 'create' | 'update' | 'addDomain' | 'verifyDomain' | 'removeDomain' | 'deletedBefore' | 'remove'>;
-
-export class CmsSites {
-    readonly #db: RomeDB;
-    readonly #now: () => number;
-
-    constructor(db: RomeDB, options: { now?: () => number } = {}) {
-        this.#db = db;
-        this.#now = options.now ?? Date.now;
-    }
-
+/**
+ * The registry of a network's sites, which the application keeps (the dashboard package's
+ * tenants in a CMS project). The main site has no record: it is the network's own database.
+ */
+export interface SitesStore {
     /** Added sites, deleted ones included: zero while the network is only the main site. */
-    async count(): Promise<number> {
-        const result = await this.#db.read([{ rql: 'SELECT count(*) FROM cms_sites' }]);
-        return Number(result.results[0]!.rows[0]![0] as bigint);
-    }
-
-    async get(id: string): Promise<SiteRecord | null> {
-        if (!ID.test(id) || id === MAIN_SITE) return null;
-        return (await this.#many([id]))[0] ?? null;
-    }
-
-    /** The added sites among the IDs, in one read; unknown IDs and the main site are left out. */
-    async getMany(ids: readonly string[]): Promise<SiteRecord[]> {
-        const wanted = [...new Set(ids.filter(id => ID.test(id) && id !== MAIN_SITE))];
-        return wanted.length ? this.#many(wanted) : [];
-    }
-
+    count(): Promise<number>;
+    get(id: string): Promise<SiteRecord | null>;
+    /** The added sites among the IDs; unknown IDs and the main site are left out. */
+    getMany(ids: readonly string[]): Promise<SiteRecord[]>;
     /** Newest first. `search` matches the name or a domain. */
-    async list(options: { search?: string; status?: SiteStatus; limit?: number; offset?: number } = {}): Promise<{ items: SiteRecord[]; total: number }> {
-        const conditions: string[] = [];
-        const params: { [key: string]: Value } = {};
-        if (options.search?.trim()) {
-            conditions.push("(lower(name) LIKE $q ESCAPE '\\' OR id IN (SELECT site_id FROM cms_site_domains WHERE host LIKE $q ESCAPE '\\'))");
-            params.$q = `%${options.search.trim().toLowerCase().slice(0, 100).replace(/[\\%_]/g, character => `\\${character}`)}%`;
-        }
-        if (options.status) { conditions.push('status = $status'); params.$status = options.status; }
-        const where = conditions.length ? ` WHERE ${conditions.join(' AND ')}` : '';
-        const result = await this.#db.read([
-            { rql: `SELECT id FROM cms_sites${where} ORDER BY created_at DESC, id LIMIT $limit OFFSET $offset`, params: { ...params, $limit: Math.min(Math.max(options.limit ?? 20, 1), 100), $offset: Math.max(options.offset ?? 0, 0) } },
-            { rql: `SELECT count(*) FROM cms_sites${where}`, params },
-        ]);
-        return { items: await this.#many(result.results[0]!.rows.map(row => row[0] as string)), total: Number(result.results[1]!.rows[0]![0] as bigint) };
-    }
-
+    list(options?: { search?: string; status?: SiteStatus; limit?: number; offset?: number }): Promise<{ items: SiteRecord[]; total: number }>;
     /** Active and archived sites in ID order, starting after `after` and wrapping around: scheduled work visits them in turn. */
-    async inTurn(after: string, limit = 50): Promise<SiteRecord[]> {
-        const result = await this.#db.read([{ rql: "SELECT id FROM cms_sites WHERE status IN ('active', 'archived') ORDER BY id <= $after, id LIMIT $limit",
-            params: { $after: after, $limit: Math.min(Math.max(limit, 1), 200) } }]);
-        return this.#many(result.results[0]!.rows.map(row => row[0] as string));
-    }
-
+    inTurn(after: string, limit?: number): Promise<SiteRecord[]>;
     /** The site a host belongs to, `main` for the main site's own domains, or null. */
-    async siteOf(host: string): Promise<{ site: string; domain: SiteDomain } | null> {
-        const name = siteHost(host);
-        if (!name) return null;
-        const result = await this.#db.read([{ rql: 'SELECT site_id, host, is_primary, verified_at FROM cms_site_domains WHERE host = $host', params: { $host: name } }]);
-        const row = result.results[0]!.rows[0];
-        return row ? { site: row[0] as string, domain: domainOf(row.slice(1)) } : null;
-    }
-
-    /**
-     * Register a site and its domains in one write. The first domain is primary unless one
-     * says otherwise. A domain another site has is a conflict.
-     */
-    async create(input: { id: string; name: string; database: string; status?: SiteStatus; step?: string | null; domains: readonly { host: string; primary?: boolean; verifiedAt?: number | null }[] }): Promise<SiteRecord> {
-        if (!ID.test(input.id) || RESERVED_SITE_IDS.has(input.id)) throw new CmsError('CMS_VALIDATION', 'Site IDs are lowercase letters, digits and hyphens, other than main and new.', { fields: { id: 'is invalid.' } });
-        if (!DATABASE.test(input.database)) throw new CmsError('CMS_VALIDATION', 'Invalid database ID.');
-        checkName(input.name);
-        const status = input.status ?? 'active';
-        if (!STATUSES.includes(status)) throw new CmsError('CMS_VALIDATION', 'Unknown site status.');
-        const domains = checkDomains(input.domains);
-        const now = this.#now();
-        try {
-            await this.#db.write([
-                { rql: 'INSERT INTO cms_sites (id, name, database, status, step, created_at, updated_at) VALUES ($id, $name, $database, $status, $step, $now, $now)',
-                    params: { $id: input.id, $name: input.name.trim(), $database: input.database, $status: status, $step: input.step ?? null, $now: now } },
-                ...domains.map(domain => ({ rql: 'INSERT INTO cms_site_domains (host, site_id, is_primary, verified_at, created_at) VALUES ($host, $site, $primary, $verified, $now)',
-                    params: { $host: domain.host, $site: input.id, $primary: domain.primary ? 1 : 0, $verified: domain.verifiedAt, $now: now } })),
-            ], WRITE);
-        } catch (error) {
-            if (error instanceof ClientError && error.outcome === 'rolled-back' && /UNIQUE|PRIMARY/i.test(error.message)) {
-                throw new CmsError('CMS_CONFLICT', /cms_sites\.database/.test(error.message) ? 'Another site uses this database.' : /cms_sites/.test(error.message) ? 'A site with this ID exists.' : 'Another site answers on this domain.');
-            }
-            throw error;
-        }
-        return (await this.get(input.id))!;
-    }
-
+    siteOf(host: string): Promise<{ site: string; domain: SiteDomain } | null>;
+    /** Register a site and its domains. The first domain is primary unless one says otherwise. A domain another site has is a conflict. */
+    create(input: { id: string; name: string; database: string; status?: SiteStatus; step?: string | null; domains: readonly { host: string; primary?: boolean; verifiedAt?: number | null }[] }): Promise<SiteRecord>;
     /** Change the name, database, status or creation step. A deleted site records when it was deleted. */
-    async update(id: string, patch: { name?: string; database?: string; status?: SiteStatus; step?: string | null }): Promise<SiteRecord | null> {
-        const current = await this.get(id);
-        if (!current) return null;
-        if (patch.name !== undefined) checkName(patch.name);
-        if (patch.database !== undefined && !DATABASE.test(patch.database)) throw new CmsError('CMS_VALIDATION', 'Invalid database ID.');
-        const status = patch.status ?? current.status;
-        if (!STATUSES.includes(status)) throw new CmsError('CMS_VALIDATION', 'Unknown site status.');
-        const now = this.#now();
-        const deletedAt = status === 'deleted' ? current.deletedAt ?? now : null;
-        await this.#db.write([{ rql: 'UPDATE cms_sites SET name = $name, database = $database, status = $status, step = $step, deleted_at = $deleted, updated_at = $now WHERE id = $id',
-            params: { $id: id, $name: (patch.name ?? current.name).trim(), $database: patch.database ?? current.database, $status: status, $step: patch.step === undefined ? current.step : patch.step, $deleted: deletedAt, $now: now } }], WRITE);
-        return this.get(id);
-    }
-
+    update(id: string, patch: { name?: string; database?: string; status?: SiteStatus; step?: string | null }): Promise<SiteRecord | null>;
     /** Add a domain that is not checked yet; it answers as an alias until a check makes it primary. */
-    async addDomain(id: string, host: string): Promise<SiteRecord | null> {
-        const name = siteHost(host);
-        if (!name) throw new CmsError('CMS_VALIDATION', 'Enter a host name, such as blog.example.com.', { fields: { host: 'is invalid.' } });
-        if (id !== MAIN_SITE && !(await this.get(id))) return null;
-        try {
-            await this.#db.write([{ rql: 'INSERT INTO cms_site_domains (host, site_id, is_primary, verified_at, created_at) VALUES ($host, $site, 0, NULL, $now)', params: { $host: name, $site: id, $now: this.#now() } }], WRITE);
-        } catch (error) {
-            if (error instanceof ClientError && error.outcome === 'rolled-back' && /UNIQUE|PRIMARY/i.test(error.message)) throw new CmsError('CMS_CONFLICT', 'Another site answers on this domain.', { fields: { host: 'is taken.' } });
-            throw error;
-        }
-        return id === MAIN_SITE ? null : this.get(id);
-    }
-
+    addDomain(id: string, host: string): Promise<SiteRecord | null>;
     /** Record that the domain answered its check, and make it the site's primary domain when asked. */
-    async verifyDomain(id: string, host: string, options: { primary?: boolean } = {}): Promise<boolean> {
-        const name = siteHost(host);
-        const now = this.#now();
-        const result = await this.#db.write([
-            { rql: 'UPDATE cms_site_domains SET verified_at = $now WHERE host = $host AND site_id = $site', params: { $host: name, $site: id, $now: now } },
-            ...(options.primary ? [
-                { rql: 'UPDATE cms_site_domains SET is_primary = 0 WHERE site_id = $site AND host != $host AND EXISTS (SELECT 1 FROM cms_site_domains WHERE host = $host AND site_id = $site)', params: { $host: name, $site: id } },
-                { rql: 'UPDATE cms_site_domains SET is_primary = 1 WHERE host = $host AND site_id = $site', params: { $host: name, $site: id } },
-            ] : []),
-        ], WRITE);
-        return result.results[0]!.affected === 1n;
-    }
-
+    verifyDomain(id: string, host: string, options?: { primary?: boolean }): Promise<boolean>;
     /** Remove an alias. The primary domain stays until another one is primary. */
-    async removeDomain(id: string, host: string): Promise<boolean> {
-        const result = await this.#db.write([{ rql: 'DELETE FROM cms_site_domains WHERE host = $host AND site_id = $site AND is_primary = 0', params: { $host: siteHost(host), $site: id } }], WRITE);
-        return result.results[0]!.affected === 1n;
-    }
-
+    removeDomain(id: string, host: string): Promise<boolean>;
     /** Sites deleted before this time, oldest first: their 30 days to restore are over. */
-    async deletedBefore(at: number, limit = 20): Promise<SiteRecord[]> {
-        const result = await this.#db.read([{ rql: "SELECT id FROM cms_sites WHERE status = 'deleted' AND deleted_at < $at ORDER BY deleted_at LIMIT $limit", params: { $at: at, $limit: limit } }]);
-        return this.#many(result.results[0]!.rows.map(row => row[0] as string));
-    }
-
+    deletedBefore(at: number, limit?: number): Promise<SiteRecord[]>;
     /** Forget a site, its domains and its members' memberships, once its database and media are gone. */
-    async remove(id: string): Promise<void> {
-        await this.#db.write([
-            { rql: 'DELETE FROM cms_site_domains WHERE site_id = $id', params: { $id: id } },
-            { rql: 'DELETE FROM cms_memberships WHERE site_id = $id', params: { $id: id } },
-            { rql: 'DELETE FROM cms_session_sites WHERE site_id = $id', params: { $id: id } },
-            { rql: 'DELETE FROM cms_handoffs WHERE site_id = $id', params: { $id: id } },
-            { rql: 'DELETE FROM cms_sites WHERE id = $id', params: { $id: id } },
-        ], WRITE);
-    }
-
-    async #many(ids: readonly string[]): Promise<SiteRecord[]> {
-        if (!ids.length) return [];
-        const list = inList('s', ids);
-        const result = await this.#db.read([
-            { rql: `SELECT ${COLUMNS} FROM cms_sites WHERE id IN ${list.rql}`, params: list.params },
-            { rql: `SELECT site_id, host, is_primary, verified_at FROM cms_site_domains WHERE site_id IN ${list.rql} ORDER BY is_primary DESC, host`, params: list.params },
-        ]);
-        const domains = new Map<string, SiteDomain[]>();
-        for (const row of result.results[1]!.rows) {
-            const entry = domains.get(row[0] as string) ?? [];
-            entry.push(domainOf(row.slice(1)));
-            domains.set(row[0] as string, entry);
-        }
-        const sites = new Map(result.results[0]!.rows.map(row => [row[0] as string, Object.freeze({
-            id: row[0] as string, name: row[1] as string, database: row[2] as string, status: row[3] as SiteStatus, step: row[4] as string | null,
-            domains: Object.freeze(domains.get(row[0] as string) ?? []), createdAt: Number(row[5] as bigint), updatedAt: Number(row[6] as bigint),
-            deletedAt: row[7] === null ? null : Number(row[7] as bigint),
-        })]));
-        return ids.map(id => sites.get(id)).filter((site): site is SiteRecord => site !== undefined);
-    }
+    remove(id: string): Promise<void>;
 }
 
-function domainOf(row: readonly Value[]): SiteDomain {
-    return Object.freeze({ host: row[0] as string, primary: Number(row[1] as bigint) === 1, verifiedAt: row[2] === null ? null : Number(row[2] as bigint) });
-}
-
-function checkName(name: string): void {
-    if (typeof name !== 'string' || !name.trim() || name.length > 120) throw new CmsError('CMS_VALIDATION', 'Enter a site name of at most 120 characters.', { fields: { name: 'is required.' } });
-}
-
-function checkDomains(domains: readonly { host: string; primary?: boolean; verifiedAt?: number | null }[]): { host: string; primary: boolean; verifiedAt: number | null }[] {
-    if (!domains.length || domains.length > 20) throw new CmsError('CMS_VALIDATION', 'A site needs 1 to 20 domains.', { fields: { domains: 'are required.' } });
-    const hosts = domains.map(domain => siteHost(domain.host));
-    if (hosts.some(host => !host) || new Set(hosts).size !== hosts.length) throw new CmsError('CMS_VALIDATION', 'Enter each domain once, as a host name such as blog.example.com.', { fields: { domains: 'are invalid.' } });
-    const primary = domains.findIndex(domain => domain.primary);
-    if (domains.filter(domain => domain.primary).length > 1) throw new CmsError('CMS_VALIDATION', 'A site has one primary domain.', { fields: { domains: 'have two primaries.' } });
-    return domains.map((domain, index) => ({ host: hosts[index]!, primary: index === (primary < 0 ? 0 : primary), verifiedAt: domain.verifiedAt ?? null }));
+/**
+ * A registry of sites kept in memory: for tests, and for trying a network without an
+ * application around it. It follows the rules an application's registry must follow.
+ */
+export function memorySites(options: { now?: () => number } = {}): SitesStore {
+    const now = options.now ?? Date.now;
+    const sites = new Map<string, { id: string; name: string; database: string; status: SiteStatus; step: string | null; createdAt: number; updatedAt: number; deletedAt: number | null }>();
+    const domains = new Map<string, { site: string; primary: boolean; verifiedAt: number | null }>();
+    const record = (id: string): SiteRecord | null => {
+        const site = sites.get(id);
+        if (!site) return null;
+        const own = [...domains].filter(([, domain]) => domain.site === id).map(([host, domain]): SiteDomain => Object.freeze({ host, primary: domain.primary, verifiedAt: domain.verifiedAt }))
+            .sort((a, b) => Number(b.primary) - Number(a.primary) || (a.host < b.host ? -1 : 1));
+        return Object.freeze({ ...site, domains: Object.freeze(own) });
+    };
+    const checkName = (name: string) => {
+        if (typeof name !== 'string' || !name.trim() || name.length > 120) throw new CmsError('CMS_VALIDATION', 'Enter a site name of at most 120 characters.', { fields: { name: 'is required.' } });
+    };
+    return {
+        async count() { return sites.size; },
+        async get(id) { return id === MAIN_SITE ? null : record(id); },
+        async getMany(ids) { return [...new Set(ids)].filter(id => id !== MAIN_SITE).map(record).filter((site): site is SiteRecord => site !== null); },
+        async list(listOptions = {}) {
+            const search = listOptions.search?.trim().toLowerCase();
+            const all = [...sites.values()].sort((a, b) => b.createdAt - a.createdAt || (a.id < b.id ? -1 : 1)).map(site => record(site.id)!)
+                .filter(site => !listOptions.status || site.status === listOptions.status)
+                .filter(site => !search || site.name.toLowerCase().includes(search) || site.domains.some(domain => domain.host.includes(search)));
+            const offset = Math.max(listOptions.offset ?? 0, 0);
+            return { items: all.slice(offset, offset + Math.min(Math.max(listOptions.limit ?? 20, 1), 100)), total: all.length };
+        },
+        async inTurn(after, limit = 50) {
+            const live = [...sites.values()].filter(site => site.status === 'active' || site.status === 'archived').map(site => site.id).sort();
+            return [...live.filter(id => id > after), ...live.filter(id => id <= after)].slice(0, Math.min(Math.max(limit, 1), 200)).map(id => record(id)!);
+        },
+        async siteOf(host) {
+            const name = siteHost(host);
+            const domain = domains.get(name);
+            return domain ? { site: domain.site, domain: Object.freeze({ host: name, primary: domain.primary, verifiedAt: domain.verifiedAt }) } : null;
+        },
+        async create(input) {
+            if (!ID.test(input.id) || RESERVED_SITE_IDS.has(input.id)) throw new CmsError('CMS_VALIDATION', 'Site IDs are lowercase letters, digits and hyphens, other than main and new.', { fields: { id: 'is invalid.' } });
+            checkName(input.name);
+            const hosts = input.domains.map(domain => siteHost(domain.host));
+            if (!hosts.length || hosts.length > 20 || hosts.some(host => !host) || new Set(hosts).size !== hosts.length) throw new CmsError('CMS_VALIDATION', 'Enter each domain once, as a host name such as blog.example.com.', { fields: { domains: 'are invalid.' } });
+            if (sites.has(input.id)) throw new CmsError('CMS_CONFLICT', 'A site with this ID exists.', { fields: { id: 'is taken.' } });
+            if ([...sites.values()].some(site => site.database === input.database)) throw new CmsError('CMS_CONFLICT', 'Another site uses this database.');
+            if (hosts.some(host => domains.has(host))) throw new CmsError('CMS_CONFLICT', 'Another site answers on this domain.', { fields: { host: 'is taken.' } });
+            const at = now();
+            sites.set(input.id, { id: input.id, name: input.name.trim(), database: input.database, status: input.status ?? 'active', step: input.step ?? null, createdAt: at, updatedAt: at, deletedAt: null });
+            const primary = Math.max(input.domains.findIndex(domain => domain.primary), 0);
+            input.domains.forEach((domain, index) => domains.set(hosts[index]!, { site: input.id, primary: index === primary, verifiedAt: domain.verifiedAt ?? null }));
+            return record(input.id)!;
+        },
+        async update(id, patch) {
+            const site = sites.get(id);
+            if (!site) return null;
+            if (patch.name !== undefined) checkName(patch.name);
+            const status = patch.status ?? site.status;
+            sites.set(id, { ...site, name: (patch.name ?? site.name).trim(), database: patch.database ?? site.database, status, step: patch.step === undefined ? site.step : patch.step,
+                deletedAt: status === 'deleted' ? site.deletedAt ?? now() : null, updatedAt: now() });
+            return record(id);
+        },
+        async addDomain(id, host) {
+            const name = siteHost(host);
+            if (!name) throw new CmsError('CMS_VALIDATION', 'Enter a host name, such as blog.example.com.', { fields: { host: 'is invalid.' } });
+            if (id !== MAIN_SITE && !sites.has(id)) return null;
+            if (domains.has(name)) throw new CmsError('CMS_CONFLICT', 'Another site answers on this domain.', { fields: { host: 'is taken.' } });
+            domains.set(name, { site: id, primary: false, verifiedAt: null });
+            return id === MAIN_SITE ? null : record(id);
+        },
+        async verifyDomain(id, host, verifyOptions = {}) {
+            const name = siteHost(host);
+            const domain = domains.get(name);
+            if (!domain || domain.site !== id) return false;
+            if (verifyOptions.primary) for (const [other, entry] of domains) if (entry.site === id) domains.set(other, { ...entry, primary: false });
+            domains.set(name, { site: id, primary: verifyOptions.primary ? true : domain.primary, verifiedAt: now() });
+            return true;
+        },
+        async removeDomain(id, host) {
+            const name = siteHost(host);
+            const domain = domains.get(name);
+            if (!domain || domain.site !== id || domain.primary) return false;
+            return domains.delete(name);
+        },
+        async deletedBefore(at, limit = 20) {
+            return [...sites.values()].filter(site => site.status === 'deleted' && site.deletedAt !== null && site.deletedAt <= at)
+                .sort((a, b) => a.deletedAt! - b.deletedAt!).slice(0, limit).map(site => record(site.id)!);
+        },
+        async remove(id) {
+            for (const [host, domain] of domains) if (domain.site === id) domains.delete(host);
+            sites.delete(id);
+        },
+    };
 }

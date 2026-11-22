@@ -106,7 +106,7 @@ export const POST = async (c: Context) => {
      */
     const saveBack = async (page: string, result: FormResult) => {
         const bucket = result.kind === 'success' ? null : result.kind === 'error' ? 'form-error' : 'form-result';
-        const allowed = bucket === null || await cms.security.attempt(bucket, ip ?? 'anonymous', RESULTS_PER_ADDRESS, RESULTS_WINDOW_MS).catch(() => false);
+        const allowed = bucket === null || await cms.attempts.attempt(bucket, ip ?? 'anonymous', RESULTS_PER_ADDRESS, RESULTS_WINDOW_MS).catch(() => false);
         const query = allowed ? `?form=${encodeURIComponent(loaded.ref.slug)}&result=${await cms.forms.saveResult(loaded.ref.id, result)}` : '';
         return c.redirect(`${page}${query}#form-${loaded.ref.slug}`, 303);
     };

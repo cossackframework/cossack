@@ -13,11 +13,9 @@ import { DEFAULT_ROLES, isNetworkAdmin, principalId, systemPrincipal, type Princ
 import { unrestrictedGrantAudit } from './audit';
 import { PLUGIN_ENABLED, type CmsHost, type PluginStatus } from './host';
 import { pluginState, POLICY_KEYS, readPolicy, type NetworkPluginState, type NetworkPolicy, type NetworkThemeState, type StoredPluginStates, type StoredThemeStates } from './network-policy';
-import { CmsHandoffs } from './handoffs';
 import { missingTable, sharedRead } from './shared-read';
 import { seedStarterContent } from './seed';
-import { CmsSites, MAIN_SITE, RESERVED_SITE_IDS, siteHost, type SiteRecord, type SitesStore, type SiteStatus } from './sites';
-import type { EndedSessions } from './stores';
+import { MAIN_SITE, RESERVED_SITE_IDS, siteHost, type SiteRecord, type SitesStore, type SiteStatus } from './sites';
 
 /** The site a CMS host serves. */
 export interface NetworkSite {
@@ -63,10 +61,10 @@ export interface CmsNetworkOptions {
     readonly cacheMs?: number;
     readonly now?: () => number;
     /**
-     * The registry of sites, when the application keeps it (the dashboard package's tenants,
-     * `specs/cms-on-dashboard.md`). Default: the CMS's own tables.
+     * The registry of sites, which the application keeps (the dashboard package's tenants in a
+     * CMS project, `specs/cms-on-dashboard.md`).
      */
-    readonly sites?: SitesStore;
+    readonly sites: SitesStore;
     /**
      * With accounts kept by the application (`CmsOptions.people`): run work on a site's users in
      * that site's database, whichever host the request arrived at. The people port reads the
@@ -82,8 +80,6 @@ export const MAIN: NetworkSite = Object.freeze({ id: MAIN_SITE, name: null, data
 export class CmsNetwork {
     readonly db: RomeDB;
     readonly sites: SitesStore;
-    /** One-use codes that sign a network session in on a site. */
-    readonly handoffs: CmsHandoffs;
     readonly #options: CmsNetworkOptions;
     readonly #now: () => number;
     readonly #hosts = new Map<string, CmsHost>();
@@ -95,22 +91,7 @@ export class CmsNetwork {
         this.db = options.db;
         this.#options = options;
         this.#now = options.now ?? Date.now;
-        this.sites = options.sites ?? new CmsSites(options.db, { now: this.#now });
-        this.handoffs = new CmsHandoffs(options.db, { now: this.#now });
-    }
-
-    /**
-     * End the child sessions sites made from these network sessions. Pass it to every host as
-     * `sessionsEnded`: signing out, a password reset, a suspension or a new network role end
-     * the account's sessions on every site it reached.
-     */
-    async endSessions(ended: EndedSessions): Promise<void> {
-        if (!this.multisite) return;
-        for (const id of await this.handoffs.reached(ended)) {
-            const record = await this.sites.get(id);
-            if (record && record.status !== 'creating') await this.hostOf(networkSite(record)).authSessions.revokeChildren(ended);
-        }
-        await this.handoffs.forget(ended);
+        this.sites = options.sites;
     }
 
     /** Whether added sites can open their databases. */
@@ -312,7 +293,7 @@ export class CmsNetwork {
         const site = await this.checkSiteRegistration(input);
         const account = await this.#account(principal.id);
         if (!account || account.status !== 'active') throw new CmsError('CMS_FORBIDDEN', 'Confirm your email address before registering a site.');
-        if (!(await this.main.security.attempt('site-registration', `account:${account.id}`, SITE_REGISTRATIONS.perAccount, SITE_REGISTRATIONS.windowMs))) {
+        if (!(await this.main.attempts.attempt('site-registration', `account:${account.id}`, SITE_REGISTRATIONS.perAccount, SITE_REGISTRATIONS.windowMs))) {
             throw new CmsError('CMS_LIMIT', 'This account registered as many sites as a day allows. Try again tomorrow.');
         }
         return this.#createSite({ ...site, admin: account.id, starter: true });
@@ -581,9 +562,9 @@ export class CmsNetwork {
             params: { $key: key, $value: JSON.stringify(value), $now: this.#now() } }], { kind: 'cms.network', retryConflicts: 5 });
     }
 
-    /** An account by ID: a user of the main site with the application's accounts, a network account otherwise. */
+    /** An account of the network by ID: a user of the main site. */
     async #account(id: string): Promise<{ id: string; email: string; name: string; status: string } | null> {
-        return this.#options.inSite ? this.main.users.get(id) : this.main.accounts.get(id);
+        return this.main.users.get(id);
     }
 
     /** Run work on a site's users in that site's database (`CmsNetworkOptions.inSite`); as it is without one. */
@@ -593,7 +574,7 @@ export class CmsNetwork {
 
     /** The sites an account is a member of, the main site first, without opening their databases. Off, the network is its main site. */
     async memberSites(accountId: string): Promise<NetworkSite[]> {
-        const ids = this.#options.memberSites ? [MAIN_SITE, ...await this.#options.memberSites(accountId)] : (await this.main.accounts.memberships([accountId])).get(accountId) ?? [];
+        const ids = [MAIN_SITE, ...await this.#options.memberSites?.(accountId) ?? []];
         const sites: NetworkSite[] = ids.includes(MAIN_SITE) ? [MAIN] : [];
         if (!(await this.enabled())) return sites;
         const records = new Map((await this.sites.getMany(ids)).map(record => [record.id, record]));
@@ -602,24 +583,6 @@ export class CmsNetwork {
             if (record && (record.status === 'active' || record.status === 'archived')) sites.push(networkSite(record));
         }
         return sites;
-    }
-
-    /** Delete an account: first its membership of every site, through each site's own user deletion, then the account. */
-    async deleteAccount(id: string, context: { principal: Principal }): Promise<boolean> {
-        requireNetworkAdmin(context.principal);
-        if (this.#options.inSite) throw new CmsError('CMS_UNAVAILABLE', 'Deleting an account is the application\'s, on the dashboard package.', { lasting: true });
-        const account = await this.main.accounts.get(id);
-        if (!account) return false;
-        // Refuse the last network admin before anything changes.
-        if (account.networkRole && !(await this.main.accounts.list({ networkAdmins: true, limit: 2 })).items.some(other => other.id !== id && other.status === 'active')) {
-            throw new CmsError('CMS_FORBIDDEN', 'The last network admin cannot be deleted.');
-        }
-        for (const site of (await this.main.accounts.memberships([id])).get(id) ?? []) {
-            const record = site === MAIN_SITE ? null : await this.sites.get(site);
-            if (site === MAIN_SITE) await this.main.users.delete(id);
-            else if (record && record.status !== 'creating') await this.hostOf(networkSite(record)).users.delete(id);
-        }
-        return this.main.accounts.delete(id);
     }
 
     /** Sites whose schema has steps to apply after a deploy, with how many; each site applies its own when it next loads. */
@@ -687,11 +650,7 @@ export class CmsNetwork {
     #siteCount(): Promise<number> {
         const now = this.#now();
         if (!this.#count || now - this.#count.at >= (this.#options.cacheMs ?? 30_000)) {
-            // Before setup the registry does not exist yet: there are no added sites.
-            const value = this.sites.count().catch(error => {
-                if (missingTable(error, /cms_sites/i)) return 0;
-                throw error;
-            });
+            const value = this.sites.count();
             this.#count = { at: now, value };
             value.catch(() => { this.#count = undefined; });
         }

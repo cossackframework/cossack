@@ -45,12 +45,14 @@ const PAGES = [
   { prefix: '(site)/preview/', allow: STAFF },
   // Signed-in people are sent on from the sign-in pages; the actions answer anyone.
   { prefix: 'auth/', allow: ALL, get: ['anonymous'] },
+  // A signed-in person registers a site there.
+  { prefix: 'auth/register-site/', allow: ALL, methods: { 'signOut': { skip: 'signs the client out' } } },
   // The dashboard: signed-in people reach their profile, security and sessions; the rest is staff or admin.
   { prefix: 'dashboard/index.ts', allow: SIGNED_IN },
   { prefix: 'dashboard/layout.ts', allow: SIGNED_IN, methods: { 'doLogout': { skip: 'signs the client out' } } },
   { prefix: 'dashboard/profile/', allow: SIGNED_IN },
   { prefix: 'dashboard/profile/security/', allow: [...SIGNED_IN, 'gated'], methods: { 'addToken': SIGNED_IN, 'turnOff': SIGNED_IN, 'regenerate': SIGNED_IN, 'deletePasskey': SIGNED_IN, 'deleteToken': SIGNED_IN } },
-  { prefix: 'dashboard/sessions/', allow: SIGNED_IN, methods: { 'revokeAll': { skip: 'ends the client\'s session' } } },
+  { prefix: 'dashboard/sessions/', allow: SIGNED_IN, methods: { 'revokeAll': { skip: 'ends the client\'s session' }, 'rotateCurrent': { skip: 'replaces the client\'s session' } } },
   { prefix: 'dashboard/users/', allow: ADMIN },
   { prefix: 'dashboard/roles/', allow: ADMIN },
   { prefix: 'dashboard/(cms)/', allow: ADMIN },
@@ -84,7 +86,15 @@ const API = [
   { prefix: 'auth/session', allow: NONE, verbs: { DELETE: { skip: 'signs the client out' } } },
   // OAuth routes answer only for a provider the site lists (src/cms.config.ts: oauth); this app lists none.
   { prefix: 'auth/[provider]/', allow: NONE },
+  // Recovery mode is off without a recovery code.
+  { prefix: 'auth/recovery', allow: NONE },
+  // Sign-in between hosts: without a site or a code the request is refused as incomplete (400), whoever sends it.
+  { prefix: 'auth/tenant/', allow: ALL },
+  // The main host's side asks for a session first.
+  { prefix: 'auth/tenant/redirect', allow: PRINCIPALS.filter(principal => principal !== 'anonymous') },
   { prefix: 'cms/', allow: ADMIN },
+  // Development mail: open while APP_URL and the request's address name this machine, as here.
+  { prefix: 'cms/dev/mail', allow: PRINCIPALS.filter(principal => principal !== 'gated') },
   // Visitor endpoints answer anyone, staff without a second factor as visitors.
   { prefix: 'cms/comments/index', verbs: { GET: ALL, POST: ALL } },
   { prefix: 'cms/forms/[slug]/index', allow: ALL },

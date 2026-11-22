@@ -61,6 +61,8 @@ export async function create(userId: string, input: { name: string; scope?: ApiT
 
 /** False when the user has no such token. */
 export async function revoke(userId: string, id: string): Promise<boolean> {
+  // A missing ID must not widen the delete to every token of the user.
+  if (typeof id !== 'string' || !id) return false;
   return (await ApiTokenRow.delete({ id, userId })).meta.rowsAffected === 1;
 }
 

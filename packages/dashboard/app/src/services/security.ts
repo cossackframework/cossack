@@ -301,6 +301,8 @@ export async function renamePasskey(userId: string, id: string, name: string): P
 }
 
 export async function removePasskey(userId: string, id: string): Promise<void> {
+  // A missing ID must not widen the delete to every passkey of the user.
+  if (typeof id !== 'string' || !id) return;
   await Passkey.delete({ id, userId });
 }
 

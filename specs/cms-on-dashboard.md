@@ -1,6 +1,6 @@
 # The CMS on the dashboard's accounts and tenants
 
-Status: decided 2026-11-22 (below); steps 1 to 7 built. Step 8 removes the old stores. Steps are committed one by one. It replaces "step 6" of `specs/romedb-orm.md`,
+Status: built 2026-11-22, steps 1 to 8, committed one by one. It replaces "step 6" of `specs/romedb-orm.md`,
 which was built in part and reverted on 2026-11-21, before the dashboard had tenants
 (`specs/dashboard-tenants.md`) and before a user's field values were documents
 (`specs/cms-field-values.md`).
@@ -177,8 +177,43 @@ What the rest of the CMS calls on the stores today (inventory of 2026-11-22):
    - Every unit and runtime suite passes, the multisite cases included.
    - Still on the old stores, for step 8: `cms/recovery.ts`, the purges of `cms/maintenance.ts`,
      the dashboard home's recent sessions, the CMS's own Registrations screen.
-8. Remove `accounts.ts`, `security.ts`, `api-tokens.ts`, `handoffs.ts`, `sites.ts`, the
-   session stores, their tables and host steps, and the 17 test files that tested them.
-   Rebuild that coverage in the CMS runtime suites. Docs.
+8. **Done:** the old stores are removed.
+   - Library: `accounts.ts`, `security.ts`, `api-tokens.ts`, `handoffs.ts`, `auth.ts`
+     (`createCmsAuth`) and the session stores are gone, and so are `host.accounts`,
+     `authSessions`, `sessions`, `oauthStates`, `apiTokens`, `security`, `tokenPrincipal` and
+     `network.handoffs`, `endSessions`, `deleteAccount`. `CmsUsers` is the store over the
+     port (it checks avatar URLs itself); `createCMS` without `people` uses `memoryPeople()`.
+     `sites.ts` keeps the `SitesStore` interface and `memorySites()`; `CmsNetwork` needs
+     `sites`. Attempt counts are `host.attempts` (`attempts.ts`, table `cms_attempts`).
+   - Schema: host step 17 drops the 19 tables (`cms_users`, `cms_roles`, `cms_user_roles`,
+     `cms_accounts`, the session, token, security, passkey, challenge and reset tables,
+     `cms_sites`, `cms_site_domains`, `cms_handoffs`, `cms_session_sites`, `cms_memberships`,
+     `cms_registrations`). No converter: an install from before signs up again.
+   - App: recovery makes its reset link with the dashboard's `recoverAccount`
+     (`CMS_RECOVERY_CODE`), the dashboard home reads `recentSignIns`, Registrations reads the
+     dashboard's, maintenance purges `host.attempts` only.
+   - Tests: six library test files of the removed stores are deleted, the rest run on
+     `memoryPeople`, `memorySites` and `networkPeople()` (`tests/helpers.ts`).
+     `scaffold/tests/auth-security.test.js` gained the per-account count of wrong current
+     passwords, the refusal of a password alone when the second step is a passkey, and email
+     links from `APP_URL`. OAuth's refusal to claim an existing email was covered already.
+   - `generated-runtime-cms-access` passes again: its table skips the sign-out of the site
+     registration page (it signed every test user out) and has rows for recovery, the
+     sign-in endpoints between hosts and development mail. It found two server methods that
+     answered 500 without arguments (`deleteToken`, a role's `create`); the services now
+     refuse a missing token ID, passkey ID and role name.
+   - Docs: `docs/cms/multisite.md`, three guides of `packages/cms/agent-docs.json`.
 
-Done when the CMS unit suite, the CMS runtime suites and `pnpm test:cms:packed` pass.
+## Left
+
+- Not run: `pnpm test:cms:packed`, `pnpm test:databases`, `pnpm test:desktop`, the Workers
+  variants of the dashboard's tenants, PostgreSQL, MySQL and Turso tenants.
+- Nothing purges deleted tenants of a plain dashboard project on a schedule or drops their
+  databases; no command migrates every tenant; the dashboard's `security.purgeExpired()` is
+  not scheduled.
+- A tenant's own accounts have no passkey or OAuth sign-in.
+- The last-administrator check reads, then writes.
+- Media "in use" no longer counts a user's avatar: `cms.users.usingFile` reads profile
+  fields only.
+- Without the application, an import does not carry users (`PeoplePort.adopt` is the
+  application's); the CMS app's adoption is covered by the runtime suite only.

@@ -1,3 +1,4 @@
+import { recentSignIns } from '#app/auth';
 import { Cossack, Page, State, Server, type HeadValue } from '@cossackframework/core';
 import { Avatar, Badge, Icon } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
@@ -130,7 +131,7 @@ export default class DashboardPage extends Cossack {
         // Who signed in lately: sessions end at sign-out, so these are the accounts signed in now.
         this.canSeeSignIns = hasPermission(principal, PERMISSIONS.manageUsers);
         if (this.canSeeSignIns) {
-            const sessions = await cms.authSessions.listRecent(Date.now(), 8).catch(() => []);
+            const sessions = await recentSignIns(8).catch(() => []);
             const users = await cms.users.getMany([...new Set(sessions.map(session => session.userId))]);
             this.signIns = sessions.map(session => {
                 const user = users.get(session.userId);

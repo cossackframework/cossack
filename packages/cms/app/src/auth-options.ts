@@ -49,4 +49,5 @@ export const authOptions = {
     },
     /** The CMS's setup code. */
     setupCodeVariable: 'CMS_SETUP_CODE',
+    recoveryCodeVariable: 'CMS_RECOVERY_CODE',
 };

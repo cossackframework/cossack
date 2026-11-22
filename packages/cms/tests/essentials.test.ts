@@ -1,6 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { StorageProvider } from '@cossackframework/core/storage';
-import { totpCode, totpStep } from '@cossackframework/auth';
 import {
     ANONYMOUS, contentModule, createCMS, DEFAULT_ROLES, field, imageSrcset, MAX_FILE_VARIANTS, VARIANT_ASPECTS, posts, verifyWebhookSignature,
     type CmsHost, type CmsModule, type ImageTransformer, type Principal,
@@ -234,18 +233,6 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         await cms.redirects.hit(external.id);
         expect(await cms.redirects.get(external.id)).toMatchObject({ hits: 1, lastHitAt: clock });
         expect((await cms.redirects.list({ search: 'campaign' })).items.map(item => item.source)).toEqual(['/retired']);
-    });
-
-    it('authenticates application passwords and keeps read-only ones read-only', async () => {
-        const { token, record } = await cms.apiTokens.create(authorId, { name: 'Mobile app', scope: 'read' });
-        expect(token).toMatch(/^cms_[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{43}$/);
-        expect(await cms.tokenPrincipal(token)).toMatchObject({ scope: 'read', userId: authorId, principal: { kind: 'user', id: authorId } });
-        expect(await cms.tokenPrincipal(token.replace(/.$/, character => character === 'A' ? 'B' : 'A'))).toBeNull();
-        expect((await cms.apiTokens.list(authorId))[0]).toMatchObject({ id: record.id, name: 'Mobile app', lastUsedAt: clock });
-        await expect(cms.apiTokens.revoke('someone-else', record.id)).rejects.toMatchObject({ code: 'CMS_NOT_FOUND' });
-        await cms.apiTokens.revoke(authorId, record.id);
-        expect(await cms.tokenPrincipal(token)).toBeNull();
-        await expect(cms.apiTokens.create(authorId, { name: 'Expired', expiresAt: clock - 1 })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
     });
 
     it('signs webhook deliveries and retries failures', async () => {
@@ -494,57 +481,6 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         expect((await cms.entryUrls(cms.collection('pages'), [published])).get(french.id)).toBe('/a-propos');
     });
 
-    it('checks second factors once each and limits sign-in attempts', async () => {
-        const secret = await cms.security.startTotp(authorId);
-        expect(await cms.security.hasSecondFactor(authorId)).toBe(false);
-        await expect(cms.security.confirmTotp(authorId, '000000')).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
-        const step = totpStep(clock);
-        const codes = await cms.security.confirmTotp(authorId, await totpCode(secret, step));
-        expect(codes).toHaveLength(10);
-        expect(await cms.security.status(authorId)).toMatchObject({ totp: true, recoveryCodes: 10, passkeys: [] });
-        // The confirming code cannot sign in again; the next step's can, once.
-        expect(await cms.security.verifyCode(authorId, await totpCode(secret, step))).toBeNull();
-        clock += 30_000;
-        const next = await totpCode(secret, step + 1);
-        expect(await cms.security.verifyCode(authorId, next)).toBe('totp');
-        expect(await cms.security.verifyCode(authorId, next)).toBeNull();
-        expect(await cms.security.verifyCode(authorId, codes[0]!.toUpperCase())).toBe('recovery');
-        expect(await cms.security.verifyCode(authorId, codes[0]!)).toBeNull();
-        expect((await cms.security.status(authorId)).recoveryCodes).toBe(9);
-
-        await cms.security.addPasskey(authorId, { id: 'cred-1', publicKey: 'pk', counter: 0, transports: ['internal'], deviceType: 'multiDevice', backedUp: true }, 'Laptop');
-        await expect(cms.security.addPasskey(authorId, { id: 'cred-1', publicKey: 'pk', counter: 0 }, 'Again')).rejects.toMatchObject({ code: 'CMS_CONFLICT' });
-        expect((await cms.security.status(authorId)).passkeys).toEqual([expect.objectContaining({ id: 'cred-1', name: 'Laptop', backedUp: true })]);
-
-        const pending = await cms.security.createChallenge('signin', authorId, 'password-ok');
-        for (let left = 4; left >= 0; left--) {
-            expect(await cms.security.secondFactorAttempt(pending, authorId)).toEqual({ left });
-            await cms.security.failChallenge(pending);
-        }
-        expect(await cms.security.challenge(pending, 'signin')).toBeNull();
-        expect(await cms.security.secondFactorAttempt(pending, authorId)).toBe('expired');
-        // Codes sent at once each take a try: no more than five are let through.
-        const burst = await cms.security.createChallenge('signin', authorId, 'password-ok');
-        const tries = await Promise.all(Array.from({ length: 12 }, () => cms.security.secondFactorAttempt(burst, authorId)));
-        expect(tries.filter(t => typeof t === 'object')).toHaveLength(5);
-        // The account has used its ten codes: a new pending sign-in after a right password gets none.
-        const again = await cms.security.createChallenge('signin', authorId, 'password-ok');
-        expect(await cms.security.secondFactorAttempt(again, authorId)).toBe('locked');
-        await cms.security.secondFactorSucceeded(authorId);
-        const fresh = await cms.security.createChallenge('signin', authorId, 'password-ok');
-        const freshTries = await Promise.all(Array.from({ length: 12 }, () => cms.security.secondFactorAttempt(fresh, authorId)));
-        expect(freshTries.filter(t => typeof t === 'object')).toHaveLength(5);
-        clock += 16 * 60_000;
-        await cms.security.purgeAttempts();
-        const kept = await cms.db.read([{ rql: 'SELECT count(*) FROM cms_attempts WHERE until <= $now', params: { $now: clock } }]);
-        expect(Number(kept.results[0]!.rows[0]![0] as bigint)).toBe(0);
-        const once = await cms.security.createChallenge('passkey-signin', null, 'abc');
-        expect(await cms.security.takeChallenge(once, 'passkey-signin')).toBe(true);
-        expect(await cms.security.takeChallenge(once, 'passkey-signin')).toBe(false);
-        await cms.security.reset(authorId);
-        expect(await cms.security.hasSecondFactor(authorId)).toBe(false);
-    });
-
     it('validates SEO groups and their media', async () => {
         const repository = cms.resource('cms/posts');
         await expect(repository.create({ title: 'SEO', seo: { title: 'x', unknown: 1 } }, { principal: editor })).rejects.toMatchObject({ fields: { seo: expect.stringContaining('unknown') } });
@@ -657,7 +593,7 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         await cms.users.update(ada.id, { meta: { bio: 'First programmer.', jobTitle: 'Analyst', website: 'https://ada.example', profiles: 'https://x.com/ada\nnot a url' } });
         expect((await cms.users.get(ada.id))?.meta).toMatchObject({ bio: 'First programmer.', jobTitle: 'Analyst', website: 'https://ada.example' });
         // Users from before author pages get a slug the first time the site needs one.
-        await cms.db.write([{ rql: 'UPDATE cms_users SET slug = NULL WHERE id = $id', params: { $id: ada.id } }], { kind: 'cms.users' });
+        await cms.db.write([{ rql: 'DELETE FROM cms_authors WHERE user_id = $id', params: { $id: ada.id } }], { kind: 'cms.users' });
         expect((await cms.users.get(ada.id))?.slug).toBeNull();
         const withSlugs = await cms.users.withSlugs(await cms.users.getMany([ada.id]));
         expect(withSlugs.get(ada.id)?.slug).toBe('augusta-ada-king');
@@ -711,14 +647,6 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         await expect(cms.users.setSystemMeta(user.id, 'recent', [])).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         await cms.users.setSystemMeta(user.id, '_recent_blocks', null);
         expect((await cms.users.get(user.id))?.meta).not.toHaveProperty('_recent_blocks');
-    });
-
-    it('finds users whose profile picture or fields name a file', async () => {
-        const file = 'file-avatar-1';
-        const pictured = await cms.users.create({ email: 'pictured@example.com', name: 'Pictured', avatar: `/media/${file}/me.png` });
-        await cms.users.create({ email: 'elsewhere@example.com', name: 'Elsewhere', avatar: `/media/${file}x/me.png` });
-        expect((await cms.users.usingFile(file)).map(user => user.id)).toEqual([pictured.id]);
-        expect(await cms.users.usingFile('a%')).toEqual([]);
     });
 
     it('crops images and keeps their variants', async () => {

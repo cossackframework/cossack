@@ -3,7 +3,6 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 vi.stubGlobal('env', (_name: string, fallback: string) => fallback);
 vi.stubGlobal('__', (text: string) => text);
 import { Hono } from 'hono';
-import { totpCode, totpStep } from '@cossackframework/auth';
 import { ANONYMOUS, contentModule, createCMS, defineResource, field, systemPrincipal, userPrincipal, type CmsHost } from '../../src/server/index';
 import { live, romedbService } from '../../tests/helpers';
 import { editorView, entryValues, saveEntry } from '../src/cms/content';
@@ -84,14 +83,6 @@ describe.skipIf(!live)('editorial access', () => {
         expect(await draftMedia(cms, { collection: 'posts', id: 'member' }, '', reader)).toBeNull();
         expect(await draftMedia(cms, { collection: 'posts', id: 'member' }, '', editor)).toEqual([]);
         expect(await draftMedia(cms, { collection: '', id: '' }, '', ANONYMOUS)).toBeNull();
-    });
-
-    it('keeps a confirmed authenticator when another setup starts', async () => {
-        const secret = await cms.security.startTotp('factor-user');
-        await cms.security.confirmTotp('factor-user', await totpCode(secret, totpStep(clock)));
-        await expect(cms.security.startTotp('factor-user')).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
-        expect(await cms.security.requiresCode('factor-user')).toBe(true);
-        expect(await cms.security.verifyCode('factor-user', await totpCode(secret, totpStep(clock) + 1))).toBe('totp');
     });
 
     it('keeps fields with their own access rule out of the editing room', async () => {
