@@ -1,8 +1,9 @@
+import type { Context } from 'hono';
 import { tenantORM } from '@/orm/factory';
 import { defineServerMiddleware } from '@cossackframework/core';
 import type { ORM } from '@cossackframework/database';
 import { getCookie, deleteCookie, setCookie } from 'hono/cookie';
-import { hostName, mainHost, markTenantRequest, sharedSignIn, tenantClaimingHost, tenantOfHost, tenantsEnabled, tenantsRunning } from '../tenants';
+import { hostName, mainHost, markTenantRequest, sharedSignIn, tenantClaimingHost, tenantOfHost, tenantsEnabled, tenantsRunning, type TenantInfo } from '../tenants';
 import { returnPath } from '../auth-input';
 import { SESSION_COOKIE_NAME } from '../auth';
 
@@ -28,13 +29,7 @@ export const tenantMiddleware = defineServerMiddleware(async (c, next) => {
     const main = mainHost();
     const host = hostName(c.req.url);
     if (!main || !host || host === main) {
-        // Shared sign-in: a visitor a tenant's host sent here signed in, and now goes back with a code.
-        const waiting = sharedSignIn && c.req.method === 'GET' && !c.req.path.startsWith('/auth/') ? getCookie(c, TENANT_RETURN) : undefined;
-        if (waiting && getCookie(c, SESSION_COOKIE_NAME) && c.req.header('sec-fetch-dest') !== 'empty') {
-            deleteCookie(c, TENANT_RETURN, { path: '/' });
-            return c.redirect(`/auth/tenant/redirect?${waiting}`);
-        }
-        return next();
+        return sharedSignInOnMainHost(c) ?? next();
     }
     if (screen) return c.notFound();
     // A domain proves it points here by answering with the ID of the tenant that asked for it.
@@ -57,29 +52,57 @@ export const tenantMiddleware = defineServerMiddleware(async (c, next) => {
     // account sign in on the main host, which sends them back with a one-time code. A visitor
     // goes there once on their own: signed in already, they arrive signed in; if not, they come
     // back to this page, whose link ("/auth/tenant/start") takes them to the main host's sign-in.
+    const routed = sharedSignInOnTenantHost(c, host, main);
+    if (routed) return routed;
+    return inTenantDatabase(c, tenant, () => next());
+});
+
+/**
+ * Shared sign-in, on the main host: a visitor a tenant's host sent here has signed in, and now
+ * goes back with a code. Null when the request is not that.
+ */
+export function sharedSignInOnMainHost(c: Context): Response | null {
+    const waiting = sharedSignIn && c.req.method === 'GET' && !c.req.path.startsWith('/auth/') ? getCookie(c, TENANT_RETURN) : undefined;
+    if (!waiting || !getCookie(c, SESSION_COOKIE_NAME) || c.req.header('sec-fetch-dest') === 'empty') return null;
+    deleteCookie(c, TENANT_RETURN, { path: '/' });
+    return c.redirect(`/auth/tenant/redirect?${waiting}`);
+}
+
+/**
+ * Shared sign-in, on a tenant's host. Its sign-in page is for its own accounts; people with a
+ * main account sign in on the main host, which sends them back with a one-time code. A visitor
+ * who opens the dashboard without a session here goes to the main host once on their own:
+ * signed in there already, they arrive signed in; if not, they come back to the tenant's
+ * sign-in page, whose link ("/auth/tenant/start") takes them to the main host's sign-in.
+ * Null when the request is neither.
+ */
+export function sharedSignInOnTenantHost(c: Context, host: string, main: string): Response | null {
     const start = c.req.path === '/auth/tenant/start';
-    const first = c.req.path === '/auth/login' && !getCookie(c, TENANT_AUTO) && !getCookie(c, SESSION_COOKIE_NAME);
-    if (sharedSignIn && c.req.method === 'GET' && (start || first)) {
-        const url = new URL(c.req.url);
-        const secure = url.protocol === 'https:';
-        const state = crypto.randomUUID().replaceAll('-', '');
-        setCookie(c, TENANT_STATE, state, { path: '/', httpOnly: true, sameSite: 'Lax', maxAge: 600, secure });
-        // Once in five minutes, so a visitor without a main session is not sent in circles.
-        setCookie(c, TENANT_AUTO, '1', { path: '/', httpOnly: true, sameSite: 'Lax', maxAge: 300, secure });
-        const back = returnPath(c.req.query(start ? 'next' : 'redirect'));
-        const query = new URLSearchParams({ host, state, ...(back ? { next: back } : {}), ...(start ? {} : { auto: '1' }) });
-        url.hostname = main;
-        url.pathname = '/auth/tenant/redirect';
-        url.search = query.toString();
-        return c.redirect(url.toString());
-    }
+    const first = /^\/dashboard(?:\/|$)/.test(c.req.path) && !getCookie(c, TENANT_AUTO) && !getCookie(c, SESSION_COOKIE_NAME) && c.req.header('sec-fetch-dest') !== 'empty';
+    if (!sharedSignIn || c.req.method !== 'GET' || !(start || first)) return null;
+    const url = new URL(c.req.url);
+    const secure = url.protocol === 'https:';
+    const state = crypto.randomUUID().replaceAll('-', '');
+    setCookie(c, TENANT_STATE, state, { path: '/', httpOnly: true, sameSite: 'Lax', maxAge: 600, secure });
+    // Once in five minutes, so a visitor without a main session is not sent in circles.
+    setCookie(c, TENANT_AUTO, '1', { path: '/', httpOnly: true, sameSite: 'Lax', maxAge: 300, secure });
+    const back = returnPath(start ? c.req.query('next') : `${url.pathname}${url.search}`);
+    const query = new URLSearchParams({ host, state, ...(back ? { next: back } : {}), ...(start ? {} : { auto: '1' }) });
+    url.hostname = main;
+    url.pathname = '/auth/tenant/redirect';
+    url.search = query.toString();
+    return c.redirect(url.toString());
+}
+
+/** Run the rest of the request in a tenant's database: models and services reach it, and the request knows its tenant. */
+export async function inTenantDatabase<T>(c: Context, tenant: TenantInfo, work: () => Promise<T>): Promise<T> {
     const opened = await tenantORM(c.env, tenant);
     try {
         markTenantRequest(c, tenant, c.get('orm' as never) as ORM, opened.orm);
-        await opened.orm.run(() => next());
+        return await opened.orm.run(work);
     } finally {
         // A response that streams keeps the database until its body ends.
         const lifetime = c.get('cossack:response-lifetime' as never) as { deferCleanup?(cleanup: () => Promise<void>): boolean } | undefined;
         if (!lifetime?.deferCleanup?.(() => opened.release())) await opened.release();
     }
-});
+}

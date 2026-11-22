@@ -12,6 +12,9 @@ import { TenantMember } from '@/models/TenantMember';
 import { User } from '@/models/User';
 import { Role } from '@/models/Role';
 import { UserRole } from '@/models/UserRole';
+import { UserSecurity } from '@/models/UserSecurity';
+import { Passkey } from '@/models/Passkey';
+import { ApiToken } from '@/models/ApiToken';
 
 export interface TenantSummary extends TenantInfo {
   readonly createdAt: string;
@@ -368,5 +371,61 @@ export async function tenantsOf(userId: string): Promise<TenantInfo[]> {
     if (!memberships.length) return [];
     const ids = new Set(memberships.map(membership => membership.tenantId));
     return (await Tenant.find({ take: 500 })).filter(row => ids.has(row.id) && row.status === 'active').map(info);
+  });
+}
+
+/** The rows of an account that move with it: its authenticator app and recovery codes. */
+async function takeSecurity(userId: string): Promise<UserSecurity | null> {
+  const row = await UserSecurity.findOne({ where: { userId } });
+  if (row) await UserSecurity.delete({ userId });
+  // Passkeys belong to the host they were made on, and application passwords name the account's home: both are set up again.
+  await Passkey.delete({ userId });
+  await ApiToken.delete({ userId });
+  return row;
+}
+
+async function giveSecurity(row: UserSecurity | null): Promise<void> {
+  if (row) await UserSecurity.insert({ userId: row.userId, totpSecret: row.totpSecret, totpConfirmedAt: row.totpConfirmedAt, totpLastStep: row.totpLastStep, recovery: row.recovery, updatedAt: new Date() });
+}
+
+/**
+ * Move an account between a tenant and the main database, keeping its ID, password and
+ * authenticator app. `main`: an account of this tenant only becomes one every tenant can have
+ * as a member, and stays a member here. `tenant`: a main account that is a member of this
+ * tenant only, and no network administrator, becomes this tenant's own. Its sessions end, and
+ * it sets up passkeys and application passwords again. Call it in the main database's scope.
+ */
+export async function moveAccount(tenant: TenantInfo, userId: string, to: 'main' | 'tenant'): Promise<void> {
+  required();
+  const here = await withTenant(tenant, () => User.findOne({ where: { id: userId } }));
+  if (!here) throw new ClientVisibleError('This tenant has no such user.');
+  if (to === 'main') {
+    if (!here.tenantAccount) throw new ClientVisibleError('This is a shared account already.');
+    if (await User.exists({ email: here.email })) throw new ClientVisibleError('Another shared account has this email.');
+    const security = await withTenant(tenant, async () => {
+      await sql`DELETE FROM sessions WHERE user_id = ${userId}`;
+      const row = await takeSecurity(userId);
+      await User.update({ id: userId }, { tenantAccount: false, passwordHash: null });
+      return row;
+    });
+    await User.insert({ id: here.id, email: here.email, name: here.name, passwordHash: here.passwordHash, avatar: here.avatar, meta: here.meta, status: here.status, createdAt: here.createdAt });
+    await giveSecurity(security);
+    await TenantMember.upsert({ tenantId: tenant.id, userId, createdAt: new Date() }, ['tenantId', 'userId']);
+    return;
+  }
+  if (here.tenantAccount) throw new ClientVisibleError('This is an account of this tenant already.');
+  const account = await User.findOne({ where: { id: userId } });
+  if (!account) throw new ClientVisibleError('Account not found.');
+  if (account.networkAdmin) throw new ClientVisibleError('A network administrator keeps a shared account.');
+  if ((await TenantMember.find({ where: { userId }, take: 3 })).some(member => member.tenantId !== tenant.id)) throw new ClientVisibleError('This account is a member of other tenants too.');
+  await sql`DELETE FROM sessions WHERE user_id = ${userId}`;
+  const security = await takeSecurity(userId);
+  await UserRole.delete({ userId });
+  await TenantMember.delete({ userId });
+  await User.delete({ id: userId });
+  await withTenant(tenant, async () => {
+    await sql`DELETE FROM sessions WHERE user_id = ${userId}`;
+    await User.update({ id: userId }, { tenantAccount: true, passwordHash: account.passwordHash, email: account.email, name: account.name, status: account.status });
+    await giveSecurity(security);
   });
 }

@@ -1,3 +1,4 @@
+import { networkAccounts } from '#app/cms/network-accounts';
 import { Cossack, Page, State, flash, flashed, type HeadValue } from '@cossackframework/core';
 import { Card, CardBody } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
@@ -31,7 +32,7 @@ export default class NewNetworkUser extends Cossack {
         const value = (name: string) => String(data.get(name) ?? '').trim();
         const form: NewAccountForm = { name: value('name'), email: value('email'), admin: data.get('admin') === 'on' };
         try {
-            const account = await network(this.c).main.accounts.create({ email: form.email, name: form.name || form.email.split('@')[0]!, password: String(data.get('password') ?? ''),
+            const account = await networkAccounts.create({ email: form.email, name: form.name || form.email.split('@')[0]!, password: String(data.get('password') ?? ''),
                 ...(form.admin ? { networkRole: NETWORK_ADMIN } : {}) });
             flash('network.message', `${account.name} ${__('can sign in now. Add them to sites below.')}`);
             return this.redirect(`/dashboard/network/users/${account.id}`);

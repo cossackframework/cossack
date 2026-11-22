@@ -73,6 +73,22 @@ export interface PeoplePort {
     setRoles(id: string, roles: readonly string[]): Promise<void>;
     /** False when there is no such user. */
     delete(id: string): Promise<boolean>;
+    /**
+     * Make an account that the whole network shares a member of this site, with these roles, when
+     * the application has such accounts. Null when there is no such account.
+     */
+    join?(accountId: string, roles: readonly string[]): Promise<Person | null>;
+    /**
+     * How many accounts are this site's own: on a site of a network the ones that exist there
+     * only, elsewhere every account. An import needs none. Default: `count()`.
+     */
+    ownCount?(): Promise<number>;
+    /**
+     * After a site's export was imported into this site's tables: make its users people of
+     * this site. Each becomes a member whose account the network already has, or an account
+     * of this site without a password (it sets one with Forgot password). Answers how many of each.
+     */
+    adopt?(): Promise<{ readonly network: number; readonly site: number; readonly pending: number }>;
 }
 
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}$/;

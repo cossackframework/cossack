@@ -1,3 +1,4 @@
+import { networkAccounts } from '#app/cms/network-accounts';
 import { Cossack, Page, State, flash, flashed, type HeadValue } from '@cossackframework/core';
 import { Badge, Card, CardBody, CardHeader, Field, NativeSelect } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
@@ -34,20 +35,21 @@ export default class NetworkUser extends Cossack {
 
     async init() {
         const net = network(this.c);
-        const account = await net.main.accounts.get(this.c.req.param('id') ?? '');
+        const account = await networkAccounts.get(this.c.req.param('id') ?? '');
         if (!account) { this.error = __('There is no such account.'); this.c.status(404); return; }
         const principal = this.c.get('principal');
         Object.assign(this, {
             id: account.id, name: account.name, email: account.email, status: account.status, admin: account.networkRole === NETWORK_ADMIN,
             self: principal.kind === 'user' && principal.id === account.id, createdAt: account.createdAt, lastSignInAt: account.lastSignInAt,
         });
-        const ids = (await net.main.accounts.memberships([account.id])).get(account.id) ?? [];
+        const ids = (await networkAccounts.memberships([account.id])).get(account.id) ?? [];
         const names = await siteNames(this.c, ids);
         const memberships: Membership[] = [];
         for (const site of ids) {
             const host = await this.hostOf(site);
             if (!host) continue;
-            const member = await host.users.get(account.id);
+            // A site's users are in its own database.
+            const member = await this.onSite(site, () => host.users.get(account.id));
             const record = site === MAIN_SITE ? null : await net.sites.get(site);
             memberships.push({ id: site, name: names.get(site) ?? site, roles: member?.assignments.map(role => role.name).join(', ') || __('No role'),
                 dashboard: siteLinks(this.c, { host: record?.domains.find(domain => domain.primary)?.host ?? null }).dashboard });
@@ -68,6 +70,15 @@ export default class NetworkUser extends Cossack {
         return record && record.status !== 'creating' ? net.hostOf(networkSite(record)) : null;
     }
 
+    /** Run work on a site's users in that site's database. */
+    private async onSite<T>(site: string, work: () => Promise<T>): Promise<T> {
+        const net = network(this.c);
+        if (site === MAIN_SITE) return work();
+        const record = await net.sites.get(site);
+        if (!record) throw new Error(__('There is no such site.'));
+        return net.inSite(networkSite(record), work);
+    }
+
     async post() {
         if (!isSameOriginPost(this.c.req.raw)) return this.c.text('Forbidden', 403);
         const id = this.c.req.param('id') ?? '';
@@ -75,7 +86,7 @@ export default class NetworkUser extends Cossack {
         const value = (name: string) => String(form.get(name) ?? '').trim();
         const net = network(this.c);
         const principal = this.c.get('principal');
-        const accounts = net.main.accounts;
+        const accounts = networkAccounts;
         try {
             const account = await accounts.get(id);
             if (!account) throw new Error(__('There is no such account.'));
@@ -85,7 +96,10 @@ export default class NetworkUser extends Cossack {
             if (action === 'profile') {
                 await accounts.update(id, { name: value('name'), email: value('email') });
                 // Sites keep a copy of the name and email in their member rows.
-                for (const site of (await accounts.memberships([id])).get(id) ?? []) await (await this.hostOf(site))?.users.update(id, { name: value('name'), email: value('email') });
+                for (const site of (await accounts.memberships([id])).get(id) ?? []) {
+                    const host = await this.hostOf(site);
+                    if (host && site !== MAIN_SITE) await this.onSite(site, () => host.users.update(id, { name: value('name'), email: value('email') }));
+                }
                 if (value('password')) await accounts.setPassword(id, value('password'));
                 flash('network.message', __('Saved.'));
             } else if (action === 'make-admin' || action === 'remove-admin') {
@@ -98,15 +112,20 @@ export default class NetworkUser extends Cossack {
                 const host = await this.hostOf(value('site'));
                 if (!host) throw new Error(__('There is no such site.'));
                 const role = value('role');
-                if (role && !(await host.users.roles()).some(entry => entry.id === role)) throw new Error(__('That site has no such role.'));
-                await host.users.addMember(id);
-                await host.users.setRoles(id, role ? [role] : []);
+                await this.onSite(value('site'), async () => {
+                    if (role && !(await host.users.roles()).some(entry => entry.id === role)) throw new Error(__('That site has no such role.'));
+                    // On the main site every account is a user already: it gets the role there.
+                    if (value('site') === MAIN_SITE) await host.users.setRoles(id, role ? [role] : []);
+                    else await host.users.addMember(id, { roles: role ? [role] : [] });
+                });
                 flash('network.message', `${account.name} ${__('is a member now.')}`);
             } else if (action === 'remove-site') {
-                await (await this.hostOf(value('site')))?.users.delete(id);
+                const host = await this.hostOf(value('site'));
+                if (value('site') === MAIN_SITE) throw new Error(__('Every account is a user of the main site. Change its roles there, or delete the account.'));
+                if (host) await this.onSite(value('site'), async () => { await host.users.delete(id); });
                 flash('network.message', __('Removed from the site.'));
             } else if (action === 'delete') {
-                await net.deleteAccount(id, { principal });
+                await accounts.delete(id);
                 flash('network.message', __('Deleted from every site.'));
                 return this.redirect('/dashboard/network/users');
             }

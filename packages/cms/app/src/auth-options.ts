@@ -35,10 +35,18 @@ export const authOptions = {
         const site = settings();
         return { requireTwoFactor: site['general.requireTwoFactor'] === true, twoFactorRoles: settingRoles(site['general.twoFactorRoles']) };
     },
-    /** A network of sites is the dashboard package's tenants: step 7 of specs/cms-on-dashboard.md turns them on here. */
-    tenants: { enabled: false, signIn: 'shared' as 'host' | 'shared', verifyDomains: true },
+    /**
+     * A network's sites are the dashboard package's tenants. Each site signs in its own accounts,
+     * and people with a network account sign in on the network host (shared sign-in).
+     */
+    tenants: { enabled: true, signIn: 'shared' as 'host' | 'shared', verifyDomains: true },
     /** Application passwords start with `cms_`. */
     tokenPrefix: 'cms',
+    /** On a site of a network: members with a network account. */
+    accountLabels: {
+        shared: 'Network account',
+        sharedNotice: 'A network account: its name, email, password and sign-in methods change on the network, by the person or a network admin. This site manages its roles.',
+    },
     /** The CMS's setup code. */
     setupCodeVariable: 'CMS_SETUP_CODE',
 };

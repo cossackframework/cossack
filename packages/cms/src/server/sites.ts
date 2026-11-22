@@ -50,6 +50,9 @@ export function siteHost(host: string): string {
     return HOST.test(name) ? name : '';
 }
 
+/** What the network needs from a registry of sites: `CmsSites` on the CMS's own tables, or the application's on the dashboard package's tenants. */
+export type SitesStore = Pick<CmsSites, 'count' | 'get' | 'getMany' | 'list' | 'inTurn' | 'siteOf' | 'create' | 'update' | 'addDomain' | 'verifyDomain' | 'removeDomain' | 'deletedBefore' | 'remove'>;
+
 export class CmsSites {
     readonly #db: RomeDB;
     readonly #now: () => number;

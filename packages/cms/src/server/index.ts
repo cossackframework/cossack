@@ -13,7 +13,7 @@ export { Outbox, type DispatchReport, type OutboxOptions } from './outbox';
 export { CmsUsers, type CmsUser, type CmsMember, type CmsRole, type UserPage } from './users';
 export { memoryPeople, personPermissions, type PeoplePort, type Person, type PersonRole, type PersonInput, type PeopleListOptions } from './people';
 export { CmsAccounts, normalizeEmail, type CmsAccount, type AccountProfile } from './accounts';
-export { CmsSites, MAIN_SITE, siteHost, type SiteRecord, type SiteDomain, type SiteStatus } from './sites';
+export { CmsSites, MAIN_SITE, siteHost, type SiteRecord, type SiteDomain, type SiteStatus , type SitesStore } from './sites';
 export { CmsNetwork, MAIN, networkSite, prefixedStorage, type NetworkSite, type SiteResolution, type CmsNetworkOptions, type NewSite, type NetworkSettings, type SiteExportPolicy, type ExportRequest, type SiteRegistration, SITE_REGISTRATIONS } from './network';
 export { siteExport, siteFile, EXPORT_SKIPPED_TABLES, EXPORT_REDACTED_COLUMNS, FILE_EXPORT_EMPTIED_TABLES, type SiteExportOptions } from './site-export';
 export { siteImport, siteImportState, type SiteImportOptions, type SiteImportReport } from './site-import';

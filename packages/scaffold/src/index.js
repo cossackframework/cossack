@@ -327,6 +327,9 @@ const AUTH_ORM_PATHS = new Set([
   'src/avatars.ts',
   'src/auth-events.ts',
   'src/middlewares/tenant.ts',
+  'src/pages/auth/tenant/redirect.ts',
+  'src/pages/auth/tenant/callback.ts',
+  'src/pages/auth/recovery.ts',
   'src/models/ApiToken.ts',
   'src/models/Tenant.ts',
   'src/models/TenantDomain.ts',
@@ -786,7 +789,8 @@ function romedbOrmFactory(recipe) {
       : `async function serverDatabase(env: ORMEnvironment): Promise<RomeDB> {
   return getRomeDB(env);
 }`;
-    return `import { mkdirSync } from 'node:fs';
+    return `import { AsyncLocalStorage } from 'node:async_hooks';
+import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { applyPendingMigrations, createORM, createTenantORMs, tenantUrl, type ORM, type TenantDatabase, type TenantORM } from '@cossackframework/database';
 import { createRomeDB, type RomeDB } from '@cossackframework/romedb';
@@ -840,7 +844,22 @@ export function getORM(env: ORMEnvironment = process.env): Promise<ORM> {
   return singleton;
 }
 
+${cms ? `const tenantEnvironment = new AsyncLocalStorage<ORMEnvironment>();
 const tenants = createTenantORMs({
+  // A site of the CMS's network: its database is the one the CMS opened for it.
+  adapter: async (tenant) => {
+    const { siteDatabase } = await import('${CMS_PACKAGE}/app/cms/index');
+    return romedb(await siteDatabase(tenantEnvironment.getStore() as Parameters<typeof siteDatabase>[0], tenant.slug));
+  },
+  entities: models,
+  migrations,
+});
+
+/** The ORM of a site's database, for the accounts of that site. Its migrations apply when it is first opened. */
+export function tenantORM(env: unknown, tenant: TenantDatabase): Promise<TenantORM> {
+  return tenantEnvironment.run((env ?? process.env) as ORMEnvironment, () => tenants.open(tenant));
+}
+` : `const tenants = createTenantORMs({
   // A file beside the main one, or TENANT_DATABASE_URL with {tenant} in it for a service.
   adapter: (tenant) => {
     const main = process.env.ROMEDB_URL || 'storage/romedb/app.romedb';
@@ -859,14 +878,14 @@ const tenants = createTenantORMs({
   migrations,
 });
 
-/** The ORM of a tenant's database, for \`tenants\` in src/dashboard.config.ts. Its migrations apply when it is first opened. */
+/** The ORM of a tenant's database, for tenants in src/dashboard.config.ts. Its migrations apply when it is first opened. */
 export function tenantORM(_env: unknown, tenant: TenantDatabase): Promise<TenantORM> {
   return tenants.open(tenant);
 }
-`;
+`}`;
   }
   const instance = cms
-    ? `import { cmsFor, type CmsBindings } from '${CMS_PACKAGE}/app/cms/index';
+    ? `import { cmsFor, siteDatabase, type CmsBindings } from '${CMS_PACKAGE}/app/cms/index';
 
 export type ORMEnvironment = CmsBindings;
 
@@ -934,9 +953,21 @@ export async function createRequestORM(env: ORMEnvironment) {
   return orm;
 }
 ${cms ? `
-/** A CMS project's tenants are the CMS's sites. */
-export function tenantORM(_env: unknown, _tenant: TenantDatabase): Promise<TenantORM> {
-  throw new Error('Tenants of the dashboard package are not used with the CMS: use its network of sites.');
+const tenantEnvironment = new AsyncLocalStorage<ORMEnvironment>();
+const tenants = createTenantORMs({
+  // A site of the CMS's network: its database is the one the CMS opened for it.
+  adapter: async (tenant) => {
+    const adapter = await romedb(await siteDatabase(tenantEnvironment.getStore()!, tenant.slug));
+    return { ...adapter, scope: createAsyncLocalScope(new AsyncLocalStorage()) };
+  },
+  entities: models,
+  migrations,
+  perRequest: true,
+});
+
+/** The ORM of a site's database for this request, for the accounts of that site. Release it after the request. */
+export function tenantORM(env: unknown, tenant: TenantDatabase): Promise<TenantORM> {
+  return tenantEnvironment.run(env as ORMEnvironment, () => tenants.open(tenant));
 }` : `
 const tenants = createTenantORMs({
   // TENANT_DATABASE_URL has {tenant} in it: a RomeDB Cloud database per tenant.

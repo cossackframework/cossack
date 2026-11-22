@@ -51,6 +51,7 @@
 !/src/pages/auth/
 /src/pages/auth/*
 !/src/pages/auth/setup/
+!/src/pages/auth/register-site/
 !/src/pages/dashboard/
 /src/pages/dashboard/*
 !/src/pages/dashboard/(cms)/

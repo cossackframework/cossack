@@ -26,13 +26,13 @@ import { authOptions } from './auth-options';
 import { mailer } from './mail';
 import { avatarUploads as storedAvatars, storeAvatar } from './avatars';
 import { authEvents } from './auth-events';
-import { accounts, currentTenant, hostName, inTenant, mainHost, sharedSignIn, tenantOfHost } from './tenants';
+import { accounts, currentTenant, hostName, inTenant, mainHost, sharedSignIn, tenantOfHost, tenantOrigin } from './tenants';
 import { TenantHandoff } from '@/models/TenantHandoff';
 import { TenantSession } from '@/models/TenantSession';
 import { Tenant } from '@/models/Tenant';
 import { asMainAccount, asTenantAccount, markTenantAccountRequest, tenantAccountHome, withTenant } from './tenants';
 import { ALL_PERMISSIONS } from './lib/permissions';
-import { siteName } from './brand';
+import { mainSiteName, siteName } from './brand';
 import * as security from './services/security';
 import * as apiTokens from './services/api-tokens';
 import type { ApiToken } from './services/api-tokens';
@@ -152,11 +152,16 @@ async function accountOf<T>(userId: string, work: () => Promise<T>): Promise<T> 
 
 /**
  * Run code about the account with this email, as someone on this host would mean it: on a
- * tenant's host its own account with the email, else the main account.
+ * tenant's host its own account with the email, else the main account (`elsewhere` is the
+ * answer where this host does not serve main accounts).
  */
-async function accountByEmail<T>(email: string, work: () => Promise<T>): Promise<T> {
+async function accountByEmail<T>(email: string, work: () => Promise<T>, elsewhere: T): Promise<T> {
   const own = currentTenant() ? await inTenant(async () => (await User.findOne({ where: { email } }))?.tenantAccount === true) : false;
-  return own ? asTenantAccount(work) : asMainAccount(work);
+  if (own) return asTenantAccount(work);
+  // With shared sign-in a tenant's host serves its own accounts only: a main account signs in,
+  // and resets its password, on the main host.
+  if (currentTenant() && sharedSignIn) return elsewhere;
+  return asMainAccount(work);
 }
 
 /**
@@ -401,7 +406,7 @@ export async function loginUser(email: string, password: string, address = clien
   // The password matched: on a tenant's host, the visitor is told when the account is not its member.
   if (!await allowedHere(user.id)) throw new SignInMemberError(currentTenant()!.name);
   return user;
-  }));
+  }), null);
 }
 
 /** The account is right, but it is not a member of the tenant whose host this is. Thrown after the password matched. */
@@ -875,8 +880,18 @@ export async function completeTwoFactor(challengeId: string, code: string): Prom
 
 export async function securityStatus(userId: string): Promise<SecurityStatus> {
   return accountOf(userId, async () => {
-  return security.status(userId);
+  return { ...await security.status(userId), passkeysManagedAt: await passkeysElsewhere(userId) };
   });
+}
+
+/**
+ * On a tenant's host, for an account every tenant shares: its passkeys sign it in on the main
+ * host and are added and removed there. Null for an account of this host.
+ */
+async function passkeysElsewhere(userId: string): Promise<{ name: string; href: string | null } | null> {
+  if (!currentTenant() || await tenantAccount(userId)) return null;
+  const origin = tenantOrigin(null);
+  return { name: await mainSiteName(), href: origin ? `${origin}/dashboard/profile/security` : null };
 }
 
 /**
@@ -998,6 +1013,8 @@ async function passkeySite(c: Context): Promise<PasskeyConfig> {
 
 export async function passkeyRegistration(c: Context, user: PublicUser): Promise<{ challenge: string; options: PublicKeyCredentialCreationOptionsJSON }> {
   return accountOf(user.id, async () => {
+  const elsewhere = await passkeysElsewhere(user.id);
+  if (elsewhere) throw new ClientVisibleError(`Add or remove this account's passkeys on ${elsewhere.name}.`);
   await requireFactorSetupAllowed(user.id);
   const existing = await security.passkeys(user.id);
   const options = await passkeyRegistrationOptions(await passkeySite(c), { id: user.id, name: user.email, displayName: user.name },
@@ -1125,7 +1142,7 @@ export async function requestPasswordReset(email: string, resetBaseUrl: string):
   const resetUrl = `${resetBaseUrl.replace(/\/$/, '')}/auth/reset-password?token=${token}`;
   await mail.send({ to: email, subject: 'Reset your password',
     text: `We received a request to reset your password. Choose a new one here; the link works for one hour:\n${resetUrl}\n\nIf you did not ask for it, ignore this email.` });
-  }));
+  }), undefined);
 }
 
 export async function resetPassword(token: string, newPassword: string): Promise<boolean> {
@@ -1351,7 +1368,7 @@ export async function requestMagicLink(email: string, _requestOrigin?: string): 
   const title = await siteName().catch(() => '');
   await mail.send({ to: account.email, subject: `Sign in to ${title || 'the site'}`,
     text: `Open this link to sign in; it works once, for fifteen minutes:\n${origin}/auth/magic?token=${token}\n\nIf you did not ask for it, ignore this email.` });
-  }));
+  }), undefined);
 }
 
 /** Spend a sign-in link: the account's ID, or null for a link that is unknown, spent or expired. */
@@ -1653,5 +1670,5 @@ export async function recoverAccount(code: unknown, email: unknown, clearSecondF
   await mailer()?.send({ to: user.email, subject: 'A password reset link was made for your account',
     text: `Someone with access to the site's settings used recovery mode to make a password reset link for your account${clearSecondFactors ? ', and removed its second factors' : ''}. If this was not you or your administrator, tell the site's owner.` }).catch(() => undefined);
   return { email: user.email, resetUrl: `${origin}/auth/reset-password?token=${token}`, expiresAt: Date.now() + 60 * 60 * 1000, secondFactorsCleared: clearSecondFactors };
-  }));
+  }), { error: 'Recover a main account on the main host.', status: 400 as const });
 }

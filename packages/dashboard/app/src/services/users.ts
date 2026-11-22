@@ -7,6 +7,7 @@ import { forgetMemberships, joinCurrentTenant, leaveCurrentTenant, requireAnothe
 import * as security from './security';
 import * as apiTokens from './api-tokens';
 import { defaultRole } from './roles';
+import { authOptions } from '../auth-options';
 import { User } from '@/models/User';
 import { UserRole } from '@/models/UserRole';
 import { Role } from '@/models/Role';
@@ -125,8 +126,8 @@ export async function listUsers(options: ListUsersOptions = {}): Promise<ListUse
     : sql.fragment``;
 
   const [pageResult, countResult] = await Promise.all([
-    sql<{ id: string; email: string; name: string | null; avatar: string | null; createdAt: string }>`
-      SELECT u.id, u.email, u.name, u.avatar, u.created_at AS createdAt
+    sql<{ id: string; email: string; name: string | null; avatar: string | null; createdAt: string; tenantAccount: boolean | number }>`
+      SELECT u.id, u.email, u.name, u.avatar, u.created_at AS createdAt, u.tenant_account AS tenantAccount
       FROM users u
       WHERE 1 = 1 ${searchFilter} ${roleFilter}
       ORDER BY u.created_at DESC
@@ -137,8 +138,11 @@ export async function listUsers(options: ListUsersOptions = {}): Promise<ListUse
       WHERE 1 = 1 ${searchFilter} ${roleFilter}
     `,
   ]);
-  const items: UserSummary[] = pageResult.rows.map((row) => ({
+  // In a tenant, members whose account every tenant shares are marked.
+  const tenant = currentTenant() !== null;
+  const items: UserSummary[] = pageResult.rows.map(({ tenantAccount, ...row }) => ({
     ...row,
+    ...(tenant && !tenantAccount ? { badge: authOptions.accountLabels.shared } : {}),
     name: row.name ?? '',
     lastSignedInAt: null,
     roles: [],
@@ -177,7 +181,7 @@ export async function getUser(id: string): Promise<UserDetail | null> {
     lastSignedInAt: (await lastSignIns([id])).get(id) ?? null,
     roles: parseRoles(await roleRowsForUsers([id])),
     // In a tenant a member's account is shared, so only its owner changes it. The tenant's own accounts are its to manage.
-    ...(currentTenant() && !user.tenantAccount ? { lockedProfile: 'This account is shared with other tenants: only its owner changes the profile, password and sign-in methods. This tenant chooses its roles.' } : {}),
+    ...(currentTenant() && !user.tenantAccount ? { lockedProfile: authOptions.accountLabels.sharedNotice } : {}),
   };
 }
 
@@ -229,7 +233,7 @@ export async function createUser(input: CreateUserInput): Promise<PublicUser> {
   return { id, email: input.email, name: input.name ?? '', avatar: null, meta: null, roles: [] };
 }
 
-const SHARED_ACCOUNT = 'This account is shared with other tenants: only its owner changes it.';
+const SHARED_ACCOUNT = authOptions.accountLabels.sharedNotice;
 
 export async function updateUser(id: string, patch: UpdateUserInput): Promise<void> {
   if (currentTenant() && !await tenantOwnAccount(id)) throw new ClientVisibleError(SHARED_ACCOUNT);

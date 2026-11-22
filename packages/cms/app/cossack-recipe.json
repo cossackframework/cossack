@@ -22,7 +22,8 @@
     "src/mail.ts",
     "src/avatars.ts",
     "src/auth-events.ts",
-    "src/services/rbac.ts"
+    "src/services/rbac.ts",
+    "src/pages/auth/register-site/"
   ],
   "shell": [
     "src/pages/auth/",

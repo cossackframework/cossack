@@ -144,7 +144,7 @@ export async function siteImportState(host: CmsHost): Promise<'new' | 'stopped' 
     if (!(await host.installed())) return 'new';
     const marker = (await host.db.read([{ rql: 'SELECT updated_at FROM cms_network WHERE key = $key', params: { $key: IMPORT_KEY } }])).results[0]!.rows[0];
     if (marker) return Number(marker[0] as bigint) > host.now() - IMPORT_LEASE_MS ? 'running' : 'stopped';
-    return (await (host.siteAccounts ?? host.accounts).count()) > 0 || await hasEntries(host) ? 'used' : 'new';
+    return (await ownAccounts(host)) > 0 || await hasEntries(host) ? 'used' : 'new';
 }
 
 /** The imported collection and taxonomy definitions are loaded and migrated, so their tables exist. */
@@ -219,7 +219,7 @@ async function claim(host: CmsHost): Promise<Lease> {
         if (Number(marker[0] as bigint) > now - IMPORT_LEASE_MS) throw new CmsError('CMS_CONFLICT', 'An import into this site is running. Wait for it to finish.');
     } else {
         // An added site's own accounts, or on the main site any account: a fresh install has none.
-        if ((await (host.siteAccounts ?? host.accounts).count()) > 0 || await hasEntries(host)) {
+        if ((await ownAccounts(host)) > 0 || await hasEntries(host)) {
             throw new CmsError('CMS_CONFLICT', 'Import into a new site: this one has entries or accounts of its own.');
         }
     }
@@ -260,7 +260,26 @@ async function hasEntries(host: CmsHost): Promise<boolean> {
  * accounts without passwords, set with Forgot password. Network members from before the
  * import that the export does not have stay members, unless their email is now taken.
  */
+/** The accounts that are this site's own: an added site's site accounts, or on the main site any account. */
+async function ownAccounts(host: CmsHost): Promise<number> {
+    if (host.people) return host.people.ownCount ? host.people.ownCount() : host.people.count();
+    return (host.siteAccounts ?? host.accounts).count();
+}
+
+/** With accounts kept by the application: the imported users become people of this site, and the members from before stay. */
+async function adoptPeople(host: CmsHost, before: readonly { id: string; roles: readonly string[] }[]): Promise<SiteImportReport['members']> {
+    const counts = { ...(await host.people!.adopt?.() ?? { network: 0, site: 0, pending: 0 }) };
+    for (const member of before) {
+        if (await host.users.get(member.id)) continue;
+        const roles = [];
+        for (const role of member.roles) if (await host.users.role(role)) roles.push(role);
+        if (await host.users.addMember(member.id, { roles }).catch(() => null)) counts.network++;
+    }
+    return counts;
+}
+
 async function adoptMembers(host: CmsHost, before: readonly { id: string; roles: readonly string[] }[]): Promise<SiteImportReport['members']> {
+    if (host.people) return adoptPeople(host, before);
     const counts = { network: 0, site: 0, pending: 0 };
     const now = host.now();
     for (let offset = 0; ; offset += 200) {

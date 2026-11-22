@@ -11,6 +11,7 @@ import { asMainAccount, accounts, currentTenant } from '#app/tenants';
 import { User } from '@/models/User';
 import { Role } from '@/models/Role';
 import { UserRole } from '@/models/UserRole';
+import { TenantMember } from '@/models/TenantMember';
 
 const ROLE_ID = /^[a-z][a-z0-9_-]{0,63}$/;
 const AUTH_PURPOSE = JSON.stringify({ type: 'auth' });
@@ -122,10 +123,56 @@ export const ormPeople: PeoplePort = {
         await UserRole.delete({ userId: id });
         if (roles.length) await UserRole.insert(roles.map(roleId => ({ userId: id, roleId, createdAt: new Date() })));
     },
+    /** A main account becomes a member of this site: its row here (no password), its roles, and the network's record of it. */
+    async join(accountId, roles) {
+        const tenant = currentTenant();
+        if (!tenant) return (await this.getMany([accountId])).get(accountId) ?? null;
+        const account = await asMainAccount(() => accounts(() => User.findOne({ where: { id: accountId } })));
+        if (!account) return null;
+        const held = await roleIds(roles);
+        if (await User.exists({ id: accountId })) await User.update({ id: accountId }, { email: account.email, name: account.name, avatar: account.avatar, status: 'active' });
+        else await User.insert({ id: accountId, email: account.email, name: account.name, passwordHash: null, avatar: account.avatar, meta: null, status: 'active', tenantAccount: false, createdAt: new Date() });
+        await UserRole.delete({ userId: accountId });
+        if (held.length) await UserRole.insert(held.map(roleId => ({ userId: accountId, roleId, createdAt: new Date() })));
+        await asMainAccount(() => accounts(() => TenantMember.upsert({ tenantId: tenant.id, userId: accountId, createdAt: new Date() }, ['tenantId', 'userId'])));
+        return (await this.getMany([accountId])).get(accountId) ?? null;
+    },
+    /** On a site of a network: its own accounts. On the main site: every account. */
+    async ownCount() {
+        return currentTenant() ? User.count({ tenantAccount: true }) : User.count();
+    },
+    /**
+     * The users an import brought into this site's table: one whose ID the network has as an
+     * account is a member with that account; the others are accounts of this site, which set a
+     * password with Forgot password. On the main site every user is an account already.
+     */
+    async adopt() {
+        const counts = { network: 0, site: 0, pending: 0 };
+        const tenant = currentTenant();
+        const users = await User.find({ take: 20_000 });
+        if (!tenant) {
+            // An export never gives a password or the network's role.
+            for (const user of users) await User.update({ id: user.id }, { networkAdmin: false, tenantAccount: false });
+            counts.pending = users.length;
+            return counts;
+        }
+        const ids = users.map(user => user.id);
+        const known = new Set(ids.length ? (await asMainAccount(() => accounts(() => User.find({ where: { id: In(ids) }, take: 20_000 })))).map(user => user.id) : []);
+        for (const user of users) {
+            const member = known.has(user.id);
+            await User.update({ id: user.id }, { tenantAccount: !member, networkAdmin: false, passwordHash: null });
+            if (member) { await asMainAccount(() => accounts(() => TenantMember.upsert({ tenantId: tenant.id, userId: user.id, createdAt: new Date() }, ['tenantId', 'userId']))); counts.network++; }
+            else counts.site++;
+        }
+        return counts;
+    },
     async delete(id) {
         if (!await User.exists({ id })) return false;
         await UserRole.delete({ userId: id });
         await User.delete({ id });
+        // On a site of a network: a member's membership goes too; a network account itself stays.
+        const tenant = currentTenant();
+        if (tenant) await asMainAccount(() => accounts(() => TenantMember.delete({ tenantId: tenant.id, userId: id })));
         return true;
     },
 };

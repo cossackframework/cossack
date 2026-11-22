@@ -95,17 +95,19 @@ export function inTenant<T>(work: () => Promise<T>): Promise<T> {
 }
 
 /** Run code against one tenant's database, whatever the request's host: the main host's Tenants screen uses it. */
-export async function withTenant<T>(tenant: Pick<TenantInfo, 'database' | 'slug'>, work: () => Promise<T>): Promise<T> {
+export async function withTenant<T>(tenant: Pick<TenantInfo, 'database' | 'slug'> & Partial<TenantInfo>, work: () => Promise<T>): Promise<T> {
   const c = getRequestContext();
   const opened = await tenantORM(c?.env, tenant);
-  const before = c ? [c.get(MAIN_ORM as never), c.get(TENANT_ORM as never)] as const : undefined;
+  const before = c ? [c.get(MAIN_ORM as never), c.get(TENANT_ORM as never), c.get(TENANT as never), c.get(ACCOUNT_HOME as never)] as const : undefined;
   try {
     // `accounts()` inside the work still reaches the main database.
     if (c && !before![0]) c.set(MAIN_ORM as never, c.get('orm' as never));
     c?.set(TENANT_ORM as never, opened.orm as never);
+    // With the whole tenant given, it is the current one for the work: code that asks which tenant it is in gets this one.
+    if (c && tenant.id) { c.set(TENANT as never, tenant as never); c.set(ACCOUNT_HOME as never, undefined as never); }
     return await opened.orm.run(work);
   } finally {
-    if (c) { c.set(MAIN_ORM as never, before![0] as never); c.set(TENANT_ORM as never, before![1] as never); }
+    if (c) { c.set(MAIN_ORM as never, before![0] as never); c.set(TENANT_ORM as never, before![1] as never); c.set(TENANT as never, before![2] as never); c.set(ACCOUNT_HOME as never, before![3] as never); }
     await opened.release();
   }
 }

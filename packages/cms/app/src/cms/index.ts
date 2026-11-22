@@ -12,6 +12,9 @@ import { reservedRouteSegments } from './reserved-paths';
 import { requestCallsSignal } from './request-calls';
 import { devMailTransport, markMailKeptOnly } from './dev-mail';
 import { ormPeople } from './people';
+import { tenantSites } from './sites';
+import { accounts, asMainAccount, withTenant } from '../tenants';
+import { TenantMember } from '@/models/TenantMember';
 import registry from 'virtual:cossack-pages';
 
 /**
@@ -115,6 +118,10 @@ export function networkFor(env: CmsBindings): CmsNetwork {
             ...(multisite ? { open: site => createRomeDB({ ...store.siteDatabase(env, site.database)!, pending: store.pendingWrites(env, site.database), reconcilers: cmsReconcilers(), ...calls }) } : {}),
             ...(directory ? { directory } : {}),
             hostUrl: host => siteUrl(env, { host })!,
+            // Sites are the dashboard package's tenants; a site's users are in the site's own database.
+            sites: tenantSites,
+            inSite: (site, work) => site.id === MAIN_SITE ? asMainAccount(() => accounts(work)) : withTenant({ id: site.id, slug: site.id, name: site.name ?? site.id, database: site.database, status: 'active' }, work),
+            memberSites: accountId => asMainAccount(() => accounts(async () => (await TenantMember.find({ where: { userId: accountId }, take: 500 })).map(member => member.tenantId))),
             host: (site, siteDb) => {
               // What the project sets in src/cms.config.ts goes over the defaults below.
               const project = typeof projectOptions === 'function' ? projectOptions(env as Record<string, unknown>, site) : projectOptions;
@@ -203,4 +210,9 @@ export function currentCms(): CmsHost {
 export function localAddress(appUrl: string | undefined): boolean {
     const host = urlOf(appUrl)?.hostname;
     return host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host?.endsWith('.localhost') === true;
+}
+
+/** A site's RomeDB database by the site's ID, for the application's own tables there (src/orm/factory.ts: `tenantORM`). */
+export async function siteDatabase(env: CmsBindings, id: string) {
+    return networkFor(env).databaseOf(id);
 }

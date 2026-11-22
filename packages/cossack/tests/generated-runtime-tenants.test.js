@@ -197,9 +197,9 @@ it('signs in once for every host with shared sign-in', async () => {
     expect((await main.action(screen, 'create', ['Acme', 'acme'])).error).toBe('');
     const pathOf = response => { const url = new URL(response.headers.get('location'), 'http://app.test'); return [url.hostname, url.pathname + url.search]; };
 
-    // A browser: one jar per host, as cookies are. The tenant's sign-in page sends it to the main host.
+    // A browser: one jar per host, as cookies are. Opening the tenant's dashboard without a session there asks the main host first.
     const acme = on('acme.app.test');
-    const start = await acme.request('/auth/login?redirect=%2Fdashboard%2Fusers');
+    const start = await acme.request('/dashboard/users');
     expect(start.status).toBe(302);
     expect(acme.jar.has('tenant_state')).toBe(true);
     const [mainHost, issue] = pathOf(start);
@@ -226,7 +226,7 @@ it('signs in once for every host with shared sign-in', async () => {
     const mainSide = on('app.test');
     // The tenant's host sends them to the main host once, on its own; nobody is signed in there,
     // so they come back to the tenant's own sign-in page, which has a link for main accounts.
-    const [, auto] = pathOf(await tenantSide.request('/auth/login'));
+    const [, auto] = pathOf(await tenantSide.request('/dashboard'));
     expect(auto).toContain('auto=1');
     const returned = await mainSide.request(auto);
     expect([returned.status, returned.headers.get('location')]).toEqual([302, `http://acme.app.test:${port}/auth/login`]);

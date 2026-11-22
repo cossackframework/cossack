@@ -4,7 +4,8 @@ import { enforceRateLimit, getClientIp, getSupportedLocales, LOCALE_COOKIE_NAME,
 import { ANONYMOUS, escapeHtml, hasPermission, PERMISSIONS, userPrincipal, type Principal, DEFAULT_ICON_STYLE, isIconStyle } from '@cossackframework/cms';
 import { MAIN_SITE, networkSite, type SiteResolution } from '@cossackframework/cms/server';
 import { cmsFor, networkFor, type CmsBindings } from './index';
-import { handoff } from './handoff';
+import { inTenantDatabase, sharedSignInOnMainHost, sharedSignInOnTenantHost } from '../middlewares/tenant';
+import { hostName, mainHost } from '../tenants';
 import { dashboardPalette } from '../dashboard/head';
 import { runMaintenance } from './maintenance';
 import { answered, withRequestCalls } from './request-calls';
@@ -70,9 +71,11 @@ async function serveSite(c: Context, next: Next): Promise<Response | void> {
     c.set('site', found.site);
     c.set('network', network);
     c.set('principal', ANONYMOUS);
-    // Sign-in happens on the network host; other sites get their sessions through a handoff.
-    const routed = await handoff(c, network, found.site);
-    if (routed) return routed;
+    // A site of the network is a tenant of the dashboard package: its accounts and sessions are in
+    // its own database, which the rest of the request runs in. People with a network account
+    // sign in on the network host, which sends them back with a one-time code (shared sign-in).
+    const site = found.site;
+    const serve = async (): Promise<Response | void> => {
     // Before setup the definition tables do not exist yet; built-in collections apply.
     await cms.ready().catch(error => console.error('[cms] could not load collections', error));
     // Settings → Interface: the style every icon of this request is drawn in (`iconStyle()` in
@@ -103,6 +106,13 @@ async function serveSite(c: Context, next: Next): Promise<Response | void> {
         lastMaintenance.set(found.site.database, now);
         later(c, runMaintenance(cms, { warm: false }));
     }
+    };
+    if (site.id === MAIN_SITE) return sharedSignInOnMainHost(c) ?? serve();
+    const main = mainHost();
+    // An API client that names the site on the network host is not a visitor to send elsewhere.
+    const routed = main && !requested ? sharedSignInOnTenantHost(c, hostName(c.req.url), main) : null;
+    if (routed) return routed;
+    return inTenantDatabase(c, { id: site.id, slug: site.id, name: site.name ?? site.id, database: site.database, status: 'active', ...(site.host ? { primaryHost: site.host } : {}) }, serve);
 }
 
 /**

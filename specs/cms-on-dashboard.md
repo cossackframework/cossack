@@ -1,6 +1,6 @@
 # The CMS on the dashboard's accounts and tenants
 
-Status: decided 2026-11-22 (below); steps 1 to 6 built. Added sites are broken until step 7. Steps are committed one by one. It replaces "step 6" of `specs/romedb-orm.md`,
+Status: decided 2026-11-22 (below); steps 1 to 7 built. Step 8 removes the old stores. Steps are committed one by one. It replaces "step 6" of `specs/romedb-orm.md`,
 which was built in part and reverted on 2026-11-21, before the dashboard had tenants
 (`specs/dashboard-tenants.md`) and before a user's field values were documents
 (`specs/cms-field-values.md`).
@@ -153,10 +153,30 @@ What the rest of the CMS calls on the stores today (inventory of 2026-11-22):
      account is asked, not only the people who can use the dashboard. The CMS's recovery
      endpoint, its maintenance purges and the dashboard home's "recent sessions" still read
      the old stores.
-7. Sites on tenants: `CmsNetwork` keeps the host of each site and the network's policy,
-   settings, exports and updates, and takes sites, domains and members from the tenants
-   service. Site export and import. The network screens give way to the Tenants screen where
-   they overlap.
+7. **Done:** sites are tenants.
+   - Library: `CmsNetwork` takes its site registry (`sites: SitesStore`), a way to run work on
+     a site's users in that site's database (`inSite`) and the sites of an account
+     (`memberSites`); `databaseOf(id)` gives a site's database. `PeoplePort` gained `join`,
+     `ownCount` and `adopt`; `PeopleUsers` adds members and pages through every user.
+   - App: `cms/sites.ts` (a site is a tenant whose ID and slug are the site's ID; domains and
+     members in the tenant tables; the creation step a network setting), `cms/network-accounts.ts`
+     (the network's accounts are the main database's users), `cms/site-registration.ts`.
+     `cms/middleware.ts` runs an added site's request in the site's database and uses the
+     dashboard's shared sign-in; `cms/handoff.ts` is gone. A CMS project's `tenantORM` opens a
+     site's ORM on the database the CMS opened for it.
+   - The dashboard took from the CMS: the automatic visit to the main host starts from a
+     dashboard page; with shared sign-in a tenant's sign-in serves its own accounts only;
+     members with a main account are marked and locked; their passkeys are the main host's;
+     an account moves between a tenant and the main database (`moveAccount`).
+   - Export skips the account tables that hold secrets, the tenant tables and the ORM's own
+     record, and leaves out password hashes; an import makes the imported users members
+     (accounts the network has) or accounts of the site.
+   - Different from before: moving an account keeps its password and authenticator app and
+     drops its passkeys and application passwords. Registering a site with a new email, where
+     the network sends email, asks for an account first.
+   - Every unit and runtime suite passes, the multisite cases included.
+   - Still on the old stores, for step 8: `cms/recovery.ts`, the purges of `cms/maintenance.ts`,
+     the dashboard home's recent sessions, the CMS's own Registrations screen.
 8. Remove `accounts.ts`, `security.ts`, `api-tokens.ts`, `handoffs.ts`, `sites.ts`, the
    session stores, their tables and host steps, and the 17 test files that tested them.
    Rebuild that coverage in the CMS runtime suites. Docs.

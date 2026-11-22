@@ -1,3 +1,4 @@
+import { networkAccounts } from '#app/cms/network-accounts';
 import { Client, Cossack, Page, Server, State, flashed, type HeadValue } from '@cossackframework/core';
 import { AlertDialog, Badge } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
@@ -45,11 +46,11 @@ export default class NetworkUsers extends Cossack {
         const net = network(this.c);
         const search = this.search ? { search: this.search } : {};
         const [found, all, admins] = await Promise.all([
-            net.main.accounts.list({ ...search, networkAdmins: this.admins, limit: PAGE_SIZE, offset: (this.page - 1) * PAGE_SIZE }),
-            net.main.accounts.list({ ...search, limit: 1 }),
-            net.main.accounts.list({ ...search, networkAdmins: true, limit: 1 }),
+            networkAccounts.list({ ...search, networkAdmins: this.admins, limit: PAGE_SIZE, offset: (this.page - 1) * PAGE_SIZE }),
+            networkAccounts.list({ ...search, limit: 1 }),
+            networkAccounts.list({ ...search, networkAdmins: true, limit: 1 }),
         ]);
-        const memberships = await net.main.accounts.memberships(found.items.map(account => account.id));
+        const memberships = await networkAccounts.memberships(found.items.map(account => account.id));
         const names = await siteNames(this.c, [...memberships.values()].flat());
         const principal = this.c.get('principal');
         this.counts = { all: all.total, admins: admins.total };
@@ -71,14 +72,14 @@ export default class NetworkUsers extends Cossack {
         try {
             if (principal.kind === 'user' && principal.id === id) throw new Error(__('Change your own account from your profile.'));
             if (action === 'make-admin' || action === 'remove-admin') {
-                await net.main.accounts.setNetworkRole(id, action === 'make-admin' ? NETWORK_ADMIN : null);
+                await networkAccounts.setNetworkRole(id, action === 'make-admin' ? NETWORK_ADMIN : null);
                 this.message = __('Saved.');
             } else if (action === 'suspend' || action === 'activate') {
                 // Suspension signs the account out of every site.
-                await net.main.accounts.setStatus(id, action === 'suspend' ? 'disabled' : 'active');
+                await networkAccounts.setStatus(id, action === 'suspend' ? 'disabled' : 'active');
                 this.message = action === 'suspend' ? __('Suspended and signed out everywhere.') : __('Active again.');
             } else if (action === 'delete') {
-                await net.deleteAccount(id, { principal });
+                await networkAccounts.delete(id);
                 this.message = __('Deleted from every site.');
             }
         } catch (error) {

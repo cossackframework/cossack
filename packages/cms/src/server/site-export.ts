@@ -22,10 +22,14 @@ export const EXPORT_SKIPPED_TABLES: ReadonlySet<string> = new Set([
     'cms_file_variants',
     // Each database counts its own schema changes.
     'cms_schema_generations',
+    // The application's account tables (the dashboard package's, on the ORM) besides users and roles:
+    // credentials and sign-in state, the network's sites and members, the cache, and the ORM's own record of migrations.
+    'sessions', 'user_security', 'passkeys', 'api_tokens', 'auth_challenges', 'auth_attempts', 'oauth_accounts',
+    'tenants', 'tenant_domains', 'tenant_members', 'tenant_handoffs', 'tenant_network', 'tenant_sessions', 'cache_items', '_cossack_migrations',
 ]);
 
-/** Columns exported as null: webhook signing secrets. */
-export const EXPORT_REDACTED_COLUMNS: Readonly<Record<string, readonly string[]>> = Object.freeze({ cms_webhooks: ['secret'] });
+/** Columns exported as null: webhook signing secrets, and the password hashes of the application's accounts. */
+export const EXPORT_REDACTED_COLUMNS: Readonly<Record<string, readonly string[]>> = Object.freeze({ cms_webhooks: ['secret'], users: ['password_hash'] });
 
 /**
  * Tables a `.romedb` file leaves empty: sign-in state (sessions are keyed by their tokens, so a

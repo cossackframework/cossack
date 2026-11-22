@@ -16,7 +16,7 @@ import { pluginState, POLICY_KEYS, readPolicy, type NetworkPluginState, type Net
 import { CmsHandoffs } from './handoffs';
 import { missingTable, sharedRead } from './shared-read';
 import { seedStarterContent } from './seed';
-import { CmsSites, MAIN_SITE, RESERVED_SITE_IDS, siteHost, type SiteRecord, type SiteStatus } from './sites';
+import { CmsSites, MAIN_SITE, RESERVED_SITE_IDS, siteHost, type SiteRecord, type SitesStore, type SiteStatus } from './sites';
 import type { EndedSessions } from './stores';
 
 /** The site a CMS host serves. */
@@ -62,13 +62,26 @@ export interface CmsNetworkOptions {
     /** How long a host's lookup is reused. Default 30 seconds. */
     readonly cacheMs?: number;
     readonly now?: () => number;
+    /**
+     * The registry of sites, when the application keeps it (the dashboard package's tenants,
+     * `specs/cms-on-dashboard.md`). Default: the CMS's own tables.
+     */
+    readonly sites?: SitesStore;
+    /**
+     * With accounts kept by the application (`CmsOptions.people`): run work on a site's users in
+     * that site's database, whichever host the request arrived at. The people port reads the
+     * database of the scope it is called in.
+     */
+    readonly inSite?: <T>(site: NetworkSite, work: () => Promise<T>) => Promise<T>;
+    /** With accounts kept by the application: the IDs of the sites an account is a member of. */
+    readonly memberSites?: (accountId: string) => Promise<readonly string[]>;
 }
 
 export const MAIN: NetworkSite = Object.freeze({ id: MAIN_SITE, name: null, database: MAIN_SITE, status: 'active', host: null });
 
 export class CmsNetwork {
     readonly db: RomeDB;
-    readonly sites: CmsSites;
+    readonly sites: SitesStore;
     /** One-use codes that sign a network session in on a site. */
     readonly handoffs: CmsHandoffs;
     readonly #options: CmsNetworkOptions;
@@ -82,7 +95,7 @@ export class CmsNetwork {
         this.db = options.db;
         this.#options = options;
         this.#now = options.now ?? Date.now;
-        this.sites = new CmsSites(options.db, { now: this.#now });
+        this.sites = options.sites ?? new CmsSites(options.db, { now: this.#now });
         this.handoffs = new CmsHandoffs(options.db, { now: this.#now });
     }
 
@@ -115,6 +128,17 @@ export class CmsNetwork {
         if (id === MAIN_SITE) return this.main;
         const record = await this.sites.get(id);
         return record && record.status !== 'creating' && record.status !== 'deleted' ? this.hostOf(networkSite(record)) : null;
+    }
+
+    /**
+     * A site's database by the site's ID, whatever state the site is in: the application opens its
+     * own tables there (accounts, on the ORM). Throws for an unknown site.
+     */
+    async databaseOf(id: string): Promise<RomeDB> {
+        if (id === MAIN_SITE) return this.db;
+        const record = await this.sites.get(id);
+        if (!record) throw new CmsError('CMS_NOT_FOUND', `No site with the ID ${id}.`);
+        return this.hostOf(networkSite(record)).db;
     }
 
     /** The CMS host of a site, built on first use and kept while it is among the last used. */
@@ -217,7 +241,7 @@ export class CmsNetwork {
         const slug = slugify(input.name, 40) || 'site';
         const id = input.id ?? (RESERVED_SITE_IDS.has(slug) ? `${slug}-site` : slug);
         if (input.language && !LOCALE.test(input.language)) throw new CmsError('CMS_VALIDATION', 'Enter a language code, such as en or pt-br.', { fields: { language: 'is invalid.' } });
-        const admin = await this.main.accounts.get(input.admin);
+        const admin = await this.#account(input.admin);
         if (!admin || admin.status !== 'active') throw new CmsError('CMS_VALIDATION', 'Choose an active account as the first administrator.', { fields: { admin: 'is invalid.' } });
         let record = await this.sites.get(id);
         if (record && record.status !== 'creating') throw new CmsError('CMS_CONFLICT', 'A site with this ID exists.', { fields: { id: 'is taken.' } });
@@ -228,6 +252,8 @@ export class CmsNetwork {
         const done = (step: CreationStep) => record!.step !== null && CREATION_STEPS.indexOf(record!.step as CreationStep) >= CREATION_STEPS.indexOf(step);
         if (!done('database')) record = (await this.sites.update(id, { database: await directory.create(`site-${id}`), step: 'database' }))!;
         const host = this.hostOf(networkSite(record));
+        // From here the work is on the new site's own database: its schema, its roles and its first member.
+        await this.inSite(networkSite(record), async () => {
         if (!done('schema')) {
             const report = await host.migrate();
             if (report.failed) throw new CmsError('CMS_UNAVAILABLE', `The site's schema could not be applied: ${report.failed.message}`);
@@ -241,7 +267,7 @@ export class CmsNetwork {
             // As on its first request: the plugins the network enables migrate and add their field groups, patterns and roles.
             host.expire();
             await host.ready();
-            await host.settings.update('general', { siteTitle: record.name, adminEmail: admin.email }, { principal: system });
+            await host.settings.update('general', { siteTitle: record!.name, adminEmail: admin.email }, { principal: system });
             const language = input.language || defaults.defaultLanguage;
             // Languages come with the content module.
             if (language && host.settings.groups.some(group => group.id === 'languages')) await host.settings.update('languages', { default: language }, { principal: system });
@@ -260,10 +286,11 @@ export class CmsNetwork {
             if (principal) await seedStarterContent(host, { principal }).catch(error => console.warn(`[cms] starter content for site ${id}: ${(error as Error).message}`));
             // The site's plugins hear of it from its own outbox; a resumed creation queues it once.
             const event: SiteCreatedEvent = { eventId: `site.created:${id}`, topic: 'site.created', at: this.#now(),
-                site: { id, name: record.name, host: networkSite(record).host }, admin: { id: admin.id, email: admin.email, name: admin.name } };
+                site: { id, name: record!.name, host: networkSite(record!).host }, admin: { id: admin.id, email: admin.email, name: admin.name } };
             if (await host.outbox.enqueue('site.created', event, { ignoreDuplicate: true })) host.outboxWritten();
             record = (await this.sites.update(id, { step: 'members' }))!;
         }
+        });
         record = (await this.sites.update(id, { status: 'active', step: null }))!;
         this.invalidate();
         // Delivered now, so the site is ready when its administrator arrives; a failure is retried by maintenance.
@@ -283,7 +310,7 @@ export class CmsNetwork {
         const principal = context.principal;
         if (principal.kind !== 'user') throw new CmsError('CMS_UNAUTHENTICATED', 'Sign in to register a site.');
         const site = await this.checkSiteRegistration(input);
-        const account = await this.main.accounts.get(principal.id);
+        const account = await this.#account(principal.id);
         if (!account || account.status !== 'active') throw new CmsError('CMS_FORBIDDEN', 'Confirm your email address before registering a site.');
         if (!(await this.main.security.attempt('site-registration', `account:${account.id}`, SITE_REGISTRATIONS.perAccount, SITE_REGISTRATIONS.windowMs))) {
             throw new CmsError('CMS_LIMIT', 'This account registered as many sites as a day allows. Try again tomorrow.');
@@ -554,9 +581,19 @@ export class CmsNetwork {
             params: { $key: key, $value: JSON.stringify(value), $now: this.#now() } }], { kind: 'cms.network', retryConflicts: 5 });
     }
 
+    /** An account by ID: a user of the main site with the application's accounts, a network account otherwise. */
+    async #account(id: string): Promise<{ id: string; email: string; name: string; status: string } | null> {
+        return this.#options.inSite ? this.main.users.get(id) : this.main.accounts.get(id);
+    }
+
+    /** Run work on a site's users in that site's database (`CmsNetworkOptions.inSite`); as it is without one. */
+    inSite<T>(site: NetworkSite, work: () => Promise<T>): Promise<T> {
+        return this.#options.inSite ? this.#options.inSite(site, work) : work();
+    }
+
     /** The sites an account is a member of, the main site first, without opening their databases. Off, the network is its main site. */
     async memberSites(accountId: string): Promise<NetworkSite[]> {
-        const ids = (await this.main.accounts.memberships([accountId])).get(accountId) ?? [];
+        const ids = this.#options.memberSites ? [MAIN_SITE, ...await this.#options.memberSites(accountId)] : (await this.main.accounts.memberships([accountId])).get(accountId) ?? [];
         const sites: NetworkSite[] = ids.includes(MAIN_SITE) ? [MAIN] : [];
         if (!(await this.enabled())) return sites;
         const records = new Map((await this.sites.getMany(ids)).map(record => [record.id, record]));
@@ -570,6 +607,7 @@ export class CmsNetwork {
     /** Delete an account: first its membership of every site, through each site's own user deletion, then the account. */
     async deleteAccount(id: string, context: { principal: Principal }): Promise<boolean> {
         requireNetworkAdmin(context.principal);
+        if (this.#options.inSite) throw new CmsError('CMS_UNAVAILABLE', 'Deleting an account is the application\'s, on the dashboard package.', { lasting: true });
         const account = await this.main.accounts.get(id);
         if (!account) return false;
         // Refuse the last network admin before anything changes.

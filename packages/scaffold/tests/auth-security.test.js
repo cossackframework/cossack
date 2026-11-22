@@ -31,7 +31,7 @@ async function generatedAuth() {
     '@cossackframework/database': { MoreThan: (value) => value, LessThan: (value) => value, In: (values) => values, sql },
     '@cossackframework/core': { ClientVisibleError: Error, getClientIp: () => '203.0.113.7', getRequestContext: () => undefined },
     uqr: { renderSVG: vi.fn() },
-    './brand': { siteName: async () => 'Test' },
+    './brand': { siteName: async () => 'Test', mainSiteName: async () => 'Test' },
     './mail': { mailer: () => null },
     './avatars': { avatarUploads: false, storeAvatar: vi.fn() },
     './auth-events': { authEvents: { beforeRegister: async draft => ({ name: draft.name }), registered: async () => {}, signedIn: async () => {} } },
@@ -45,7 +45,7 @@ async function generatedAuth() {
     // The project's choices, as src/dashboard.config.ts states them for this recipe.
     './auth-options': { authOptions: { authMethods: ['credentials', 'oauth'], oauth: ['github'], modules: ['sessions'], dashboard: true, redirectAfterLogin: '/dashboard',
       registration: { open: true, verifyEmail: false, approve: false, defaultRole: '' },
-      security: { requireTwoFactor: false, twoFactorRoles: [] }, tenants: { enabled: false, signIn: 'host' }, tokenPrefix: 'app', setupCodeVariable: 'SETUP_CODE' } },
+      security: { requireTwoFactor: false, twoFactorRoles: [] }, tenants: { enabled: false, signIn: 'host' }, tokenPrefix: 'app', setupCodeVariable: 'SETUP_CODE', accountLabels: { shared: 'Shared account', sharedNotice: 'Shared.' } } },
     '@/models/User': { User },
     '@/models/Session': { Session },
     '@/models/OAuthAccount': { OAuthAccount },

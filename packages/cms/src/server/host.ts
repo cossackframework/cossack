@@ -550,6 +550,8 @@ export class CmsHost {
     /** Static resources and the current collections. */
     /** Accounts, roles and sign-in are the application's (`CmsOptions.people`). */
     readonly #withPeople: boolean;
+    /** The people port, when the application keeps accounts; null with the CMS's own account tables. */
+    readonly people: PeoplePort | null;
     #resources = new Map<string, Resource>();
     /** The stores of terms' field values, by taxonomy. */
     readonly #termFields = new Map<string, FieldValues>();
@@ -646,6 +648,7 @@ export class CmsHost {
         });
         const userOptions: ConstructorParameters<typeof CmsUsers>[1] = { accounts: this.accounts, ...(this.siteAccounts ? { siteAccounts: this.siteAccounts } : {}), ...(options.site ? { site: options.site } : {}), now: this.#now, fields: this.userFields, checkMeta: (meta, previous, principal) => this.#checkMeta({ kind: 'users' }, meta, previous, principal) };
         this.#withPeople = options.people !== undefined;
+        this.people = options.people ?? null;
         this.users = options.people ? new PeopleUsers(this.db, { ...userOptions, people: options.people }) : new CmsUsers(this.db, userOptions);
         this.redirects = new CmsRedirects(this.db, { now: this.#now, changed: () => this.#purgeSite('redirects') });
         this.traffic = new CmsTraffic(this.db, { now: this.#now });

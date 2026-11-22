@@ -1038,7 +1038,8 @@ export async function siteCreate(c: Context, input: Body): Promise<SiteView> {
     const name = text(input.name, 'name', { max: 120 });
     const host = text(input.host, 'host', { max: 253 }).toLowerCase();
     const email = text(input.admin, 'admin', { required: false, max: 254 });
-    const admin = email ? await network.main.accounts.findByEmail(email) : await network.main.accounts.get(principal.id);
+    // Accounts of the network are the main site's users.
+    const admin = email ? await network.main.users.findByEmail(email) : await network.main.users.get(principal.id);
     if (!admin) throw new CmsError('CMS_VALIDATION', 'No network account has that email. Add the person under Network → Users first.', { fields: { admin: 'is not a network account.' } });
     const id = text(input.id, 'id', { required: false, max: 63 });
     const language = text(input.language, 'language', { required: false, max: 16 });

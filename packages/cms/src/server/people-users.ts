@@ -226,8 +226,20 @@ export class PeopleUsers extends CmsUsers {
     }
 
     // --- The application's, on the dashboard package ---
-    override async addMember(): Promise<CmsUser | null> { return elsewhere('Adding a member'); }
-    override async after(): Promise<{ users: CmsUser[]; next: string | null }> { return elsewhere('Reading every user'); }
+    /** Make a network account a member of this site. The roles it gets are the ones named. */
+    override async addMember(accountId: string, options: { roles?: readonly string[]; meta?: unknown } = {}): Promise<CmsUser | null> {
+        if (!this.#people.join) return elsewhere('Adding a member');
+        const person = await this.#people.join(accountId, options.roles ?? []);
+        return person ? this.get(person.id) : null;
+    }
+    /** Every user, a page at a time. The cursor is the place in the port's list. */
+    override async after(after: string | null, limit = 100): Promise<{ users: CmsUser[]; next: string | null }> {
+        const offset = after === null ? 0 : Math.max(Number(after) || 0, 0);
+        const size = Math.min(Math.max(limit, 1), 200);
+        const page = await this.#people.list({ limit: size, offset });
+        const users = await this.#users(new Map(page.users.map(person => [person.id, person])));
+        return { users: page.users.map(person => users.get(person.id)!), next: offset + page.users.length < page.total && page.users.length > 0 ? String(offset + page.users.length) : null };
+    }
     override async awaitingApproval(): Promise<boolean> { return false; }
     override async confirmRegistration(): Promise<boolean> { return elsewhere('Confirming a registration'); }
     override async registrations(): Promise<{ user: CmsUser; verified: boolean; createdAt: number }[]> { return []; }

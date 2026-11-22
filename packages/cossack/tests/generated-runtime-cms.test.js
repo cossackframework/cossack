@@ -880,9 +880,11 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
         // signs them in without a click; a visitor the network does not know comes back to the blog's own sign-in, once.
         const auto = new URL((await blogAdmin.request('/dashboard')).headers.get('location'));
         // The blog's state for this browser travels along and comes back with the code.
-        expect(auto.toString()).toMatch(new RegExp(`^${origin}/auth/handoff\\?site=blog&next=%2Fdashboard&state=[0-9a-f]{32}&auto=1$`));
-        const autoBack = new URL((await web.request(auto.pathname + auto.search)).headers.get('location'));
-        expect(`${autoBack.origin}${autoBack.pathname}`).toBe(`${blogOrigin}/auth/handoff`);
+        expect(auto.toString()).toMatch(new RegExp(`^${origin}/auth/tenant/redirect\\?host=blog\\.localhost&state=[0-9a-f]{32}&next=%2Fdashboard&auto=1$`));
+        const issued = await web.request(auto.pathname + auto.search);
+        expect(issued.status, await issued.clone().text()).toBe(302);
+        const autoBack = new URL(issued.headers.get('location'));
+        expect(`${autoBack.origin}${autoBack.pathname}`).toBe(`${blogOrigin}/auth/tenant/callback`);
         expect((await blogAdmin.request(autoBack.pathname + autoBack.search)).headers.get('location')).toBe('/dashboard');
         expect((await blogAdmin.request('/dashboard')).status).toBe(200);
         const stranger = browserless(blogOrigin, routeIds, () => output, { connect: '127.0.0.1' });
@@ -891,8 +893,8 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
         const strangerOnNetwork = browserless(origin, routeIds, () => output, { connect: '127.0.0.1' });
         expect((await strangerOnNetwork.request(strangerAuto.pathname + strangerAuto.search)).headers.get('location')).toBe(`${blogOrigin}/auth/login`);
         expect((await stranger.request('/dashboard')).headers.get('location')).toBe('/auth/login');
-        const toNetwork = new URL((await blogAdmin.request('/auth/handoff?next=/dashboard')).headers.get('location'));
-        expect(toNetwork.toString()).toMatch(new RegExp(`^${origin}/auth/handoff\\?site=blog&next=%2Fdashboard&state=[0-9a-f]{32}$`));
+        const toNetwork = new URL((await blogAdmin.request('/auth/tenant/start?next=/dashboard')).headers.get('location'));
+        expect(toNetwork.toString()).toMatch(new RegExp(`^${origin}/auth/tenant/redirect\\?host=blog\\.localhost&state=[0-9a-f]{32}&next=%2Fdashboard$`));
         const back = new URL((await web.request(toNetwork.pathname + toNetwork.search)).headers.get('location'));
         expect(back.origin).toBe(blogOrigin);
         // A code opened in another browser (a link made with someone else's account) does not sign it in.
@@ -981,7 +983,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
         contains(registration, 'data-signed-in-as');
         lacks(registration, 'new-password');
         const registered = await web.action('auth/register-site/index.ts', 'register', [{ siteName: 'Shop', subdomain: 'shop', name: '', email: '', password: '' }]);
-        expect(registered._cossack_redirect, JSON.stringify(registered)).toMatch(/^http:\/\/shop\.[^/]+\/auth\/handoff\?next=%2Fdashboard$/);
+        expect(registered._cossack_redirect, JSON.stringify(registered)).toMatch(/^http:\/\/shop\.[^/]+\/auth\/tenant\/start\?next=%2Fdashboard$/);
         contains(await web.page('/dashboard/network/sites/shop'), 'ada@example.com');
         // A visitor who is not signed in still gives an account.
         contains(await browserless(origin, routeIds, () => output, { connect: '127.0.0.1' }).page('/auth/register-site'), 'new-password');

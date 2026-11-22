@@ -12,6 +12,8 @@ export const authOptions: Required<Omit<DashboardConfig, 'security' | 'registrat
     security: Required<NonNullable<DashboardConfig['security']>>;
     /** What an application password starts with: `app_…`. */
     tokenPrefix: string;
+    /** In a tenant: how a member whose account every tenant shares is marked, and why others cannot change it. */
+    accountLabels: { shared: string; sharedNotice: string };
     /** The environment variable that holds the setup code. */
     setupCodeVariable: string;
 } = {
@@ -33,6 +35,10 @@ export const authOptions: Required<Omit<DashboardConfig, 'security' | 'registrat
         verifyDomains: dashboard.tenants?.verifyDomains !== false,
     },
     tokenPrefix: 'app',
+    accountLabels: {
+        shared: 'Shared account',
+        sharedNotice: 'This account is shared with other tenants: only its owner changes the profile, password and sign-in methods. This tenant chooses its roles.',
+    },
     setupCodeVariable: 'SETUP_CODE',
     security: {
         requireTwoFactor: dashboard.security?.requireTwoFactor === true,

@@ -37,3 +37,8 @@ export async function signInBrand(): Promise<SignInBrand> {
     return { name: tenant?.name ?? await siteName(), logo: await siteLogo(), logoOnly: await siteHasLogo(), home: '/', network: '',
         networkSignIn: network ? { href: '/auth/tenant/start', name: network } : null };
 }
+
+/** What the main host is called on a tenant's pages ("add your passkeys on …"). */
+export async function mainSiteName(): Promise<string> {
+    return mainHost() || await siteName();
+}
