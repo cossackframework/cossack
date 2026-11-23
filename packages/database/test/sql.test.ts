@@ -23,6 +23,14 @@ describe("SQL fragments", () => {
     );
   });
 
+  it("writes a column type as each database's own", () => {
+    const fragment = sql.fragment`CREATE TABLE notes (id ${sql.type("varchar", { length: 36 })} PRIMARY KEY, meta ${sql.type("json")})`;
+    expect(compileSQL(fragment, postgresDialect).text).toBe("CREATE TABLE notes (id varchar(36) PRIMARY KEY, meta jsonb)");
+    expect(compileSQL(fragment, mysqlDialect).text).toBe("CREATE TABLE notes (id varchar(36) PRIMARY KEY, meta json)");
+    expect(compileSQL(fragment, sqliteDialect).text).toBe("CREATE TABLE notes (id varchar(36) PRIMARY KEY, meta json)");
+    expect(compileSQL(fragment, postgresDialect).parameters).toEqual([]);
+  });
+
   it("renumbers nested PostgreSQL fragments", () => {
     const left = sql.fragment`${1} + ${2}`;
     const right = sql.fragment`${3}`;

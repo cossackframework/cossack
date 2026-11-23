@@ -65,7 +65,7 @@ codes), passkeys, and required two-step sign-in (`security` in `src/dashboard.co
 
 - Store: `packages/dashboard/app/src/services/security.ts`, on four entities of the project
   (`UserSecurity`, `Passkey`, `AuthChallenge`, `AuthAttempt`) and `sessions.second_factor`,
-  from migration `0009_create_account_security`.
+  from migration `0007_create_account_security`.
 - Every limit is one conditional write, as in the CMS, so it holds for requests sent at once
   on each database.
 - Test: `packages/cossack/tests/generated-runtime-account-security.test.js`, the same flow
@@ -79,12 +79,12 @@ Built 2026-11-20, second slice: the rest of the features that are not about site
   exists. It needs `SETUP_CODE`; without it the seeder makes the first account as before.
 - **Registration** (`registration` in `src/dashboard.config.ts`): open or closed, email
   confirmation, an administrator's approval, a default role. Accounts have a `status`
-  (migration `0010_add_user_status`); only `active` accounts sign in or keep a session.
+  (in `0001_create_users`); only `active` accounts sign in or keep a session.
 - **Links**: `/auth/verify` and `/auth/magic`. A link's token is kept as its hash, in the
   sessions table with its own purpose, and is spent in one conditional delete.
 - **Users → Registrations** (`/dashboard/users/registrations`): approve or delete. The CMS
   gets the same page from the shell, on three functions its `auth.ts` now exports too.
-- **Application passwords** (`services/api-tokens.ts`, migration `0011_create_api_tokens`),
+- **Application passwords** (`services/api-tokens.ts`, migration `0008_create_api_tokens`),
   and `apiTokenUser(token)` for a project's API routes. Tokens start with `app_`.
 - Tests: `generated-runtime-account-security.test.js` runs both flows on SQLite and RomeDB.
 

@@ -85,8 +85,8 @@ describe('dashboard recipe', () => {
 
   it('installs roles with every ORM sign-in, and seeds them only with a dashboard', async () => {
     const sessions = await render({ features: ['dashboard'], dashboardModules: ['sessions'] });
-    for (const rel of ['src/models/Role.ts', 'src/models/UserRole.ts', 'src/migrations/0003_create_roles.ts', 'src/migrations/0007_create_user_roles.ts']) expect(sessions.has(rel), rel).toBe(true);
-    expect(text(sessions, 'src/migrations/index.ts')).toContain("'./0007_create_user_roles'");
+    for (const rel of ['src/models/Role.ts', 'src/models/UserRole.ts', 'src/migrations/0003_create_roles.ts', 'src/migrations/0004_create_user_roles.ts']) expect(sessions.has(rel), rel).toBe(true);
+    expect(text(sessions, 'src/migrations/index.ts')).toContain("'./0004_create_user_roles'");
     expect(text(sessions, 'src/models/User.ts')).toContain('roleAssignments');
     expect(text(sessions, 'src/seeders/application.seeder.ts')).toContain('ALL_PERMISSIONS');
     const signIn = await render({ preset: 'auth' });

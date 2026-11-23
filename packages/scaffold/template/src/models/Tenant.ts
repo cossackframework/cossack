@@ -27,6 +27,10 @@ export class Tenant extends BaseEntity {
   @Column({ type: 'varchar', name: 'status', length: 16, default: 'creating' })
   declare status: 'creating' | 'active' | 'archived' | 'deleted';
 
+  /** The project's own data about this row. */
+  @Column({ type: 'json', name: 'meta', nullable: true })
+  declare meta: Record<string, unknown> | null;
+
   @Column({ type: 'datetime', name: 'deleted_at', nullable: true })
   declare deletedAt: Date | null;
 

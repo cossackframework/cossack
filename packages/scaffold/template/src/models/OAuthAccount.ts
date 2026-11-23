@@ -24,6 +24,10 @@ export class OAuthAccount extends BaseEntity {
   @Column({ type: 'varchar', name: 'provider_user_id', length: 191 })
   declare providerUserId: string;
 
+  /** The project's own data about this row. */
+  @Column({ type: 'json', name: 'meta', nullable: true })
+  declare meta: Record<string, unknown> | null;
+
   @CreateDateColumn({ name: 'created_at' })
   declare createdAt: Date;
 

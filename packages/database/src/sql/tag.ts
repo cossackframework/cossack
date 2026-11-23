@@ -8,6 +8,7 @@ import {
   type SQLNode,
 } from "./fragment.js";
 import type { RecordLink } from "../record-link.js";
+import type { LogicalType } from "../schema/types.js";
 
 export type SQLInterpolation =
   | DatabaseValue
@@ -30,6 +31,11 @@ export interface SQLTag {
   join(values: readonly SQLInterpolation[], separator?: SQLFragment): SQLFragment;
   values(rows: Readonly<Record<string, DatabaseValue>> | readonly Readonly<Record<string, DatabaseValue>>[]): SQLFragment;
   unsafe(text: string): SQLFragment;
+  /**
+   * A column type for DDL that runs on more than one database: `sql.type('json')` is `jsonb`
+   * on PostgreSQL and `json` on MySQL and SQLite (where it is stored as text).
+   */
+  type(logicalType: LogicalType, options?: { readonly length?: number; readonly precision?: number; readonly scale?: number }): SQLFragment;
   execute<Result = Record<string, unknown>>(fragment: SQLFragment<Result>): Promise<QueryResult<Result>>;
   transaction<T>(callback: () => Promise<T>): Promise<T>;
   reserve<T>(callback: () => Promise<T>): Promise<T>;
@@ -135,6 +141,7 @@ function makeTag(
     return new SQLFragment(valueNodes);
   };
   tag.unsafe = (text) => new SQLFragment([{ kind: "unsafe", value: text }]);
+  tag.type = (logicalType, options) => new SQLFragment([{ kind: "type", logicalType, ...(options ? { options: Object.freeze({ ...options }) } : {}) }]);
   tag.execute = async <Result>(fragment: SQLFragment<Result>) => {
     if (executor) return executor(fragment) as Promise<QueryResult<Result>>;
     const orm = currentORM();

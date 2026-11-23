@@ -18,6 +18,10 @@ export class TenantDomain extends BaseEntity {
   @Column({ type: 'datetime', name: 'verified_at', nullable: true })
   declare verifiedAt: Date | null;
 
+  /** The project's own data about this row. */
+  @Column({ type: 'json', name: 'meta', nullable: true })
+  declare meta: Record<string, unknown> | null;
+
   @Column({ type: 'datetime', name: 'created_at' })
   declare createdAt: Date;
 }

@@ -1,42 +1,40 @@
 import { sql, type Migration } from '@cossackframework/database';
 
+// Sessions, and the single-use tokens kept beside them. `public_id` names a session without
+// its token; `second_factor` records a two-step sign-in; `parent_id` links a tenant's session to
+// the main one it came from.
+const up = [
+  sql.fragment`
+    CREATE TABLE sessions (
+      id VARCHAR(191) PRIMARY KEY,
+      user_id VARCHAR(191),
+      public_id VARCHAR(36),
+      parent_id VARCHAR(191),
+      second_factor BOOLEAN NOT NULL DEFAULT FALSE,
+      data TEXT,
+      meta ${sql.type('json')},
+      location TEXT,
+      user_agent TEXT,
+      ip_address TEXT,
+      created_at VARCHAR(32) NOT NULL DEFAULT '',
+      expires_at VARCHAR(32) NOT NULL
+    )
+  `,
+  sql.fragment`CREATE UNIQUE INDEX sessions_public_id_unique ON sessions (public_id)`,
+  sql.fragment`CREATE INDEX sessions_parent_id ON sessions (parent_id)`,
+];
+
 export default {
   name: '0002_create_sessions',
   // Operations are authoritative for read-only plans and migration execution.
   operations: {
-    up: [
-      sql.unsafe(`
-      CREATE TABLE sessions (
-        id VARCHAR(191) PRIMARY KEY,
-        user_id VARCHAR(191),
-        data TEXT,
-        meta TEXT,
-        location TEXT,
-        user_agent TEXT,
-        ip_address TEXT,
-        created_at VARCHAR(32) NOT NULL DEFAULT '',
-        expires_at VARCHAR(32) NOT NULL
-      )
-    `),
-    ],
+    up,
     down: [
       { kind: 'drop-table', tableName: 'sessions' },
     ],
   },
-  up({ orm, schema }) {
-    schema.raw(orm.sql.unsafe(`
-      CREATE TABLE sessions (
-        id VARCHAR(191) PRIMARY KEY,
-        user_id VARCHAR(191),
-        data TEXT,
-        meta TEXT,
-        location TEXT,
-        user_agent TEXT,
-        ip_address TEXT,
-        created_at VARCHAR(32) NOT NULL DEFAULT '',
-        expires_at VARCHAR(32) NOT NULL
-      )
-    `));
+  up({ schema }) {
+    for (const statement of up) schema.raw(statement);
   },
   down({ schema }) {
     schema.dropTable('sessions');

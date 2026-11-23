@@ -104,6 +104,19 @@ export default {
 static, and reviewed. Use schema operations where they express the change
 portably.
 
+### Column types that differ between databases
+
+A statement that runs on more than one database names such a type with `sql.type()`, which
+writes the database's own type when the statement runs:
+
+```ts
+schema.raw(sql.fragment`ALTER TABLE users ADD COLUMN meta ${sql.type("json")}`);
+```
+
+`sql.type("json")` is `jsonb` on PostgreSQL and `json` on MySQL and SQLite. SQLite has no
+JSON storage type: the column keeps the JSON text, and its JSON functions read it. A
+`@Column({ type: "json" })` property reads and writes the value as an object on all three.
+
 ## Squash migration history
 
 Create one baseline migration directly from the current models:

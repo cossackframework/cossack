@@ -28,6 +28,10 @@ give it on the Tenants screen. Without `APP_URL` every request is the main tenan
 | The main host's sessions, OAuth accounts, second factors, passkeys, application passwords | The tenant's sessions, `roles` and `user_roles` |
 | `tenants`, `tenant_domains`, `tenant_members`, `tenant_sessions` | Your own tables |
 
+`tenants`, `tenant_domains` and `tenant_members` each have a `meta` column (JSON, as `users`,
+`roles`, `sessions`, `oauth_accounts` and `api_tokens` do) for the project's own data about a
+row: a plan, a billing ID, a member's title.
+
 Every database has the same schema: each gets all of the project's migrations. A request
 for a tenant's host runs in that tenant's database, so your models and services need no
 change. Code that must reach the main database from a tenant's request wraps itself:

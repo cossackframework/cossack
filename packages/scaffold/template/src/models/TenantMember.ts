@@ -13,6 +13,10 @@ export class TenantMember extends BaseEntity {
   @PrimaryColumn({ type: 'varchar', name: 'user_id', length: 191 })
   declare userId: string;
 
+  /** The project's own data about this row. */
+  @Column({ type: 'json', name: 'meta', nullable: true })
+  declare meta: Record<string, unknown> | null;
+
   @Column({ type: 'datetime', name: 'created_at' })
   declare createdAt: Date;
 }

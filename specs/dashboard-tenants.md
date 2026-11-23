@@ -61,7 +61,7 @@ CMS, and the CMS could later run on the dashboard's accounts (`specs/romedb-orm.
 - `@cossackframework/database`: `createTenantORMs`, `tenantUrl`; `ORM.run` re-enters its own
   scope in front of another ORM's scope opened inside it (`accounts()` relies on it).
 - Scaffold: `tenantORM` in every generated `src/orm/factory.ts`; four models
-  (`Tenant`, `TenantDomain`, `TenantMember`, `TenantHandoff`), migration `0012_create_tenants`
+  (`Tenant`, `TenantDomain`, `TenantMember`, `TenantHandoff`), migration `0009_create_tenants`
   (with `sessions.parent_id`); `tenantMiddleware` before the sign-in middleware.
 - Dashboard package: `src/tenants.ts` (`currentTenant`, `accounts`, `inTenant`, `withTenant`),
   `middlewares/tenant.ts`, `services/tenants.ts`, the Tenants screen and module. In `auth.ts`

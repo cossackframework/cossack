@@ -19,7 +19,7 @@ async function migrations() {
 
 it('preserves applied callback definitions and data while planning/applying only new declarative migrations', async () => {
   const current = await migrations();
-  const pending = current.find(item => item.name === '0008_add_session_public_id');
+  const pending = current.find(item => item.name === '0009_create_tenants');
   expect(pending).toBeDefined();
   const legacy = current.filter(item => item !== pending).map(({ operations, ...definition }) => definition);
   const orm = database.createORM({ adapter: await nodeSQLite(), entities: [] });
@@ -33,10 +33,11 @@ it('preserves applied callback definitions and data while planning/applying only
       const plan = await runner.plan();
       expect(plan).toHaveLength(1);
       expect(plan[0]).toMatchObject({ name: pending.name, complete: true, mode: 'apply' });
-      expect((await orm.executeFragment(orm.sql.unsafe('PRAGMA table_info(sessions)'), 'select')).rows.some(row => row.name === 'public_id')).toBe(false);
+      expect((await orm.executeFragment(orm.sql.unsafe("SELECT name FROM sqlite_master WHERE name = 'tenants'"), 'select')).rows).toEqual([]);
       expect(await runner.applyPlan(plan)).toEqual([pending.name]);
       expect((await runner.applied({ readOnly: true })).filter(row => row.name !== pending.name)).toEqual(history);
       expect((await orm.executeFragment(orm.sql.unsafe('SELECT id, data, meta, public_id FROM sessions'), 'select')).rows).toEqual([{ id: 'existing-token', data: '{"cart":2}', meta: '{"type":"auth"}', public_id: null }]);
+      expect((await orm.executeFragment(orm.sql.unsafe("SELECT name FROM sqlite_master WHERE name = 'tenants'"), 'select')).rows).toEqual([{ name: 'tenants' }]);
       expect((await runner.status({ readOnly: true })).every(row => row.state === 'applied')).toBe(true);
       expect(await runner.plan()).toEqual([]);
       expect(await runner.down()).toEqual([pending.name]);

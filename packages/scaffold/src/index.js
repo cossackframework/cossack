@@ -311,15 +311,10 @@ const AUTH_ORM_PATHS = new Set([
   'src/services/security.ts',
   'src/migrations/0001_create_users.ts',
   'src/migrations/0002_create_sessions.ts',
-  'src/migrations/0008_add_session_public_id.ts',
   'src/migrations/0005_create_oauth_accounts.ts',
-  'src/migrations/0009_create_account_security.ts',
-  'src/migrations/0010_add_user_status.ts',
-  'src/migrations/0011_create_api_tokens.ts',
-  'src/migrations/0012_create_tenants.ts',
-  'src/migrations/0013_add_network_admin.ts',
-  'src/migrations/0014_tenant_lifecycle.ts',
-  'src/migrations/0015_tenant_sessions.ts',
+  'src/migrations/0007_create_account_security.ts',
+  'src/migrations/0008_create_api_tokens.ts',
+  'src/migrations/0009_create_tenants.ts',
   'src/services/api-tokens.ts',
   'src/services/tenants.ts',
   'src/tenants.ts',
@@ -375,7 +370,7 @@ const RBAC_PATHS = new Set([
 ]);
 const RBAC_ORM_PATHS = new Set([
   'src/migrations/0003_create_roles.ts',
-  'src/migrations/0007_create_user_roles.ts',
+  'src/migrations/0004_create_user_roles.ts',
   'src/models/Role.ts',
   'src/models/UserRole.ts',
 ]);
@@ -1282,8 +1277,8 @@ extendCacheDriver('database', () => createDatabaseCacheStore());
 const ACCOUNT_MODELS = ['User', 'Session', 'OAuthAccount', 'UserSecurity', 'Passkey', 'AuthChallenge', 'AuthAttempt', 'ApiToken', 'Tenant', 'TenantDomain', 'TenantMember', 'TenantHandoff', 'TenantNetwork', 'TenantSession', 'Role', 'UserRole'];
 /** Their migrations, in the order they apply. */
 const ACCOUNT_MIGRATIONS = [
-  '0001_create_users.ts', '0002_create_sessions.ts', '0003_create_roles.ts', '0005_create_oauth_accounts.ts', '0007_create_user_roles.ts',
-  '0008_add_session_public_id.ts', '0009_create_account_security.ts', '0010_add_user_status.ts', '0011_create_api_tokens.ts', '0012_create_tenants.ts', '0013_add_network_admin.ts', '0014_tenant_lifecycle.ts', '0015_tenant_sessions.ts',
+  '0001_create_users.ts', '0002_create_sessions.ts', '0003_create_roles.ts', '0004_create_user_roles.ts', '0005_create_oauth_accounts.ts',
+  '0007_create_account_security.ts', '0008_create_api_tokens.ts', '0009_create_tenants.ts',
 ];
 
 function modelsBarrel(recipe, names = accountBarrelNames(recipe)) {
@@ -1819,7 +1814,7 @@ export async function renderRecipe(recipe, options = {}) {
       capability: 'database',
     });
     const ormAuth = recipe.resolvedFeatures.includes('auth');
-    const migrationFiles = [...(ormAuth ? ACCOUNT_MIGRATIONS : []), '0006_create_cache_table.ts'];
+    const migrationFiles = [...(ormAuth ? ACCOUNT_MIGRATIONS : []), '0006_create_cache_table.ts'].sort();
     files.set('src/migrations/index.ts', {
       content: text(registeredBarrel('migrations', migrationFiles)),
       capability: 'database',

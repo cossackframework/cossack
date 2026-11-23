@@ -24,8 +24,8 @@ async function schema(orm) {
 
 it('all generated migrations have complete read-only operations, including conditional OAuth and public sessions', async () => {
   const generated = await generatedMigrations();
-  expect(generated).toHaveLength(14);
-  expect(generated.map(row=>row.migration.name)).toContain('0008_add_session_public_id');
+  expect(generated).toHaveLength(9);
+  expect(generated.map(row=>row.migration.name)).toContain('0005_create_oauth_accounts');
   const callbacks = vi.fn(() => { throw new Error('Callbacks must not execute while planning or applying declarative migrations'); });
   const migrations = generated.map(({migration}) => ({...migration,up:callbacks,down:callbacks}));
   const orm = await sqliteORM();
@@ -33,15 +33,15 @@ it('all generated migrations have complete read-only operations, including condi
     await orm.run(async () => {
       const runner = new database.MigrationRunner(orm,migrations);
       const plan = await runner.plan();
-      expect(plan).toHaveLength(14);
+      expect(plan).toHaveLength(9);
       expect(plan.every(entry=>entry.complete && entry.statements.length>0)).toBe(true);
       expect(await schema(orm)).toEqual([]);
       await runner.up();
       expect(callbacks).not.toHaveBeenCalled();
       // The newest migration is the one a rollback takes first.
-      expect((await runner.plan('down'))[0]).toMatchObject({name:'0015_tenant_sessions',complete:true});
+      expect((await runner.plan('down'))[0]).toMatchObject({name:'0009_create_tenants',complete:true});
       expect((await runner.plan('down'))[0].statements.map(statement=>statement.text)).toContain('DROP TABLE "tenant_sessions"');
-      await runner.down({count:14});
+      await runner.down({count:9});
       expect(await schema(orm)).toEqual([]);
       expect(callbacks).not.toHaveBeenCalled();
     });

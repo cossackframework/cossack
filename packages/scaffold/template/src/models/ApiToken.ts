@@ -23,6 +23,10 @@ export class ApiToken extends BaseEntity {
   @Column({ type: 'varchar', name: 'scope', length: 16 })
   declare scope: 'read' | 'write';
 
+  /** The project's own data about this row. */
+  @Column({ type: 'json', name: 'meta', nullable: true })
+  declare meta: Record<string, unknown> | null;
+
   @Column({ type: 'datetime', name: 'created_at' })
   declare createdAt: Date;
 
