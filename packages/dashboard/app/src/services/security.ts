@@ -277,8 +277,8 @@ export async function verifyCode(userId: string, code: string): Promise<'totp' |
   const hash = await hashRecoveryCode(code);
   if (!hashes.includes(hash)) return null;
   // The code is used up only if the list is still the one that was read.
-  const update = await sql`UPDATE user_security SET recovery = ${JSON.stringify(hashes.filter(entry => entry !== hash))}, updated_at = ${new Date(clock.now())}
-    WHERE user_id = ${userId} AND recovery = ${JSON.stringify(hashes)}`;
+  const update = await sql`UPDATE user_security SET recovery = ${sql.json(hashes.filter(entry => entry !== hash))}, updated_at = ${new Date(clock.now())}
+    WHERE user_id = ${userId} AND recovery = ${sql.json(hashes)}`;
   return update.meta.rowsAffected === 1 ? 'recovery' : null;
 }
 

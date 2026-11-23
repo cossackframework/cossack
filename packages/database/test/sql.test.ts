@@ -31,6 +31,14 @@ describe("SQL fragments", () => {
     expect(compileSQL(fragment, postgresDialect).parameters).toEqual([]);
   });
 
+  it("binds a JSON value so each database compares it as JSON", () => {
+    const fragment = sql.fragment`SELECT id FROM sessions WHERE user_id = ${"u1"} AND meta = ${sql.json({ type: "auth" })}`;
+    expect(compileSQL(fragment, postgresDialect).text).toBe("SELECT id FROM sessions WHERE user_id = $1 AND meta = $2::jsonb");
+    expect(compileSQL(fragment, mysqlDialect).text).toBe("SELECT id FROM sessions WHERE user_id = ? AND meta = CAST(? AS JSON)");
+    expect(compileSQL(fragment, sqliteDialect).text).toBe("SELECT id FROM sessions WHERE user_id = ? AND meta = ?");
+    expect(compileSQL(fragment, sqliteDialect).parameters).toEqual(["u1", '{"type":"auth"}']);
+  });
+
   it("renumbers nested PostgreSQL fragments", () => {
     const left = sql.fragment`${1} + ${2}`;
     const right = sql.fragment`${3}`;

@@ -5,7 +5,7 @@ const up = [
     CREATE TABLE roles (
       id VARCHAR(191) PRIMARY KEY,
       name VARCHAR(191) NOT NULL UNIQUE,
-      permissions TEXT,
+      permissions ${sql.type('json')},
       meta ${sql.type('json')},
       created_at VARCHAR(32) NOT NULL
     )

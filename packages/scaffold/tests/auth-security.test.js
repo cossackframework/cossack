@@ -14,6 +14,8 @@ async function generatedAuth() {
   const Session = { find: vi.fn(), findOne: vi.fn(), delete: vi.fn(async () => ({ meta: { rowsAffected: 1 } })), insert: vi.fn() };
   Session.findOne.mockResolvedValue(sessionRow({ id: ownerContext().cookie }));
   const sql = vi.fn(async () => ({ rows: [], meta: { rowsAffected: 1 } }));
+  // The stub records a JSON value as the text every database receives.
+  sql.json = value => JSON.stringify(value);
   const User = { findOne: vi.fn(), insert: vi.fn(), update: vi.fn() };
   const OAuthAccount = { findOne: vi.fn(), insert: vi.fn() };
   let provider;

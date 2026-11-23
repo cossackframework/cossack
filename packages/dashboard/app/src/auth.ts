@@ -106,7 +106,7 @@ function publicUser(u: User, roles: RoleAssignment[] = []): PublicUser {
 // user_roles -> roles. Used by resolveUserById so c.get('user').roles is
 // available to the authorizer (src/services/rbac.ts) and the dashboard nav.
 async function rolesHere(userId: string): Promise<RoleAssignment[]> {
-  const rows = (await sql<{ id: string; name: string; permissions: string | null }>`
+  const rows = (await sql<{ id: string; name: string; permissions: string | string[] | null }>`
     SELECT roles.id, roles.name, roles.permissions
     FROM user_roles
     INNER JOIN roles ON roles.id = user_roles.role_id
@@ -119,10 +119,11 @@ async function rolesHere(userId: string): Promise<RoleAssignment[]> {
   }));
 }
 
-function parsePermissions(raw: string | null): string[] {
+// A JSON column arrives as text from SQLite and already parsed from PostgreSQL and MySQL.
+function parsePermissions(raw: string | string[] | null): string[] {
   if (!raw) return [];
   try {
-    const parsed = JSON.parse(raw);
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
     return Array.isArray(parsed) ? parsed.filter((p) => typeof p === 'string') : [];
   } catch {
     return [];
@@ -217,7 +218,7 @@ function sessions<T>(work: () => Promise<T>): Promise<T> {
   return getRequestContext()?.get('auth.sessionHome' as never) === 'main' ? accounts(work) : inTenant(work);
 }
 
-const AUTH_PURPOSE = JSON.stringify({ type: 'auth' });
+const AUTH_PURPOSE = sql.json({ type: 'auth' });
 
 /** End the sessions that tenants' hosts made from a main session, named by its public ID. Called in any scope. */
 async function endReached(publicId: string): Promise<void> {
@@ -292,7 +293,7 @@ export const authSessions = createSessionManager({
           AND created_at = ${new Date(expected.createdAt)}
           AND expires_at = ${new Date(expected.expiresAt)}
           AND expires_at > ${new Date(Math.max(now, Date.now()))}
-          AND meta = ${JSON.stringify({ type: 'auth' })}
+          AND meta = ${sql.json({ type: 'auth' })}
       `);
       // Sessions made from this one name its public ID, which stays.
       return result.meta.rowsAffected === 1;
@@ -1219,7 +1220,7 @@ async function sessionWithReference(row: Session, userId: string): Promise<Sessi
     // Conditional assignment and re-read retain one winner across tabs.
     await sql`UPDATE sessions SET public_id = ${crypto.randomUUID()}
       WHERE id = ${row.id} AND user_id = ${userId} AND public_id IS NULL
-        AND meta = ${JSON.stringify({ type: 'auth' })}
+        AND meta = ${sql.json({ type: 'auth' })}
         AND expires_at > ${new Date()}`;
     const stored = await Session.findOne({ where: { id: row.id, userId } });
     if (!stored || parseMeta(stored.meta)?.type !== 'auth' || stored.expiresAt.getTime() <= Date.now()) return null;
@@ -1281,7 +1282,7 @@ export async function revokeSession(c: Context, reference: string): Promise<bool
   const result = await sql`DELETE FROM sessions
     WHERE public_id = ${reference} AND user_id = ${userId} AND id <> ${currentId}
       AND public_id <> ${currentReference}
-      AND meta = ${JSON.stringify({ type: 'auth' })}
+      AND meta = ${sql.json({ type: 'auth' })}
       AND expires_at > ${new Date()}`;
   // A session of the main host takes the sessions tenants' hosts made from it.
   if (result.meta.rowsAffected === 1 && !currentTenant()) await endReached(reference);
@@ -1295,7 +1296,7 @@ export async function revokeSessionOf(c: Context, userId: string, reference: str
   if (typeof reference !== 'string' || !PUBLIC_SESSION_REFERENCE.test(reference)) return false;
   const result = await sql`DELETE FROM sessions
     WHERE public_id = ${reference} AND user_id = ${userId} AND id <> ${getCookie(c, SESSION_COOKIE) ?? ''}
-      AND meta = ${JSON.stringify({ type: 'auth' })}
+      AND meta = ${sql.json({ type: 'auth' })}
       AND expires_at > ${new Date()}`;
   if (result.meta.rowsAffected === 1 && !currentTenant()) await endReached(reference);
   return result.meta.rowsAffected === 1;
@@ -1306,7 +1307,7 @@ export async function revokeSessionOf(c: Context, userId: string, reference: str
 export async function revokeSessionsOf(c: Context, userId: string): Promise<void> {
   return sessions(async () => {
   await sql`DELETE FROM sessions WHERE user_id = ${userId} AND id <> ${getCookie(c, SESSION_COOKIE) ?? ''}
-    AND meta = ${JSON.stringify({ type: 'auth' })}`;
+    AND meta = ${sql.json({ type: 'auth' })}`;
   await endReachedOfUser(userId, getCookie(c, SESSION_COOKIE) ?? '');
   });
 }
@@ -1319,9 +1320,9 @@ export async function revokeAllUserSessions(c: Context, keepCurrent = false): Pr
     const currentReference = await currentSessionReference(userId, currentId);
     await sql`DELETE FROM sessions WHERE user_id = ${userId}
       AND id <> ${currentId} AND (public_id IS NULL OR public_id <> ${currentReference})
-      AND meta = ${JSON.stringify({ type: 'auth' })}`;
+      AND meta = ${sql.json({ type: 'auth' })}`;
   } else {
-    await sql`DELETE FROM sessions WHERE user_id = ${userId} AND meta = ${JSON.stringify({ type: 'auth' })}`;
+    await sql`DELETE FROM sessions WHERE user_id = ${userId} AND meta = ${sql.json({ type: 'auth' })}`;
   }
   await endReachedOfUser(userId, keepCurrent ? currentId : '');
   });
@@ -1424,7 +1425,7 @@ export const oauthStateStore: OAuthStateStore = {
   async consume(key, provider, now) {
     // One conditional write owns callback replay. Never read then delete.
     const result = await accounts(async () => sql`DELETE FROM sessions WHERE id = ${key}
-      AND user_id IS NULL AND meta = ${JSON.stringify({ type: 'oauth_state', provider })}
+      AND user_id IS NULL AND meta = ${sql.json({ type: 'oauth_state', provider })}
       AND expires_at > ${new Date(Math.max(now, Date.now()))}`);
     return result.meta.rowsAffected === 1;
   },

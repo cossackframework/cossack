@@ -14,7 +14,7 @@ import { UserRole } from '@/models/UserRole';
 import { TenantMember } from '@/models/TenantMember';
 
 const ROLE_ID = /^[a-z][a-z0-9_-]{0,63}$/;
-const AUTH_PURPOSE = JSON.stringify({ type: 'auth' });
+const AUTH_PURPOSE = sql.json({ type: 'auth' });
 
 function personRole(role: Role): PersonRole {
     return Object.freeze({ id: role.id, name: role.name, permissions: Object.freeze([...(role.permissions ?? [])].sort()) });

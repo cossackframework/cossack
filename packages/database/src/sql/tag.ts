@@ -36,6 +36,11 @@ export interface SQLTag {
    * on PostgreSQL and `json` on MySQL and SQLite (where it is stored as text).
    */
   type(logicalType: LogicalType, options?: { readonly length?: number; readonly precision?: number; readonly scale?: number }): SQLFragment;
+  /**
+   * A JSON value to compare with or write to a `json` column: `WHERE meta = ${sql.json({ type: 'auth' })}`.
+   * A bare string works on SQLite and PostgreSQL only: MySQL reads it as a JSON string.
+   */
+  json(value: unknown): SQLFragment;
   execute<Result = Record<string, unknown>>(fragment: SQLFragment<Result>): Promise<QueryResult<Result>>;
   transaction<T>(callback: () => Promise<T>): Promise<T>;
   reserve<T>(callback: () => Promise<T>): Promise<T>;
@@ -141,6 +146,7 @@ function makeTag(
     return new SQLFragment(valueNodes);
   };
   tag.unsafe = (text) => new SQLFragment([{ kind: "unsafe", value: text }]);
+  tag.json = (value) => new SQLFragment([{ kind: "json", value: JSON.stringify(value) }]);
   tag.type = (logicalType, options) => new SQLFragment([{ kind: "type", logicalType, ...(options ? { options: Object.freeze({ ...options }) } : {}) }]);
   tag.execute = async <Result>(fragment: SQLFragment<Result>) => {
     if (executor) return executor(fragment) as Promise<QueryResult<Result>>;

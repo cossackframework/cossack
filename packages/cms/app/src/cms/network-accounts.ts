@@ -43,7 +43,7 @@ export interface NetworkAccount {
     networkRole: typeof NETWORK_ADMIN | null; createdAt: number; lastSignInAt: number | null;
 }
 
-const AUTH_PURPOSE = JSON.stringify({ type: 'auth' });
+const AUTH_PURPOSE = sql.json({ type: 'auth' });
 
 async function shaped(users: readonly User[]): Promise<NetworkAccount[]> {
     if (!users.length) return [];

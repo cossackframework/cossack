@@ -11,7 +11,7 @@ const up = [
       public_id VARCHAR(36),
       parent_id VARCHAR(191),
       second_factor BOOLEAN NOT NULL DEFAULT FALSE,
-      data TEXT,
+      data ${sql.type('json')},
       meta ${sql.type('json')},
       location TEXT,
       user_agent TEXT,

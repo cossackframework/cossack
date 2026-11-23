@@ -65,12 +65,13 @@ export interface UpdateUserInput {
   avatar?: string | null;
 }
 
-type RoleRow = { userId?: string; id: string; name: string; permissions: string | null };
+type RoleRow = { userId?: string; id: string; name: string; permissions: string | string[] | null };
 
-function safeParseStrings(raw: string | null): string[] {
+// A JSON column arrives as text from SQLite and already parsed from PostgreSQL and MySQL.
+function safeParseStrings(raw: string | string[] | null): string[] {
   if (!raw) return [];
   try {
-    const parsed = JSON.parse(raw);
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
     return Array.isArray(parsed) ? parsed.filter((value) => typeof value === 'string') : [];
   } catch {
     return [];
@@ -92,7 +93,7 @@ async function lastSignIns(userIds: readonly string[]): Promise<Map<string, stri
   const rows = (await sql<{ userId: string; lastSignedInAt: string | null }>`
     SELECT user_id AS userId, MAX(created_at) AS lastSignedInAt
     FROM sessions
-    WHERE user_id IN (${userIds}) AND meta = ${JSON.stringify({ type: 'auth' })}
+    WHERE user_id IN (${userIds}) AND meta = ${sql.json({ type: 'auth' })}
     GROUP BY user_id
   `).rows;
   const times = new Map<string, string>();
@@ -251,7 +252,7 @@ export async function setUserStatus(id: string, status: 'active' | 'disabled'): 
     if (!currentTenant()) await requireAnotherNetworkAdmin(id, 'disabled');
   }
   await User.update({ id }, { status });
-  if (status === 'disabled') await sql`DELETE FROM sessions WHERE user_id = ${id} AND meta = ${JSON.stringify({ type: 'auth' })}`;
+  if (status === 'disabled') await sql`DELETE FROM sessions WHERE user_id = ${id} AND meta = ${sql.json({ type: 'auth' })}`;
 }
 
 export async function changeUserPassword(id: string, newPassword: string): Promise<void> {

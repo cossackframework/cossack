@@ -9,7 +9,7 @@ const up = [
       totp_secret TEXT,
       totp_confirmed_at VARCHAR(32),
       totp_last_step INTEGER,
-      recovery TEXT,
+      recovery ${sql.type('json')},
       updated_at VARCHAR(32) NOT NULL
     )
   `,
@@ -20,7 +20,7 @@ const up = [
       name TEXT NOT NULL,
       public_key TEXT NOT NULL,
       sign_count INTEGER NOT NULL,
-      transports TEXT,
+      transports ${sql.type('json')},
       device_type TEXT,
       backed_up BOOLEAN NOT NULL,
       created_at VARCHAR(32) NOT NULL,
