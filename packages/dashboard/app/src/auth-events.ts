@@ -11,8 +11,8 @@ export const authEvents = {
   async beforeRegister(draft: { email: string; name: string }): Promise<{ name: string }> {
     return { name: draft.name };
   },
-  /** After a registration made an account (it may still wait for confirmation or approval). */
-  async registered(_user: AuthUserRef): Promise<void> {},
+  /** After a registration made an account. `state` says what it waits for: nothing, its email link, or an administrator. */
+  async registered(_user: AuthUserRef, _state: 'active' | 'verification' | 'approval' = 'active'): Promise<void> {},
   /** After a session was made for the user on this host. */
   async signedIn(_user: { id: string }): Promise<void> {},
 };

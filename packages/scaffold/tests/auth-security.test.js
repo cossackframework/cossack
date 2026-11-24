@@ -20,13 +20,15 @@ async function generatedAuth() {
   const OAuthAccount = { findOne: vi.fn(), insert: vi.fn() };
   let provider;
   const createSession = vi.fn();
+  const setCookie = vi.fn();
   const security = {
     signInBegin: vi.fn(async () => ({ ok: true })), signInSucceeded: vi.fn(), attempt: vi.fn(async () => true), release: vi.fn(),
     sha256Hex: async text => `hash:${text}`, randomToken: () => 'T'.repeat(43), RESET_REQUESTS: { windowMs: 3_600_000, perEmail: 3, perAddress: 10 },
     requiresCode: vi.fn(async () => false), hasSecondFactor: vi.fn(async () => false), reset: vi.fn(),
+    createChallenge: vi.fn(async () => 'pending-sign-in'),
   };
   const modules = {
-    'hono/cookie': { getCookie: c => c?.cookie },
+    'hono/cookie': { getCookie: c => c?.cookie, setCookie },
     '@cossackframework/auth': { createAuth: (options) => { provider = options; return { createSession }; }, createOAuth: vi.fn(), OAuthError,
       createCredentialVerifier, createSessionManager, hashPassword, verifyPassword, totpUri: vi.fn() },
     '@cossackframework/auth/passkeys': {},
@@ -67,7 +69,7 @@ async function generatedAuth() {
     if (!(name in modules)) throw new Error(`Unexpected dependency: ${name}`);
     return modules[name];
   }, module, module.exports);
-  return { api: module.exports, provider, Session, User, OAuthAccount, createSession, sql, files, security, authOptions: modules['./auth-options'].authOptions };
+  return { api: module.exports, provider, Session, User, OAuthAccount, createSession, setCookie, sql, files, security, authOptions: modules['./auth-options'].authOptions };
 }
 
 const ownerContext = () => ({ cookie: 'CURRENT_PRIVATE_BEARER', get: () => ({ id: 'member' }),
@@ -472,6 +474,43 @@ describe('generated auth security', () => {
     expect(OAuthAccount.insert).not.toHaveBeenCalled();
     expect(createSession).not.toHaveBeenCalled();
     expect(User.insert).not.toHaveBeenCalled();
+  });
+
+  it('makes no account through OAuth while registration is closed', async () => {
+    const { api, OAuthAccount, User, createSession, authOptions } = await generatedAuth();
+    authOptions.registration.open = false;
+    OAuthAccount.findOne.mockResolvedValue(null);
+    User.findOne.mockResolvedValue(null);
+    const c = { redirect: location => location, req: { url: 'https://app.test/auth/github/callback' } };
+    expect(await api.handleOAuthUser('github', { id: 'stranger', email: 'stranger@example.com', emailVerified: true }, {}, c)).toBe('/auth/login?oauth=closed');
+    expect(User.insert).not.toHaveBeenCalled();
+    expect(OAuthAccount.insert).not.toHaveBeenCalled();
+    expect(createSession).not.toHaveBeenCalled();
+  });
+
+  it('makes an OAuth account wait for approval, and signs in no account that is not active', async () => {
+    const { api, OAuthAccount, User, createSession, authOptions } = await generatedAuth();
+    authOptions.registration.approve = true;
+    OAuthAccount.findOne.mockResolvedValue(null);
+    User.findOne.mockResolvedValueOnce(null).mockResolvedValue({ id: 'generated-id', email: 'new@example.com', status: 'pending' });
+    const c = { redirect: location => location, req: { url: 'https://app.test/auth/github/callback' } };
+    expect(await api.handleOAuthUser('github', { id: 'new', email: 'new@example.com', emailVerified: true }, {}, c)).toBe('/auth/login?oauth=pending');
+    expect(User.insert.mock.calls[0][0]).toMatchObject({ email: 'new@example.com', status: 'pending' });
+    OAuthAccount.findOne.mockResolvedValue({ userId: 'off' });
+    User.findOne.mockReset().mockResolvedValue({ id: 'off', email: 'off@example.com', status: 'disabled' });
+    expect(await api.handleOAuthUser('github', { id: 'off', email: 'off@example.com', emailVerified: true }, {}, c)).toBe('/auth/login?oauth=inactive');
+    expect(createSession).not.toHaveBeenCalled();
+  });
+
+  it('asks an OAuth sign-in for the account\'s authenticator code', async () => {
+    const { api, OAuthAccount, User, createSession, setCookie, security } = await generatedAuth();
+    OAuthAccount.findOne.mockResolvedValue({ userId: 'member' });
+    User.findOne.mockResolvedValue({ id: 'member', email: 'member@example.com', status: 'active' });
+    security.requiresCode.mockResolvedValue(true);
+    const c = { redirect: location => location, req: { url: 'https://app.test/auth/github/callback' } };
+    expect(await api.handleOAuthUser('github', { id: 'member', email: 'member@example.com', emailVerified: true }, {}, c)).toBe('/auth/two-factor');
+    expect(setCookie.mock.calls[0].slice(1, 3)).toEqual(['two_factor', 'pending-sign-in']);
+    expect(createSession).not.toHaveBeenCalled();
   });
 
   it('never stores an email address the provider did not verify', async () => {

@@ -86,7 +86,10 @@ own session back:
    sign-in page shows the site's name and logo, and *Back to Home* returns to the site. The
    redirect continues afterwards.
 3. The network issues a one-use code for that site and session, valid for one minute, and
-   redirects to `blog.example.com/auth/tenant/callback?code=…`.
+   redirects to `blog.example.com/auth/tenant/callback?code=…`. For a site's own domain
+   (not a subdomain of the network), the network first shows a page naming the site and the
+   account, and sends the code after the visitor presses *Continue*: whoever runs that
+   domain can read the code, so nobody is sent there without asking.
 4. The site trades the code for a *child session* in its own database. Later requests to the site read only the site's database. The child
    session ends no later than the network session it came from.
 

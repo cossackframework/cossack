@@ -3,7 +3,7 @@
 import { ClientVisibleError, getClientIp, getRequestContext } from '@cossackframework/core';
 import { isCmsError, userPrincipal } from '@cossackframework/cms';
 import type { SiteRegistration } from '@cossackframework/cms/server';
-import { loginUser } from '#app/auth';
+import { loginUser, securityStatus } from '#app/auth';
 import { mailer } from '#app/mail';
 import { currentCms, networkFor, type CmsBindings } from './index';
 import { networkAccounts } from './network-accounts';
@@ -53,6 +53,9 @@ export async function registerSite(input: { site: SiteRegistration; name?: strin
         // An account's own password makes its site, counted as a sign-in attempt.
         const account = await loginUser(email, password);
         if (!account) throw new ClientVisibleError('An account with this email exists. Enter its password, or sign in first.');
+        // A password is one step: an account with a second one signs in through it first.
+        const factors = await securityStatus(account.id);
+        if (factors.totp || factors.passkeys.length) throw new ClientVisibleError('This account uses two-step sign-in. Sign in first, then register your site.');
         return { site: await create(account.id), user: account.id, signIn: true };
     }
     if (mailer()) throw new ClientVisibleError('Create your account first (Register), confirm your email, then register your site.');

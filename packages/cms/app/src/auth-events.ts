@@ -22,8 +22,8 @@ export const authEvents = {
       throw error;
     }
   },
-  async registered(user: AuthUserRef): Promise<void> {
-    await currentCms().userRegistered(user, 'active').catch(() => undefined);
+  async registered(user: AuthUserRef, state: 'active' | 'verification' | 'approval' = 'active'): Promise<void> {
+    await currentCms().userRegistered(user, state).catch(() => undefined);
   },
   async signedIn(user: { id: string }): Promise<void> {
     const cms = currentCms();

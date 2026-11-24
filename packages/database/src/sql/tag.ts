@@ -146,7 +146,11 @@ function makeTag(
     return new SQLFragment(valueNodes);
   };
   tag.unsafe = (text) => new SQLFragment([{ kind: "unsafe", value: text }]);
-  tag.json = (value) => new SQLFragment([{ kind: "json", value: JSON.stringify(value) }]);
+  tag.json = (value) => {
+    // A value with no JSON form (undefined, a function) is SQL NULL, as an undefined parameter is.
+    const text = JSON.stringify(value) as string | undefined;
+    return new SQLFragment([text === undefined ? { kind: "value", value: null } : { kind: "json", value: text }]);
+  };
   tag.type = (logicalType, options) => new SQLFragment([{ kind: "type", logicalType, ...(options ? { options: Object.freeze({ ...options }) } : {}) }]);
   tag.execute = async <Result>(fragment: SQLFragment<Result>) => {
     if (executor) return executor(fragment) as Promise<QueryResult<Result>>;

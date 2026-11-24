@@ -9,6 +9,7 @@ import { authOptions } from '../auth-options';
 import { Tenant } from '@/models/Tenant';
 import { TenantDomain } from '@/models/TenantDomain';
 import { TenantMember } from '@/models/TenantMember';
+import { TenantNetwork } from '@/models/TenantNetwork';
 import { User } from '@/models/User';
 import { Role } from '@/models/Role';
 import { UserRole } from '@/models/UserRole';
@@ -108,7 +109,7 @@ export async function getTenant(id: string): Promise<TenantInfo | null> {
  */
 export async function createTenant(input: { name: string; slug: string }, creator: { id: string }): Promise<TenantInfo> {
   required();
-  return makeTenant(input, creator);
+  return makeTenant(input, creator, true);
 }
 
 /** How many tenants one account registers in a day. */
@@ -131,10 +132,14 @@ export async function setTenantRegistration(on: boolean): Promise<void> {
 export async function registerTenant(input: { name: string; slug: string }, user: { id: string }): Promise<TenantInfo> {
   if (!await tenantRegistrationOpen()) throw new ClientVisibleError('Registration of tenants is closed.');
   if (!await security.attempt('tenant-registration', `u:${user.id}`, TENANT_REGISTRATIONS.max, TENANT_REGISTRATIONS.windowMs)) throw new ClientVisibleError('You registered three tenants today. Try again tomorrow.');
-  return makeTenant(input, user);
+  return makeTenant(input, user, false);
 }
 
-async function makeTenant(input: { name: string; slug: string }, creator: { id: string }): Promise<TenantInfo> {
+/** Who started a tenant that is still being created: a network setting, gone once the tenant is active. */
+const creatorKey = (id: string) => `tenant.creator:${id}`;
+
+/** `manager`: a network administrator makes it, and may finish a tenant someone else started. */
+async function makeTenant(input: { name: string; slug: string }, creator: { id: string }, manager: boolean): Promise<TenantInfo> {
   const name = input.name.trim();
   const slug = input.slug.trim().toLowerCase();
   if (!name || name.length > 120) throw new ClientVisibleError('Give the tenant a name of at most 120 characters.');
@@ -143,9 +148,15 @@ async function makeTenant(input: { name: string; slug: string }, creator: { id: 
   if (!TENANT_DATABASE.test(database)) throw new ClientVisibleError('The address is too long.');
   let row = await Tenant.findOne({ where: { slug } });
   if (row && row.status !== 'creating') throw new ClientVisibleError('A tenant with this address already exists.');
+  // A tenant that is being created is finished by the account that started it, or by a network
+  // administrator: nobody else becomes its administrator by asking for the same address.
+  if (row && !manager && (await TenantNetwork.findOne({ where: { key: creatorKey(row.id) } }))?.value !== creator.id) {
+    throw new ClientVisibleError('A tenant with this address already exists.');
+  }
   if (!row) {
     const id = uuidv7();
     await Tenant.insert({ id, slug, name, database, status: 'creating', createdAt: new Date() });
+    await TenantNetwork.upsert({ key: creatorKey(id), value: creator.id, updatedAt: new Date() }, ['key']);
     row = (await Tenant.findOne({ where: { id } }))!;
   }
   const tenant = info(row);
@@ -163,6 +174,7 @@ async function makeTenant(input: { name: string; slug: string }, creator: { id: 
   }
   await addMemberById(tenant, creator.id, ['admin']);
   await Tenant.update({ id: tenant.id }, { status: 'active' });
+  await TenantNetwork.delete({ key: creatorKey(tenant.id) });
   forgetTenantHosts();
   return { ...tenant, status: 'active' };
 }
@@ -399,18 +411,20 @@ export async function moveAccount(tenant: TenantInfo, userId: string, to: 'main'
   required();
   const here = await withTenant(tenant, () => User.findOne({ where: { id: userId } }));
   if (!here) throw new ClientVisibleError('This tenant has no such user.');
+  // Each direction writes the account where it goes first, and removes it where it was only
+  // after that worked: a failure half-way leaves the account where it was, with its password.
   if (to === 'main') {
     if (!here.tenantAccount) throw new ClientVisibleError('This is a shared account already.');
     if (await User.exists({ email: here.email })) throw new ClientVisibleError('Another shared account has this email.');
-    const security = await withTenant(tenant, async () => {
-      await sql`DELETE FROM sessions WHERE user_id = ${userId}`;
-      const row = await takeSecurity(userId);
-      await User.update({ id: userId }, { tenantAccount: false, passwordHash: null });
-      return row;
-    });
+    const kept = await withTenant(tenant, () => UserSecurity.findOne({ where: { userId } }));
     await User.insert({ id: here.id, email: here.email, name: here.name, passwordHash: here.passwordHash, avatar: here.avatar, meta: here.meta, status: here.status, createdAt: here.createdAt });
-    await giveSecurity(security);
+    await giveSecurity(kept);
     await TenantMember.upsert({ tenantId: tenant.id, userId, createdAt: new Date() }, ['tenantId', 'userId']);
+    await withTenant(tenant, async () => {
+      await sql`DELETE FROM sessions WHERE user_id = ${userId}`;
+      await takeSecurity(userId);
+      await User.update({ id: userId }, { tenantAccount: false, passwordHash: null });
+    });
     return;
   }
   if (here.tenantAccount) throw new ClientVisibleError('This is an account of this tenant already.');
@@ -418,14 +432,16 @@ export async function moveAccount(tenant: TenantInfo, userId: string, to: 'main'
   if (!account) throw new ClientVisibleError('Account not found.');
   if (account.networkAdmin) throw new ClientVisibleError('A network administrator keeps a shared account.');
   if ((await TenantMember.find({ where: { userId }, take: 3 })).some(member => member.tenantId !== tenant.id)) throw new ClientVisibleError('This account is a member of other tenants too.');
-  await sql`DELETE FROM sessions WHERE user_id = ${userId}`;
-  const security = await takeSecurity(userId);
-  await UserRole.delete({ userId });
-  await TenantMember.delete({ userId });
-  await User.delete({ id: userId });
+  const kept = await UserSecurity.findOne({ where: { userId } });
   await withTenant(tenant, async () => {
     await sql`DELETE FROM sessions WHERE user_id = ${userId}`;
     await User.update({ id: userId }, { tenantAccount: true, passwordHash: account.passwordHash, email: account.email, name: account.name, status: account.status });
-    await giveSecurity(security);
+    await UserSecurity.delete({ userId });
+    await giveSecurity(kept);
   });
+  await sql`DELETE FROM sessions WHERE user_id = ${userId}`;
+  await takeSecurity(userId);
+  await UserRole.delete({ userId });
+  await TenantMember.delete({ userId });
+  await User.delete({ id: userId });
 }

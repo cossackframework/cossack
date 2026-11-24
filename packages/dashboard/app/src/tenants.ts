@@ -46,9 +46,31 @@ export function mainHost(): string {
   return hostName(env('APP_URL', ''));
 }
 
-/** The tenant of this request, or null on the main host (and with tenants off). */
+/**
+ * What `withTenant()` sets for the work it runs. It is kept beside the work, not on the request:
+ * a request may run work for several tenants at once, and each sees its own.
+ */
+interface TenantScope {
+  readonly tenant: TenantInfo | null;
+  readonly main: ORM | undefined;
+  readonly orm: ORM;
+  readonly home: 'tenant' | 'main' | undefined;
+}
+const tenantScope = new AsyncLocalStorage<TenantScope>();
+
+/** The tenant of this request, or null on the main host (and with tenants off). Inside `withTenant()`: the tenant of that work. */
 export function currentTenant(c: Context | undefined = getRequestContext()): TenantInfo | null {
+  const scope = tenantScope.getStore();
+  if (scope) return scope.tenant;
   return (c?.get(TENANT as never) as TenantInfo | undefined) ?? null;
+}
+
+/** The request's marks, or those of the `withTenant()` the caller is in. */
+function marks(): { main: ORM | undefined; orm: ORM | undefined; home: 'tenant' | 'main' | undefined } {
+  const scope = tenantScope.getStore();
+  if (scope) return scope;
+  const c = getRequestContext();
+  return { main: c?.get(MAIN_ORM as never) as ORM | undefined, orm: c?.get(TENANT_ORM as never) as ORM | undefined, home: c?.get(ACCOUNT_HOME as never) as 'tenant' | 'main' | undefined };
 }
 
 /**
@@ -56,10 +78,9 @@ export function currentTenant(c: Context | undefined = getRequestContext()): Ten
  * the list of tenants. Inside a tenant's request it steps out of the tenant's database.
  */
 export function accounts<T>(work: () => Promise<T>): Promise<T> {
-  const c = getRequestContext();
+  const { main, home } = marks();
   // A tenant's own account keeps everything in the tenant's database.
-  if ((accountHome.getStore() ?? c?.get(ACCOUNT_HOME as never)) === 'tenant') return inTenant(work);
-  const main = c?.get(MAIN_ORM as never) as ORM | undefined;
+  if ((accountHome.getStore() ?? home) === 'tenant') return inTenant(work);
   return main ? main.run(work) : work();
 }
 
@@ -80,7 +101,7 @@ export function asMainAccount<T>(work: () => Promise<T>): Promise<T> {
 
 /** Whether the running code is about an account of this tenant only. */
 export function tenantAccountHome(): boolean {
-  return currentTenant() !== null && (accountHome.getStore() ?? getRequestContext()?.get(ACCOUNT_HOME as never)) === 'tenant';
+  return currentTenant() !== null && (accountHome.getStore() ?? marks().home) === 'tenant';
 }
 
 /** @internal The signed-in user of this request is an account of this tenant only. */
@@ -90,7 +111,7 @@ export function markTenantAccountRequest(c: Context): void {
 
 /** Run code against the request's tenant database again, from inside `accounts()`. */
 export function inTenant<T>(work: () => Promise<T>): Promise<T> {
-  const orm = getRequestContext()?.get(TENANT_ORM as never) as ORM | undefined;
+  const { orm } = marks();
   return orm ? orm.run(work) : work();
 }
 
@@ -98,16 +119,18 @@ export function inTenant<T>(work: () => Promise<T>): Promise<T> {
 export async function withTenant<T>(tenant: Pick<TenantInfo, 'database' | 'slug'> & Partial<TenantInfo>, work: () => Promise<T>): Promise<T> {
   const c = getRequestContext();
   const opened = await tenantORM(c?.env, tenant);
-  const before = c ? [c.get(MAIN_ORM as never), c.get(TENANT_ORM as never), c.get(TENANT as never), c.get(ACCOUNT_HOME as never)] as const : undefined;
+  const outer = marks();
   try {
-    // `accounts()` inside the work still reaches the main database.
-    if (c && !before![0]) c.set(MAIN_ORM as never, c.get('orm' as never));
-    c?.set(TENANT_ORM as never, opened.orm as never);
-    // With the whole tenant given, it is the current one for the work: code that asks which tenant it is in gets this one.
-    if (c && tenant.id) { c.set(TENANT as never, tenant as never); c.set(ACCOUNT_HOME as never, undefined as never); }
-    return await opened.orm.run(work);
+    return await tenantScope.run({
+      // `accounts()` inside the work still reaches the main database.
+      main: outer.main ?? (c?.get('orm' as never) as ORM | undefined),
+      orm: opened.orm,
+      // With the whole tenant given, it is the current one for the work: code that asks which
+      // tenant it is in gets this one, and the signed-in user's own home does not count there.
+      tenant: tenant.id ? tenant as TenantInfo : currentTenant(),
+      home: tenant.id ? undefined : outer.home,
+    }, () => opened.orm.run(work));
   } finally {
-    if (c) { c.set(MAIN_ORM as never, before![0] as never); c.set(TENANT_ORM as never, before![1] as never); c.set(TENANT as never, before![2] as never); c.set(ACCOUNT_HOME as never, before![3] as never); }
     await opened.release();
   }
 }

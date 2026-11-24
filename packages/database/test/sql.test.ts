@@ -39,6 +39,11 @@ describe("SQL fragments", () => {
     expect(compileSQL(fragment, sqliteDialect).parameters).toEqual(["u1", '{"type":"auth"}']);
   });
 
+  it("binds a value with no JSON form as NULL", () => {
+    const compiled = compileSQL(sql.fragment`UPDATE users SET meta = ${sql.json(undefined)}`, mysqlDialect);
+    expect(compiled).toEqual({ text: "UPDATE users SET meta = ?", parameters: [null] });
+  });
+
   it("renumbers nested PostgreSQL fragments", () => {
     const left = sql.fragment`${1} + ${2}`;
     const right = sql.fragment`${3}`;

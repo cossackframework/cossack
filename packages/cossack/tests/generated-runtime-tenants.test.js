@@ -1,5 +1,6 @@
 // Tenants of the dashboard package (src/dashboard.config.ts: `tenants`): a database per tenant,
 // shared accounts, members and roles per tenant. The same flow on SQLite and on a RomeDB file.
+import http from 'node:http';
 import { afterEach, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -9,7 +10,7 @@ import { browserless } from './fixtures/cms-client.js';
 
 afterEach(cleanupRoots);
 
-const PAGES = ['auth/login/index.ts', 'auth/register/index.ts', 'auth/setup/index.ts', 'dashboard/tenants/index.ts', 'dashboard/users/new/index.ts'];
+const PAGES = ['auth/login/index.ts', 'auth/register/index.ts', 'auth/setup/index.ts', 'dashboard/tenants/index.ts', 'dashboard/users/new/index.ts', 'dashboard/users/[id]/index.ts'];
 
 async function tenants(database) {
   const root = await project('node', ['dashboard'], { database });
@@ -27,7 +28,7 @@ async function tenants(database) {
     const { origin } = server;
     const port = new URL(origin).port;
     const on = host => browserless(`http://${host}:${port}`, routeIds, server.diagnostics, { connect: '127.0.0.1' });
-    const [login, register, setup, screen, newUser] = PAGES;
+    const [login, register, setup, screen, newUser, userPage] = PAGES;
     const admin = { name: 'Ada', email: 'ada@example.test', password: 'test-password-123' };
     const grace = { name: 'Grace', email: 'grace@example.test', password: 'test-password-456' };
 
@@ -96,6 +97,17 @@ async function tenants(database) {
     const member = on('acme.app.test');
     expect((await member.action(login, 'login', [{ email: grace.email, password: grace.password }])).error ?? '').toBe('');
     expect(member.jar.has('session_id')).toBe(true);
+
+    // A member's shared account is its owner's: the tenant's administrator makes no application
+    // password for it and does not remove its second factors. The tenant's own accounts are its to manage.
+    const membersNow = (await owner.action(screen, 'open', [made.tenants[0].id])).members;
+    const idOf = email => membersNow.find(entry => entry.email === email).id;
+    const refused = await acme.action(userPage, 'addToken', ['Not mine', 'write', 30], { params: { id: idOf(grace.email) } });
+    expect(refused.tokensError).toContain('only its owner');
+    expect(refused.newToken ?? '').toBe('');
+    await expect(acme.action(userPage, 'resetSecurity', [], { params: { id: idOf(grace.email) } })).rejects.toThrow('only its owner');
+    const allowed = await acme.action(userPage, 'addToken', ['For Frank', 'write', 30], { params: { id: idOf(frank.email) } });
+    expect([allowed.tokensError ?? '', /^app_/.test(allowed.newToken)]).toEqual(['', true]);
 
     // Each database has its own users: the main host lists both accounts, and Acme its two members.
     const mainUsers = await owner.page('/dashboard/users');
@@ -196,6 +208,16 @@ it('signs in once for every host with shared sign-in', async () => {
     await main.action(setup, 'setup', [{ code: 'setup-code-for-tests', ...admin }]);
     expect((await main.action(screen, 'create', ['Acme', 'acme'])).error).toBe('');
     const pathOf = response => { const url = new URL(response.headers.get('location'), 'http://app.test'); return [url.hostname, url.pathname + url.search]; };
+    // A form on another site that posts to the main host with the visitor's cookies.
+    const fetchForeign = async () => {
+      const body = new URLSearchParams({ host: 'app.acme.test', state: 's'.repeat(32) }).toString();
+      return new Promise((resolve, reject) => {
+        const outgoing = http.request({ host: '127.0.0.1', port, path: '/auth/tenant/redirect', method: 'POST', headers: { host: `app.test:${port}`, origin: 'http://evil.test', 'sec-fetch-site': 'cross-site',
+          'content-type': 'application/x-www-form-urlencoded', 'content-length': String(Buffer.byteLength(body)), cookie: [...main.jar].map(([name, value]) => `${name}=${value}`).join('; ') } }, incoming => { incoming.resume(); resolve(incoming.statusCode); });
+        outgoing.on('error', reject);
+        outgoing.end(body);
+      });
+    };
 
     // A browser: one jar per host, as cookies are. Opening the tenant's dashboard without a session there asks the main host first.
     const acme = on('acme.app.test');
@@ -260,6 +282,16 @@ it('signs in once for every host with shared sign-in', async () => {
     const id = (await main.action(screen, 'open', [''])).tenants[0].id;
     expect((await main.action(screen, 'addDomain', [id, 'app.acme.test'])).tenants[0].domains).toEqual([{ host: 'app.acme.test', primary: false, verified: true }]);
     expect((await on('app.acme.test').request('/auth/tenant/callback')).status).toBe(400);
+    // A domain of the tenant's own is run by the tenant, so a code goes there only after the
+    // person says so on the main host: never on its own, and not for a form on another site.
+    const ownState = 's'.repeat(32);
+    const consent = await main.request(`/auth/tenant/redirect?host=app.acme.test&state=${ownState}`);
+    expect([consent.status, consent.headers.get('location'), (await consent.text()).includes('Sign in to Acme?')]).toEqual([200, null, true]);
+    const unasked = await main.request(`/auth/tenant/redirect?host=app.acme.test&state=${ownState}&auto=1`);
+    expect([unasked.status, unasked.headers.get('location')]).toEqual([302, `http://app.acme.test:${port}/auth/login`]);
+    expect(await fetchForeign()).toBe(403);
+    const confirmed = await main.post('/auth/tenant/redirect', { host: 'app.acme.test', state: ownState });
+    expect([confirmed.status, ...pathOf(confirmed).map(part => part.split('?')[0])]).toEqual([302, 'app.acme.test', '/auth/tenant/callback']);
     const primary = await main.action(screen, 'primaryDomain', [id, 'app.acme.test']);
     expect(primary.error).toBe('');
     expect(primary.tenants[0]).toMatchObject({ address: `http://app.acme.test:${port}`, domains: [{ host: 'app.acme.test', primary: true, verified: true }] });

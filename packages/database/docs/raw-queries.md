@@ -139,7 +139,8 @@ await orm.sql`
 It binds the JSON text as a parameter and adds the cast each database needs (`::jsonb` on
 PostgreSQL, `CAST(? AS JSON)` on MySQL, none on SQLite). Do not bind
 `JSON.stringify(value)` yourself: MySQL compares a JSON column with a bare string as with
-a JSON string, so the row is never found.
+a JSON string, so the row is never found. A value with no JSON form (`undefined`) is bound as SQL
+`NULL`.
 
 A raw `SELECT` returns a JSON column as text on SQLite and as the parsed value on
 PostgreSQL and MySQL. Read it through the model, or accept both.

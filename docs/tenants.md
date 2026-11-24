@@ -75,6 +75,10 @@ tenant chooses its roles.
 
 Passkey sign-in and OAuth are for main accounts only today.
 
+On a tenant's host a member's shared account is changed by its owner only: the tenant's
+administrators cannot change its profile, make application passwords for it or remove its
+second factors. Email links for a tenant's own account open on that tenant's host.
+
 An account that is not a member of a tenant cannot sign in on its host. A network
 administrator can, on every tenant, with every permission: it is a flag on the account (the
 first account has it), set on the Tenants screen, and the last one cannot lose it. Only
@@ -97,6 +101,8 @@ tenants: { enabled: true, signIn: 'shared' }
   its own session from it. Anyone else comes back to the tenant's sign-in page, which signs
   in the tenant's own accounts and links to the main host's sign-in. Signing out on any host
   ends the session on the main host and on every tenant's host.
+  A tenant's own domain is run by the tenant, so a code for it is sent only after the visitor
+  confirms the tenant and the account on the main host, and never on its own.
 
 Accounts are in the main database in both modes, so the setting can change later. A
 tenant's sessions are in its own database; with shared sign-in the main database records

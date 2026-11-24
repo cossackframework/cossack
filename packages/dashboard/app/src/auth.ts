@@ -10,7 +10,7 @@
 // so credential and reset helpers need no Hono `Context`. Session operations
 // receive the context for request metadata and cookie handling.
 
-import { getCookie } from 'hono/cookie';
+import { getCookie, setCookie } from 'hono/cookie';
 import type { Context } from 'hono';
 import { createAuth, createCredentialVerifier, createOAuth, createSessionManager, hashPassword, OAuthError, totpUri, type AuthSessionRecord, type OAuthKit, type OAuthStateStore, type OAuthUser, type TokenSet } from '@cossackframework/auth';
 import {
@@ -173,6 +173,16 @@ async function accountByToken<T>(work: () => Promise<T>, nothing: (value: T) => 
   if (!currentTenant()) return work();
   const own = await asTenantAccount(work);
   return nothing(own) ? asMainAccount(work) : own;
+}
+
+/**
+ * On a tenant's host a member's shared account is its owner's: only they change its profile,
+ * sign-in methods and application passwords there. The tenant's own accounts are the tenant's.
+ */
+async function requireOwnerOfShared(userId: string): Promise<void> {
+  if (!currentTenant() || await tenantAccount(userId)) return;
+  const caller = (getRequestContext()?.get('user') as PublicUser | undefined)?.id;
+  if (caller !== userId) throw new ClientVisibleError(authOptions.accountLabels.sharedNotice);
 }
 
 /** Whether the account is a network administrator: its own flag, in the main database. */
@@ -531,11 +541,14 @@ export async function completeSetup(code: string, account: { email: string; pass
 }
 
 /**
- * Where links in emails point: the site's own address (APP_URL), never the request's Host
- * header, which a client chooses. Without APP_URL, a request to this machine (development)
+ * Where links in emails point: the site's own address (APP_URL), or the tenant's host under it
+ * for an account of that tenant only; never the request's Host header, which a client chooses. Without APP_URL, a request to this machine (development)
  * uses its own origin; otherwise null, and no link is sent.
  */
 export function linkOrigin(): string | null {
+  // A tenant's own account exists on that tenant's host only: its links open there.
+  const own = tenantAccountHome() ? tenantOrigin(currentTenant()) : null;
+  if (own) return own;
   const configured = env('APP_URL', '').replace(/\/+$/, '');
   if (configured) return configured;
   const c = getRequestContext();
@@ -632,7 +645,7 @@ export async function registerUser(email: string, password: string, name?: strin
   const role = options.defaultRole ? await Role.findOne({ where: { id: options.defaultRole } }) ?? await Role.findOne({ where: { name: options.defaultRole } }) : null;
   if (role) await UserRole.insert({ userId: id, roleId: role.id, createdAt: new Date() });
   const user: PublicUser = { id, email, name: name ?? '', avatar: null, meta: null, roles: role ? [{ id: role.id, name: role.name, permissions: role.permissions ?? [] }] : [] };
-  await authEvents.registered({ id, email, name: name ?? '' });
+  await authEvents.registered({ id, email, name: name ?? '' }, verify ? 'verification' : options.approve ? 'approval' : 'active');
   if (verify) {
     await sendVerification({ id, email, name: name ?? null });
     return { ...user, verification: 'sent' };
@@ -722,6 +735,7 @@ export const avatarUploads = storedAvatars;
 
 /** Store an uploaded picture (src/avatars.ts) and make it the user's avatar. Answers its URL. */
 export async function uploadAvatar(userId: string, file: File): Promise<string> {
+  await requireOwnerOfShared(userId);
   if (!storedAvatars) throw new ClientVisibleError('Picture uploads need file storage. Enter an image URL instead.');
   const url = await storeAvatar(userId, file);
   await updateUserProfile(userId, { avatar: url });
@@ -736,6 +750,7 @@ export interface ProfileUpdate {
 
 /** Update editable profile fields. */
 export async function updateUserProfile(userId: string, patch: ProfileUpdate): Promise<void> {
+  await requireOwnerOfShared(userId);
   return accountOf(userId, async () => {
   const values: Partial<User> = {};
   if (patch.name !== undefined) values.name = patch.name;
@@ -996,6 +1011,7 @@ export async function newRecoveryCodes(userId: string, code: string): Promise<st
 
 /** Remove a user's second factors, for a user manager helping someone who lost their device. The page checks who may. */
 export async function resetSecondFactors(userId: string): Promise<void> {
+  await requireOwnerOfShared(userId);
   return accountOf(userId, async () => {
   await security.reset(userId);
   });
@@ -1082,6 +1098,7 @@ export async function completePasskeySignIn(c: Context, challengeId: string, res
 export const apiTokensAvailable = true;
 
 export async function listApiTokens(userId: string): Promise<ApiToken[]> {
+  await requireOwnerOfShared(userId);
   return accountOf(userId, async () => {
   return apiTokens.list(userId);
   });
@@ -1089,6 +1106,7 @@ export async function listApiTokens(userId: string): Promise<ApiToken[]> {
 
 /** A new application password; the token is shown once. */
 export async function createApiToken(userId: string, name: string, scope: 'read' | 'write', expiresInDays: number | null = null): Promise<string> {
+  await requireOwnerOfShared(userId);
   return accountOf(userId, async () => {
   // An application password signs in without a second factor: an account that must have one
   // gets passwords only once it does, and only from a session that used it.
@@ -1103,6 +1121,7 @@ export async function createApiToken(userId: string, name: string, scope: 'read'
 }
 
 export async function revokeApiToken(userId: string, id: string): Promise<void> {
+  await requireOwnerOfShared(userId);
   return accountOf(userId, async () => {
   // A session that never used the account's second factor may not take its tokens away either.
   requireFactorUsed(userId);
@@ -1449,6 +1468,12 @@ export const oauth: OAuthKit = {
   },
 };
 
+/**
+ * The provider sent the visitor back. A linked account signs in, through its second step when
+ * it has one; an unknown one becomes an account only while registration is open, with the
+ * default role and the approval rule. The sign-in page says why a sign-in did not happen
+ * (`?oauth=<reason>`).
+ */
 export async function handleOAuthUser(
   provider: string,
   oauthUser: OAuthUser,
@@ -1456,6 +1481,7 @@ export async function handleOAuthUser(
   c: Context,
 ) {
   return accounts(async () => {
+  const refused = (reason: 'closed' | 'pending' | 'inactive' | 'passkey') => c.redirect(`/auth/login?oauth=${reason}`);
   const account = await OAuthAccount.findOne({
     where: { provider, providerUserId: oauthUser.id },
   });
@@ -1469,16 +1495,30 @@ export async function handleOAuthUser(
     if (existing) throw new ClientVisibleError('Sign in to your existing account before linking an OAuth provider.');
   }
   if (!user) {
+    // A new account is a registration: closed registration, the approval rule and the default role apply.
+    const options = authOptions.registration;
+    if (!options.open) return refused('closed');
+    const email = verifiedEmail ?? `${provider}-${oauthUser.id}@oauth.invalid`;
+    let name: string;
+    try { name = (await authEvents.beforeRegister({ email, name: oauthUser.name ?? oauthUser.nickname ?? '' })).name; }
+    catch (error) {
+      if (error instanceof ClientVisibleError) return refused('closed');
+      throw error;
+    }
     const id = uuidv7();
     await User.insert({
       id,
-      email: verifiedEmail ?? `${provider}-${oauthUser.id}@oauth.invalid`,
-      name: oauthUser.name ?? oauthUser.nickname ?? null,
+      email,
+      name: name || null,
       passwordHash: null,
       avatar: oauthUser.avatar ?? null,
       meta: null,
+      status: options.approve ? 'pending' : 'active',
       createdAt: new Date(),
     });
+    const role = options.defaultRole ? await Role.findOne({ where: { id: options.defaultRole } }) ?? await Role.findOne({ where: { name: options.defaultRole } }) : null;
+    if (role) await UserRole.insert({ userId: id, roleId: role.id, createdAt: new Date() });
+    await authEvents.registered({ id, email, name }, options.approve ? 'approval' : 'active');
     user = await User.findOne({ where: { id } });
   }
   if (!user) throw new Error('Unable to provision OAuth user.');
@@ -1490,6 +1530,18 @@ export async function handleOAuthUser(
       providerUserId: oauthUser.id,
       createdAt: new Date(),
     });
+  }
+  if (user.status !== 'active') return refused(user.status === 'pending' ? 'pending' : 'inactive');
+  // The provider stands in for the password only: an authenticator app is still asked for.
+  let pending: string | null;
+  try { pending = await beginTwoFactor(user.id); }
+  catch (error) {
+    if (!(error instanceof SignInPasskeyError)) throw error;
+    return refused('passkey');
+  }
+  if (pending) {
+    setCookie(c, TWO_FACTOR_COOKIE, pending, { path: '/', httpOnly: true, sameSite: 'Lax', maxAge: 300, secure: new URL(c.req.url).protocol === 'https:' });
+    return c.redirect('/auth/two-factor');
   }
   if (auth.createSession) {
     const { headers } = await auth.createSession(publicUser(user), c);
@@ -1581,6 +1633,25 @@ export async function completeTenantHandoff(c: Context, code: string): Promise<H
   const { headers } = await authSessions.create(row.userId, c);
   return headers;
   });
+}
+
+/**
+ * On the main host: the tenant a one-time code for `host` would sign in to. `custom` is true for
+ * a domain of the tenant's own: whoever runs that domain reads the code, so the main host asks
+ * the person before it sends one there. A host under the main host is the application's own,
+ * and a `localhost` name is this machine's.
+ */
+export async function tenantHandoffTarget(host: string): Promise<{ name: string; host: string; custom: boolean } | null> {
+  return asMainAccount(() => accounts(async () => {
+  const name = hostName(`http://${host}`);
+  const main = mainHost();
+  if (!sharedSignIn || currentTenant() || !name || name === main) return null;
+  const tenant = await tenantOfHost(name);
+  if (!tenant || tenant.status !== 'active') return null;
+  // Names under the main host are the application's, and `localhost` names reach this machine only.
+  const own = (!!main && name.endsWith(`.${main}`)) || name === 'localhost' || name.endsWith('.localhost');
+  return { name: tenant.name, host: name, custom: !own };
+  }));
 }
 
 /** On the main host: the sign-in page of the tenant at `host`, or null when the host is no active tenant's. */

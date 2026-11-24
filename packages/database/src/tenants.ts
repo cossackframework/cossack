@@ -51,7 +51,12 @@ export function tenantUrl(template: string | undefined, tenant: TenantDatabase, 
  */
 export function createTenantORMs(options: TenantORMsOptions): TenantORMs {
   const max = Math.max(options.max ?? 32, 1);
-  const kept = new Map<string, Promise<ORM>>();
+  /** An open ORM, how many pieces of work hold it, and whether it left the kept ones. */
+  interface Entry { readonly opening: Promise<ORM>; users: number; evicted: boolean }
+  const kept = new Map<string, Entry>();
+  // ORMs that left the kept ones while work still holds them: a new request for the same
+  // database takes the same ORM again, so a database is never open twice.
+  const leaving = new Map<string, Entry>();
   const migrated = new Map<string, Promise<unknown>>();
 
   const make = async (tenant: TenantDatabase): Promise<ORM> => {
@@ -72,6 +77,8 @@ export function createTenantORMs(options: TenantORMsOptions): TenantORMs {
     }
   };
 
+  const close = (entry: Entry) => { void entry.opening.then(orm => orm.close()).catch(() => undefined); };
+
   return {
     async open(tenant) {
       if (!TENANT_DATABASE.test(tenant.database)) throw new Error("A tenant's database name has lowercase letters, digits, - and _ only.");
@@ -79,28 +86,51 @@ export function createTenantORMs(options: TenantORMsOptions): TenantORMs {
         const orm = await make(tenant);
         return { orm, release: () => orm.close() };
       }
-      let opening = kept.get(tenant.database);
-      if (opening) {
+      const name = tenant.database;
+      let entry = kept.get(name) ?? leaving.get(name);
+      if (entry) {
         // Most recently used last.
-        kept.delete(tenant.database);
-        kept.set(tenant.database, opening);
+        kept.delete(name);
+        leaving.delete(name);
+        entry.evicted = false;
+        kept.set(name, entry);
       } else {
-        opening = make(tenant);
-        kept.set(tenant.database, opening);
-        opening.catch(() => { if (kept.get(tenant.database) === opening) kept.delete(tenant.database); });
-        if (kept.size > max) {
-          const [oldest, closing] = kept.entries().next().value as [string, Promise<ORM>];
+        const created: Entry = { opening: make(tenant), users: 0, evicted: false };
+        entry = created;
+        kept.set(name, created);
+        created.opening.catch(() => { if (kept.get(name) === created) kept.delete(name); if (leaving.get(name) === created) leaving.delete(name); });
+      }
+      const held = entry;
+      held.users++;
+      if (kept.size > max) {
+        // The least recently used one that is not this one leaves. It closes when its work is done.
+        for (const [oldest, candidate] of kept) {
+          if (candidate === held) continue;
           kept.delete(oldest);
-          // Requests that hold it finish first.
-          setTimeout(() => { void closing.then(orm => orm.close()).catch(() => undefined); }, 60_000);
+          candidate.evicted = true;
+          if (candidate.users === 0) close(candidate);
+          else leaving.set(oldest, candidate);
+          break;
         }
       }
-      return { orm: await opening, release: async () => undefined };
+      let released = false;
+      const release = async () => {
+        if (released) return;
+        released = true;
+        held.users--;
+        if (held.evicted && held.users === 0) {
+          if (leaving.get(name) === held) leaving.delete(name);
+          close(held);
+        }
+      };
+      try { return { orm: await held.opening, release }; }
+      catch (error) { await release(); throw error; }
     },
     async close() {
-      const open = [...kept.values()];
+      const open = [...kept.values(), ...leaving.values()];
       kept.clear();
-      await Promise.all(open.map(opening => opening.then(orm => orm.close()).catch(() => undefined)));
+      leaving.clear();
+      await Promise.all(open.map(entry => entry.opening.then(orm => orm.close()).catch(() => undefined)));
     },
   };
 }
