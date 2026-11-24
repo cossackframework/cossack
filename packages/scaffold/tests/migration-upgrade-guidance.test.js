@@ -47,6 +47,21 @@ it('preserves applied callback definitions and data while planning/applying only
   } finally { await orm.close(); }
 });
 
+it('keeps the database session store working on the sessions table: its rows are of kind data', async () => {
+  const { createDatabaseSessionStore } = await import('../../database/src/cossack/index.ts');
+  const orm = database.createORM({ adapter: await nodeSQLite(), entities: [] });
+  try {
+    await orm.run(async () => {
+      await new database.MigrationRunner(orm, await migrations()).up();
+      const store = createDatabaseSessionStore(orm);
+      const id = await store.create(60_000);
+      await store.set(id, 'cart', 2, 60_000);
+      expect(await store.get(id, 'cart')).toBe(2);
+      expect((await orm.executeFragment(orm.sql.unsafe('SELECT kind FROM sessions'), 'select')).rows).toEqual([{ kind: 'data' }]);
+    });
+  } finally { await orm.close(); }
+});
+
 it('blindly replacing applied callback templates rejects planning/execution and baseline does not reconcile them', async () => {
   const current = await migrations();
   const legacy = current.map(({ operations, ...definition }) => definition);

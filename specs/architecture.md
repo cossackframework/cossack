@@ -409,7 +409,7 @@ Generated applications retain user models, database selection and account writes
 Auth also owns typed password hashing, credential verification and persistent
 session lifecycle contracts. Password encodings include the algorithm and work
 factor. Application callbacks own account lookup, safe user mapping and conditional
-hash upgrades. Session records carry their purpose in a `kind` column, random tokens and
+hash upgrades. Session records carry their purpose in a `kind` column (a database session store row is `data`, the default), random tokens and
 Unix-millisecond timestamps. Validation rejects exact expiry without refresh.
 Rotation requires an application store to atomically replace the complete active
 record. The generated SQL adapter enforces a single winner. Default cookies are

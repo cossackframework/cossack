@@ -1,14 +1,15 @@
 import { sql, type Migration } from '@cossackframework/database';
 
-// Sessions, and the single-use tokens kept beside them: `kind` says which a row is. `public_id` names a session without
-// its token; `second_factor` records a two-step sign-in; `parent_id` links a tenant's session to
+// Sessions, and the single-use tokens kept beside them: `kind` says which a row is. A row the
+// database session store makes (flash messages, `session()` data) names no kind and is `data`.
+// `public_id` names a session without its token; `second_factor` records a two-step sign-in; `parent_id` links a tenant's session to
 // the main one it came from.
 const up = [
   sql.fragment`
     CREATE TABLE sessions (
       id VARCHAR(191) PRIMARY KEY,
       user_id VARCHAR(191),
-      kind VARCHAR(32) NOT NULL,
+      kind VARCHAR(32) NOT NULL DEFAULT 'data',
       public_id VARCHAR(36),
       parent_id VARCHAR(191),
       second_factor BOOLEAN NOT NULL DEFAULT FALSE,

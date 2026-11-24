@@ -11,8 +11,11 @@ import {
 } from '@cossackframework/database';
 import { User } from './User';
 
-/** What a row of `sessions` is: a sign-in session, or a single-use token kept beside them. */
-export type SessionKind = 'auth' | 'password_reset' | 'verify' | 'magic' | 'oauth_state';
+/**
+ * What a row of `sessions` is: a sign-in session, a single-use token kept beside them, or
+ * `data`, the column's default: a row of the database session store (`session()`, flash messages).
+ */
+export type SessionKind = 'auth' | 'password_reset' | 'verify' | 'magic' | 'oauth_state' | 'data';
 
 @Entity({ tableName: 'sessions' })
 @Index('sessions_user_id_kind', ['userId', 'kind'])
