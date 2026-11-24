@@ -31,7 +31,7 @@ export class Session extends BaseEntity {
   @Column({ type: 'varchar', name: 'user_id', length: 191, nullable: true })
   declare userId: string | null;
 
-  @Column({ type: 'varchar', name: 'kind', length: 32 })
+  @Column({ type: 'varchar', name: 'kind', length: 32, default: 'data' })
   declare kind: SessionKind;
 
   /** The framework's own data for the row, such as the provider of an OAuth state. */
