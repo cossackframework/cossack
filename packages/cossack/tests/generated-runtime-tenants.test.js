@@ -226,6 +226,9 @@ it('signs in once for every host with shared sign-in', async () => {
     expect(acme.jar.has('tenant_state')).toBe(true);
     const [mainHost, issue] = pathOf(start);
     expect([mainHost, issue.split('?')[0]]).toEqual(['app.test', '/auth/tenant/redirect']);
+    // The main host's session was signed in with a second factor.
+    const sessionsOf = (file, write) => { const db = new DatabaseSync(path.join(root, file)); try { if (write) db.exec(write); return db.prepare("SELECT second_factor AS factor FROM sessions WHERE kind = 'auth'").all().map(row => row.factor); } finally { db.close(); } };
+    expect(sessionsOf('database.sqlite', "UPDATE sessions SET second_factor = 1 WHERE kind = 'auth'")).toEqual([1]);
     // Signed in there already: it comes back with a code, which makes a session on the tenant's host.
     const issued = await main.request(issue);
     expect(issued.status).toBe(302);
@@ -237,6 +240,8 @@ it('signs in once for every host with shared sign-in', async () => {
     expect([done.status, done.headers.get('location')]).toEqual([302, '/dashboard/users']);
     expect(acme.jar.has('session_id')).toBe(true);
     expect(await acme.page('/dashboard/users')).toContain(admin.email);
+    // The tenant's session is that sign-in: it keeps the second factor, so a tenant that requires one lets it in.
+    expect(sessionsOf('tenants/acme.sqlite')).toEqual([1]);
     // The code was spent.
     expect((await acme.request(callback)).status).toBe(400);
 

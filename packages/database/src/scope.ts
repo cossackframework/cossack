@@ -16,6 +16,19 @@ function ormRegistry(): Set<ORM> {
 
 const registered = ormRegistry();
 
+const SCOPE_SEQUENCE = Symbol.for("@cossackframework/database/scope-sequence");
+
+/**
+ * The number of the next scope to open. Scopes are numbered as they open, so the innermost of
+ * several ORMs' scopes can be told. The counter is shared like the registry: two copies of
+ * this module counting apart would give an outer and an inner scope the same number.
+ */
+export function nextScopeSequence(): number {
+  const next = (typeof registryHost[SCOPE_SEQUENCE] === "number" ? registryHost[SCOPE_SEQUENCE] as number : 0) + 1;
+  registryHost[SCOPE_SEQUENCE] = next;
+  return next;
+}
+
 export function registerORM(orm: ORM): void {
   registered.add(orm);
 }

@@ -490,14 +490,15 @@ export async function registrationOpen(): Promise<boolean> {
 }
 
 /**
- * Whether the first account still has to be created on /auth/setup: SETUP_CODE is set and no
- * account exists. /auth/login sends visitors there then. Without SETUP_CODE the first account
- * comes from the seeder.
+ * Whether setup on /auth/setup is still to do: SETUP_CODE is set and no account administers
+ * the application. That is so before the first account, and after an import that brought
+ * accounts without one (the CMS's setup page then offers its takeover). /auth/login sends
+ * visitors there then. Without SETUP_CODE the first account comes from the seeder.
  */
 export async function setupRequired(): Promise<boolean> {
   return accounts(async () => {
   if (!env(authOptions.setupCodeVariable, '') || currentTenant()) return false;
-  try { return (await User.count()) === 0; }
+  try { return !(await User.exists({ networkAdmin: true })); }
   catch { return false; }
   });
 }
@@ -1621,17 +1622,21 @@ export async function completeTenantHandoff(c: Context, code: string): Promise<H
   // The code names a session of the main host, which must still be alive.
   c.set('auth.sessionHome' as never, 'main' as never);
   let reference: string | null;
+  let secondFactor = false;
   try {
     const parent = await authSessions.validate(row.sessionId, c);
     if (!parent || parent.userId !== row.userId) return null;
     const stored = await Session.findOne({ where: { id: parent.id } });
     reference = stored ? (await sessionWithReference(stored, row.userId))?.publicId ?? null : null;
+    // The sign-in on the main host is the tenant session's sign-in: a second factor used there counts here.
+    secondFactor = stored?.secondFactor === true;
   } finally { c.set('auth.sessionHome' as never, undefined as never); }
   if (!reference) return null;
   // The tenant's own session, in its database, made from that one.
   c.set('auth.sessionParent' as never, reference as never);
-  const { headers } = await authSessions.create(row.userId, c);
-  return headers;
+  c.set('auth.signInSecondFactor', secondFactor);
+  try { return (await authSessions.create(row.userId, c)).headers; }
+  finally { c.set('auth.signInSecondFactor', false); }
   });
 }
 

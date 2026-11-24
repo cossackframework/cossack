@@ -404,9 +404,37 @@ async function exercise(origin, routeIds, diagnostics) {
   await admin.action('auth/login/index.ts', 'login', [{ email: 'bea@example.com', password: 'long password' }]);
   lacks(await admin.page('/dashboard/tools/export'), 'data-database-file');
   expect((await admin.request('/api/cms/site-export?format=romedb')).status).toBe(403);
-  expect((await admin.request('/api/cms/site-export')).status).toBe(200);
+  const exported = await admin.request('/api/cms/site-export');
+  expect(exported.status).toBe(200);
+  const siteExport = await exported.text();
   expect((await web.action('dashboard/layout.ts', 'doLogout', [], { page: 'dashboard/index.ts' }))._cossack_redirect).toBe('/auth/login');
   expect((await web.request('/dashboard')).headers.get('location')).toBe('/auth/login');
+  return siteExport;
+}
+
+/** A new install takes a site's export, then one of the site's administrators takes it over on the setup page. */
+async function takeOver(origin, routeIds, diagnostics, siteExport) {
+  const web = browserless(origin, routeIds, diagnostics);
+  contains(await web.page('/auth/setup'), 'Set up your site');
+  const imported = await web.request('/auth/setup', { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json', 'x-cms-setup-code': 'setup-code-for-tests' }, body: siteExport });
+  expect(imported.status, await imported.clone().text()).toBe(200);
+  expect(await imported.json()).toEqual({ next: '/auth/setup' });
+  // The import brought members without passwords and nobody runs the install: setup is not done.
+  expect((await web.request('/auth/login')).headers.get('location')).toBe('/auth/setup');
+  const page = await web.page('/auth/setup');
+  contains(page, 'Take over this site');
+  lacks(page, 'Your site is set up');
+  expect((await web.post('/auth/setup', { code: 'setup-code-for-tests', email: 'nobody@example.com', password: 'a new password' })).headers.get('location')).toBe('/auth/setup');
+  expect((await web.post('/auth/setup', { code: 'setup-code-for-tests', email: 'ada@example.com', password: 'a new password' })).headers.get('location')).toBe('/dashboard');
+  contains(await web.page('/dashboard'), 'ada@example.com');
+  // Now it is set up: the page says so, and a second export is refused.
+  const fresh = browserless(origin, routeIds, diagnostics);
+  contains(await fresh.page('/auth/setup'), 'Your site is set up');
+  expect((await fresh.request('/auth/login')).status).toBe(200);
+  const again = await fresh.request('/auth/setup', { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json', 'x-cms-setup-code': 'setup-code-for-tests' }, body: siteExport });
+  expect(again.status).toBe(400);
+  await fresh.action('auth/login/index.ts', 'login', [{ email: 'ada@example.com', password: 'a new password' }]);
+  contains(await fresh.page('/dashboard'), 'ada@example.com');
 }
 
 describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
@@ -437,8 +465,13 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
     const environment = { APP_SECRET: 'generated-cms-test-secret-0123456789abcdef', ROMEDB_URL: path.join(root, 'storage/romedb/app.romedb'), ROMEDB_TOKEN: '', CMS_SETUP_CODE: 'setup-code-for-tests',
       ROMEDB_PENDING_DIR: path.join(root, '.cossack/romedb-pending'), MEDIA_DIR: path.join(root, 'storage/media') };
     const server = await productionServer(root, environment);
-    try { await exercise(server.origin, routeIds, () => server.diagnostics()); }
+    let siteExport;
+    try { siteExport = await exercise(server.origin, routeIds, () => server.diagnostics()); }
     finally { await server.close(); }
+    // The export in a new install: another database, the same application.
+    const second = await productionServer(root, { ...environment, ROMEDB_URL: path.join(root, 'storage/romedb/moved.romedb'), ROMEDB_PENDING_DIR: path.join(root, '.cossack/romedb-pending-moved') });
+    try { await takeOver(second.origin, routeIds, () => second.diagnostics(), siteExport); }
+    finally { await second.close(); }
     expect((await fs.stat(path.join(root, 'storage/romedb/app.romedb'))).mode & 0o777).toBe(0o600);
   }, 400_000);
 

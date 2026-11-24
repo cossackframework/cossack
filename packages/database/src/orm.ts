@@ -24,14 +24,11 @@ import type {
 } from "./metadata/types.js";
 import { In, type DeleteOptions, type EntityShape } from "./query/types.js";
 import { dialectFor } from "./dialect/dialects.js";
-import { currentORM, registerORM, unregisterORM } from "./scope.js";
+import { currentORM, nextScopeSequence, registerORM, unregisterORM } from "./scope.js";
 import type { OrmSchema } from "./schema/types.js";
 import { compileSQL, SQLFragment } from "./sql/fragment.js";
 import { createSQLTag, type SQLTag } from "./sql/tag.js";
 import { uuidv7 } from "./uuid.js";
-
-/** Scopes are numbered as they open, so the innermost of several ORMs' scopes can be told. */
-let scopeSequence = 0;
 
 interface ScopeContext {
   /** When this scope opened, among the scopes of every ORM. */
@@ -130,8 +127,8 @@ export class ORM {
     // Inside another ORM's scope that was opened within this one (a tenant's database inside
     // the application's): the same scope again, in front, so models reach this ORM.
     const context: ScopeContext = current?.root === this
-      ? { ...current, sequence: ++scopeSequence }
-      : { sequence: ++scopeSequence, root: this, orm: this, driver: this.driver, transactionDepth: 0 };
+      ? { ...current, sequence: nextScopeSequence() }
+      : { sequence: nextScopeSequence(), root: this, orm: this, driver: this.driver, transactionDepth: 0 };
     if (this.scope) return this.scope.run(context, callback);
     this.fallbackScopes.push(context);
     let result: T;
@@ -168,7 +165,7 @@ export class ORM {
       }
       const savepoint = `cossack_sp_${current.transactionDepth + 1}`;
       await current.driver.execute({ text: `SAVEPOINT ${savepoint}`, parameters: [] }, "raw");
-      const nested: ScopeContext = { ...current, sequence: ++scopeSequence, transactionDepth: current.transactionDepth + 1 };
+      const nested: ScopeContext = { ...current, sequence: nextScopeSequence(), transactionDepth: current.transactionDepth + 1 };
       try {
         const result = await this.runContext(nested, callback);
         await current.driver.execute({ text: `RELEASE SAVEPOINT ${savepoint}`, parameters: [] }, "raw");
@@ -183,7 +180,7 @@ export class ORM {
     }
     return current.driver.transaction(async (transactionDriver) => {
       const transactionORM = this.scopedClone(transactionDriver);
-      const context: ScopeContext = { sequence: ++scopeSequence, root: this, orm: transactionORM, driver: transactionDriver, transactionDepth: 1 };
+      const context: ScopeContext = { sequence: nextScopeSequence(), root: this, orm: transactionORM, driver: transactionDriver, transactionDepth: 1 };
       return this.runContext(context, callback);
     });
   }
@@ -194,7 +191,7 @@ export class ORM {
     const orm = this.scopedClone(driver);
     Object.defineProperty(orm, "managers", { value: new Map() });
     Object.defineProperty(orm, "states", { value: new WeakMap() });
-    return this.runContext({ sequence: ++scopeSequence, root: this, orm, driver, transactionDepth: 0 }, () => callback(orm));
+    return this.runContext({ sequence: nextScopeSequence(), root: this, orm, driver, transactionDepth: 0 }, () => callback(orm));
   }
 
   async reserve<T>(callback: () => Promise<T>): Promise<T> {
@@ -205,7 +202,7 @@ export class ORM {
     }
     return current.driver.reserve(async (reservedDriver) => {
       const reservedORM = this.scopedClone(reservedDriver);
-      return this.runContext({ ...current, sequence: ++scopeSequence, orm: reservedORM, driver: reservedDriver }, callback);
+      return this.runContext({ ...current, sequence: nextScopeSequence(), orm: reservedORM, driver: reservedDriver }, callback);
     });
   }
 

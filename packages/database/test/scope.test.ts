@@ -42,6 +42,37 @@ describe("ORM scopes", () => {
     }
   });
 
+  it("numbers scopes across duplicated module graphs, so the inner ORM of another copy wins", async () => {
+    vi.resetModules();
+    const outerCopy = await import("../src/index.js");
+    const outerAdapter = await import("../src/adapter/index.js");
+    const outerScope = await import("../src/scope.js");
+    vi.resetModules();
+    const innerCopy = await import("../src/index.js");
+    const innerAdapter = await import("../src/adapter/index.js");
+    const innerScope = await import("../src/scope.js");
+    expect(innerCopy.createORM).not.toBe(outerCopy.createORM);
+    const main = outerCopy.createORM({
+      adapter: { driver: new outerAdapter.MemoryDriver("sqlite"), scope: outerAdapter.createAsyncLocalScope(new AsyncLocalStorage()) },
+      entities: [],
+    });
+    const tenant = innerCopy.createORM({
+      adapter: { driver: new innerAdapter.MemoryDriver("sqlite"), scope: innerAdapter.createAsyncLocalScope(new AsyncLocalStorage()) },
+      entities: [],
+    });
+    try {
+      // Each copy's first scope: counted apart, both would be scope 1 and the outer ORM would stay current.
+      main.run(() => tenant.run(() => {
+        expect(outerScope.currentORM()).toBe(tenant);
+        expect(innerScope.currentORM()).toBe(tenant);
+      }));
+      tenant.run(() => main.run(() => expect(innerScope.currentORM()).toBe(main)));
+    } finally {
+      await main.close();
+      await tenant.close();
+    }
+  });
+
   it("throws actionable errors outside a run scope", () => {
     expect(() => ScopedUser.create({ name: "Ada" })).toThrow(ScopeError);
   });
