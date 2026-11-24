@@ -14,7 +14,6 @@ import { UserRole } from '@/models/UserRole';
 import { TenantMember } from '@/models/TenantMember';
 
 const ROLE_ID = /^[a-z][a-z0-9_-]{0,63}$/;
-const AUTH_PURPOSE = sql.json({ type: 'auth' });
 
 function personRole(role: Role): PersonRole {
     return Object.freeze({ id: role.id, name: role.name, permissions: Object.freeze([...(role.permissions ?? [])].sort()) });
@@ -27,7 +26,7 @@ async function people(users: readonly User[]): Promise<Person[]> {
     const [assignments, roles, signIns, admins] = await Promise.all([
         UserRole.find({ where: { userId: In(ids) }, take: 5000 }),
         Role.find({ take: 500 }),
-        sql<{ userId: string; at: string | null }>`SELECT user_id AS userId, MAX(created_at) AS at FROM sessions WHERE user_id IN (${ids}) AND meta = ${AUTH_PURPOSE} GROUP BY user_id`,
+        sql<{ userId: string; at: string | null }>`SELECT user_id AS userId, MAX(created_at) AS at FROM sessions WHERE user_id IN (${ids}) AND kind = 'auth' GROUP BY user_id`,
         // The flag is the account's, in the main database; on a site of a network the member row does not carry it.
         currentTenant() ? asMainAccount(() => accounts(() => User.find({ where: { id: In(ids), networkAdmin: true }, take: 500 }))) : Promise.resolve(users.filter(user => user.networkAdmin)),
     ]);

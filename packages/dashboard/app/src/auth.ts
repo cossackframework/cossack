@@ -40,16 +40,16 @@ import type { ApiToken } from './services/api-tokens';
 import { User, type RoleAssignment } from '@/models/User';
 import { Role } from '@/models/Role';
 import { UserRole } from '@/models/UserRole';
-import { Session } from '@/models/Session';
+import { Session, type SessionKind } from '@/models/Session';
 import { OAuthAccount } from '@/models/OAuthAccount';
 import { TenantMember } from '@/models/TenantMember';
 
 const SESSION_COOKIE = 'session_id';
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
 
-// Purpose tags separate auth sessions, password-reset tokens and the OAuth
-// recipe's anonymous state records. Session listings show only auth rows.
-type SessionMeta = { type: 'auth' } | { type: 'password_reset' } | { type: 'verify' } | { type: 'magic' } | { type: 'oauth_state'; provider: string };
+// `sessions.kind` separates sign-in sessions from the single-use tokens kept in the same table.
+// Session listings show only sign-in rows. `meta` is the project's own.
+const AUTH: SessionKind = 'auth';
 
 const warnedSessionErrors = new Set<string>();
 
@@ -204,7 +204,7 @@ function captureRequestInfo(c: Context): { ip: string | null; userAgent: string 
 }
 
 function authSession(row: Session | null): AuthSessionRecord | null {
-  if (!row || !row.userId || parseMeta(row.meta)?.type !== 'auth') return null;
+  if (!row || !row.userId || row.kind !== 'auth') return null;
   return { id: row.id, userId: row.userId, kind: 'auth',
     createdAt: row.createdAt.getTime(), expiresAt: row.expiresAt.getTime() };
 }
@@ -218,7 +218,6 @@ function sessions<T>(work: () => Promise<T>): Promise<T> {
   return getRequestContext()?.get('auth.sessionHome' as never) === 'main' ? accounts(work) : inTenant(work);
 }
 
-const AUTH_PURPOSE = sql.json({ type: 'auth' });
 
 /** End the sessions that tenants' hosts made from a main session, named by its public ID. Called in any scope. */
 async function endReached(publicId: string): Promise<void> {
@@ -226,7 +225,7 @@ async function endReached(publicId: string): Promise<void> {
     const reached = await TenantSession.find({ where: { sessionPublicId: publicId }, take: 500 });
     for (const entry of reached) {
       const tenant = await Tenant.findOne({ where: { id: entry.tenantId } });
-      if (tenant) await withTenant(tenant, async () => { await sql`DELETE FROM sessions WHERE parent_id = ${publicId} AND meta = ${AUTH_PURPOSE}`; }).catch((error) => console.warn(`[tenants] could not end the sessions of ${tenant.slug}`, error));
+      if (tenant) await withTenant(tenant, async () => { await sql`DELETE FROM sessions WHERE parent_id = ${publicId} AND kind = ${AUTH}`; }).catch((error) => console.warn(`[tenants] could not end the sessions of ${tenant.slug}`, error));
     }
     if (reached.length) await TenantSession.delete({ sessionPublicId: publicId });
   });
@@ -250,12 +249,12 @@ async function endReachedOfUser(userId: string, keptId: string): Promise<void> {
  * For a changed password and a removed account. Called in the main database's scope.
  */
 async function endSessionsEverywhere(userId: string): Promise<void> {
-  await sql`DELETE FROM sessions WHERE user_id = ${userId} AND meta = ${AUTH_PURPOSE}`;
+  await sql`DELETE FROM sessions WHERE user_id = ${userId} AND kind = ${AUTH}`;
   if (!authOptions.tenants.enabled) return;
   const memberships = await TenantMember.find({ where: { userId }, take: 500 });
   for (const membership of memberships) {
     const tenant = await Tenant.findOne({ where: { id: membership.tenantId } });
-    if (tenant) await withTenant(tenant, async () => { await sql`DELETE FROM sessions WHERE user_id = ${userId} AND meta = ${AUTH_PURPOSE}`; }).catch((error) => console.warn(`[tenants] could not end the sessions of ${tenant.slug}`, error));
+    if (tenant) await withTenant(tenant, async () => { await sql`DELETE FROM sessions WHERE user_id = ${userId} AND kind = ${AUTH}`; }).catch((error) => console.warn(`[tenants] could not end the sessions of ${tenant.slug}`, error));
   }
   await TenantSession.delete({ userId });
 }
@@ -272,7 +271,7 @@ export const authSessions = createSessionManager({
       const parent = (c.get('auth.sessionParent') as string | undefined) ?? null;
       await sessions(() => Session.insert({ id: record.id, publicId: crypto.randomUUID(), userId: record.userId, data: null,
         createdAt: new Date(record.createdAt), expiresAt: new Date(record.expiresAt),
-        meta: { type: 'auth' }, ipAddress: ip, userAgent, location,
+        kind: AUTH, meta: null, ipAddress: ip, userAgent, location,
         // Set by createSession() for the session it is about to store.
         secondFactor: c.get('auth.signInSecondFactor') === true, parentId: parent }));
       // The main database remembers which tenants the main session reached, to end them with it.
@@ -293,18 +292,18 @@ export const authSessions = createSessionManager({
           AND created_at = ${new Date(expected.createdAt)}
           AND expires_at = ${new Date(expected.expiresAt)}
           AND expires_at > ${new Date(Math.max(now, Date.now()))}
-          AND meta = ${sql.json({ type: 'auth' })}
+          AND kind = ${AUTH}
       `);
       // Sessions made from this one name its public ID, which stays.
       return result.meta.rowsAffected === 1;
     },
     async revoke(id) {
       const row = authOptions.tenants.enabled ? await sessions(() => Session.findOne({ where: { id } })) : null;
-      await sessions(async () => sql`DELETE FROM sessions WHERE id = ${id} AND meta = ${AUTH_PURPOSE}`);
-      if (!row || parseMeta(row.meta)?.type !== 'auth') return;
+      await sessions(async () => sql`DELETE FROM sessions WHERE id = ${id} AND kind = ${AUTH}`);
+      if (!row || row.kind !== 'auth') return;
       // Signing out anywhere ends the main host's session and every session made from it.
       const made = currentTenant() ? row.parentId : null;
-      if (made) await accounts(async () => sql`DELETE FROM sessions WHERE public_id = ${made} AND meta = ${AUTH_PURPOSE}`);
+      if (made) await accounts(async () => sql`DELETE FROM sessions WHERE public_id = ${made} AND kind = ${AUTH}`);
       const family = made ?? (currentTenant() ? null : row.publicId);
       if (family) await endReached(family);
     },
@@ -547,7 +546,7 @@ export function linkOrigin(): string | null {
 
 
 // A link's token is kept as its hash, in the sessions table like reset tokens, with its own purpose.
-type LinkKind = 'verify' | 'magic';
+type LinkKind = Extract<SessionKind, 'verify' | 'magic'>;
 const LINK_TOKEN = /^[A-Za-z0-9_-]{20,128}$/;
 /** How long a confirmation link lives. */
 const VERIFICATION_TTL_MS = 48 * 60 * 60_000;
@@ -562,14 +561,14 @@ async function createLink(kind: LinkKind, userId: string, ttlMs: number): Promis
   const token = security.randomToken(32);
   const now = new Date();
   await Session.insert({ id: await linkId(kind, token), userId, data: null, createdAt: now, expiresAt: new Date(now.getTime() + ttlMs),
-    meta: { type: kind }, location: null, userAgent: null, ipAddress: null });
+    kind, meta: null, location: null, userAgent: null, ipAddress: null });
   return token;
 }
 
 async function liveLink(kind: LinkKind, token: string): Promise<Session | null> {
   if (!LINK_TOKEN.test(token)) return null;
   const row = await Session.findOne({ where: { id: await linkId(kind, token), expiresAt: MoreThan(new Date()) } });
-  return row && parseMeta(row.meta)?.type === kind ? row : null;
+  return row && row.kind === kind ? row : null;
 }
 
 /** Spend a link: the account's ID for the first request while it is live, null otherwise. */
@@ -760,14 +759,14 @@ async function createPasswordResetToken(email: string, ttlMs = 60 * 60 * 1000): 
   const token = randomToken();
   const now = new Date();
   const expiresAt = new Date(now.getTime() + ttlMs); // one hour, or an invitation's seven days
-  const meta: SessionMeta = { type: 'password_reset' };
   await Session.insert({
     id: token,
     userId: user.id,
     data: null,
     expiresAt,
     createdAt: now,
-    meta,
+    kind: 'password_reset',
+    meta: null,
     location: null,
     userAgent: null,
     ipAddress: null,
@@ -779,7 +778,7 @@ async function consumePasswordResetToken(token: string): Promise<string | null> 
   const row = await Session.findOne({
     where: { id: token, expiresAt: MoreThan(new Date()) },
   });
-  if (!row || parseMeta(row.meta)?.type !== 'password_reset') return null;
+  if (!row || row.kind !== 'password_reset') return null;
   const deleted = await Session.delete({ id: token, expiresAt: MoreThan(new Date()) });
   return deleted.meta.rowsAffected === 1 ? row.userId : null;
 }
@@ -1189,15 +1188,6 @@ export interface SessionInfo {
   ipAddress: string | null;
 }
 
-function parseMeta(raw: Record<string, unknown> | string | null): Record<string, unknown> | null {
-  if (!raw) return null;
-  if (typeof raw === 'object') return raw;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
 
 const PUBLIC_SESSION_REFERENCE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -1215,15 +1205,15 @@ function validSessionReference(row: Session): boolean {
 }
 
 async function sessionWithReference(row: Session, userId: string): Promise<Session | null> {
-  if (row.userId !== userId || parseMeta(row.meta)?.type !== 'auth' || row.expiresAt.getTime() <= Date.now()) return null;
+  if (row.userId !== userId || row.kind !== 'auth' || row.expiresAt.getTime() <= Date.now()) return null;
   if (row.publicId == null) {
     // Conditional assignment and re-read retain one winner across tabs.
     await sql`UPDATE sessions SET public_id = ${crypto.randomUUID()}
       WHERE id = ${row.id} AND user_id = ${userId} AND public_id IS NULL
-        AND meta = ${sql.json({ type: 'auth' })}
+        AND kind = ${AUTH}
         AND expires_at > ${new Date()}`;
     const stored = await Session.findOne({ where: { id: row.id, userId } });
-    if (!stored || parseMeta(stored.meta)?.type !== 'auth' || stored.expiresAt.getTime() <= Date.now()) return null;
+    if (!stored || stored.kind !== 'auth' || stored.expiresAt.getTime() <= Date.now()) return null;
     row = stored;
   }
   if (!validSessionReference(row)) throw new Error('Invalid session management reference.');
@@ -1282,7 +1272,7 @@ export async function revokeSession(c: Context, reference: string): Promise<bool
   const result = await sql`DELETE FROM sessions
     WHERE public_id = ${reference} AND user_id = ${userId} AND id <> ${currentId}
       AND public_id <> ${currentReference}
-      AND meta = ${sql.json({ type: 'auth' })}
+      AND kind = ${AUTH}
       AND expires_at > ${new Date()}`;
   // A session of the main host takes the sessions tenants' hosts made from it.
   if (result.meta.rowsAffected === 1 && !currentTenant()) await endReached(reference);
@@ -1296,7 +1286,7 @@ export async function revokeSessionOf(c: Context, userId: string, reference: str
   if (typeof reference !== 'string' || !PUBLIC_SESSION_REFERENCE.test(reference)) return false;
   const result = await sql`DELETE FROM sessions
     WHERE public_id = ${reference} AND user_id = ${userId} AND id <> ${getCookie(c, SESSION_COOKIE) ?? ''}
-      AND meta = ${sql.json({ type: 'auth' })}
+      AND kind = ${AUTH}
       AND expires_at > ${new Date()}`;
   if (result.meta.rowsAffected === 1 && !currentTenant()) await endReached(reference);
   return result.meta.rowsAffected === 1;
@@ -1307,7 +1297,7 @@ export async function revokeSessionOf(c: Context, userId: string, reference: str
 export async function revokeSessionsOf(c: Context, userId: string): Promise<void> {
   return sessions(async () => {
   await sql`DELETE FROM sessions WHERE user_id = ${userId} AND id <> ${getCookie(c, SESSION_COOKIE) ?? ''}
-    AND meta = ${sql.json({ type: 'auth' })}`;
+    AND kind = ${AUTH}`;
   await endReachedOfUser(userId, getCookie(c, SESSION_COOKIE) ?? '');
   });
 }
@@ -1320,9 +1310,9 @@ export async function revokeAllUserSessions(c: Context, keepCurrent = false): Pr
     const currentReference = await currentSessionReference(userId, currentId);
     await sql`DELETE FROM sessions WHERE user_id = ${userId}
       AND id <> ${currentId} AND (public_id IS NULL OR public_id <> ${currentReference})
-      AND meta = ${sql.json({ type: 'auth' })}`;
+      AND kind = ${AUTH}`;
   } else {
-    await sql`DELETE FROM sessions WHERE user_id = ${userId} AND meta = ${sql.json({ type: 'auth' })}`;
+    await sql`DELETE FROM sessions WHERE user_id = ${userId} AND kind = ${AUTH}`;
   }
   await endReachedOfUser(userId, keepCurrent ? currentId : '');
   });
@@ -1417,15 +1407,15 @@ function oauthUnavailable(c: Context, error: OAuthError): Response {
 
 export const oauthStateStore: OAuthStateStore = {
   async create(record) {
-    await accounts(() => Session.insert({ id: record.key, userId: null, data: null,
-      meta: { type: 'oauth_state', provider: record.provider },
+    await accounts(() => Session.insert({ id: record.key, userId: null, kind: 'oauth_state',
+      data: { provider: record.provider }, meta: null,
       createdAt: new Date(record.createdAt), expiresAt: new Date(record.expiresAt),
       location: null, userAgent: null, ipAddress: null }));
   },
   async consume(key, provider, now) {
     // One conditional write owns callback replay. Never read then delete.
     const result = await accounts(async () => sql`DELETE FROM sessions WHERE id = ${key}
-      AND user_id IS NULL AND meta = ${sql.json({ type: 'oauth_state', provider })}
+      AND user_id IS NULL AND kind = ${'oauth_state' satisfies SessionKind} AND data = ${sql.json({ provider })}
       AND expires_at > ${new Date(Math.max(now, Date.now()))}`);
     return result.meta.rowsAffected === 1;
   },
@@ -1678,7 +1668,7 @@ export async function recoverAccount(code: unknown, email: unknown, clearSecondF
 export async function recentSignIns(limit = 8): Promise<{ userId: string; createdAt: number; userAgent: string | null; ip: string | null }[]> {
   return sessions(async () => {
   const rows = (await Session.find({ where: { expiresAt: MoreThan(new Date()) }, order: { createdAt: 'desc' }, take: Math.min(Math.max(limit, 1), 50) * 3 }))
-    .filter((row) => row.userId && parseMeta(row.meta)?.type === 'auth').slice(0, limit);
+    .filter((row) => row.userId && row.kind === 'auth').slice(0, limit);
   return rows.map((row) => ({ userId: row.userId!, createdAt: row.createdAt.getTime(), userAgent: row.userAgent, ip: row.ipAddress }));
   });
 }

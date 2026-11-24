@@ -73,7 +73,7 @@ async function generatedAuth() {
 const ownerContext = () => ({ cookie: 'CURRENT_PRIVATE_BEARER', get: () => ({ id: 'member' }),
   req: { header: () => undefined, raw: new Request('http://localhost/') } });
 const sessionRow = (overrides = {}) => ({ id: 'PRIVATE_AUTH_BEARER', publicId: crypto.randomUUID(), userId: 'member',
-  createdAt: new Date(Date.now() - 1000), expiresAt: new Date(Date.now() + 60000), meta: { type: 'auth' },
+  createdAt: new Date(Date.now() - 1000), expiresAt: new Date(Date.now() + 60000), kind: 'auth', meta: null,
   location: null, userAgent: null, ipAddress: null, data: { credential: 'PRIVATE_SESSION_DATA' }, ...overrides });
 
 function generatedSessionsPage(files, api) {
@@ -147,8 +147,8 @@ describe('generated auth security', () => {
     const { provider, Session } = await generatedAuth(); const row = sessionRow();
     Session.findOne.mockResolvedValue(row); const captured = await provider.realtime.capture(row.id, row.userId, ownerContext());
     for (const stored of [null, { ...row, expiresAt: new Date(0) }, { ...row, expiresAt: new Date(NaN) },
-      { ...row, createdAt: new Date(Date.now() + 10000) }, { ...row, createdAt: new Date(NaN) }, { ...row, meta: { type: 'password_reset' } },
-      { ...row, meta: { type: 'oauth_state', provider: 'github' } }]) {
+      { ...row, createdAt: new Date(Date.now() + 10000) }, { ...row, createdAt: new Date(NaN) }, { ...row, kind: 'password_reset' },
+      { ...row, kind: 'oauth_state', data: { provider: 'github' } }]) {
       Session.findOne.mockResolvedValue(stored); expect(await provider.realtime.validate(captured, ownerContext())).toBeNull();
     }
     Session.findOne.mockResolvedValue({ ...row, userId: 'another-owner' });
@@ -167,15 +167,16 @@ describe('generated auth security', () => {
     expect(row.publicId).toMatch(/^[0-9a-f-]{36}$/);
     expect(row.publicId).not.toBe(created.session.id);
     expect(row.id).toBe(created.session.id);
-    expect(row.meta).toEqual({ type: 'auth' });
+    expect(row.kind).toBe('auth');
+    expect(row.meta).toBeNull();
     expect(created.headers.get('set-cookie')).not.toContain(row.publicId);
   });
 
   it('lists safe references and excludes credentials, storage data, other owners and token purposes', async () => {
     const { api, Session } = await generatedAuth();
-    const current = sessionRow({ id: ownerContext().cookie, meta: { type: 'auth', credential: 'PRIVATE_META' } });
-    Session.find.mockResolvedValue([current, sessionRow({ meta: { type: 'password_reset' } }),
-      sessionRow({ meta: { type: 'oauth_state' } }), sessionRow({ userId: 'victim' }), sessionRow({ expiresAt: new Date(0) })]);
+    const current = sessionRow({ id: ownerContext().cookie, meta: { credential: 'PRIVATE_META' } });
+    Session.find.mockResolvedValue([current, sessionRow({ kind: 'password_reset' }),
+      sessionRow({ kind: 'oauth_state' }), sessionRow({ userId: 'victim' }), sessionRow({ expiresAt: new Date(0) })]);
     expect(await api.listUserSessions(ownerContext())).toEqual([{ reference: current.publicId,
       createdAt: current.createdAt.toISOString(), expiresAt: current.expiresAt.toISOString(), current: true,
       location: null, userAgent: null, ipAddress: null }]);
@@ -221,7 +222,7 @@ describe('generated auth security', () => {
     const reference = crypto.randomUUID();
     expect(await api.revokeSession(ownerContext(), reference)).toBe(true);
     const current = await Session.findOne();
-    expect(sql.mock.calls[0].slice(1, 6)).toEqual([reference, 'member', ownerContext().cookie, current.publicId, '{"type":"auth"}']);
+    expect(sql.mock.calls[0].slice(1, 6)).toEqual([reference, 'member', ownerContext().cookie, current.publicId, 'auth']);
     sql.mockResolvedValue({ meta: { rowsAffected: 0 } });
     expect(await api.revokeSession(ownerContext(), reference)).toBe(false);
   });
@@ -344,7 +345,7 @@ describe('generated auth security', () => {
     const { api, Session, sql } = await generatedAuth();
     const current = await Session.findOne();
     await api.revokeAllUserSessions(ownerContext(), true);
-    expect(sql.mock.calls[0].slice(1)).toEqual(['member', ownerContext().cookie, current.publicId, '{"type":"auth"}']);
+    expect(sql.mock.calls[0].slice(1)).toEqual(['member', ownerContext().cookie, current.publicId, 'auth']);
     Session.findOne.mockResolvedValue(null);
     sql.mockClear();
     await expect(api.revokeSession(ownerContext(), crypto.randomUUID())).rejects.toThrow('Sign in');
@@ -396,18 +397,18 @@ describe('generated auth security', () => {
   });
   it('does not accept reset tokens as login sessions', async () => {
     const { provider, Session } = await generatedAuth();
-    for (const meta of [{ type: 'password_reset' }, null, '{', { type: 'unknown' }]) {
-      Session.findOne.mockResolvedValue({ userId: 'victim', meta });
+    for (const kind of ['password_reset', 'oauth_state', 'verify', 'unknown', undefined]) {
+      Session.findOne.mockResolvedValue({ userId: 'victim', kind, meta: { type: 'auth' } });
       expect(await provider.validateSessionId('reset-token')).toBeNull();
     }
-    Session.findOne.mockResolvedValue({ id: 'session', userId: 'member', meta: { type: 'auth' },
+    Session.findOne.mockResolvedValue({ id: 'session', userId: 'member', kind: 'auth',
       createdAt: new Date(Date.now() - 1000), expiresAt: new Date(Date.now() + 10000) });
     expect(await provider.validateSessionId('session')).toBe('member');
   });
 
   it('rejects login sessions as reset tokens without deleting them', async () => {
     const { api, Session, User } = await generatedAuth();
-    Session.findOne.mockResolvedValue({ userId: 'member', meta: { type: 'auth' } });
+    Session.findOne.mockResolvedValue({ userId: 'member', kind: 'auth' });
     expect(await api.resetPassword('login-session', 'new-password')).toBe(false);
     expect(Session.delete).not.toHaveBeenCalled();
     expect(User.update).not.toHaveBeenCalled();
@@ -415,7 +416,7 @@ describe('generated auth security', () => {
 
   it('allows only one reset when the same token is consumed concurrently and revokes sessions', async () => {
     const { api, Session, User } = await generatedAuth();
-    Session.findOne.mockResolvedValue({ userId: 'member', meta: { type: 'password_reset' } });
+    Session.findOne.mockResolvedValue({ userId: 'member', kind: 'password_reset' });
     Session.delete.mockResolvedValueOnce({ meta: { rowsAffected: 1 } }).mockResolvedValueOnce({ meta: { rowsAffected: 0 } });
     const results = await Promise.all([api.resetPassword('reset', 'password-one'), api.resetPassword('reset', 'password-two')]);
     expect(results.sort()).toEqual([false, true]);

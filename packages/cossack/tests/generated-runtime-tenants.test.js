@@ -52,7 +52,7 @@ async function tenants(database) {
     expect(await acme.page('/dashboard/users')).toContain(admin.email);
     // A tenant keeps its sessions in its own database: the main one has only the main host's.
     if (database === 'sqlite') {
-      const count = file => { const db = new DatabaseSync(path.join(root, file), { readOnly: true }); try { return db.prepare("SELECT COUNT(*) AS total FROM sessions WHERE meta LIKE '%auth%'").get().total; } finally { db.close(); } };
+      const count = file => { const db = new DatabaseSync(path.join(root, file), { readOnly: true }); try { return db.prepare("SELECT COUNT(*) AS total FROM sessions WHERE kind = 'auth'").get().total; } finally { db.close(); } };
       expect([count('database.sqlite'), count('tenants/acme.sqlite')]).toEqual([1, 1]);
     }
     // Tenants are managed on the main host only.

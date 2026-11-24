@@ -11,7 +11,11 @@ import {
 } from '@cossackframework/database';
 import { User } from './User';
 
+/** What a row of `sessions` is: a sign-in session, or a single-use token kept beside them. */
+export type SessionKind = 'auth' | 'password_reset' | 'verify' | 'magic' | 'oauth_state';
+
 @Entity({ tableName: 'sessions' })
+@Index('sessions_user_id_kind', ['userId', 'kind'])
 export class Session extends BaseEntity {
   @PrimaryColumn({ type: 'varchar', name: 'id', length: 191 })
   declare id: string;
@@ -24,9 +28,14 @@ export class Session extends BaseEntity {
   @Column({ type: 'varchar', name: 'user_id', length: 191, nullable: true })
   declare userId: string | null;
 
+  @Column({ type: 'varchar', name: 'kind', length: 32 })
+  declare kind: SessionKind;
+
+  /** The framework's own data for the row, such as the provider of an OAuth state. */
   @Column({ type: 'json', name: 'data', nullable: true })
   declare data: Record<string, unknown> | null;
 
+  /** The project's own data about the session. The framework does not read it. */
   @Column({ type: 'json', name: 'meta', nullable: true })
   declare meta: Record<string, unknown> | null;
 

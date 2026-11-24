@@ -28,7 +28,7 @@ it('preserves applied callback definitions and data while planning/applying only
       const oldRunner = new database.MigrationRunner(orm, legacy);
       await oldRunner.up();
       const history = await oldRunner.applied({ readOnly: true });
-      await orm.executeFragment(orm.sql.fragment`INSERT INTO sessions (id, data, meta, expires_at) VALUES (${'existing-token'}, ${'{"cart":2}'}, ${'{"type":"auth"}'}, ${'2099-01-01T00:00:00.000Z'})`, 'insert');
+      await orm.executeFragment(orm.sql.fragment`INSERT INTO sessions (id, kind, data, meta, expires_at) VALUES (${'existing-token'}, ${'auth'}, ${'{"cart":2}'}, ${'{"plan":"pro"}'}, ${'2099-01-01T00:00:00.000Z'})`, 'insert');
       const runner = new database.MigrationRunner(orm, [...legacy, pending]);
       const plan = await runner.plan();
       expect(plan).toHaveLength(1);
@@ -36,7 +36,7 @@ it('preserves applied callback definitions and data while planning/applying only
       expect((await orm.executeFragment(orm.sql.unsafe("SELECT name FROM sqlite_master WHERE name = 'tenants'"), 'select')).rows).toEqual([]);
       expect(await runner.applyPlan(plan)).toEqual([pending.name]);
       expect((await runner.applied({ readOnly: true })).filter(row => row.name !== pending.name)).toEqual(history);
-      expect((await orm.executeFragment(orm.sql.unsafe('SELECT id, data, meta, public_id FROM sessions'), 'select')).rows).toEqual([{ id: 'existing-token', data: '{"cart":2}', meta: '{"type":"auth"}', public_id: null }]);
+      expect((await orm.executeFragment(orm.sql.unsafe('SELECT id, kind, data, meta, public_id FROM sessions'), 'select')).rows).toEqual([{ id: 'existing-token', kind: 'auth', data: '{"cart":2}', meta: '{"plan":"pro"}', public_id: null }]);
       expect((await orm.executeFragment(orm.sql.unsafe("SELECT name FROM sqlite_master WHERE name = 'tenants'"), 'select')).rows).toEqual([{ name: 'tenants' }]);
       expect((await runner.status({ readOnly: true })).every(row => row.state === 'applied')).toBe(true);
       expect(await runner.plan()).toEqual([]);

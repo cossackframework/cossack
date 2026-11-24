@@ -81,7 +81,7 @@ Built 2026-11-20, second slice: the rest of the features that are not about site
   confirmation, an administrator's approval, a default role. Accounts have a `status`
   (in `0001_create_users`); only `active` accounts sign in or keep a session.
 - **Links**: `/auth/verify` and `/auth/magic`. A link's token is kept as its hash, in the
-  sessions table with its own purpose, and is spent in one conditional delete.
+  sessions table under its own `kind`, and is spent in one conditional delete.
 - **Users → Registrations** (`/dashboard/users/registrations`): approve or delete. The CMS
   gets the same page from the shell, on three functions its `auth.ts` now exports too.
 - **Application passwords** (`services/api-tokens.ts`, migration `0008_create_api_tokens`),

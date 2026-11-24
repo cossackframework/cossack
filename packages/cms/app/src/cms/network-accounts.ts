@@ -43,12 +43,11 @@ export interface NetworkAccount {
     networkRole: typeof NETWORK_ADMIN | null; createdAt: number; lastSignInAt: number | null;
 }
 
-const AUTH_PURPOSE = sql.json({ type: 'auth' });
 
 async function shaped(users: readonly User[]): Promise<NetworkAccount[]> {
     if (!users.length) return [];
     const ids = users.map(user => user.id);
-    const signIns = await sql<{ userId: string; at: string | null }>`SELECT user_id AS userId, MAX(created_at) AS at FROM sessions WHERE user_id IN (${ids}) AND meta = ${AUTH_PURPOSE} GROUP BY user_id`;
+    const signIns = await sql<{ userId: string; at: string | null }>`SELECT user_id AS userId, MAX(created_at) AS at FROM sessions WHERE user_id IN (${ids}) AND kind = 'auth' GROUP BY user_id`;
     const last = new Map(signIns.rows.map(row => [row.userId, row.at ? new Date(row.at).getTime() : null]));
     return users.map(user => ({ id: user.id, email: user.email, name: user.name ?? '', status: user.status === 'active' ? 'active' as const : 'disabled' as const,
         networkRole: user.networkAdmin ? NETWORK_ADMIN : null, createdAt: user.createdAt.getTime(), lastSignInAt: last.get(user.id) ?? null }));

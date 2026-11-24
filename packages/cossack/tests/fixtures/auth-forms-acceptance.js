@@ -29,7 +29,7 @@ export const POST = async (c: Context) => {
     const user = await User.findOne({ where: { email } });
     const token = crypto.randomUUID();
     await Session.insert({ id: token, userId: user!.id, publicId: null, data: null,
-      meta: { type: 'password_reset' }, createdAt: new Date(),
+      kind: 'password_reset', meta: null, createdAt: new Date(),
       expiresAt: new Date(operation === 'reset' ? Date.now() + 3600000 : 0),
       location: null, userAgent: null, ipAddress: null });
     return c.json({ token });

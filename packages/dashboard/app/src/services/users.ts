@@ -93,7 +93,7 @@ async function lastSignIns(userIds: readonly string[]): Promise<Map<string, stri
   const rows = (await sql<{ userId: string; lastSignedInAt: string | null }>`
     SELECT user_id AS userId, MAX(created_at) AS lastSignedInAt
     FROM sessions
-    WHERE user_id IN (${userIds}) AND meta = ${sql.json({ type: 'auth' })}
+    WHERE user_id IN (${userIds}) AND kind = 'auth'
     GROUP BY user_id
   `).rows;
   const times = new Map<string, string>();
@@ -252,7 +252,7 @@ export async function setUserStatus(id: string, status: 'active' | 'disabled'): 
     if (!currentTenant()) await requireAnotherNetworkAdmin(id, 'disabled');
   }
   await User.update({ id }, { status });
-  if (status === 'disabled') await sql`DELETE FROM sessions WHERE user_id = ${id} AND meta = ${sql.json({ type: 'auth' })}`;
+  if (status === 'disabled') await sql`DELETE FROM sessions WHERE user_id = ${id} AND kind = 'auth'`;
 }
 
 export async function changeUserPassword(id: string, newPassword: string): Promise<void> {

@@ -61,6 +61,10 @@ describe.each(targets)('account migrations on $name', target => {
         await orm.executeFragment(sql.fragment`INSERT INTO roles (id, name, permissions, created_at) VALUES (${'r1'}, ${'editor'}, ${sql.json(['posts.read', 'posts.write'])}, ${'2026-01-01T00:00:00.000Z'})`, 'insert');
         const swapped = await orm.executeFragment(sql.fragment`UPDATE roles SET permissions = ${sql.json(['posts.read'])} WHERE id = ${'r1'} AND permissions = ${sql.json(['posts.read', 'posts.write'])}`, 'update');
         expect(swapped.meta.rowsAffected).toBe(1);
+        // A session's purpose is its `kind`, so the project's own `meta` does not hide it from the sign-in code.
+        await orm.executeFragment(sql.fragment`INSERT INTO sessions (id, user_id, kind, meta, expires_at) VALUES (${'s1'}, ${'u1'}, ${'auth'}, ${sql.json({ device: 'ipad' })}, ${'2099-01-01T00:00:00.000Z'})`, 'insert');
+        await orm.executeFragment(sql.fragment`INSERT INTO sessions (id, user_id, kind, expires_at) VALUES (${'s2'}, ${'u1'}, ${'password_reset'}, ${'2099-01-01T00:00:00.000Z'})`, 'insert');
+        expect((await orm.executeFragment(sql.fragment`DELETE FROM sessions WHERE user_id = ${'u1'} AND kind = ${'auth'}`, 'delete')).meta.rowsAffected).toBe(1);
         expect(await runner.down({ count: all.length })).toHaveLength(all.length);
       });
     } finally { await orm.close(); }

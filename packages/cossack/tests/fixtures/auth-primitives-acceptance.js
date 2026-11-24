@@ -50,7 +50,7 @@ export const POST = defineApi({
     if (operation === 'reset-token') {
       const user = await User.findOne({ where: { email } });
       const id = crypto.randomUUID();
-      await Session.insert({ id, userId: user!.id, data: null, meta: { type: 'password_reset' },
+      await Session.insert({ id, userId: user!.id, kind: 'password_reset', data: null, meta: null,
         createdAt: new Date(), expiresAt: new Date(Date.now() + 3600000), location: null, userAgent: null, ipAddress: null });
       c.header('Set-Cookie', 'session_id=' + id + '; Path=/; HttpOnly; Secure; SameSite=Lax');
       return c.json({ accepted: true });
