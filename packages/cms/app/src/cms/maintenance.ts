@@ -21,7 +21,6 @@ export async function runNetworkMaintenance(network: CmsNetwork, options: { warm
     const updates = updateSettingsOf(network);
     if (updates?.check && await network.main.installed().catch(() => false)) await refreshUpdateCheck(network, updates).catch(error => console.error('[cms] the update check failed', error));
     if (!network.multisite || !(await network.main.installed())) return;
-    await network.handoffs.purgeExpired();
     // Sites deleted 30 days ago lose their database and media.
     await network.purgeDeleted().catch(error => console.error('[cms] could not purge deleted sites', error));
     // Off, the network serves its main site only.
@@ -61,12 +60,8 @@ export async function runMaintenance(cms: CmsHost, options: { warm?: boolean } =
         () => cms.webhooks.dispatch({ limit: 20 }),
         () => cms.outbox.prune(),
         () => cms.webhooks.prune(),
-        () => cms.sessions.purgeExpired(),
-        () => cms.oauthStates.purgeExpired(Date.now()),
-        () => cms.accounts.purgeExpiredResets(),
         () => cms.previews.purgeExpired(),
-        () => cms.security.purgeExpired(),
-        () => cms.security.purgeAttempts(),
+        () => cms.attempts.purge(),
         () => cms.autosaves.purge(),
         () => cms.drafts.purge(),
         () => purgeOrphanNotes(cms),

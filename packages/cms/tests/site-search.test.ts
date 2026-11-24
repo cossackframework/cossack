@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { contentModule, createCMS, DEFAULT_ROLES, SITE_SEARCH, type CmsHost, type Principal } from '../src/server/index';
+import { contentModule, createCMS, DEFAULT_ROLES, SITE_SEARCH, type CmsHost, type Principal, memoryPeople } from '../src/server/index';
 import type { RomeDB } from '@cossackframework/romedb';
 import { romedbService, live } from './helpers';
 
@@ -21,7 +21,7 @@ describe.skipIf(!live)('site search index', () => {
 
     beforeAll(async () => {
         db = service.database();
-        cms = createCMS({ db, modules: [contentModule] });
+        cms = createCMS({ people: memoryPeople(),  db, modules: [contentModule] });
         expect((await cms.migrate()).failed).toBeUndefined();
         for (const role of DEFAULT_ROLES) await cms.users.defineRole({ ...role, permissions: [...role.permissions] });
         editor = (await cms.users.principal((await cms.users.create({ email: 'editor@example.com', name: 'Editor', roles: ['editor'] })).id))!;

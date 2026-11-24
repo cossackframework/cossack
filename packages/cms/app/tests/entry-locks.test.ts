@@ -7,7 +7,7 @@ import { apiEntries } from '../src/cms/content-api';
 const record = (fields: Record<string, unknown>): RecordShape => ({ id: 'p1', rev: 1, createdAt: 1, updatedAt: 1, owner: 'author-1', title: 'Members news', slug: 'members-news', status: 'published', ...fields }) as RecordShape;
 const resource = collectionResource({ ...posts, fields: { ...posts.fields, subtitle: { kind: 'string', label: 'Subtitle' } } });
 const host = (editor: boolean) => ({
-    resource: () => ({ canUpdate: () => editor }),
+    resource: () => ({ canUpdate: async () => editor, editable: async (records: { id: string }[]) => new Set(editor ? records.map(entry => entry.id) : []) }),
     resourceById: () => resource,
     entryUrls: async (_collection: unknown, records: readonly RecordShape[]) => new Map(records.map(entry => [entry.id, `/posts/${String(entry.slug)}`])),
 }) as unknown as CmsHost;

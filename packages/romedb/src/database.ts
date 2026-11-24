@@ -75,6 +75,14 @@ export interface RomeDBOptions {
     sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
     /** Reconcilers by pending write kind, used when a write left the 64-request receipt window. */
     reconcilers?: { [kind: string]: Reconciler };
+    /**
+     * The signal of the request a call is made for, used when the call passes no `signal` of its
+     * own. When it aborts, the request's calls end and give their places back. On Workers a call
+     * whose request ends first never settles and keeps its place for good, so pass a signal that
+     * aborts when the visitor leaves or the request fails, such as the CMS's (see the package
+     * README, "Requests that end early").
+     */
+    requestSignal?: () => AbortSignal | undefined;
 }
 
 /**
@@ -170,6 +178,15 @@ export class UncertainWriteError extends Error {
     }
 }
 
+/**
+ * The client refused a call for lack of places: it allows 32 calls (and 2 MiB of request
+ * bodies) in flight. Nothing was sent, and it passes once earlier calls end, so it says
+ * nothing about the call's size. The binding waits and tries again before it gives up.
+ */
+export function isClientFull(error: unknown): boolean {
+    return error instanceof ClientError && error.code === 'RDB_LIMIT' && (error.limit === 'client-requests' || error.limit === 'client-bytes');
+}
+
 const DEFAULT_LIMITS: RomeDBWorkLimits = {
     read: { rowsRead: 50_000, vmSteps: 2_000_000 },
     write: { rowsRead: 50_000, rowMutations: 1_000, vmSteps: 2_000_000 },
@@ -177,7 +194,11 @@ const DEFAULT_LIMITS: RomeDBWorkLimits = {
 
 /**
  * One database binding per isolate or process. Calls are request-scoped through their
- * options: pass the request's AbortSignal and explicit budgets.
+ * options: pass the request's AbortSignal (or `requestSignal`) and explicit budgets.
+ *
+ * A client that refuses a call for lack of places is backpressure: the call waits and tries
+ * again, like a 503. The client gives back the place of a call past its deadline itself, so a
+ * call that never settles (on Workers, one whose request ended first) holds its place no longer.
  */
 export class RomeDB {
     readonly url: string;
@@ -237,16 +258,17 @@ export class RomeDB {
 
     /** Fresh snapshot read with bounded backpressure retries. Reads are always safe to retry. */
     async read(statements: Statement[], options: ReadCallOptions = {}): Promise<BatchResult> {
-        const client = await this.#connection();
-        const call = { ...options, workLimits: options.workLimits ?? this.#limits.read };
+        const scoped = this.#scoped(options);
+        const call = { ...scoped, workLimits: scoped.workLimits ?? this.#limits.read };
         for (let attempt = 1; ; attempt++) {
+            const client = await this.#connection();
             try {
                 return await client.read(clientStatements(statements), call);
             } catch (error) {
                 if (tooLarge(error)) throw new RequestTooLargeError(error);
-                const delay = this.#retryDelay(error, attempt, options.signal);
+                const delay = this.#retryDelay(error, attempt, call.signal);
                 if (delay === undefined) throw error;
-                await this.#sleep(delay, options.signal);
+                await this.#wait(delay, call.signal);
             }
         }
     }
@@ -256,19 +278,30 @@ export class RomeDB {
      * recovered with the same request ID and body, never with a replacement write.
      */
     async write(statements: Statement[], options: WriteCallOptions = {}): Promise<BatchResult> {
-        const retries = options.retryConflicts ?? 0;
-        for (let attempt = 0; ; attempt++) {
+        const call = this.#scoped(options);
+        const retries = call.retryConflicts ?? 0;
+        let conflicts = 0;
+        let refusals = 0;
+        for (;;) {
+            const client = await this.#connection();
             try {
-                return await this.#writeOnce(statements, attempt === 0 ? options : { ...options, requestId: undefined });
+                // A batch refused for lack of places was never sent: it keeps its request ID.
+                return await this.#writeOnce(client, statements, conflicts === 0 ? call : { ...call, requestId: undefined });
             } catch (error) {
-                if (attempt >= retries || !(error instanceof ClientError) || error.outcome !== 'rolled-back' || error.code !== 'RDB_WRITE_CONFLICT') throw error;
-                await this.#sleep(Math.floor(Math.random() * 10 * (attempt + 1)), options.signal).catch(() => {});
+                if (isClientFull(error)) {
+                    const delay = this.#retryDelay(error, ++refusals, call.signal);
+                    if (delay === undefined) throw error;
+                    await this.#wait(delay, call.signal);
+                    continue;
+                }
+                if (conflicts >= retries || !(error instanceof ClientError) || error.outcome !== 'rolled-back' || error.code !== 'RDB_WRITE_CONFLICT') throw error;
+                conflicts++;
+                await this.#sleep(Math.floor(Math.random() * 10 * conflicts), call.signal).catch(() => {});
             }
         }
     }
 
-    async #writeOnce(statements: Statement[], options: WriteCallOptions): Promise<BatchResult> {
-        const client = await this.#connection();
+    async #writeOnce(client: DatabaseClient, statements: Statement[], options: WriteCallOptions): Promise<BatchResult> {
         if (options.afterSequence === undefined && !client.sequenceKnown) await this.preflight(options);
         let request: PreparedWrite;
         try {
@@ -416,6 +449,22 @@ export class RomeDB {
         if (client) await (await client.catch(() => undefined))?.close();
     }
 
+    /** Wait before a call tries again; a signal that aborts meanwhile ends the call, unsent. */
+    async #wait(ms: number, signal: AbortSignal | undefined): Promise<void> {
+        try { await this.#sleep(ms, signal); }
+        catch (cause) {
+            if (signal?.aborted) throw new ClientError('RDB_CANCELLED', 'Request cancelled before dispatch', 'not-sent', { cause });
+            throw cause;
+        }
+    }
+
+    /** The call's own signal, or else the request's. */
+    #scoped<T extends RequestOptions>(options: T): T {
+        if (options.signal !== undefined) return options;
+        const signal = this.#options.requestSignal?.();
+        return signal ? { ...options, signal } : options;
+    }
+
     #connection(): Promise<DatabaseClient> {
         if (!this.#client) {
             const { url, token, timeoutMs, fetch } = this.#options;
@@ -425,17 +474,19 @@ export class RomeDB {
                 ...(timeoutMs === undefined ? {} : { timeoutMs }),
                 ...(fetch === undefined ? {} : { fetch }),
             }));
-            this.#client = open().then(async client => {
-                if (cloud(client)) return client;
-                // Files and local services answer details at once; check the engine right away.
-                try {
-                    const info = await client.info();
-                    checkEngine(info.engineVersion, this.#required);
-                    this.#preflight = Promise.resolve(info);
-                } catch (error) { await client.close(); throw error; }
+            const opening: Promise<DatabaseClient> = open().then(async client => {
+                if (!cloud(client)) {
+                    // Files and local services answer details at once; check the engine right away.
+                    try {
+                        const info = await client.info();
+                        checkEngine(info.engineVersion, this.#required);
+                        if (this.#client === opening) this.#preflight = Promise.resolve(info);
+                    } catch (error) { await client.close(); throw error; }
+                }
                 return client;
             });
-            this.#client.catch(() => { this.#client = undefined; this.#preflight = undefined; });
+            this.#client = opening;
+            opening.catch(() => { if (this.#client === opening) { this.#client = undefined; this.#preflight = undefined; } });
         }
         return this.#client;
     }
@@ -443,6 +494,8 @@ export class RomeDB {
     #retryDelay(error: unknown, attempt: number, signal: AbortSignal | undefined, writing = false): number | undefined {
         if (attempt >= this.#attempts || signal?.aborted || !(error instanceof ClientError)) return undefined;
         if (error.code === 'RDB_CANCELLED' || error.code === 'RDB_AUTH' || error.code === 'RDB_FORBIDDEN' || error.code === 'RDB_CLOSED') return undefined;
+        // The client's own places are full: wait for calls of other requests to settle.
+        if (isClientFull(error)) return Math.min(this.#maxDelay, 25 * 2 ** attempt) + Math.floor(Math.random() * 50);
         const backpressure = error.status === 503 || error.status === 429;
         if (!backpressure && !(writing && error.outcome === 'unknown') && !(error.outcome === 'read-failed' && (error.code === 'RDB_TRANSPORT' || error.status === undefined))) return undefined;
         const base = error.retryAfterMs ?? 50 * 2 ** (attempt - 1);

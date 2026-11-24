@@ -205,17 +205,11 @@ describe.skipIf(!live)('RomeDB limits', () => {
         for (let i = 0; i < 2 * count; i++) ids.push((await posts.create({ title: `Budgetword ${i}`, content: richContent(sections), status: 'published' }, { principal: admin })).id);
         expect(await posts.search('Budgetword', { limit: 2 * count }, { principal: admin })).toHaveLength(2 * count);
         expect((await posts.getMany(ids, { principal: admin })).size).toBe(2 * count);
-        await insert(i => ({ rql: "INSERT INTO cms_users (id, email, name, avatar, status, created_at, updated_at, last_sign_in_at, meta, slug) VALUES ($id, $email, 'Wide', NULL, 'active', $at, $at, NULL, $meta, NULL)",
-            params: { $id: `wide-user-${i}`, $email: `wide${i}@example.com`, $meta: JSON.stringify({ bio: text(i) }), $at: clock + i } }));
-        expect((await cms.users.getMany(Array.from({ length: count }, (_, i) => `wide-user-${i}`))).size).toBe(count);
-        // Roles with long permission lists: every user holding one reads it once, and the roles list pages.
-        const permissions = (i: number) => JSON.stringify(Array.from({ length: Math.ceil(size / 40) }, (_, j) => `cms/wide-${i}-${String(j).padStart(4, '0')}:read`));
-        await insert(i => ({ rql: 'INSERT INTO cms_roles (id, name, permissions, created_at) VALUES ($id, $name, $permissions, $at)',
-            params: { $id: `wide-role-${i}`, $name: `Wide role ${i}`, $permissions: permissions(i), $at: clock + i } }));
-        await insert(i => ({ rql: 'INSERT INTO cms_user_roles (user_id, role_id) VALUES ($user, $role)', params: { $user: `wide-user-${i}`, $role: 'wide-role-0' } }));
-        const holders = await cms.users.getMany(Array.from({ length: count }, (_, i) => `wide-user-${i}`));
-        expect([...holders.values()].every(user => user.assignments.some(role => role.id === 'wide-role-0'))).toBe(true);
-        expect((await cms.users.roles({ limit: 200 })).filter(role => role.id.startsWith('wide-role-'))).toHaveLength(count);
+        // Users are the application's; their field values are documents the CMS reads with them.
+        const wide: string[] = [];
+        for (let i = 0; i < count; i++) wide.push((await cms.users.create({ email: `wide${i}@example.com`, name: 'Wide' })).id);
+        for (const [i, id] of wide.entries()) await cms.db.write(cms.userFields.save(id, { bio: text(i) }, null, crypto.randomUUID()) as never);
+        expect((await cms.users.getMany(wide)).size).toBe(count);
         await insert(i => ({ rql: "INSERT INTO cms_comments (id, resource, record_id, parent_id, user_id, author_name, author_email, author_url, content, status, created_at, updated_at) VALUES ($id, 'cms/posts', $record, NULL, NULL, 'Spammer', 'spam@example.com', '', $content, 'pending', $at, $at)",
             params: { $id: `pending-${i}`, $record: ids[0]!, $content: text(i), $at: clock + i } }));
         expect((await cms.comments.list({ status: 'pending', limit: count })).items).toHaveLength(count);
@@ -226,7 +220,7 @@ describe.skipIf(!live)('RomeDB limits', () => {
         await insert(i => ({ rql: 'INSERT INTO cms_areas (name, blocks, revision, updated_at) VALUES ($name, $blocks, 1, $at)',
             params: { $name: `wide-area-${i}`, $blocks: JSON.stringify([{ _id: `p${i}`, type: 'core/paragraph', data: { text: text(i) } }]), $at: clock + i } }));
         expect((await cms.areas.get('wide-area-0')).blocks).toHaveLength(1);
-        await insert(i => ({ rql: "INSERT INTO cms_terms (id, taxonomy, name, slug, description, parent_id, path, depth, created_at, updated_at, icon, meta) VALUES ($id, 'categories', $name, $slug, $description, NULL, $path, 0, $at, $at, '', '{}')",
+        await insert(i => ({ rql: "INSERT INTO cms_terms (id, taxonomy, name, slug, description, parent_id, path, depth, created_at, updated_at, icon) VALUES ($id, 'categories', $name, $slug, $description, NULL, $path, 0, $at, $at, '')",
             params: { $id: `wide-term-${i}`, $name: `Wide ${i}`, $slug: `wide-${i}`, $description: text(i), $path: `/wide-term-${i}`, $at: clock + i } }));
         expect((await cms.taxonomies.list('categories', { search: 'Wide', limit: count })).items).toHaveLength(count);
         expect((await cms.taxonomies.getMany(Array.from({ length: count }, (_, i) => `wide-term-${i}`))).size).toBe(count);
@@ -236,14 +230,10 @@ describe.skipIf(!live)('RomeDB limits', () => {
         await cms.db.write([{ rql: 'CREATE TABLE limits_noise (id INTEGER PRIMARY KEY, at INTEGER NOT NULL)' }]);
         let done = false;
         let next = 0;
-        // Two writers, as sessions, drafts and the outbox write on a busy site: about 80 writes a
-        // second. (Back to back with no pause, they hold off a migration's DDL for RomeDB's whole
-        // 15-second deadline: the service lock lets writers pass a waiting schema change.)
+        // Two writers, as sessions, drafts and the outbox write on a busy site, back to back. Since
+        // RomeDB 0.2.27 a waiting schema change goes before writes that arrive after it.
         const noise = Promise.all([0, 1].map(async () => {
-            while (!done) {
-                await cms.db.write([{ rql: 'INSERT INTO limits_noise (id, at) VALUES ($id, $at)', params: { $id: ++next, $at: Date.now() } }]);
-                await new Promise(resolve => setTimeout(resolve, 25));
-            }
+            while (!done) await cms.db.write([{ rql: 'INSERT INTO limits_noise (id, at) VALUES ($id, $at)', params: { $id: ++next, $at: Date.now() } }]);
         }));
         try {
             for (let i = 0; i < 40; i++) {

@@ -239,7 +239,7 @@ export default class MenuEditor extends Cossack {
         } else {
             const collection = cms.collection(source);
             const where = collection.publishable === false ? {} : { where: { status: 'published' } };
-            const records = query.trim() ? openMatches(cms, `cms/${source}`, await cms.resource(`cms/${source}`).search(query.slice(0, 100), { limit: 30, ...where }, { principal }).catch(() => []), principal)
+            const records = query.trim() ? await openMatches(cms, `cms/${source}`, await cms.resource(`cms/${source}`).search(query.slice(0, 100), { limit: 30, ...where }, { principal }).catch(() => []), principal)
                 : (await cms.resource(`cms/${source}`).list({ ...where, limit: 30 }, { principal })).records;
             entries = records.map(record => ({ id: record.id, title: recordTitle(record, 'title'), depth: 0 }));
         }

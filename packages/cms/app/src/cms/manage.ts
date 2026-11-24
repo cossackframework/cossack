@@ -10,10 +10,11 @@ import {
     BLOCK_ID, checkNoteRange, CmsError, CONTENT_STATUSES, findBlock, hasPermission, indexedRowField, isNetworkAdmin, MAIN_SITE, MENU_LIMITS, menuItemId, noteThreads, PERMISSIONS, recordSchema, recordTitle, richTextBlocks,
     ANONYMOUS, mediaKind, mediaUrl, type MediaKind, type SnippetPart,
     type Block, type FieldFilter, type MenuItem, type MenuShape, type Note, type NoteThread, type Principal, type RecordShape, type RichTextDoc, redirectProblems, type Redirect, type RedirectStatus, type FieldDeclaration, WEBHOOK_EVENTS, COMMENT_STATUSES, type Webhook, type CommentShape, type CommentStatus } from '@cossackframework/cms';
-import { networkSite, type ApiToken, type CmsHost, type NetworkSite, type SiteRecord } from '@cossackframework/cms/server';
-import { createApiToken, listApiTokens, manageableHere, NETWORK_ACCOUNT_LOCKED, revokeApiToken, type PublicUser } from '../auth';
+import { networkSite, type CmsHost, type NetworkSite, type SiteRecord } from '@cossackframework/cms/server';
+import { createApiToken, listApiTokens, revokeApiToken, type ApiToken, type PublicUser } from '../auth';
+import { userOfPrincipal } from './actor';
 import { canAssignRoles, canGrantRoles, canManageUser } from '../services/rbac';
-import { changeUserPassword, createUser, deleteUser, getUser, listUsers, syncUserRoles, updateUser, type UserDetail, type UserSummary } from '../services/users';
+import { changeUserPassword, createUser, deleteUser, getUser, listUsers, setUserStatus, syncUserRoles, updateUser, type UserDetail, type UserSummary } from '../services/users';
 import { apiEntries, apiPatterns, withheldFields, type ApiEntry } from './content-api';
 import { entryLock } from './site';
 import { routeResource } from './content';
@@ -48,7 +49,7 @@ function allowed(c: Context, permission: string, refusal: string): Principal & {
 /** The signed-in user as the RBAC helpers see them; a token request has no `user` on the context. */
 function actor(c: Context): PublicUser {
     const principal = signedIn(c);
-    return (c.get('user') as PublicUser | undefined) ?? { id: principal.id, email: '', name: '', avatar: null, meta: null, roles: [], principal };
+    return (c.get('user') as PublicUser | undefined) ?? userOfPrincipal(principal);
 }
 
 function integer(value: unknown, fallback: number, min: number, max: number): number {
@@ -247,8 +248,9 @@ export async function entriesList(c: Context, name: string, query: Query): Promi
     if (q) {
         // A locked entry the reader may not open stays out: that it matched would tell what its content says.
         const signedIn = principal.kind === 'user';
-        const records = (await repository.search(q, { limit: perPage, where }, { principal }))
-            .filter(record => !entryLock(record, { editor: repository.canUpdate(record, principal), signedIn, roles: signedIn ? principal.roles : [] }));
+        const found = await repository.search(q, { limit: perPage, where }, { principal });
+        const editable = await repository.editable(found, { principal });
+        const records = found.filter(record => !entryLock(record, { editor: editable.has(record.id), signedIn, roles: signedIn ? principal.roles : [] }));
         return { items: await apiEntries(cms, collection, records, html, principal), page: 1, pages: 1, total: records.length };
     }
     // `sort=publishedAt:asc`, `sort=title`: a scalar field of the collection; the default follows what is listed.
@@ -275,7 +277,8 @@ export async function entriesList(c: Context, name: string, query: Query): Promi
         for (let offset = 0; ; offset += LOCKED_SCAN_BATCH) {
             if (offset >= LOCKED_SCAN_LIMIT) { truncated = true; break; }
             const batch = await repository.list({ where, order, limit: LOCKED_SCAN_BATCH, offset }, { principal });
-            open.push(...batch.records.filter(record => !entryLock(record, { editor: repository.canUpdate(record, principal), signedIn: true, roles: principal.roles })));
+            const editable = await repository.editable(batch.records, { principal });
+            open.push(...batch.records.filter(record => !entryLock(record, { editor: editable.has(record.id), signedIn: true, roles: principal.roles })));
             if (!batch.more && !batch.next) break;
         }
         const pages = Math.max(1, Math.ceil(open.length / perPage));
@@ -519,7 +522,7 @@ export async function notesForEntry(c: Context, name: string, id: string, status
     const principal = c.get('principal');
     const record = await entryOf(cms, resource, id, principal);
     // Notes are the editors' discussion: publishing an entry does not publish them.
-    if (!cms.resource(resource).canUpdate(record, principal)) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to read notes on this entry.');
+    if (!await cms.resource(resource).canUpdate(record, { principal })) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to read notes on this entry.');
     if (status !== undefined && status !== '' && status !== 'open' && status !== 'resolved') throw new CmsError('CMS_VALIDATION', 'status is open or resolved.');
     return { threads: noteThreads(await cms.notes.forEntry(resource, id)).filter(thread => !status || thread.root.status === status) };
 }
@@ -536,7 +539,7 @@ export async function noteAdd(c: Context, name: string, id: string, input: Body)
     const resource = `cms/${collection.name}`;
     const repository = cms.resource(resource);
     const record = await entryOf(cms, resource, id, principal);
-    if (!repository.canUpdate(record, principal)) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to leave notes on this entry.');
+    if (!await repository.canUpdate(record, { principal })) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to leave notes on this entry.');
     const author = await cms.users.get(principal.id).catch(() => null);
     // Its webhooks and emails follow from the outbox, queued with the note.
     const note = await cms.notes.create({
@@ -556,7 +559,7 @@ async function editableNote(c: Context, noteId: string): Promise<{ note: Note; r
     const repository = cms.resource(note.resource);
     const record = await repository.get(note.recordId, { principal });
     if (!record) throw new CmsError('CMS_NOT_FOUND', 'Note not found.');
-    if (!repository.canUpdate(record, principal)) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to change notes on this entry.');
+    if (!await repository.canUpdate(record, { principal })) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to change notes on this entry.');
     return { note, record, principal };
 }
 
@@ -602,7 +605,7 @@ export async function notesAcross(c: Context, status: string | undefined, limit:
         if (owner !== 'cms' || !resourceName) continue;
         let record: RecordShape | null;
         try { record = await cms.resource(entry.resource).get(entry.recordId, { principal }); } catch { continue; }
-        if (!record || !cms.resource(entry.resource).canUpdate(record, principal)) continue;
+        if (!record || !await cms.resource(entry.resource).canUpdate(record, { principal })) continue;
         const threads = noteThreads(await cms.notes.forEntry(entry.resource, entry.recordId)).filter(thread => !status || thread.root.status === status);
         if (!threads.length) continue;
         items.push({ collection: resourceName, entryId: entry.recordId, title: recordTitle(record, cms.resourceById(entry.resource).titleField), status: typeof record.status === 'string' ? record.status : null, threads });
@@ -689,8 +692,7 @@ export async function userUpdate(c: Context, id: string, input: Body): Promise<U
     if (input.status !== undefined) {
         if (input.status !== 'active' && input.status !== 'disabled') throw new CmsError('CMS_VALIDATION', 'status is active or disabled.');
         if (id === me.id) throw new CmsError('CMS_VALIDATION', 'Your own account stays active.');
-        if (!(await manageableHere(id))) throw new CmsError('CMS_FORBIDDEN', NETWORK_ACCOUNT_LOCKED);
-        await c.get('cms').users.setStatus(id, input.status);
+        await setUserStatus(id, input.status);
     }
     return (await getUser(id))!;
 }
@@ -1036,7 +1038,8 @@ export async function siteCreate(c: Context, input: Body): Promise<SiteView> {
     const name = text(input.name, 'name', { max: 120 });
     const host = text(input.host, 'host', { max: 253 }).toLowerCase();
     const email = text(input.admin, 'admin', { required: false, max: 254 });
-    const admin = email ? await network.main.accounts.findByEmail(email) : await network.main.accounts.get(principal.id);
+    // Accounts of the network are the main site's users.
+    const admin = email ? await network.main.users.findByEmail(email) : await network.main.users.get(principal.id);
     if (!admin) throw new CmsError('CMS_VALIDATION', 'No network account has that email. Add the person under Network → Users first.', { fields: { admin: 'is not a network account.' } });
     const id = text(input.id, 'id', { required: false, max: 63 });
     const language = text(input.language, 'language', { required: false, max: 16 });

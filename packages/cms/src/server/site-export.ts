@@ -4,7 +4,7 @@
  * binary values come back exactly with `decodeValue`. Media files are not included: `cms_files`
  * rows name their storage keys.
  */
-import { ClientError, encodeValue, type DatabaseFile, type RecordId, type RomeDB, type Statement, type Value } from '@cossackframework/romedb';
+import { ClientError, encodeValue, isClientFull, type DatabaseFile, type RecordId, type RomeDB, type Statement, type Value } from '@cossackframework/romedb';
 import { HOST_TABLES } from './host-schema';
 
 /**
@@ -13,19 +13,21 @@ import { HOST_TABLES } from './host-schema';
  * tables, which hold accounts and the site registry on the main site.
  */
 export const EXPORT_SKIPPED_TABLES: ReadonlySet<string> = new Set([
-    'cms_auth_sessions', 'cms_sessions', 'cms_session_values', 'cms_session_sites', 'cms_oauth_states', 'cms_password_resets', 'cms_auth_challenges',
-    'cms_user_security', 'cms_passkeys', 'cms_api_tokens', 'cms_preview_tokens', 'cms_handoffs', 'cms_cache', 'cms_attempts', 'cms_schedules',
-    'cms_accounts', 'cms_sites', 'cms_site_domains', 'cms_memberships', 'cms_network',
+    'cms_preview_tokens', 'cms_cache', 'cms_attempts', 'cms_schedules', 'cms_network',
     // The search index is built from the entries; an import rebuilds it.
     'cms_search',
     // Resized copies are made again on request; an imported row could name any stored object.
     'cms_file_variants',
     // Each database counts its own schema changes.
     'cms_schema_generations',
+    // The application's account tables (the dashboard package's, on the ORM) besides users and roles:
+    // credentials and sign-in state, the network's sites and members, the cache, and the ORM's own record of migrations.
+    'sessions', 'user_security', 'passkeys', 'api_tokens', 'auth_challenges', 'auth_attempts', 'oauth_accounts',
+    'tenants', 'tenant_domains', 'tenant_members', 'tenant_handoffs', 'tenant_network', 'tenant_sessions', 'cache_items', '_cossack_migrations',
 ]);
 
-/** Columns exported as null: webhook signing secrets. */
-export const EXPORT_REDACTED_COLUMNS: Readonly<Record<string, readonly string[]>> = Object.freeze({ cms_webhooks: ['secret'] });
+/** Columns exported as null: webhook signing secrets, and the password hashes of the application's accounts. */
+export const EXPORT_REDACTED_COLUMNS: Readonly<Record<string, readonly string[]>> = Object.freeze({ cms_webhooks: ['secret'], users: ['password_hash'] });
 
 /**
  * Tables a `.romedb` file leaves empty: sign-in state (sessions are keyed by their tokens, so a
@@ -37,11 +39,16 @@ export const EXPORT_REDACTED_COLUMNS: Readonly<Record<string, readonly string[]>
  * set up an authenticator app and application passwords again.
  */
 export const FILE_EXPORT_EMPTIED_TABLES: readonly string[] = [
-    'cms_user_security', 'cms_api_tokens',
-    'cms_auth_sessions', 'cms_sessions', 'cms_session_values', 'cms_session_sites', 'cms_oauth_states', 'cms_password_resets', 'cms_auth_challenges',
-    'cms_preview_tokens', 'cms_handoffs', 'cms_cache', 'cms_attempts', 'cms_outbox', 'cms_webhooks', 'cms_webhook_deliveries', 'cossack_jobs', 'cms_schedules',
+    'cms_preview_tokens', 'cms_cache', 'cms_attempts', 'cms_outbox', 'cms_webhooks', 'cms_webhook_deliveries', 'cossack_jobs', 'cms_schedules',
     'cms_file_variants',
 ];
+
+/**
+ * The same for the application's account tables, which the dashboard package keeps through the
+ * ORM: sessions (keyed by their tokens), second factors, application passwords, sign-in
+ * challenges and counters, one-time codes, and the cache. Accounts, roles and passkeys stay.
+ */
+export const ACCOUNT_SECRET_TABLES: readonly string[] = ['sessions', 'user_security', 'api_tokens', 'auth_challenges', 'auth_attempts', 'tenant_handoffs', 'tenant_sessions', 'cache_items'];
 
 /** RomeDB's longest wait for a copy to start arriving. On Cloud a job builds it first. */
 const FILE_EXPORT_TIMEOUT = 120_000;
@@ -53,8 +60,11 @@ const FILE_EXPORT_TIMEOUT = 120_000;
  */
 export async function siteFile(db: RomeDB, options: { signal?: AbortSignal } = {}): Promise<DatabaseFile> {
     const signal = options.signal ? { signal: options.signal } : {};
-    // Every site's database has every host table, so each named table exists.
-    return db.exportFile({ ...signal, timeoutMs: FILE_EXPORT_TIMEOUT, emptyTables: [...FILE_EXPORT_EMPTIED_TABLES] });
+    // Every site's database has every host table. The application's account tables (the
+    // dashboard package's, on the ORM) are there once it applied its migrations.
+    const info = await db.read([{ rql: 'INFO FOR DB' }], signal);
+    const present = new Set(((info.results[0]!.rows[0]![0] as { tables?: { name: string }[] }).tables ?? []).map(table => table.name));
+    return db.exportFile({ ...signal, timeoutMs: FILE_EXPORT_TIMEOUT, emptyTables: [...FILE_EXPORT_EMPTIED_TABLES, ...ACCOUNT_SECRET_TABLES.filter(table => present.has(table))] });
 }
 
 /** A new webhook secret, for one that comes from a copy or an export. */
@@ -121,8 +131,8 @@ export async function* siteExport(db: RomeDB, options: SiteExportOptions): Async
             let page;
             try { page = (await read([{ rql: `SELECT ${select} FROM ${name} ${after} ORDER BY ${order} LIMIT $limit`, params }], sequence)).results[0]!; }
             catch (error) {
-                // A page of large rows can pass the limit on one response: read fewer.
-                if (error instanceof ClientError && (error.code === 'RDB_LIMIT' || error.code === 'RDB_RESULT_TOO_LARGE') && size > 1) { size = Math.max(1, Math.floor(size / 2)); continue; }
+                // A page of large rows can pass the limit on one response: read fewer. A full client is not about the page.
+                if (error instanceof ClientError && (error.code === 'RDB_LIMIT' || error.code === 'RDB_RESULT_TOO_LARGE') && !isClientFull(error) && size > 1) { size = Math.max(1, Math.floor(size / 2)); continue; }
                 throw error;
             }
             const rows = page.rows.map(row => table.model === 'relational'

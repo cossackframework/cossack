@@ -45,7 +45,7 @@ export const FEATURE_REGISTRY = {
   notifications: { requires: ['jobs'] },
   workflows: { requires: [] },
   // RomeDB CMS: content, media, taxonomies, settings and plugins in the shared dashboard.
-  // With cms, auth keeps users and sessions in RomeDB, so it no longer needs database.
+  // Accounts, roles and sessions are the dashboard package's, on the ORM in the CMS's database.
   cms: { requires: ['ui', 'auth', 'dashboard', 'markdown'] },
 };
 
@@ -67,7 +67,6 @@ export function authStore(features) {
 }
 
 function requirementsOf(feature, requested) {
-  if (feature === 'auth' && authStore(requested) === 'cms') return ['ui'];
   return FEATURE_REGISTRY[feature].requires;
 }
 
@@ -89,6 +88,8 @@ export const DATABASE_PROVIDERS = {
   mysql: { adapters: ['node'] },
   'hyperdrive-postgres': { adapters: ['cloudflare'] },
   'hyperdrive-mysql': { adapters: ['cloudflare'] },
+  // RomeDB through the ORM: a file in the process or a URL on Node, a URL on Workers.
+  romedb: { adapters: ADAPTERS },
 };
 
 export function parseList(value) {
@@ -165,8 +166,9 @@ export function resolveRecipe(options = {}) {
     if (conflict.features.every(feature => resolvedFeatures.includes(feature))) throw new Error(conflict.reason);
   }
 
+  // The CMS is on RomeDB, and its accounts (the ORM's tables) are in the same database.
   const database = options.database ??
-    (adapter === 'cloudflare' ? 'd1' : 'sqlite');
+    (resolvedFeatures.includes('cms') ? 'romedb' : adapter === 'cloudflare' ? 'd1' : 'sqlite');
   if (!DATABASE_PROVIDERS[database]) {
     throw new Error(`Unknown database provider "${database}". Supported values: ${Object.keys(DATABASE_PROVIDERS).join(', ')}`);
   }
@@ -218,6 +220,19 @@ export function resolveRecipe(options = {}) {
   return recipe;
 }
 
+/**
+ * Where jobs, schedules and notifications keep their ledger: a CMS project's RomeDB database,
+ * which needs no other binding, or the `JOB_STATE` D1 database.
+ */
+/** The project keeps its ORM tables in RomeDB (`--database romedb`). */
+export function ormOnRomeDB(recipe) {
+  return recipe.resolvedFeatures.includes('database') && recipe.config.database === 'romedb';
+}
+
+export function jobLedger(recipe) {
+  return recipe.resolvedFeatures.includes('cms') ? 'romedb' : 'd1';
+}
+
 /** Host support for all selected targets. Recorded recipes remain inspectable. */
 export function recipeCapabilityDiagnostics(recipe) {
   return ['web', ...(recipe.resolvedFeatures.includes('desktop') ? ['desktop'] : [])]
@@ -239,9 +254,11 @@ export function recipeCapabilityRequirements(recipe, target = 'web') {
     feature, source: { file: 'package.json' }, requires,
   });
   if (recipe.resolvedFeatures.includes('workflows')) add('workflows/cloudflare', { cloudflareBindings: ['WORKFLOWS'] });
-  if (recipe.resolvedFeatures.includes('jobs')) add('jobs/cloudflare-queues', { cloudflareBindings: ['JOBS', 'JOB_STATE'] });
-  if (recipe.resolvedFeatures.includes('schedules')) add('schedules/cloudflare-cron', { cloudflareBindings: ['JOBS', 'JOB_STATE'] });
-  if (recipe.resolvedFeatures.includes('notifications')) add('notifications/cloudflare-email', { cloudflareBindings: ['EMAIL', 'JOB_STATE'] });
+  // A RomeDB ledger is in the CMS's database, which the cms requirement already names.
+  const ledger = jobLedger(recipe) === 'd1' ? ['JOB_STATE'] : [];
+  if (recipe.resolvedFeatures.includes('jobs')) add('jobs/cloudflare-queues', { cloudflareBindings: ['JOBS', ...ledger] });
+  if (recipe.resolvedFeatures.includes('schedules')) add('schedules/cloudflare-cron', { cloudflareBindings: ['JOBS', ...ledger] });
+  if (recipe.resolvedFeatures.includes('notifications')) add('notifications/cloudflare-email', { cloudflareBindings: ['EMAIL', ...ledger] });
   if (recipe.resolvedFeatures.includes('cms')) add('cms', { transports: ['http'], ...(recipe.adapter === 'cloudflare' ? { cloudflareBindings: ['ROMEDB_PENDING', 'MEDIA'] } : { filesystem: true }) });
   if (recipe.resolvedFeatures.includes('resource')) add('resource', { transports: ['http'] });
   if (recipe.resolvedFeatures.includes('mutation')) add('mutation', { transports: ['http'] });
@@ -254,6 +271,10 @@ export function recipeCapabilityRequirements(recipe, target = 'web') {
     if (recipe.config.database === 'd1') add('database/d1', { cloudflareBindings: ['DB'] });
     if (recipe.config.database.startsWith('hyperdrive-')) {
       add(`database/${recipe.config.database}`, { cloudflareBindings: ['HYPERDRIVE'] });
+    }
+    // Unconfirmed writes are kept in a Durable Object on Workers and in files on Node.
+    if (recipe.config.database === 'romedb') {
+      add('database/romedb', recipe.adapter === 'cloudflare' ? { cloudflareBindings: ['ROMEDB_PENDING'] } : { filesystem: true });
     }
   }
   if (target === 'desktop' && recipe.resolvedFeatures.includes('desktop')) {

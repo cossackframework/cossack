@@ -1,3 +1,5 @@
+import { moveAccount } from '#app/services/tenants';
+import { networkAdminIds, siteMemberships } from '#app/cms/network-accounts';
 import { Client, Cossack, Page, State, flash, flashed, type HeadValue } from '@cossackframework/core';
 import { Badge, Card, CardBody, CardHeader, NativeSelect, Button } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
@@ -49,20 +51,20 @@ export default class NetworkSite extends Cossack {
         Object.assign(this, { id: record.id, name: record.name, status: record.status, createdAt: record.createdAt, domains: [...record.domains] }, siteLinks(this.c, networkSite(record)));
         if (record.status !== 'creating') {
             const host = net.hostOf(networkSite(record));
-            const users = (await host.users.list({ limit: 100 })).items;
+            // The site's users and roles are in its own database.
+            const [users, roles] = await net.inSite(networkSite(record), async () => [(await host.users.list({ limit: 100 })).items, await host.users.roles()] as const);
             const network = users.filter(user => user.account === 'network').map(user => user.id);
-            const [sites, admins] = await Promise.all([net.main.accounts.memberships(network), net.main.accounts.list({ networkAdmins: true, limit: 100 })]);
-            const runsNetwork = new Set(admins.items.map(account => account.id));
+            const [sites, runsNetwork] = await Promise.all([siteMemberships(network), networkAdminIds()]);
             this.members = users.map(user => ({
                 id: user.id, name: user.name, email: user.email, roles: user.assignments.map(role => role.name).join(', ') || __('No role'), account: user.account,
                 movable: user.account === 'site' || (!runsNetwork.has(user.id) && (sites.get(user.id) ?? []).every(site => site === record.id)),
             }));
-            this.roles = (await host.users.roles()).map(role => ({ id: role.id, name: role.name }));
-            this.importState = await siteImportState(host);
+            this.roles = roles.map(role => ({ id: role.id, name: role.name }));
+            this.importState = await net.inSite(networkSite(record), () => siteImportState(host));
         }
         const request = (await net.exportRequests()).get(record.id);
         if (request) {
-            const account = await net.main.accounts.get(request.requestedBy);
+            const account = await net.main.users.get(request.requestedBy);
             this.exportRequest = { by: account ? `${account.name} (${account.email})` : request.requestedBy, at: request.requestedAt, approvedAt: request.approvedAt, expiresAt: request.expiresAt };
         }
         this.message = flashed<string>('network.message') ?? '';
@@ -96,20 +98,20 @@ export default class NetworkSite extends Cossack {
                 await net.removeDomain(id, value('host'), { principal });
                 flash('network.message', __('Removed.'));
             } else if (action === 'add-member') {
-                const account = await net.main.accounts.findByEmail(value('email'));
+                const account = await net.main.users.findByEmail(value('email'));
                 if (!account) throw new Error(__('No network account has that email.'));
                 const host = net.hostOf(networkSite(record));
-                await host.users.addMember(account.id);
-                await host.users.setRoles(account.id, value('role') ? [value('role')] : []);
+                await net.inSite(networkSite(record), async () => { await host.users.addMember(account.id, { roles: value('role') ? [value('role')] : [] }); });
                 flash('network.message', `${account.name} ${__('is a member now.')}`);
             } else if (action === 'convert-member') {
                 const to = value('to') === 'site' ? 'site' : 'network';
-                const user = await net.hostOf(networkSite(record)).users.convert(value('account'), to);
-                flash('network.message', `${user.name} ${to === 'site' ? __('has a site account now.') : __('has a network account now.')}`);
+                const before = await net.inSite(networkSite(record), () => net.hostOf(networkSite(record)).users.get(value('account')));
+                await moveAccount({ id: record.id, slug: record.id, name: record.name, database: record.database, status: 'active' }, value('account'), to === 'site' ? 'tenant' : 'main');
+                flash('network.message', `${before?.name ?? __('The account')} ${to === 'site' ? __('has a site account now.') : __('has a network account now.')}`);
             } else if (action === 'import') {
                 return this.importSite(id, false);
             } else if (action === 'remove-member') {
-                await net.hostOf(networkSite(record)).users.delete(value('account'));
+                await net.inSite(networkSite(record), async () => { await net.hostOf(networkSite(record)).users.delete(value('account')); });
                 flash('network.message', __('Removed from the site.'));
             } else if (action === 'approve-export' || action === 'decline-export') {
                 await net.answerExport(id, action === 'approve-export', { principal });
@@ -130,7 +132,8 @@ export default class NetworkSite extends Cossack {
         try {
             const record = await net.sites.get(id);
             if (!record || record.status === 'creating') throw new Error(__('There is no such site.'));
-            flash('network.message', importSummary(await importRequest(this.c, net.hostOf(networkSite(record)))));
+            // The import writes the site's users, which are in its own database.
+            flash('network.message', importSummary(await net.inSite(networkSite(record), () => importRequest(this.c, net.hostOf(networkSite(record))))));
             return raw ? this.c.json({ next: `/dashboard/network/sites/${id}` }) : this.redirect(`/dashboard/network/sites/${id}`);
         } catch (error) {
             const message = isCmsError(error) || error instanceof Error ? (error as Error).message : __('The export could not be imported.');

@@ -54,7 +54,7 @@ export const POST = defineApi({
       const id = crypto.randomUUID();
       const publicId = crypto.randomUUID();
       await Session.insert({ id, publicId, userId: user!.userId, data: { credential: '${privateValue}' },
-        meta: operation === 'reset' ? { type: 'password_reset' } : { type: 'oauth_state', provider: 'fixture' },
+        kind: operation === 'reset' ? 'password_reset' : 'oauth_state', meta: null,
         createdAt: new Date(), expiresAt: new Date(Date.now() + 3600000), location: null, userAgent: null, ipAddress: null });
       c.header('Set-Cookie', 'session_id=' + id + '; Path=/; HttpOnly; Secure; SameSite=Lax');
       return c.json({ reference: publicId });

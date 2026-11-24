@@ -2,8 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { createHookRegistry } from '@cossackframework/core/hooks';
 import {
     afterCommit, ANONYMOUS, contentModule, createCMS, DEFAULT_ROLES, formsModule, formSubmitted, formValidate, isCmsError,
-    type Block, type CmsHost, type FormSubmittedEvent, type Principal, type RecordShape,
-} from '../src/server/index';
+    type Block, type CmsHost, type FormSubmittedEvent, type Principal, type RecordShape, memoryPeople } from '../src/server/index';
 import { romedbService, live } from './helpers';
 
 const admin: Principal = { kind: 'user', id: 'admin-1', roles: ['admin'], permissions: ['*'] };
@@ -32,7 +31,7 @@ describe.skipIf(!live)('forms', () => {
 
     beforeAll(async () => {
         const hooks = createHookRegistry();
-        cms = createCMS({
+        cms = createCMS({ people: memoryPeople(), 
             db: service.database(), modules: [contentModule, formsModule], hooks, now: () => clock, mailFrom: 'site@example.com',
             mail: { async send(message) { if (failFor && message.to === failFor) throw new Error('mail is down'); sent.push(message); } },
             fetch: async () => new Response('ok'),
@@ -186,7 +185,7 @@ describe.skipIf(!live)('forms', () => {
         const draft = await forms.create({ title: 'Duo', body: [input('e', 'email', { name: 'email', required: true })] }, { principal: editor });
         await forms.update(draft.id, { status: 'published' }, { principal: editor, expectedRevision: draft.rev });
         // A second isolate on the same database, with its own copy of the forms.
-        const other = createCMS({ db: service.database(), modules: [contentModule, formsModule], now: () => clock });
+        const other = createCMS({ people: memoryPeople(),  db: service.database(), modules: [contentModule, formsModule], now: () => clock });
         await other.ready({ force: true });
         const results = await Promise.allSettled([
             ...Array.from({ length: 4 }, (_, i) => cms.forms.submit('duo', { email: `a${i}@example.com` }, { principal: ANONYMOUS, ip: `10.8.0.${i}` })),

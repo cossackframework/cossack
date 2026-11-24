@@ -14,22 +14,54 @@ async function generatedAuth() {
   const Session = { find: vi.fn(), findOne: vi.fn(), delete: vi.fn(async () => ({ meta: { rowsAffected: 1 } })), insert: vi.fn() };
   Session.findOne.mockResolvedValue(sessionRow({ id: ownerContext().cookie }));
   const sql = vi.fn(async () => ({ rows: [], meta: { rowsAffected: 1 } }));
+  // The stub records a JSON value as the text every database receives.
+  sql.json = value => JSON.stringify(value);
   const User = { findOne: vi.fn(), insert: vi.fn(), update: vi.fn() };
   const OAuthAccount = { findOne: vi.fn(), insert: vi.fn() };
   let provider;
   const createSession = vi.fn();
+  const setCookie = vi.fn();
+  const security = {
+    signInBegin: vi.fn(async () => ({ ok: true })), signInSucceeded: vi.fn(), attempt: vi.fn(async () => true), release: vi.fn(),
+    sha256Hex: async text => `hash:${text}`, randomToken: () => 'T'.repeat(43), RESET_REQUESTS: { windowMs: 3_600_000, perEmail: 3, perAddress: 10 },
+    requiresCode: vi.fn(async () => false), hasSecondFactor: vi.fn(async () => false), reset: vi.fn(),
+    createChallenge: vi.fn(async () => 'pending-sign-in'),
+  };
   const modules = {
-    'hono/cookie': { getCookie: c => c?.cookie },
+    'hono/cookie': { getCookie: c => c?.cookie, setCookie },
     '@cossackframework/auth': { createAuth: (options) => { provider = options; return { createSession }; }, createOAuth: vi.fn(), OAuthError,
-      createCredentialVerifier, createSessionManager, hashPassword, verifyPassword },
-    '@cossackframework/database': { MoreThan: (value) => value, sql },
-    '@cossackframework/core': { ClientVisibleError: Error },
+      createCredentialVerifier, createSessionManager, hashPassword, verifyPassword, totpUri: vi.fn() },
+    '@cossackframework/auth/passkeys': {},
+    '@cossackframework/database': { MoreThan: (value) => value, LessThan: (value) => value, In: (values) => values, sql },
+    '@cossackframework/core': { ClientVisibleError: Error, getClientIp: () => '203.0.113.7', getRequestContext: () => undefined },
+    uqr: { renderSVG: vi.fn() },
+    './brand': { siteName: async () => 'Test', mainSiteName: async () => 'Test' },
+    './mail': { mailer: () => null },
+    './avatars': { avatarUploads: false, storeAvatar: vi.fn() },
+    './auth-events': { authEvents: { beforeRegister: async draft => ({ name: draft.name }), registered: async () => {}, signedIn: async () => {} } },
+    './lib/permissions': { ALL_PERMISSIONS: [] },
+    '@/models/Role': { Role: { findOne: vi.fn(), insert: vi.fn() } },
+    '@/models/UserRole': { UserRole: { insert: vi.fn() } },
+    // Second factors and sign-in limits have their own tests; here every attempt is allowed.
+    './services/security': security,
+    './services/api-tokens': { revokeAll: vi.fn() },
     './lib/uuid': { uuidv7: () => 'generated-id' },
     // The project's choices, as src/dashboard.config.ts states them for this recipe.
-    './auth-options': { authOptions: { authMethods: ['credentials', 'oauth'], oauth: ['github'], modules: ['sessions'], dashboard: true, redirectAfterLogin: '/dashboard' } },
+    './auth-options': { authOptions: { authMethods: ['credentials', 'oauth'], oauth: ['github'], modules: ['sessions'], dashboard: true, redirectAfterLogin: '/dashboard',
+      registration: { open: true, verifyEmail: false, approve: false, defaultRole: '' },
+      security: { requireTwoFactor: false, twoFactorRoles: [] }, tenants: { enabled: false, signIn: 'host' }, tokenPrefix: 'app', setupCodeVariable: 'SETUP_CODE', recoveryCodeVariable: 'RECOVERY_CODE', accountLabels: { shared: 'Shared account', sharedNotice: 'Shared.' } } },
     '@/models/User': { User },
     '@/models/Session': { Session },
     '@/models/OAuthAccount': { OAuthAccount },
+    '@/models/TenantMember': { TenantMember: { delete: vi.fn() } },
+    // Tenants are off: account code runs where it is, and every request is the main tenant's.
+    './tenants': { accounts: work => work(), inTenant: work => work(), currentTenant: () => null, tenantOrigin: () => null,
+      sharedSignIn: false, hostName: () => '', mainHost: () => '', tenantOfHost: async () => null, withTenant: (_tenant, work) => work(),
+      asMainAccount: work => work(), asTenantAccount: work => work(), markTenantAccountRequest: () => {}, tenantAccountHome: () => false },
+    '@/models/TenantHandoff': { TenantHandoff: {} },
+    '@/models/TenantSession': { TenantSession: { find: async () => [], delete: vi.fn(), upsert: vi.fn() } },
+    '@/models/Tenant': { Tenant: { findOne: async () => null } },
+    './services/tenants': {},
   };
   const module = { exports: {} };
   // Execute the generated module, with only its database/provider boundary mocked.
@@ -37,13 +69,13 @@ async function generatedAuth() {
     if (!(name in modules)) throw new Error(`Unexpected dependency: ${name}`);
     return modules[name];
   }, module, module.exports);
-  return { api: module.exports, provider, Session, User, OAuthAccount, createSession, sql, files };
+  return { api: module.exports, provider, Session, User, OAuthAccount, createSession, setCookie, sql, files, security, authOptions: modules['./auth-options'].authOptions };
 }
 
 const ownerContext = () => ({ cookie: 'CURRENT_PRIVATE_BEARER', get: () => ({ id: 'member' }),
   req: { header: () => undefined, raw: new Request('http://localhost/') } });
 const sessionRow = (overrides = {}) => ({ id: 'PRIVATE_AUTH_BEARER', publicId: crypto.randomUUID(), userId: 'member',
-  createdAt: new Date(Date.now() - 1000), expiresAt: new Date(Date.now() + 60000), meta: { type: 'auth' },
+  createdAt: new Date(Date.now() - 1000), expiresAt: new Date(Date.now() + 60000), kind: 'auth', meta: null,
   location: null, userAgent: null, ipAddress: null, data: { credential: 'PRIVATE_SESSION_DATA' }, ...overrides });
 
 function generatedSessionsPage(files, api) {
@@ -117,8 +149,8 @@ describe('generated auth security', () => {
     const { provider, Session } = await generatedAuth(); const row = sessionRow();
     Session.findOne.mockResolvedValue(row); const captured = await provider.realtime.capture(row.id, row.userId, ownerContext());
     for (const stored of [null, { ...row, expiresAt: new Date(0) }, { ...row, expiresAt: new Date(NaN) },
-      { ...row, createdAt: new Date(Date.now() + 10000) }, { ...row, createdAt: new Date(NaN) }, { ...row, meta: { type: 'password_reset' } },
-      { ...row, meta: { type: 'oauth_state', provider: 'github' } }]) {
+      { ...row, createdAt: new Date(Date.now() + 10000) }, { ...row, createdAt: new Date(NaN) }, { ...row, kind: 'password_reset' },
+      { ...row, kind: 'oauth_state', data: { provider: 'github' } }]) {
       Session.findOne.mockResolvedValue(stored); expect(await provider.realtime.validate(captured, ownerContext())).toBeNull();
     }
     Session.findOne.mockResolvedValue({ ...row, userId: 'another-owner' });
@@ -137,15 +169,16 @@ describe('generated auth security', () => {
     expect(row.publicId).toMatch(/^[0-9a-f-]{36}$/);
     expect(row.publicId).not.toBe(created.session.id);
     expect(row.id).toBe(created.session.id);
-    expect(row.meta).toEqual({ type: 'auth' });
+    expect(row.kind).toBe('auth');
+    expect(row.meta).toBeNull();
     expect(created.headers.get('set-cookie')).not.toContain(row.publicId);
   });
 
   it('lists safe references and excludes credentials, storage data, other owners and token purposes', async () => {
     const { api, Session } = await generatedAuth();
-    const current = sessionRow({ id: ownerContext().cookie, meta: { type: 'auth', credential: 'PRIVATE_META' } });
-    Session.find.mockResolvedValue([current, sessionRow({ meta: { type: 'password_reset' } }),
-      sessionRow({ meta: { type: 'oauth_state' } }), sessionRow({ userId: 'victim' }), sessionRow({ expiresAt: new Date(0) })]);
+    const current = sessionRow({ id: ownerContext().cookie, meta: { credential: 'PRIVATE_META' } });
+    Session.find.mockResolvedValue([current, sessionRow({ kind: 'password_reset' }),
+      sessionRow({ kind: 'oauth_state' }), sessionRow({ userId: 'victim' }), sessionRow({ expiresAt: new Date(0) })]);
     expect(await api.listUserSessions(ownerContext())).toEqual([{ reference: current.publicId,
       createdAt: current.createdAt.toISOString(), expiresAt: current.expiresAt.toISOString(), current: true,
       location: null, userAgent: null, ipAddress: null }]);
@@ -191,7 +224,7 @@ describe('generated auth security', () => {
     const reference = crypto.randomUUID();
     expect(await api.revokeSession(ownerContext(), reference)).toBe(true);
     const current = await Session.findOne();
-    expect(sql.mock.calls[0].slice(1, 6)).toEqual([reference, 'member', ownerContext().cookie, current.publicId, '{"type":"auth"}']);
+    expect(sql.mock.calls[0].slice(1, 6)).toEqual([reference, 'member', ownerContext().cookie, current.publicId, 'auth']);
     sql.mockResolvedValue({ meta: { rowsAffected: 0 } });
     expect(await api.revokeSession(ownerContext(), reference)).toBe(false);
   });
@@ -314,7 +347,7 @@ describe('generated auth security', () => {
     const { api, Session, sql } = await generatedAuth();
     const current = await Session.findOne();
     await api.revokeAllUserSessions(ownerContext(), true);
-    expect(sql.mock.calls[0].slice(1)).toEqual(['member', ownerContext().cookie, current.publicId, '{"type":"auth"}']);
+    expect(sql.mock.calls[0].slice(1)).toEqual(['member', ownerContext().cookie, current.publicId, 'auth']);
     Session.findOne.mockResolvedValue(null);
     sql.mockClear();
     await expect(api.revokeSession(ownerContext(), crypto.randomUUID())).rejects.toThrow('Sign in');
@@ -366,18 +399,18 @@ describe('generated auth security', () => {
   });
   it('does not accept reset tokens as login sessions', async () => {
     const { provider, Session } = await generatedAuth();
-    for (const meta of [{ type: 'password_reset' }, null, '{', { type: 'unknown' }]) {
-      Session.findOne.mockResolvedValue({ userId: 'victim', meta });
+    for (const kind of ['password_reset', 'oauth_state', 'verify', 'unknown', undefined]) {
+      Session.findOne.mockResolvedValue({ userId: 'victim', kind, meta: { type: 'auth' } });
       expect(await provider.validateSessionId('reset-token')).toBeNull();
     }
-    Session.findOne.mockResolvedValue({ id: 'session', userId: 'member', meta: { type: 'auth' },
+    Session.findOne.mockResolvedValue({ id: 'session', userId: 'member', kind: 'auth',
       createdAt: new Date(Date.now() - 1000), expiresAt: new Date(Date.now() + 10000) });
     expect(await provider.validateSessionId('session')).toBe('member');
   });
 
   it('rejects login sessions as reset tokens without deleting them', async () => {
     const { api, Session, User } = await generatedAuth();
-    Session.findOne.mockResolvedValue({ userId: 'member', meta: { type: 'auth' } });
+    Session.findOne.mockResolvedValue({ userId: 'member', kind: 'auth' });
     expect(await api.resetPassword('login-session', 'new-password')).toBe(false);
     expect(Session.delete).not.toHaveBeenCalled();
     expect(User.update).not.toHaveBeenCalled();
@@ -385,12 +418,51 @@ describe('generated auth security', () => {
 
   it('allows only one reset when the same token is consumed concurrently and revokes sessions', async () => {
     const { api, Session, User } = await generatedAuth();
-    Session.findOne.mockResolvedValue({ userId: 'member', meta: { type: 'password_reset' } });
+    Session.findOne.mockResolvedValue({ userId: 'member', kind: 'password_reset' });
     Session.delete.mockResolvedValueOnce({ meta: { rowsAffected: 1 } }).mockResolvedValueOnce({ meta: { rowsAffected: 0 } });
     const results = await Promise.all([api.resetPassword('reset', 'password-one'), api.resetPassword('reset', 'password-two')]);
     expect(results.sort()).toEqual([false, true]);
     expect(User.update).toHaveBeenCalledOnce();
     expect(Session.delete).toHaveBeenCalledWith({ userId: 'member' });
+  });
+
+  it('counts wrong current passwords per account, and gives the try back for the right one', async () => {
+    const { api, User, security } = await generatedAuth();
+    const passwordHash = await hashPassword('the right password');
+    User.findOne.mockResolvedValue({ id: 'member', email: 'member@example.com', passwordHash, status: 'active' });
+    expect(await api.passwordMatches('member', 'a wrong password')).toBe(false);
+    expect(security.attempt).toHaveBeenCalledWith('password-check', 'member', expect.any(Number), expect.any(Number));
+    expect(security.release).not.toHaveBeenCalled();
+    expect(await api.passwordMatches('member', 'the right password')).toBe(true);
+    expect(security.release).toHaveBeenCalledWith('password-check', 'member');
+    // Out of tries: refused before the password is looked at.
+    security.attempt.mockResolvedValue(false);
+    User.findOne.mockClear();
+    await expect(api.passwordMatches('member', 'the right password')).rejects.toThrow('Too many wrong passwords');
+    expect(User.findOne).not.toHaveBeenCalledWith({ where: { id: 'member' } });
+  });
+
+  it('refuses a password alone when two-step sign-in is required and the second step is a passkey', async () => {
+    const { api, User, security, authOptions } = await generatedAuth();
+    User.findOne.mockResolvedValue({ id: 'member', email: 'member@example.com', status: 'active' });
+    security.hasSecondFactor.mockResolvedValue(true);
+    // Not required: the password signs in.
+    expect(await api.beginTwoFactor('member')).toBeNull();
+    authOptions.security.requireTwoFactor = true;
+    await expect(api.beginTwoFactor('member')).rejects.toMatchObject({ name: 'SignInPasskeyError' });
+    // An account with no second factor yet signs in, and is asked to set one up afterwards.
+    security.hasSecondFactor.mockResolvedValue(false);
+    expect(await api.beginTwoFactor('member')).toBeNull();
+  });
+
+  it('builds email links from APP_URL, and makes none without it outside this machine', async () => {
+    const { api } = await generatedAuth();
+    // The framework's global env() reads the deployment's variables; the request's Host is never read.
+    const variables = { APP_URL: 'https://site.example/' };
+    vi.stubGlobal('env', (name, fallback) => variables[name] ?? fallback);
+    expect(api.linkOrigin()).toBe('https://site.example');
+    delete variables.APP_URL;
+    expect(api.linkOrigin()).toBeNull();
   });
 
   it('does not link an unrecognized OAuth identity to an existing email account', async () => {
@@ -402,6 +474,43 @@ describe('generated auth security', () => {
     expect(OAuthAccount.insert).not.toHaveBeenCalled();
     expect(createSession).not.toHaveBeenCalled();
     expect(User.insert).not.toHaveBeenCalled();
+  });
+
+  it('makes no account through OAuth while registration is closed', async () => {
+    const { api, OAuthAccount, User, createSession, authOptions } = await generatedAuth();
+    authOptions.registration.open = false;
+    OAuthAccount.findOne.mockResolvedValue(null);
+    User.findOne.mockResolvedValue(null);
+    const c = { redirect: location => location, req: { url: 'https://app.test/auth/github/callback' } };
+    expect(await api.handleOAuthUser('github', { id: 'stranger', email: 'stranger@example.com', emailVerified: true }, {}, c)).toBe('/auth/login?oauth=closed');
+    expect(User.insert).not.toHaveBeenCalled();
+    expect(OAuthAccount.insert).not.toHaveBeenCalled();
+    expect(createSession).not.toHaveBeenCalled();
+  });
+
+  it('makes an OAuth account wait for approval, and signs in no account that is not active', async () => {
+    const { api, OAuthAccount, User, createSession, authOptions } = await generatedAuth();
+    authOptions.registration.approve = true;
+    OAuthAccount.findOne.mockResolvedValue(null);
+    User.findOne.mockResolvedValueOnce(null).mockResolvedValue({ id: 'generated-id', email: 'new@example.com', status: 'pending' });
+    const c = { redirect: location => location, req: { url: 'https://app.test/auth/github/callback' } };
+    expect(await api.handleOAuthUser('github', { id: 'new', email: 'new@example.com', emailVerified: true }, {}, c)).toBe('/auth/login?oauth=pending');
+    expect(User.insert.mock.calls[0][0]).toMatchObject({ email: 'new@example.com', status: 'pending' });
+    OAuthAccount.findOne.mockResolvedValue({ userId: 'off' });
+    User.findOne.mockReset().mockResolvedValue({ id: 'off', email: 'off@example.com', status: 'disabled' });
+    expect(await api.handleOAuthUser('github', { id: 'off', email: 'off@example.com', emailVerified: true }, {}, c)).toBe('/auth/login?oauth=inactive');
+    expect(createSession).not.toHaveBeenCalled();
+  });
+
+  it('asks an OAuth sign-in for the account\'s authenticator code', async () => {
+    const { api, OAuthAccount, User, createSession, setCookie, security } = await generatedAuth();
+    OAuthAccount.findOne.mockResolvedValue({ userId: 'member' });
+    User.findOne.mockResolvedValue({ id: 'member', email: 'member@example.com', status: 'active' });
+    security.requiresCode.mockResolvedValue(true);
+    const c = { redirect: location => location, req: { url: 'https://app.test/auth/github/callback' } };
+    expect(await api.handleOAuthUser('github', { id: 'member', email: 'member@example.com', emailVerified: true }, {}, c)).toBe('/auth/two-factor');
+    expect(setCookie.mock.calls[0].slice(1, 3)).toEqual(['two_factor', 'pending-sign-in']);
+    expect(createSession).not.toHaveBeenCalled();
   });
 
   it('never stores an email address the provider did not verify', async () => {

@@ -261,7 +261,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS management', () => {
       if (sites) {
         // A network: the CLI adds a site, and --site (the X-Cossack-Site header) and ?site= reach it through the network host.
         await cli(['sites', 'list'], { failure: 'COSSACK_CMS_FORBIDDEN' });
-        const network = { enabled: true, name: 'Managed network', subdomainSuffix: '', defaultTheme: '', defaultPlugins: [], defaultLanguage: '', siteExports: 'request' };
+        const network = { enabled: true, name: 'Managed network', subdomainSuffix: '', defaultTheme: '', defaultPlugins: [], defaultLanguage: '', siteExports: 'request', siteRegistration: false };
         expect((await web.action(SETTINGS, 'saveAll', [{ document: null, languages: null, permalinks: null, network, groups: {} }]))._cossack_return.error).toBe('');
         const blog = await cli(['sites', 'create', 'Blog', '--host', 'blog.localhost']);
         expect(blog.data).toMatchObject({ id: 'blog', name: 'Blog', host: 'blog.localhost', status: 'active', domains: [{ host: 'blog.localhost', primary: true }] });

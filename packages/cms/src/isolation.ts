@@ -44,6 +44,7 @@ export interface IsolateCall {
 export const ISOLATE_MEMBERS = [
     'settings.get', 'settings.all',
     'resource.get', 'resource.list', 'resource.count', 'resource.search', 'resource.create', 'resource.update', 'resource.delete',
+    'cms.batch',
     'fetch',
     'files.upload', 'files.get', 'files.list', 'files.open', 'files.update', 'files.delete',
     'mail.send',

@@ -23,7 +23,7 @@
   "scripts": {
     "start": "node ./bin/cossack.js",
     "test": "vitest --run --project unit",
-    "test:integration": "vitest --run --project integration"
+    "test:integration": "pnpm --filter @cossackframework/cms run sync && vitest --run --project integration"
   },
   "dependencies": {
     "@cossackframework/core": "workspace:*",

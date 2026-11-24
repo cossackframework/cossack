@@ -1,7 +1,9 @@
 import { Like, Not, sql } from '@cossackframework/database';
-import { ClientVisibleError } from '@cossackframework/core';
+import { ClientVisibleError, getRequestContext } from '@cossackframework/core';
 import { uuidv7 } from '../lib/uuid';
-import { PERMISSIONS, type Permission } from '../lib/permissions';
+import { holdsAll, validPermission } from '../lib/permissions';
+import { authOptions } from '../auth-options';
+import { permissionsOf } from './rbac';
 import { Role } from '@/models/Role';
 import { UserRole } from '@/models/UserRole';
 
@@ -30,21 +32,32 @@ export interface ListRolesResult {
 
 export interface CreateRoleInput {
   name: string;
-  permissions?: Permission[];
+  /** Permissions of the list, `*`, or patterns over the list such as `user:*`. */
+  permissions?: string[];
 }
 
 export interface UpdateRoleInput {
   name?: string;
-  permissions?: Permission[];
+  permissions?: string[];
 }
 
-function validatePermissions(permissions: string[]): Permission[] {
-  const known = new Set<string>(PERMISSIONS);
-  const invalid = permissions.filter((permission) => !known.has(permission));
+/** Who changes a role: with one, the role gets only permissions the actor holds. */
+export interface RoleActor { roles: readonly { name: string; permissions: readonly string[] }[] }
+
+/** The signed-in user of this request changes the role, unless the caller names another actor. A seeder or a command has none. */
+function requestActor(): RoleActor | undefined {
+  return getRequestContext()?.get('user' as never) as RoleActor | undefined;
+}
+
+function validatePermissions(permissions: string[], actor?: RoleActor): string[] {
+  const invalid = permissions.filter((permission) => !validPermission(permission));
   if (invalid.length) {
     throw new ClientVisibleError(`Unknown permission(s): ${invalid.join(', ')}`);
   }
-  return permissions as Permission[];
+  // A role manager gives only permissions they hold.
+  const missing = actor ? permissions.filter((permission) => !holdsAll(permissionsOf(actor), [permission])) : [];
+  if (missing.length) throw new ClientVisibleError(`You cannot give a role permissions you do not have: ${missing.join(', ')}.`);
+  return [...new Set(permissions)].sort();
 }
 
 function toDetail(role: Role): RoleDetail {
@@ -91,9 +104,12 @@ export async function listRoles(options: ListRolesOptions = {}): Promise<RoleDet
   return { items, total, page: safePage, pageSize: safeSize };
 }
 
-/** The role new accounts get. Accounts start without one; assign roles on the user screen. */
+/** The role new accounts get (`registration.defaultRole`: a role's ID or name), or null when none is set. */
 export async function defaultRole(): Promise<RoleDetail | null> {
-  return null;
+  const wanted = authOptions.registration.defaultRole;
+  if (!wanted) return null;
+  const role = await Role.findOne({ where: { id: wanted } }) ?? await Role.findOne({ where: { name: wanted } });
+  return role ? toDetail(role) : null;
 }
 
 export async function getRole(id: string): Promise<RoleDetail | null> {
@@ -101,14 +117,28 @@ export async function getRole(id: string): Promise<RoleDetail | null> {
   return role ? toDetail(role) : null;
 }
 
-export async function createRole(input: CreateRoleInput): Promise<RoleDetail> {
+/**
+ * A role's ID, from its name: "User manager" is `user-manager`. Rules and settings name roles by
+ * it, so it reads as the role does and stays when the role is renamed.
+ */
+async function roleId(name: string): Promise<string> {
+  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
+  // `admin` is the administrators' role.
+  if (!base || base === ADMIN_ROLE) return uuidv7();
+  if (!await Role.exists({ id: base })) return base;
+  for (let n = 2; n < 100; n++) if (!await Role.exists({ id: `${base}-${n}` })) return `${base}-${n}`;
+  return uuidv7();
+}
+
+export async function createRole(input: CreateRoleInput, actor: RoleActor | undefined = requestActor()): Promise<RoleDetail> {
+  if (typeof input?.name !== 'string' || !input.name.trim() || input.name.length > 120) throw new ClientVisibleError('Enter a role name of at most 120 characters.');
   if (await Role.exists({ name: input.name })) {
     throw new ClientVisibleError('A role with this name already exists.');
   }
   const now = new Date();
-  const permissions = validatePermissions([...(input.permissions ?? [])]);
+  const permissions = validatePermissions([...(input.permissions ?? [])], actor);
   await Role.insert({
-    id: uuidv7(),
+    id: await roleId(input.name),
     name: input.name,
     permissions,
     createdAt: now,
@@ -118,19 +148,23 @@ export async function createRole(input: CreateRoleInput): Promise<RoleDetail> {
   return toDetail(role);
 }
 
-export async function updateRole(id: string, patch: UpdateRoleInput): Promise<void> {
+export async function updateRole(id: string, patch: UpdateRoleInput, actor: RoleActor | undefined = requestActor()): Promise<void> {
   const values: Partial<Role> = {};
-  if (patch.name !== undefined && patch.name !== ADMIN_ROLE && (await Role.findOne({ where: { id } }))?.name === ADMIN_ROLE) {
-    throw new ClientVisibleError('The admin role cannot be renamed.');
-  }
+  const current = await Role.findOne({ where: { id } });
+  if (!current) throw new ClientVisibleError('Role not found.');
+  // The admin role holds everything and stays as it is: changing it could lock everyone out.
+  if (current.id === ADMIN_ROLE) throw new ClientVisibleError('The admin role cannot be changed.');
+  // Nobody weakens or renames a role that holds permissions they lack.
+  if (actor && !holdsAll(permissionsOf(actor), current.permissions ?? [])) throw new ClientVisibleError('This role has permissions you do not have, so you cannot change it.');
   if (patch.name !== undefined) {
+    if (typeof patch.name !== 'string' || !patch.name.trim() || patch.name.length > 120) throw new ClientVisibleError('Enter a role name of at most 120 characters.');
     if (await Role.exists({ id: Not(id), name: patch.name })) {
       throw new ClientVisibleError('A role with this name already exists.');
     }
     values.name = patch.name;
   }
   if (patch.permissions !== undefined) {
-    values.permissions = validatePermissions([...patch.permissions]);
+    values.permissions = validatePermissions([...patch.permissions], actor);
   }
   if (Object.keys(values).length) await Role.update({ id }, values);
 }
@@ -139,7 +173,7 @@ export async function updateRole(id: string, patch: UpdateRoleInput): Promise<vo
 export async function deleteRole(id: string): Promise<void> {
   const role = await Role.findOne({ where: { id } });
   if (!role) throw new ClientVisibleError('Role not found.');
-  if (role.name === ADMIN_ROLE) throw new ClientVisibleError('The admin role cannot be deleted.');
+  if (role.id === ADMIN_ROLE) throw new ClientVisibleError('The admin role cannot be deleted.');
   await UserRole.delete({ roleId: id });
   await Role.delete({ id });
 }

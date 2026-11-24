@@ -2,7 +2,9 @@
 import { getRequestContext } from '@cossackframework/core';
 import { MAIN_SITE } from '@cossackframework/cms';
 import { currentCms, networkFor, siteUrl, type CmsBindings } from './cms/index';
-import { pendingSite } from './cms/handoff';
+import { getCookie } from 'hono/cookie';
+import type { Context } from 'hono';
+import type { CmsNetwork, NetworkSite } from '@cossackframework/cms/server';
 
 export async function siteName(): Promise<string> {
     try { return await currentCms().settings.get('general.siteTitle'); }
@@ -48,7 +50,7 @@ export async function signInBrand(): Promise<SignInBrand> {
         const env = c.env as CmsBindings;
         const network = networkFor(env);
         if (c.get('site') && c.get('site').id !== MAIN_SITE) {
-            return own(env.APP_URL ? { href: '/auth/handoff', name: (await network.settings()).name || await network.main.settings.get('general.siteTitle') } : null);
+            return own(env.APP_URL ? { href: '/auth/tenant/start', name: (await network.settings()).name || await network.main.settings.get('general.siteTitle') } : null);
         }
         const site = await pendingSite(c, network);
         if (!site) return own();
@@ -65,4 +67,24 @@ export async function signInBrand(): Promise<SignInBrand> {
             networkSignIn: null,
         };
     } catch { return own(); }
+}
+
+/**
+ * On the network host: the site that sent the visitor here to sign in (shared sign-in keeps
+ * its address in the `tenant_return` cookie until they are signed in), or null.
+ */
+async function pendingSite(c: Context, network: CmsNetwork): Promise<NetworkSite | null> {
+    const host = new URLSearchParams(getCookie(c, 'tenant_return') ?? '').get('host');
+    if (!host) return null;
+    const found = await network.resolve(host).catch(() => null);
+    return found?.kind === 'site' && found.site.id !== MAIN_SITE ? found.site : null;
+}
+
+/** What the network host is called on a site's pages: the network's name, or the main site's title. */
+export async function mainSiteName(): Promise<string> {
+    const c = getRequestContext();
+    try {
+        const network = networkFor(c!.env as CmsBindings);
+        return (await network.settings()).name || await network.main.settings.get('general.siteTitle') || 'the network';
+    } catch { return 'the network'; }
 }

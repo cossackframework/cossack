@@ -420,8 +420,8 @@ it('builds a generated staging app and validates deployment without uploading', 
     // A stale browser snapshot (count: 0) cannot overwrite the authoritative
     // scope state (count: 1): the mutation continues from the coordinator.
     expect((await (await sharedInvoke('increment', { count: 0 })).json())._cossack_return).toBe(2);
-    // Redirects through the coordinator still return the JSON contract.
-    expect(await (await sharedInvoke('goHome')).json()).toEqual({ _cossack_redirect: '/shared' });
+    // Redirects through the coordinator still return the JSON contract, with the method's value.
+    expect(await (await sharedInvoke('goHome')).json()).toEqual({ _cossack_redirect: '/shared', _cossack_return: 'redirected' });
     const reRendered = await server.fetch('/shared');
     expect(readHydration(await reRendered.text()).public).toEqual({ count: 3 });
     // Subscriptions receive bounded incremental events with cursor ids, and

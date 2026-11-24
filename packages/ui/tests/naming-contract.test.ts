@@ -15,7 +15,7 @@ function sources(directory: string): string[] {
 const files = ['components', 'blocks', 'internal'].flatMap(folder => sources(join(root, folder)));
 // Callbacks for events that do not report state.
 const events = new Set(['onSelect', 'onAction', 'onSubmit', 'onSocial', 'onComplete', 'onNavigate', 'onRetry', 'onRemove',
-    'onImageLoad', 'onImageError', 'onSuccess', 'onExpired', 'onError', 'onClick', 'onCopy']);
+    'onImageLoad', 'onImageError', 'onSuccess', 'onExpired', 'onError', 'onClick', 'onCopy', 'onDone']);
 // State that a component reports but never accepts as a prop.
 const reportedOnly: Record<string, string[]> = { 'components/Turnstile.ts': ['token'], 'components/Command.ts': ['search'], 'blocks/DashboardShell/index.ts': ['search'] };
 

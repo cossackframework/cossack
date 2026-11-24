@@ -39,7 +39,7 @@ export default class NewNetworkSite extends Cossack {
         const net = network(this.c);
         const principal = this.c.get('principal');
         try {
-            const admin = form.admin ? await net.main.accounts.findByEmail(form.admin) : await net.main.accounts.get(principal.kind === 'user' ? principal.id : '');
+            const admin = form.admin ? await net.main.users.findByEmail(form.admin) : await net.main.users.get(principal.kind === 'user' ? principal.id : '');
             if (!admin) throw new Error(__('No account has that email. Add the person under Network → Users first.'));
             const site = await net.createSite({ name: form.name, host: form.host, admin: admin.id, ...(value('id') ? { id: value('id') } : {}), ...(form.language ? { language: form.language } : {}), starter: form.starter }, { principal });
             flash('network.message', `${site.name} ${__('is ready.')}`);

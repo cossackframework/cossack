@@ -20,7 +20,8 @@ function host(records: RecordShape[], editors: readonly string[], created: Recor
         resourceById: () => resource,
         resource: () => ({
             get: async (id: string) => records.find(entry => entry.id === id) ?? null,
-            canUpdate: (_record: RecordShape, principal: Principal) => principal.kind === 'user' && editors.includes(principal.id),
+            canUpdate: async (_record: RecordShape, { principal }: { principal: Principal }) => principal.kind === 'user' && editors.includes(principal.id),
+            editable: async (entries: RecordShape[], { principal }: { principal: Principal }) => new Set(principal.kind === 'user' && editors.includes(principal.id) ? entries.map(entry => entry.id) : []),
             create: async (input: Record<string, unknown>) => { created.push(input); return record('copy', input); },
         }),
     } as unknown as CmsHost;
@@ -38,10 +39,10 @@ describe('copies and searches of locked entries', () => {
         expect(created.map(input => input.password)).toEqual([undefined, 'open sesame']);
     });
 
-    it('leaves locked entries out of dashboard searches for those who cannot open them', () => {
+    it('leaves locked entries out of dashboard searches for those who cannot open them', async () => {
         const entries = [record('open'), record('secret', { password: 'x' }), record('members', { membersOnly: true }), record('gold', { membersOnly: true, memberRoles: ['gold'] })];
-        expect(openMatches(host(entries, []), 'cms/posts', entries, reader).map(entry => entry.id)).toEqual(['open', 'members']);
-        expect(openMatches(host(entries, ['reader-1']), 'cms/posts', entries, reader).map(entry => entry.id)).toEqual(['open', 'secret', 'members', 'gold']);
+        expect((await openMatches(host(entries, []), 'cms/posts', entries, reader)).map(entry => entry.id)).toEqual(['open', 'members']);
+        expect((await openMatches(host(entries, ['reader-1']), 'cms/posts', entries, reader)).map(entry => entry.id)).toEqual(['open', 'secret', 'members', 'gold']);
     });
 
     it('emails a note only to mentioned people who may read the entry\'s notes', async () => {

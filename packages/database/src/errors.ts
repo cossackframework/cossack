@@ -59,3 +59,24 @@ export class SeederError extends ORMError {
     super(`Seeder "${seederName}" failed${detail}`, cause);
   }
 }
+
+/** Provider codes of a write that lost to a concurrent write, or could not take its lock in time. */
+const WRITE_CONFLICT_CODES = new Set<unknown>([
+  "RDB_WRITE_CONFLICT",                         // RomeDB
+  "SQLITE_BUSY", "SQLITE_BUSY_SNAPSHOT", 5,      // SQLite
+  "40001", "40P01",                             // PostgreSQL: serialization failure, deadlock
+  "ER_LOCK_DEADLOCK", "ER_LOCK_WAIT_TIMEOUT", 1213, 1205, // MySQL
+]);
+
+/**
+ * Whether a query failed because another write to the same rows won: the statement changed
+ * nothing and may be tried again, or given up as "busy". Looks through the error's causes.
+ */
+export function isWriteConflict(error: unknown): boolean {
+  for (let current = error, depth = 0; current && depth < 8; depth++) {
+    const { code, errno, cause } = current as { code?: unknown; errno?: unknown; cause?: unknown };
+    if (WRITE_CONFLICT_CODES.has(code) || WRITE_CONFLICT_CODES.has(errno)) return true;
+    current = cause;
+  }
+  return false;
+}

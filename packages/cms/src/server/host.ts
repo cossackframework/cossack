@@ -6,7 +6,7 @@ import type { UpdatesOptions } from '../updates';
 import { createHookRegistry, type ActionHandler, type ActionPoint, type ActionReport, type ExtensionPoint, type FilterContext, type FilterHandler, type FilterPoint, type HookRegistry, type InvokeOptions } from '@cossackframework/core/hooks';
 import type { StorageProvider } from '@cossackframework/core/storage';
 import { ClientError, MAX_STATEMENTS, type RomeDB, type Statement, type Value, type WorkLimits } from '@cossackframework/romedb';
-import { normalizeRichText, richTextBlocks, withRichTextBlocks } from '../richtext';
+import { normalizeRichText, richTextBlocks, richTextMedia, withRichTextBlocks, type RichTextDoc } from '../richtext';
 import { blockId, blockMedia, blockProblems, htmlBlocksChanged, textFieldProblem, validateBlocks, type Block, type BlockDeclaration } from '../blocks';
 import { blocksShapeProblem, type FieldDeclaration } from '../fields';
 import { collectionProblems, collectionResource, contentBlocks, entryUrl, extendCollection, languageName, LOCALE, translationGroupOf, orderedFields, RESERVED_FIELDS, type CollectionDefinition } from '../collections';
@@ -26,9 +26,13 @@ import { taxonomyProblems, type TaxonomyDeclaration, type TermShape } from '../t
 import { isPluginPoint, manifestProblems, providedPoints, requestedGrants, UNRESTRICTED_GRANT, type CmsPluginManifest, type PluginCommand, type SlotLink } from '../manifest';
 import { ANONYMOUS, evaluateRule, hasPermission, isNetworkAdmin, PERMISSIONS, principalId, systemPrincipal, type Principal } from '../permissions';
 import { AVATAR_TYPES, mediaUrl } from '../media';
-import { canonicalJson, declarationHash, resolveResource, type Resource, type ResourceAction, type ResourceDeclaration } from '../resource';
+import { canonicalJson, declarationHash, memberRuleProblems, ResourceDeclarationError, resolveResource, storageName, type Resource, type ResourceAction, type ResourceDeclaration } from '../resource';
 import { Outbox, type OutboxOptions } from './outbox';
-import { JOIN_GROUP, ResourceRepository, type FieldFilter, type ListOptions, type OperationContext } from './repository';
+import { FieldValues } from './field-values';
+import { CmsAttempts } from './attempts';
+import { memoryPeople, type PeoplePort } from './people';
+import { groupMedia, JOIN_GROUP, ResourceRepository, type BatchGuard, type BatchWrite, type FieldFilter, type ListOptions, type OperationContext } from './repository';
+import { batchResource, writeBatch } from './batch';
 import { migrate, nextGenerationStatement, planSchema, readCatalog, type MigrationReport, type SchemaPlan } from './schema';
 import { FileService, type CmsFile, type FileServiceOptions, type ImageSettings, LIBRARY_KEYS } from './files';
 import { CmsCache } from './cache';
@@ -39,22 +43,21 @@ import { SiteSearch, SITE_SEARCH, searchRebuild } from './site-search';
 import { sharedFields } from './shared-fields';
 import { pathsMoved, pathsMovedStatement } from './path-moves';
 import { noteAnnounced, type NoteAnnouncedEvent } from './notes';
-import { readPaged } from './budget';
+import { readPaged, readPagedTogether } from './budget';
+import { sharedRead } from './shared-read';
 import { isLockedRecord, lockedView } from './locked';
-import { OPEN_POLICY, pluginState, readPolicy, type NetworkPluginState, type NetworkPolicy } from './network-policy';
+import { pluginState, readPolicy, type NetworkPluginState, type NetworkPolicy } from './network-policy';
 import { CmsSettings } from './site-settings';
-import { createAuthSessionStore, createJobStore, createNotificationStore, createOAuthStateStore, createSessionStore, type EndedSessions } from './stores';
+import { createJobStore, createNotificationStore } from './stores';
 import { CmsMenus } from './menus';
 import { CmsAreas } from './areas';
 import { CmsTaxonomies } from './taxonomies';
 import { CmsUsers } from './users';
-import { CmsAccounts } from './accounts';
 import { CmsPreviews, type PreviewLink } from './previews';
 import { CmsAutosaves, type Autosave } from './autosaves';
 import { CmsDrafts } from './drafts';
 import { CmsNotes } from './notes';
 import { CmsRedirects } from './redirects';
-import { CmsApiTokens, type ApiTokenScope } from './api-tokens';
 import { CmsWebhooks } from './webhooks';
 import { CmsIndexNow } from './indexnow';
 import { CmsPurge, type CachePurger } from './purge';
@@ -74,7 +77,6 @@ import type { PaymentEvent } from '../hooks';
 import { siteBindingScope, type BindingScopes } from '../bindings';
 import { CmsAutomations } from './automations';
 import { CmsComments, collectionDeleted, collectionDeletedStatement } from './comments';
-import { CmsSecurity } from './security';
 import type { ImageTransformer } from './images';
 import { checkComment, COMMENT_STATUSES, type CommentShape, type CommentStatus } from '../comments';
 import { sha256Hex } from './tokens';
@@ -104,9 +106,30 @@ export interface PluginRegistrationLike {
 
 export type { CmsModule };
 
+/** The internal resource that stores the field values of users (`specs/cms-field-values.md`). */
+export const USER_FIELDS = 'cms/user_fields';
+
+/**
+ * The internal resource that stores the field values of a taxonomy's terms. It exists while
+ * groups are attached to the taxonomy. A taxonomy's name may have capitals and be longer
+ * than a resource's, so such a name is shortened and told apart by a hash.
+ */
+export function termFieldsId(taxonomy: string): string {
+    if (/^[a-z][a-z0-9]{0,37}$/.test(taxonomy)) return `cms/tf_${taxonomy}`;
+    let hash = 0x811c9dc5;
+    for (let index = 0; index < taxonomy.length; index++) hash = Math.imul(hash ^ taxonomy.charCodeAt(index), 0x01000193) >>> 0;
+    return `cms/tf_${taxonomy.toLowerCase().slice(0, 28)}_${hash.toString(16).padStart(8, '0')}`;
+}
+
 export interface CmsOptions {
     /** The site's database. */
     readonly db: RomeDB;
+    /**
+     * Who keeps accounts, roles and sign-in: the application, on the dashboard package
+     * (`specs/cms-on-dashboard.md`). With it, `users` reads and writes people through this port
+     * and keeps only author slugs and field values. Without it, the CMS's own account tables are used.
+     */
+    readonly people?: PeoplePort;
     /** The site runs in development: webhooks may use plain HTTP and go to this machine or a private network. */
     readonly localWebhooks?: boolean;
     /**
@@ -125,8 +148,6 @@ export interface CmsOptions {
      * note's write queued, so a note that was saved is announced even after a crash.
      */
     readonly announceNote?: (host: CmsHost, event: NoteAnnouncedEvent) => Promise<void>;
-    /** Network sessions ended: end the child sessions that sites made from them. */
-    readonly sessionsEnded?: (ended: EndedSessions) => Promise<void>;
     /** This site's ID in the network; default `main`. */
     readonly site?: string;
     /** Application resources; owner defaults to `app`. */
@@ -306,6 +327,12 @@ export interface PluginUnrestricted {
 
 export interface PluginCms {
     resource(id: string): PluginResource;
+    /**
+     * Writes that commit together or not at all, under guards that count other records in the
+     * same request (`CmsHost.batch`). Each write needs what it would alone; each guard's resource,
+     * the plugin's own or one it may read.
+     */
+    batch(writes: readonly BatchWrite[], context: OperationContext & { readonly guards?: readonly BatchGuard[] }): Promise<(RecordShape | null)[]>;
 }
 
 /**
@@ -350,7 +377,10 @@ export type ThemeLoaderInput = { readonly site: SiteView } | { readonly entry: E
 export type ThemeLoader = { bivarianceHack(context: LayoutLoaderContext | EntryLoaderContext | ArchiveLoaderContext): unknown }['bivarianceHack'];
 export type ThemeLoaders = { readonly [template: string]: ThemeLoader };
 
-export type PluginResource = Pick<ResourceRepository, 'get' | 'list' | 'count' | 'search' | 'create' | 'update' | 'delete'>;
+export type PluginResource = Pick<ResourceRepository, 'get' | 'list' | 'count' | 'search' | 'create' | 'update' | 'delete'> & {
+    /** Throws unless the plugin may do this on the resource: its own, or requested and granted. */
+    checkGrant(action: ResourceAction): Promise<void>;
+};
 
 export interface PluginStatus {
     readonly name: string;
@@ -419,12 +449,6 @@ interface Activation {
 export const PLUGIN_ENABLED = 'plugin:enabled';
 
 /** Where an account and what signs it in live: the site's own database, or the network's. */
-export interface AccountStores {
-    readonly kind: 'site' | 'network';
-    readonly accounts: CmsAccounts;
-    readonly security: CmsSecurity;
-    readonly apiTokens: CmsApiTokens;
-}
 
 export class CmsHost {
     readonly db: RomeDB;
@@ -433,20 +457,11 @@ export class CmsHost {
     /** This site's ID in the network: `main`, or the registry ID. */
     readonly site: string;
     readonly hooks: HookRegistry;
-    /** Network accounts: who signs in on the network host, on the network database. */
-    readonly accounts: CmsAccounts;
-    /**
-     * Site accounts: people who sign in on this site only, on its own database, with their own
-     * second factors, passkeys and application passwords. Null on the main site, whose accounts
-     * are the network's.
-     */
-    readonly siteAccounts: CmsAccounts | null;
+    /** The field group values of users: one document per member. */
+    readonly userFields: FieldValues;
     /** This site's members and roles. */
     readonly users: CmsUsers;
     readonly outbox: Outbox;
-    readonly authSessions: ReturnType<typeof createAuthSessionStore>;
-    readonly oauthStates: ReturnType<typeof createOAuthStateStore>;
-    readonly sessions: ReturnType<typeof createSessionStore>;
     readonly taxonomies: CmsTaxonomies;
     readonly settings: CmsSettings;
     readonly menus: CmsMenus;
@@ -461,7 +476,6 @@ export class CmsHost {
     /** Editors' review notes on entries, fields, blocks and passages. */
     readonly notes: CmsNotes;
     readonly redirects: CmsRedirects;
-    readonly apiTokens: CmsApiTokens;
     readonly webhooks: CmsWebhooks;
     readonly indexnow: CmsIndexNow;
     /** Purges of the caches in front of the site, queued by changes and sent from the outbox. */
@@ -494,12 +508,8 @@ export class CmsHost {
     readonly automations: CmsAutomations;
     readonly #secrets: (name: string) => string | undefined;
     readonly #env: Readonly<Record<string, unknown>>;
-    /** Second factors and passkeys of network accounts, on the network database. */
-    readonly security: CmsSecurity;
-    /** Second factors and passkeys of site accounts; null on the main site. */
-    readonly siteSecurity: CmsSecurity | null;
-    /** Application passwords of site accounts; null on the main site. */
-    readonly siteApiTokens: CmsApiTokens | null;
+    /** Counted attempts for the CMS's own limits: forms, comments, suggestions, site registrations. */
+    readonly attempts: CmsAttempts;
     /** Media files, when the host has object storage. */
     readonly files: FileService | null;
     /** A cache shared by every isolate, on RomeDB: values slow to compute, such as the library's summary. */
@@ -511,7 +521,11 @@ export class CmsHost {
     /** Code-declared resources: modules, the application and plugins. */
     readonly #static = new Map<string, Resource>();
     /** Static resources and the current collections. */
+    /** Who keeps accounts, roles and sign-in: the application's port, or people kept in memory without one. */
+    readonly people: PeoplePort;
     #resources = new Map<string, Resource>();
+    /** The stores of terms' field values, by taxonomy. */
+    readonly #termFields = new Map<string, FieldValues>();
     readonly #repositories = new Map<string, ResourceRepository>();
     readonly #plugins = new Map<string, HostedPlugin>();
     readonly #runner: PluginRunner | null;
@@ -558,6 +572,11 @@ export class CmsHost {
         const modules = options.modules ?? [];
         for (const module of modules) for (const declaration of module.resources) this.#register(resolveResource(declaration, module.owner));
         for (const declaration of options.resources ?? []) this.#register(resolveResource(declaration, declaration.owner ?? 'app'));
+        // Membership rules name resources of the same owner; a plugin's are checked with its manifest.
+        for (const resource of this.#static.values()) {
+            const problems = memberRuleProblems(resource, resource.owner, id => this.#static.get(id));
+            if (problems.length) throw new ResourceDeclarationError(resource.id, problems);
+        }
         this.#runner = options.runner ?? null;
         for (const registration of options.plugins ?? []) this.#host(registration);
         this.#resolvePluginPoints();
@@ -587,15 +606,19 @@ export class CmsHost {
         }
         this.#apply(new Map(), new Map());
         this.fieldGroups = new CmsFieldGroups(this.db, { now: this.#now });
-        this.accounts = new CmsAccounts(this.network, { now: this.#now, ...(options.sessionsEnded ? { sessionsEnded: options.sessionsEnded } : {}) });
         const added = this.network !== this.db;
-        // A site account's sessions are this site's: ending them ends nothing elsewhere.
-        this.siteAccounts = added ? new CmsAccounts(this.db, { now: this.#now, sessionsEnded: async ended => { if ('user' in ended) await this.authSessions.revokeAllForUser(ended.user, ended.except); } }) : null;
-        this.users = new CmsUsers(this.db, { accounts: this.accounts, ...(this.siteAccounts ? { siteAccounts: this.siteAccounts } : {}), ...(options.site ? { site: options.site } : {}), now: this.#now, checkMeta: (meta, previous, principal) => this.#checkMeta({ kind: 'users' }, meta, previous, principal) });
+        // A user's field values are a document beside the member row, in the storage of an internal resource (specs/cms-field-values.md).
+        this.userFields = new FieldValues(this.db, {
+            resource: () => this.#resources.get(USER_FIELDS)!,
+            storageOf: id => this.resourceById(id).storage,
+            media: values => this.#valuesMedia(this.#resources.get(USER_FIELDS)!.fields, values),
+            now: this.#now,
+        });
+        // Accounts, roles and sign-in are the application's (the dashboard package's in a CMS project). Without a port the host keeps people in memory: for tests, and for trying the CMS alone.
+        this.people = options.people ?? memoryPeople({ now: this.#now });
+        this.users = new CmsUsers(this.db, { people: this.people, now: this.#now, fields: this.userFields, checkMeta: (meta, previous, principal) => this.#checkMeta({ kind: 'users' }, meta, previous, principal) });
         this.redirects = new CmsRedirects(this.db, { now: this.#now, changed: () => this.#purgeSite('redirects') });
         this.traffic = new CmsTraffic(this.db, { now: this.#now });
-        this.apiTokens = new CmsApiTokens(this.network, { now: this.#now });
-        this.siteApiTokens = added ? new CmsApiTokens(this.db, { now: this.#now }) : null;
         this.webhooks = new CmsWebhooks(this.db, { now: this.#now, fetch: options.webhookFetch ?? this.#fetch, local: options.localWebhooks === true });
         this.comments = new CmsComments(this.db, { now: this.#now, changed: entries => this.#purgeLater('comments', { tags: entries.filter(entry => entry.resource.startsWith('cms/')).map(entry => this.purge.tag.entry(entry.resource.slice(4), entry.recordId)) }) });
         this.mailFrom = options.mailFrom ?? 'no-reply@example.com';
@@ -604,8 +627,7 @@ export class CmsHost {
             siteUrl: typeof options.siteUrl === 'function' ? options.siteUrl : () => options.siteUrl as string | undefined }) : null;
         const mail = this.mail;
         this.forms = new CmsForms(this, { ...(mail ? { mail: { send: message => mail.send({ ...message, kind: 'form' }) } } : {}), mailFrom: this.mailFrom });
-        this.security = new CmsSecurity(this.network, { now: this.#now });
-        this.siteSecurity = added ? new CmsSecurity(this.db, { now: this.#now }) : null;
+        this.attempts = new CmsAttempts(this.db, { now: this.#now });
         this.siteSearch = new SiteSearch(this);
         // Rebuilds of the site's search index run from the outbox, a round of entries at a time.
         this.hooks.addAction(searchRebuild, (event, context) => this.siteSearch.step(event, context.signal ? { signal: context.signal } : {}), { plugin: 'cms-search' });
@@ -673,15 +695,12 @@ export class CmsHost {
         this.hooks.addAction(formSubmitted, event => this.forms.notify(event), { plugin: 'cms' });
         this.hooks.addAction(formSubmitted, event => this.#queueFormWebhooks(event), { plugin: 'cms' });
         this.outbox = new Outbox(this.db, this.hooks, { now: this.#now, ...options.outbox });
-        // The main site's sessions are the network's; another site's are child sessions handed off from them.
-        this.authSessions = createAuthSessionStore(this.db, { now: this.#now, request: requestMetadata, ...(options.sessionsEnded ? { sessionsEnded: options.sessionsEnded } : {}) });
-        this.oauthStates = createOAuthStateStore(this.network);
-        this.sessions = createSessionStore(this.db, { now: this.#now });
         this.taxonomies = new CmsTaxonomies(this.db, {
             taxonomies: () => this.#taxonomies,
             now: this.#now,
             beforeSave: (draft, input) => this.hooks.applyFilters(termBeforeSave, draft, input),
             checkMeta: taxonomy => (meta, previous, principal) => this.#checkMeta({ kind: 'taxonomy', name: taxonomy }, meta, previous, principal),
+            fields: taxonomy => this.#termValues(taxonomy),
             usage: name => this.resources.flatMap(resource => Object.entries(resource.fields)
                 .filter(([, declaration]) => declaration.taxonomy === name).map(([field]) => ({ resource: resource.id, storage: resource.storage, field }))),
             canAssign: (principal, taxonomy) => this.taxonomies.usage(taxonomy.name).some(({ resource: id }) => {
@@ -731,9 +750,9 @@ export class CmsHost {
             principal: id => this.users.principal(id),
             // As the repository answers the author: without the fields their permissions do not read,
             // and a locked entry as its readers see it unless the author may update it.
-            redact: (collection, record, principal) => {
+            redact: async (collection, record, principal) => {
                 const fields = this.#collections.has(collection) ? this.resourceById(`cms/${collection}`).fields : {};
-                const editor = this.#collections.has(collection) && this.resource(`cms/${collection}`).canUpdate(record as RecordShape, principal);
+                const editor = this.#collections.has(collection) && await this.resource(`cms/${collection}`).canUpdate(record as RecordShape, { principal });
                 const seen = editor ? record : lockedView(record as RecordShape, fields);
                 const hidden = Object.entries(fields).filter(([, field]) => field.access?.read && !hasPermission(principal, field.access.read)).map(([name]) => name);
                 return hidden.length ? Object.fromEntries(Object.entries(seen).filter(([name]) => !hidden.includes(name))) : seen;
@@ -748,7 +767,10 @@ export class CmsHost {
 
     now(): number { return this.#now(); }
 
-    get resources(): readonly Resource[] { return [...this.#resources.values()]; }
+    /** The resources people and plugins work with. Internal ones (a user's field values) are left out. */
+    get resources(): readonly Resource[] { return [...this.#resources.values()].filter(resource => !resource.internal); }
+    /** Every resource that has storage to plan and migrate, internal ones too. */
+    get #stored(): readonly Resource[] { return [...this.#resources.values()]; }
 
     /** Revisions of a dropped collection's entries written up to `before`. */
     async #deleteRevisions(resource: string, before: number): Promise<void> {
@@ -796,10 +818,20 @@ export class CmsHost {
         return resource;
     }
 
+    /**
+     * Several writes that commit together, in one request, or not at all: each prepared as it
+     * would be alone, with `guards` (counts of other records) and each record's revision checked
+     * in the same request. See `writeBatch`.
+     */
+    batch(writes: readonly BatchWrite[], context: OperationContext & { readonly guards?: readonly BatchGuard[] }): Promise<(RecordShape | null)[]> {
+        return writeBatch(this, writes, context);
+    }
+
     resource(id: string): ResourceRepository {
         let repository = this.#repositories.get(id);
         if (!repository) {
-            this.resourceById(id);
+            // The host's own storage has no repository: its rows are not records with revisions, owners and events.
+            if (this.resourceById(id).internal) throw new CmsError('CMS_NOT_FOUND', `Unknown resource ${id}.`);
             repository = new ResourceRepository(this, id);
             this.#repositories.set(id, repository);
         }
@@ -811,6 +843,10 @@ export class CmsHost {
      * request middleware awaits this so `resource()` sees current collections.
      */
     ready(options: { force?: boolean } = {}): Promise<void> {
+        return sharedRead(() => this.#ready(options));
+    }
+
+    #ready(options: { force?: boolean }): Promise<void> {
         const now = this.#now();
         if (options.force || !this.#definitions || now - this.#definitions.at > this.#activationTtl) {
             // The activation state and the settings are read by the steps that need them, not started here
@@ -1025,7 +1061,7 @@ export class CmsHost {
         const repository = this.resource(resourceId);
         const record = await repository.get(id, { principal });
         if (!record) throw new CmsError('CMS_NOT_FOUND', 'Record not found.');
-        if (!repository.canUpdate(record, principal)) throw new CmsError(principal.kind === 'anonymous' ? 'CMS_UNAUTHENTICATED' : 'CMS_FORBIDDEN', 'Not allowed to edit this entry.');
+        if (!await repository.canUpdate(record, { principal })) throw new CmsError(principal.kind === 'anonymous' ? 'CMS_UNAUTHENTICATED' : 'CMS_FORBIDDEN', 'Not allowed to edit this entry.');
         return record;
     }
 
@@ -1037,23 +1073,6 @@ export class CmsHost {
      * The stores that sign people in on this host: the site's own on an added site, the
      * network's on the main site. Sign-in by email, passkey or reset token starts here.
      */
-    get signIn(): AccountStores {
-        return this.siteAccounts ? { kind: 'site', accounts: this.siteAccounts, security: this.siteSecurity!, apiTokens: this.siteApiTokens! }
-            : { kind: 'network', accounts: this.accounts, security: this.security, apiTokens: this.apiTokens };
-    }
-
-    /** The stores holding a user's account: the site's for a site account, the network's otherwise. */
-    async storesOf(userId: string): Promise<AccountStores> {
-        return this.siteAccounts && await this.siteAccounts.get(userId) ? this.signIn
-            : { kind: 'network', accounts: this.accounts, security: this.security, apiTokens: this.apiTokens };
-    }
-
-    async tokenPrincipal(token: string): Promise<{ principal: Principal; scope: ApiTokenScope; userId: string } | null> {
-        const verified = await this.siteApiTokens?.verify(token) ?? await this.apiTokens.verify(token);
-        if (!verified) return null;
-        const user = await this.users.resolve(verified.userId);
-        return user ? { principal: user.principal, scope: verified.scope, userId: user.id } : null;
-    }
 
     /** Whether the site has discussions at all (Settings → Discussion → Allow discussions). Off hides every comment; stored ones are kept. */
     discussions(settings: SiteSettings): boolean {
@@ -1097,7 +1116,7 @@ export class CmsHost {
         }
         const ipHash = context.ip ? await sha256Hex(`cms-comment:${context.ip}`) : null;
         // One comment per address in 15 seconds, counted in one conditional write so a burst gets one through.
-        if (ipHash && !(await this.security.attempt('comment', ipHash, 1, 15_000))) throw new CmsError('CMS_LIMIT', 'You are posting comments too quickly. Wait a moment and try again.');
+        if (ipHash && !(await this.attempts.attempt('comment', ipHash, 1, 15_000))) throw new CmsError('CMS_LIMIT', 'You are posting comments too quickly. Wait a moment and try again.');
         // "An earlier approved comment" counts for signed-in users only: an anonymous commenter types any email.
         const status: CommentStatus = input.trap ? 'spam' : hasPermission(context.principal, PERMISSIONS.moderateComments) ? 'approved'
             : await commentStatus(fields, settings, async () => user !== null && await this.comments.hasApproved(fields.authorEmail));
@@ -1496,7 +1515,7 @@ export class CmsHost {
         const source = await repository.get(id, { principal });
         if (!source) throw new CmsError('CMS_NOT_FOUND', 'Entry not found.');
         // A translation starts as a copy: a reader the entry is locked for gets none to open.
-        if (lockedCopy(source, repository.canUpdate(source, principal))) throw new CmsError('CMS_FORBIDDEN', 'Only its editors can translate a protected or members-only entry.');
+        if (lockedCopy(source, await repository.canUpdate(source, { principal }))) throw new CmsError('CMS_FORBIDDEN', 'Only its editors can translate a protected or members-only entry.');
         // A translation the principal cannot read still exists: never start a second one.
         const existing = (await this.translations(collection, source, { principal: systemPrincipal('translations') })).get(locale);
         if (existing) {
@@ -1807,10 +1826,18 @@ export class CmsHost {
         this.taxonomies.declaration(name);
         const users = this.collections().filter(collection => collection.taxonomies?.includes(name));
         if (users.length) throw new CmsError('CMS_CONFLICT', `${users.map(collection => collection.label).join(', ')} use this taxonomy.`);
+        // Its terms' field values go with it, whether or not groups are attached now.
+        const fields = termFieldsId(name);
+        const storage = storageName('cms', fields.slice(4));
+        const info = await this.db.read([{ rql: 'INFO FOR DB' }]);
+        const exists = ((info.results[0]!.rows[0]![0] as { tables?: { name: string }[] }).tables ?? []).some(table => table.name === storage);
+        const at = this.#now();
         await this.db.write([
             { rql: 'DELETE FROM cms_terms WHERE taxonomy = $name', params: { $name: name } },
             { rql: 'DELETE FROM cms_taxonomies WHERE name = $name', params: { $name: name } },
+            ...(exists ? [{ rql: `DROP TABLE ${storage}` }, { rql: 'DELETE FROM cms_schema_state WHERE resource = $id', params: { $id: fields } }, nextGenerationStatement(at)] : []),
         ], { kind: 'cms.collections' });
+        this.#termFields.delete(name);
         await this.ready({ force: true });
     }
 
@@ -1820,11 +1847,11 @@ export class CmsHost {
     }
 
     async plan(options: { signal?: AbortSignal } = {}): Promise<SchemaPlan> {
-        return planSchema(this.resources, await readCatalog(this.db, this.resources.map(resource => resource.storage), options));
+        return planSchema(this.#stored, await readCatalog(this.db, this.#stored.map(resource => resource.storage), options));
     }
 
     async migrate(options: { signal?: AbortSignal } = {}): Promise<MigrationReport> {
-        const report = await migrate(this.db, this.resources, { ...options, now: this.#now });
+        const report = await migrate(this.db, this.#stored, { ...options, now: this.#now });
         this.#activation = undefined;
         return report;
     }
@@ -1905,7 +1932,22 @@ export class CmsHost {
         await this.#purgeSite('plugins');
         await this.#seedFieldGroups(plugin, principal);
         await this.#seedPatterns(plugin, principal);
+        await this.#seedRoles(plugin);
         return this.#pluginStatus(plugin, await this.#state());
+    }
+
+    /**
+     * Define the roles a plugin's manifest ships. A role the site has is left as it is, changed or
+     * not; with `onlyIfNone`, nothing is added while the site has any of them, so a role it
+     * deleted stays deleted, and comes back with the plugin's next grant.
+     */
+    async #seedRoles(plugin: HostedPlugin, options: { onlyIfNone?: boolean } = {}): Promise<void> {
+        const declared = plugin.manifest.roles ?? [];
+        if (!declared.length) return;
+        const existing = new Set<string>();
+        for (const role of declared) if (await this.users.role(role.id)) existing.add(role.id);
+        if (options.onlyIfNone && existing.size) return;
+        for (const role of declared) if (!existing.has(role.id)) await this.users.defineRole({ id: role.id, name: role.name, permissions: [...role.permissions] });
     }
 
     /**
@@ -2010,7 +2052,18 @@ export class CmsHost {
 
     /** Repositories limited to a plugin's own resources and its granted ones. */
     pluginCms(name: string): PluginCms {
-        return {
+        const cms: PluginCms = {
+            batch: async (writes, context) => {
+                // The same grant checks as each call alone: a write's action, a guard's read.
+                if (!Array.isArray(writes)) throw new CmsError('CMS_VALIDATION', 'A batch is a list of writes.');
+                for (const write of writes) {
+                    const id = write && typeof write === 'object' ? batchResource(write) : undefined;
+                    if (typeof id !== 'string') throw new CmsError('CMS_VALIDATION', 'A write creates, updates or deletes a record.');
+                    await cms.resource(id).checkGrant('create' in write ? 'create' : 'update' in write ? 'update' : 'delete');
+                }
+                for (const guard of context?.guards ?? []) await cms.resource(String(guard?.resource)).checkGrant('read');
+                return this.batch(writes, context);
+            },
             resource: id => {
                 const plugin = this.#plugins.get(name);
                 // Its own resources and the collections it ships.
@@ -2036,9 +2089,11 @@ export class CmsHost {
                     create: (input, context) => check('create').then(() => repository.create(input, context)),
                     update: (key, patch, context) => check('update').then(() => repository.update(key, patch, context)),
                     delete: (key, context) => check('delete').then(() => repository.delete(key, context)),
+                    checkGrant: async (action: ResourceAction) => { await check(action); },
                 };
             },
         };
+        return cms;
     }
 
     /** Called after each committed mutation. Menus link to entries, so their cache is dropped. */
@@ -2094,6 +2149,10 @@ export class CmsHost {
             const resource = this.#resources.get(`cms/${collection.name}`);
             if (resource && state.hashes.get(resource.id) !== await declarationHash(resource)) stale.push(resource.id);
         }
+        // The host's own storage follows the groups attached to it, as a collection does.
+        for (const resource of this.#resources.values()) {
+            if (resource.internal && state.hashes.get(resource.id) !== await declarationHash(resource)) stale.push(resource.id);
+        }
         // A plugin the network activates is migrated on every site as the site loads.
         const networkActive = [...this.#plugins.values()].filter(plugin => !plugin.problems.length && pluginState(state.policy, plugin.manifest.name) === 'network');
         for (const id of networkActive.flatMap(plugin => plugin.resources)) {
@@ -2101,7 +2160,7 @@ export class CmsHost {
             if (resource && !stale.includes(id) && state.hashes.get(id) !== await declarationHash(resource)) stale.push(id);
         }
         if (hostPending || stale.length) {
-            this.#upgrading ??= migrate(this.db, this.resources, { now: this.#now, only: stale }).then(report => {
+            this.#upgrading ??= migrate(this.db, this.#stored, { now: this.#now, only: stale }).then(report => {
                 if (report.failed) console.error(`[cms] could not upgrade the schema: ${report.failed.message}`);
             }).catch(error => console.error('[cms] could not upgrade the schema', error)).finally(() => {
                 this.#upgrading = undefined;
@@ -2114,6 +2173,7 @@ export class CmsHost {
         for (const plugin of networkActive) {
             if (plugin.manifest.fieldGroups?.length && !this.#groups.some(group => group.plugin === plugin.manifest.name)) await this.#seedFieldGroups(plugin, systemPrincipal('network')).catch(error => console.error(`[cms] could not add the field groups of ${plugin.manifest.name}`, error));
             await this.#seedPatterns(plugin, systemPrincipal('network'), { onlyIfNone: true }).catch(error => console.error(`[cms] could not add the patterns of ${plugin.manifest.name}`, error));
+            await this.#seedRoles(plugin, { onlyIfNone: true }).catch(error => console.error(`[cms] could not add the roles of ${plugin.manifest.name}`, error));
         }
     }
 
@@ -2131,11 +2191,13 @@ export class CmsHost {
         // Awaited below; when the definitions fail first, its own failure is not left unhandled.
         groups.catch(() => undefined);
         try {
-            // Definitions are JSON of many fields: forty large collections may come in smaller reads. Collections, taxonomies and field groups are read side by side.
-            [collections, taxonomies] = await Promise.all([
-                readPaged(this.db, (size, at) => ({ rql: 'SELECT name, definition FROM cms_collections ORDER BY name LIMIT $limit OFFSET $offset', params: { $limit: size, $offset: at } }), 200, 0),
-                readPaged(this.db, (size, at) => ({ rql: 'SELECT name, definition FROM cms_taxonomies ORDER BY name LIMIT $limit OFFSET $offset', params: { $limit: size, $offset: at } }), 200, 0),
-            ]);
+            // Definitions are JSON of many fields: forty large collections may come in smaller reads. Collections and
+            // taxonomies come in one request, beside the field groups' own: each read in flight takes one of the
+            // database client's places, which every request of the isolate shares.
+            [collections = [], taxonomies = []] = await readPagedTogether(this.db, [
+                (size, at) => ({ rql: 'SELECT name, definition FROM cms_collections ORDER BY name LIMIT $limit OFFSET $offset', params: { $limit: size, $offset: at } }),
+                (size, at) => ({ rql: 'SELECT name, definition FROM cms_taxonomies ORDER BY name LIMIT $limit OFFSET $offset', params: { $limit: size, $offset: at } }),
+            ], 200);
         } catch (error) {
             // Before setup the tables do not exist; built-ins apply.
             if (!(error instanceof ClientError) || !/cms_collections|cms_taxonomies|no such table|not found/i.test(error.message)) throw error;
@@ -2152,7 +2214,53 @@ export class CmsHost {
         return groupsForTarget(this.#groups, target);
     }
 
-    /** A target's fields from its groups, after the group blocks are checked against the current types. */
+    /** Where a taxonomy's terms keep their field values, or null while no group is attached to it. */
+    #termValues(taxonomy: string): FieldValues | null {
+        const id = termFieldsId(taxonomy);
+        if (!this.#resources.has(id)) return null;
+        let store = this.#termFields.get(taxonomy);
+        if (!store) {
+            store = new FieldValues(this.db, {
+                resource: () => this.#resources.get(id)!,
+                storageOf: target => this.resourceById(target).storage,
+                media: values => this.#valuesMedia(this.#resources.get(id)!.fields, values),
+                now: this.#now,
+            });
+            this.#termFields.set(taxonomy, store);
+        }
+        return store;
+    }
+
+    /** The internal resource of a taxonomy's term fields, or null when its groups give none. */
+    #termFieldsResource(taxonomy: TaxonomyDeclaration): Resource | null {
+        let fields: { [name: string]: FieldDeclaration } = {};
+        try { fields = this.#groupFields({ kind: 'taxonomy', name: taxonomy.name }).fields; } catch { return null; }
+        if (!Object.keys(fields).length) return null;
+        return resolveResource({ name: termFieldsId(taxonomy.name).slice(4), label: `${taxonomy.label} fields`, schemaless: true, internal: true, revisions: false, fields }, 'cms');
+    }
+
+    /** The users' fields: the author profile and the fields of the groups attached to users. */
+    #userFieldsResource(): Resource {
+        // A group whose blocks no longer validate adds no fields, as on a collection.
+        let fields: { [name: string]: FieldDeclaration } = {};
+        try { fields = this.#groupFields({ kind: 'users' }).fields; } catch { /* the author profile alone */ }
+        return resolveResource({ name: USER_FIELDS.slice(4), label: 'User fields', schemaless: true, internal: true, revisions: false, fields: { ...AUTHOR_FIELDS, ...fields } }, 'cms');
+    }
+
+    /** The media files that values of these fields name: media fields, and files inside blocks, rich text and groups. */
+    #valuesMedia(fields: { readonly [name: string]: FieldDeclaration }, values: { readonly [field: string]: unknown }): string[] {
+        const files: string[] = [];
+        for (const [name, value] of Object.entries(values)) {
+            const declaration = Object.hasOwn(fields, name) ? fields[name] : undefined;
+            if (!declaration || value === null || value === undefined) continue;
+            files.push(...(declaration.media ? (Array.isArray(value) ? value as string[] : [value as string])
+                : declaration.kind === 'blocks' ? blockMedia(value as Block[], this.#blocks)
+                : declaration.kind === 'richtext' ? [...richTextMedia(value as RichTextDoc), ...blockMedia(richTextBlocks(value as RichTextDoc), this.#blocks)]
+                : declaration.fields ? groupMedia(declaration, value as { [key: string]: unknown }) : []));
+        }
+        return files.filter(file => typeof file === 'string' && file);
+    }
+
     #groupFields(target: FieldGroupTarget): { fields: { [name: string]: FieldDeclaration }; layout: Block[] } {
         const fields: { [name: string]: FieldDeclaration } = {};
         const layout: Block[] = [];
@@ -2277,7 +2385,7 @@ export class CmsHost {
     async #migrateTargets(group: FieldGroup, principal: Principal): Promise<void> {
         this.#activation = undefined;
         await this.ready({ force: true });
-        const ids = group.targets.filter(target => target.kind === 'collection').map(target => `cms/${(target as { name: string }).name}`).filter(id => this.#resources.has(id));
+        const ids = group.targets.flatMap(target => target.kind === 'collection' ? [`cms/${target.name}`] : target.kind === 'users' ? [USER_FIELDS] : target.kind === 'taxonomy' ? [termFieldsId(target.name)] : []).filter(id => this.#resources.has(id));
         if (!ids.length) return;
         const resources = [...this.#resources.values()];
         const plan = await planSchema(resources, await readCatalog(this.db, resources.filter(entry => ids.includes(entry.id)).map(entry => entry.storage)));
@@ -2306,6 +2414,17 @@ export class CmsHost {
         for (const [name, stored] of storedCollections) if (!this.#builtinCollections.has(name)) collections.set(name, { ...stored, builtin: false });
         const labels = Object.fromEntries([...taxonomies.values()].map(taxonomy => [taxonomy.name, taxonomy.label]));
         const resources = new Map(this.#static);
+        // Users' fields: the author profile and the groups attached to users.
+        const userFields = this.#userFieldsResource();
+        const sameFields = this.#resources.get(USER_FIELDS);
+        resources.set(USER_FIELDS, sameFields && canonicalJson(sameFields) === canonicalJson(userFields) && sameKeyOrder(sameFields.fields, userFields.fields) ? sameFields : userFields);
+        // Terms' fields: one resource for each taxonomy that has groups attached.
+        for (const taxonomy of taxonomies.values()) {
+            const termFields = this.#termFieldsResource(taxonomy);
+            if (!termFields) continue;
+            const previous = this.#resources.get(termFields.id);
+            resources.set(termFields.id, previous && canonicalJson(previous) === canonicalJson(termFields) && sameKeyOrder(previous.fields, termFields.fields) ? previous : termFields);
+        }
         const effective = new Map<string, CollectionDefinition>();
         for (const definition of collections.values()) {
             const known = { ...definition, taxonomies: (definition.taxonomies ?? []).filter(name => taxonomies.has(name)) };
@@ -2733,7 +2852,9 @@ export class CmsHost {
     /** What `$site` and `$user` read in an automation's templates: the site's public settings and the account that acted, when a user did. */
     async #automationScopes(actor?: WriteActor): Promise<Omit<BindingScopes, 'entry'>> {
         const settings = await this.settings.all().catch(() => null);
-        const account = actor?.kind === 'user' ? await this.accounts.get(actor.id).catch(() => null) : null;
+        // The user who acted: a member of the site, or with the CMS's own accounts a network account that is none.
+        const account = actor?.kind !== 'user' ? null
+            : await this.users.get(actor.id).catch(() => null);
         return { site: settings ? siteBindingScope(settings) : null, user: account ? { name: account.name, email: account.email } : null };
     }
 
@@ -2760,9 +2881,16 @@ export class CmsHost {
     }
 
     #state(): Promise<Activation> {
+        return sharedRead(() => this.#readState());
+    }
+
+    #readState(): Promise<Activation> {
         const now = this.#now();
         if (!this.#activation || now - this.#activation.at > this.#activationTtl) {
-            const policy = readPolicy(this.network).catch(error => { console.error('[cms] could not read the network policy', error); return OPEN_POLICY; });
+            // A policy that cannot be read fails the state, which is not kept: an open policy in its
+            // place would show the network's hidden plugins and themes until the state expires.
+            const policy = readPolicy(this.network);
+            policy.catch(() => undefined);
             const state = this.db.read([
                 { rql: 'SELECT resource, declaration_hash FROM cms_schema_state ORDER BY resource LIMIT 1000' },
                 { rql: "SELECT subject, permission FROM cms_grants WHERE subject LIKE 'plugin:%' ORDER BY subject, permission LIMIT 1000" },

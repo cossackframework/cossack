@@ -60,3 +60,32 @@ export class MyApi extends Cossack<CloudflareBindings> {
     }
 }
 ```
+
+## Local values on Workers: `.dev.vars` and `secrets.required`
+
+A generated Workers app declares its secrets in `wrangler.jsonc` under
+`secrets.required`. When that list exists, Wrangler and the Vite dev server load
+only the names it lists from `.dev.vars` (or `.env`). Every other name in the
+file never reaches the Worker, without a warning: a `ROMEDB_URL` or a
+development `APP_URL` written there is `undefined` in `this.env`, and the first
+sign is often a failure in middleware.
+
+- A secret the app needs in production too: add its name to
+  `secrets.required`, then set it with `wrangler secret put` before you deploy.
+- A value only development needs: set it in the Worker's configuration while
+  the dev server runs, through the Vite preset. The preset adds it to the CMS's
+  own development values; `vite build` leaves it out.
+
+```ts
+// vite.config.ts
+import { cossackApp } from 'cossack/vite';
+
+export default (env: { mode: string; command: 'serve' | 'build' }) => cossackApp({
+  cloudflare: {
+    config: env.command === 'serve' ? { vars: { APP_URL: 'http://localhost:5173' } } : {},
+  },
+})(env);
+```
+
+A value that is not secret and is the same everywhere goes under `vars` in
+`wrangler.jsonc`.

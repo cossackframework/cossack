@@ -70,6 +70,8 @@ export interface RecipeCapabilityUse {
   requires: { transports?: readonly ('http' | 'sse' | 'durable-object')[]; filesystem?: boolean; cloudflareBindings?: readonly string[] };
 }
 export declare function recipeCapabilityRequirements(recipe: ScaffoldRecipe, target?: 'web' | 'desktop'): RecipeCapabilityUse[];
+/** Where jobs, schedules and notifications keep their ledger: the CMS's RomeDB database in a CMS project, otherwise the `JOB_STATE` D1 database. */
+export declare function jobLedger(recipe: ScaffoldRecipe): 'romedb' | 'd1';
 export interface RecipeCapabilityDiagnostic extends CapabilityDiagnostic {
   target: 'web' | 'desktop';
 }

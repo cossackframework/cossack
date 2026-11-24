@@ -5,7 +5,7 @@ import { HTTPException } from 'hono/http-exception';
 import { ClientVisibleError, input } from '@cossackframework/core';
 import { defineApi, type ApiSchemas } from '../src/api';
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 function app(handler: (c: import('hono').Context) => Promise<Response>) { const app = new Hono(); app.all('/items/:id', handler); return app; }
 function request(body: unknown, query = '', options: RequestInit = {}) {
     return new Request('http://localhost/items/a' + query, { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -123,6 +123,8 @@ describe('declared native API contracts', () => {
     });
 
     it.each(['input', 'authorize', 'handler', 'output'] as const)('keeps unexpected %s callback failures private', async stage => {
+        // Production logs: development adds the cause on a line of its own.
+        vi.stubEnv('DEV', false);
         const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
         const crash = () => { throw Object.assign(Error('private-contract-key'), { config: { token: 'private-error-property' } }); };
         const handler = vi.fn(() => stage === 'handler' ? crash() : { value: 'ok' });

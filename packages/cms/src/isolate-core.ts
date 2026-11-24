@@ -122,7 +122,7 @@ export function createIsolateRuntime(plugin: Readonly<Record<string, unknown>>, 
                     commands.set(command, handler);
                 },
             },
-            cms: { resource },
+            cms: { resource, batch: (writes: unknown, context: unknown) => forward('cms.batch', writes, withoutSignal(context)) },
             settings: {
                 get: (field: string) => forward('settings.get', field),
                 all: () => forward('settings.all'),

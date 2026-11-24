@@ -1,8 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { Hono } from 'hono';
-import { createSessionManager } from '@cossackframework/auth';
 import type { StorageProvider } from '@cossackframework/core/storage';
-import { beforeWrite, createCMS, createCmsAuth, FileService, systemPrincipal, userPrincipal, type CmsHost, type PluginContext } from '../src/server/index';
+import { beforeWrite, createCMS, FileService, systemPrincipal, userPrincipal, type CmsHost, type PluginContext } from '../src/server/index';
 import { romedbService, live } from './helpers';
 
 const context = {} as never;
@@ -16,39 +14,6 @@ describe.skipIf(!live)('CMS stores on RomeDB', () => {
         expect((await cms.migrate()).failed).toBeUndefined();
     });
 
-    it('rotates an auth session exactly once under concurrency and keeps its public reference', async () => {
-        // The store also refuses sessions expired by wall-clock time, so start at the real time.
-        let now = Date.now();
-        const manager = createSessionManager({ store: cms.authSessions, ttlSeconds: 60, now: () => now });
-        const issued = await manager.create('user-1', context);
-        const reference = await cms.authSessions.publicReference(issued.session.id);
-        const rotations = await Promise.all([manager.rotate(issued.session.id, context), manager.rotate(issued.session.id, context)]);
-        const winners = rotations.filter(Boolean);
-        expect(winners).toHaveLength(1);
-        expect(await manager.validate(issued.session.id, context)).toBeNull();
-        const rotated = winners[0]!.session;
-        expect(await manager.validate(rotated.id, context)).toMatchObject({ userId: 'user-1' });
-        expect(await cms.authSessions.publicReference(rotated.id)).toBe(reference);
-        now += 61_000;
-        expect(await manager.validate(rotated.id, context)).toBeNull();
-        expect(await manager.rotate(rotated.id, context)).toBeNull();
-        await manager.revoke(rotated.id, context);
-        expect(await cms.authSessions.read(rotated.id)).toBeNull();
-    });
-
-    it('consumes OAuth state exactly once, for its provider, before expiry', async () => {
-        const key = 'a'.repeat(64);
-        const now = Date.now();
-        await cms.oauthStates.create({ key, provider: 'github', createdAt: now, expiresAt: now + 60_000 });
-        await expect(cms.oauthStates.create({ key, provider: 'github', createdAt: now, expiresAt: now + 60_000 })).rejects.toThrow();
-        expect(await cms.oauthStates.consume(key, 'google', now)).toBe(false);
-        const results = await Promise.all([cms.oauthStates.consume(key, 'github', now), cms.oauthStates.consume(key, 'github', now)]);
-        expect(results.sort()).toEqual([false, true]);
-        const expired = 'b'.repeat(64);
-        await cms.oauthStates.create({ key: expired, provider: 'github', createdAt: now - 10, expiresAt: now - 1 });
-        expect(await cms.oauthStates.consume(expired, 'github', now)).toBe(false);
-    });
-
     it('takes a single-use cache value once, however many requests take it at the same time', async () => {
         await cms.cache.set('magic:once', { user: 'u1' }, 60_000);
         const taken = await Promise.all(Array.from({ length: 5 }, () => cms.cache.take<{ user: string }>('magic:once')));
@@ -56,21 +21,6 @@ describe.skipIf(!live)('CMS stores on RomeDB', () => {
         expect(await cms.cache.get('magic:once')).toBeUndefined();
         await cms.cache.set('magic:expired', { user: 'u1' }, 0);
         expect(await cms.cache.take('magic:expired')).toBeUndefined();
-    });
-
-    it('keeps concurrent writes to different session keys', async () => {
-        const store = cms.sessions;
-        const id = await store.create(60_000);
-        await Promise.all(Array.from({ length: 6 }, (_, index) => store.set(id, `key${index}`, { index })));
-        expect(Object.keys(await store.getAll(id)).sort()).toEqual(['key0', 'key1', 'key2', 'key3', 'key4', 'key5']);
-        await store.unset(id, 'key0');
-        expect(await store.get(id, 'key0')).toBeUndefined();
-        expect(await store.get(id, 'key1')).toEqual({ index: 1 });
-        await store.bindUser(id, 'user-1');
-        await store.destroy(id);
-        expect(await store.has(id)).toBe(false);
-        await expect(store.set(id, 'late', 1)).resolves.toBeUndefined();
-        expect(await store.getAll(id)).toEqual({});
     });
 
     it('fences job claims with lease tokens like the D1 ledger', async () => {
@@ -108,49 +58,12 @@ describe.skipIf(!live)('CMS stores on RomeDB', () => {
         expect(await notifications.list({ tenantId: 't', userId: 'u' }, { limit: 10 })).toHaveLength(1);
     });
 
-    it('verifies credentials and resolves roles into a principal', async () => {
+    it('resolves roles into a principal', async () => {
         await cms.users.defineRole({ id: 'editor', name: 'Editor', permissions: ['cms/posts:*', 'cms:dashboard'] });
         const user = await cms.users.create({ email: 'Editor@Example.com', name: 'Ed', password: 'correct horse', roles: ['editor'] });
         expect(user).toMatchObject({ email: 'editor@example.com', roles: ['editor'], permissions: ['cms/posts:*', 'cms:dashboard'] });
         await expect(cms.users.create({ email: 'editor@example.com', name: 'Dup', password: 'whatever1' })).rejects.toMatchObject({ code: 'CMS_CONFLICT' });
-        expect(await cms.accounts.verifier.verify('editor@example.com', 'wrong password')).toBeNull();
-        expect((await cms.accounts.verifier.verify('EDITOR@example.com', 'correct horse'))?.id).toBe(user.id);
         expect(await cms.users.principal(user.id)).toMatchObject({ kind: 'user', id: user.id, permissions: ['cms/posts:*', 'cms:dashboard'] });
-        await cms.users.setStatus(user.id, 'disabled');
-        expect(await cms.users.principal(user.id)).toBeNull();
-        expect(await cms.accounts.verifier.verify('editor@example.com', 'correct horse')).toBeNull();
-        await cms.users.setStatus(user.id, 'active');
-    });
-
-    it('signs in through the auth middleware and invalidates realtime descriptors on rotation', async () => {
-        const user = await cms.users.create({ email: 'author@example.com', name: 'Author', password: 'long enough' });
-        const kit = createCmsAuth(cms, { secure: false });
-        const app = new Hono();
-        app.use('*', kit.auth.middleware);
-        app.post('/login', async c => {
-            const result = await kit.signIn('author@example.com', 'long enough', c);
-            if (!result) return c.text('no', 401);
-            result.headers.forEach((value, name) => c.header(name, value, { append: true }));
-            return c.text('ok');
-        });
-        app.get('/me', c => c.json({ principal: kit.principal(c) }));
-        const login = await app.request('/login', { method: 'POST' });
-        expect(login.status).toBe(200);
-        const cookie = login.headers.get('set-cookie')!.split(';')[0]!;
-        const me = await (await app.request('/me', { headers: { cookie } })).json() as { principal: { kind: string; id?: string } };
-        expect(me.principal).toMatchObject({ kind: 'user', id: user.id });
-        expect((await (await app.request('/me')).json() as { principal: { kind: string } }).principal.kind).toBe('anonymous');
-        // The session's start is the user's last sign-in.
-        expect(user.lastSignInAt).toBeNull();
-        expect((await cms.users.get(user.id))!.lastSignInAt).toBeGreaterThan(Date.now() - 60_000);
-
-        const token = cookie.split('=')[1]!;
-        const descriptor = await kit.realtime.capture(token, user.id, context);
-        expect(await kit.realtime.validate(descriptor, context)).toBe(user.id);
-        const rotated = await kit.sessions.rotate(token, context);
-        expect(rotated).not.toBeNull();
-        expect(await kit.realtime.validate(descriptor, context)).toBeNull();
-        expect(await kit.realtime.validate(await kit.realtime.capture(rotated!.session.id, user.id, context), context)).toBe(user.id);
     });
 
     it('finishes uploads and sweeps interrupted ones', async () => {

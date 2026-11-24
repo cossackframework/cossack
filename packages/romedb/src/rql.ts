@@ -22,6 +22,12 @@ export interface RqlDatabaseOptions {
     /** Pending-write label for reconciliation. Default `rql`. */
     kind?: string;
     signal?: AbortSignal;
+    /**
+     * Statements that create the tables, run once before the first statement: SQL text with
+     * statements separated by `;`, such as `jobStateSchema` from `@cossackframework/core/jobs`.
+     * Use `CREATE ... IF NOT EXISTS`. A failure is not kept: the next statement runs them again.
+     */
+    schema?: string | readonly string[];
 }
 
 /**
@@ -30,6 +36,16 @@ export interface RqlDatabaseOptions {
  * affected count is reported as `meta.changes`. Integer results that fit become numbers.
  */
 export function rqlDatabase(db: RomeDB, options: RqlDatabaseOptions = {}): RqlDatabase {
+    const schema = (typeof options.schema === 'string' ? [options.schema] : options.schema ?? [])
+        .flatMap(text => text.split(/;\s*(?:\n|$)/)).map(text => text.trim()).filter(Boolean);
+    let created: Promise<unknown> | undefined;
+    // Each statement of the schema is its own write: a batch of DDL is not atomic anyway.
+    const ready = () => {
+        if (!schema.length) return undefined;
+        created ??= schema.reduce<Promise<unknown>>((before, rql) => before.then(() => db.write([{ rql }], { kind: options.kind ?? 'rql', ...(options.signal ? { signal: options.signal } : {}) })), Promise.resolve());
+        created.catch(() => { created = undefined; });
+        return created;
+    };
     return {
         prepare(sql: string): RqlStatement {
             const text = numberPlaceholders(sql);
@@ -41,7 +57,10 @@ export function rqlDatabase(db: RomeDB, options: RqlDatabaseOptions = {}): RqlDa
                     const statement = values.length ? { rql: text, params } : { rql: text };
                     // A rolled-back write conflict re-runs as if the writes were serial.
                     const call: WriteCallOptions = { kind: options.kind ?? 'rql', retryConflicts: 5, ...(options.signal ? { signal: options.signal } : {}) };
-                    const execute = () => reading ? db.read([statement], call) : db.write([statement], call);
+                    const execute = async () => {
+                        await ready();
+                        return reading ? db.read([statement], call) : db.write([statement], call);
+                    };
                     const rows = async () => {
                         const result = (await execute()).results[0]!;
                         return result.rows.map(row => Object.fromEntries(result.columns.map((name, index) => [name, plain(row[index]!)])));

@@ -27,6 +27,47 @@ export interface DashboardConfig {
     redirectAfterLogin?: string;
     /** The project's own screens in the dashboard's navigation, after the modules. Default: none. */
     navigation?: DashboardNavigationItem[];
+    /** Who may create an account on /auth/register, and what a new account waits for. */
+    registration?: {
+        /** Visitors may register. Default: true. */
+        open?: boolean;
+        /**
+         * A new account confirms its email with a link before it can sign in. It needs an email
+         * sender (the EMAIL binding) and APP_URL; without a sender it is off. Default: false.
+         */
+        verifyEmail?: boolean;
+        /** An administrator approves each new account (Users → Registrations). Default: false. */
+        approve?: boolean;
+        /** The name of the role a new account gets. Default: none. */
+        defaultRole?: string;
+    };
+    /**
+     * Tenants: organizations that each have their own database, members and roles, reached at
+     * `<slug>.<APP_URL's host>` or a domain of their own. Accounts and sessions are shared, in
+     * the application's own database. Default: off (one database). See docs/tenants.md.
+     */
+    tenants?: {
+        /** Default: false. */
+        enabled?: boolean;
+        /**
+         * `host` (default): each tenant's host has its own sign-in. `shared`: people sign in once,
+         * on APP_URL's host, and a tenant's host gets its session from there.
+         */
+        signIn?: 'host' | 'shared';
+        /**
+         * A tenant's own domain serves only after it was shown to point at this application: the
+         * Tenants screen asks the domain for `/.well-known/cossack-tenant`. Default: true. False
+         * trusts every domain a network administrator adds.
+         */
+        verifyDomains?: boolean;
+    };
+    /** Two-step sign-in. Every user can turn it on for their account; this makes it required. */
+    security?: {
+        /** Users must sign in with a second factor (an authenticator app or a passkey) before they can act. Default: false. */
+        requireTwoFactor?: boolean;
+        /** The names of the roles `requireTwoFactor` applies to. Default: every user. */
+        twoFactorRoles?: string[];
+    };
 }
 
 /**

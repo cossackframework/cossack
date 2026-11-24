@@ -4,19 +4,31 @@
 // opt into checks with `@Page({ middlewares: [guard.requireRole('admin')] })`.
 //
 // With the CMS, permissions are patterns such as `cms:users` or `cms/posts:*`, and the
-// shared dashboard's `admin` role means "may manage users".
+// shared dashboard's `admin` role means "may manage users". Users, roles and their
+// permissions are the dashboard package's (auth.ts); this module says what they allow here.
 
 import { createAuthorizer } from '@cossackframework/auth';
-import { hasPermission, holdsAll, isNetworkAdmin, PERMISSIONS } from '@cossackframework/cms';
+import { PERMISSIONS } from '@cossackframework/cms';
 import { isTransportPath } from '@cossackframework/core/transport-routes';
 import type { PublicUser } from '../auth';
+import { holds, holdsAll } from '../lib/permissions';
 import type { MiddlewareHandler } from 'hono';
 
-export type { RoleAssignment } from '../auth';
+export type { RoleAssignment } from '@/models/User';
+
+/** The ID of the role whose holders may do everything. It cannot be changed or deleted. */
+export const ADMIN_ROLE = 'admin';
+
+/** The permission patterns a user holds, from every role. A network administrator holds everything. */
+export function permissionsOf(user: { roles: readonly { id?: string; name: string; permissions: readonly string[] }[]; networkAdmin?: boolean } | null | undefined): string[] {
+    if (!user) return [];
+    if (user.networkAdmin || user.roles.some(role => role.id === ADMIN_ROLE)) return ['*'];
+    return [...new Set(user.roles.flatMap(role => role.permissions))];
+}
 
 export const guard = createAuthorizer<PublicUser>({
-    hasRole: (user, role) => role === 'admin' ? hasPermission(user.principal, PERMISSIONS.manageUsers) : user.roles.some(entry => entry.id === role),
-    hasPermission: (user, permission) => hasPermission(user.principal, permission),
+    hasRole: (user, role) => role === 'admin' ? holds(permissionsOf(user), PERMISSIONS.manageUsers) : user.roles.some(entry => entry.id === role || entry.name === role),
+    hasPermission: (user, permission) => holds(permissionsOf(user), permission),
     // Unauthenticated → login page. Forbidden → the dashboard, friendlier than a bare 403.
     onUnauthorized: (c, reason) => {
         if (isTransportPath(c.req.path, 'rpc', 'upload', 'websocket')) {
@@ -29,18 +41,17 @@ export const guard = createAuthorizer<PublicUser>({
 
 /** Who may define roles and choose users' roles: holders of `cms:roles`, administrators by default. */
 export function canAssignRoles(user: PublicUser | null | undefined): boolean {
-    return !!user && hasPermission(user.principal, PERMISSIONS.manageRoles);
+    return holds(permissionsOf(user), PERMISSIONS.manageRoles);
 }
 
 /**
  * Who may see and end a user's sessions and application passwords: the user, and role managers
- * who may change the account (`canManageUser`, and `manageableHere` for a network account), so
- * nobody mints a token for a stronger account or reads and ends its sessions.
+ * who may change the account, so nobody mints a token for a stronger account or reads and ends
+ * its sessions. An account shared with other sites (`lockedProfile`) stays with its owner.
  */
-export function canManageAccess(user: PublicUser | null | undefined, target: { id: string; roles: readonly { permissions: readonly string[] }[]; networkAdmin?: boolean; lockedProfile?: string }): boolean {
+export function canManageAccess(user: PublicUser | null | undefined, target: { id: string; roles: readonly { name?: string; permissions: readonly string[] }[]; networkAdmin?: boolean; lockedProfile?: string }): boolean {
     if (!user) return false;
     if (user.id === target.id) return true;
-    // A network account this request may not change (`manageableHere`): its sessions show where it signs in on every site.
     if (target.lockedProfile) return false;
     return canAssignRoles(user) && canManageUser(user, target);
 }
@@ -51,15 +62,15 @@ export const requireRoleManager: MiddlewareHandler = guard.requirePermission(PER
 /**
  * Whether the user may change another account: one whose roles hold no permission the user
  * lacks, so nobody takes over a stronger account by setting its password or email; a network
- * admin's account, which holds no site role for it, stays with network admins.
+ * administrator's account stays with network administrators.
  */
-export function canManageUser(user: PublicUser | null | undefined, target: { roles: readonly { permissions: readonly string[] }[]; networkAdmin?: boolean }): boolean {
+export function canManageUser(user: PublicUser | null | undefined, target: { roles: readonly { name?: string; permissions?: readonly string[] }[]; networkAdmin?: boolean }): boolean {
     if (!user) return false;
-    if (target.networkAdmin && !isNetworkAdmin(user.principal)) return false;
-    return holdsAll(user.principal, target.roles.flatMap(role => role.permissions));
+    if (target.networkAdmin && !user.networkAdmin) return false;
+    return holdsAll(permissionsOf(user), target.roles.flatMap(role => role.permissions ?? []));
 }
 
 /** Whether the user may give these roles: a role manager, holding every permission the roles hold. */
 export function canGrantRoles(user: PublicUser | null | undefined, roles: readonly { permissions: readonly string[] }[]): boolean {
-    return canAssignRoles(user) && holdsAll(user!.principal, roles.flatMap(role => role.permissions));
+    return canAssignRoles(user) && holdsAll(permissionsOf(user), roles.flatMap(role => role.permissions));
 }

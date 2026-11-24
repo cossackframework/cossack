@@ -6,6 +6,10 @@
 /src/*
 !/src/auth.ts
 !/src/auth-options.ts
+!/src/mail.ts
+!/src/avatars.ts
+!/src/auth-events.ts
+!/src/tenants.ts
 !/src/auth-providers.ts
 !/src/auth-input.ts
 !/src/auth-bot-check.ts
@@ -23,11 +27,15 @@
 !/src/middlewares/
 /src/middlewares/*
 !/src/middlewares/auth.ts
+!/src/middlewares/tenant.ts
 !/src/services/
 /src/services/*
 !/src/services/users.ts
 !/src/services/roles.ts
 !/src/services/rbac.ts
+!/src/services/security.ts
+!/src/services/api-tokens.ts
+!/src/services/tenants.ts
 !/src/pages/
 /src/pages/*
 !/src/pages/auth/

@@ -3,16 +3,7 @@ import path from 'node:path';
 import { expect } from 'vitest';
 
 export async function writeSessionConcurrencyAcceptance(root) {
-  // Fixture-owned declarative equivalents of the generated SQLite auth schema.
-  // Legacy callback plans intentionally remain incomplete; never execute them to plan.
-  for (const file of await fs.readdir(path.join(root,'src/migrations'))) {
-    if(file==='index.ts') continue;
-    const filename=path.join(root,'src/migrations',file),source=await fs.readFile(filename,'utf8');
-    const up=source.slice(source.indexOf('up('),source.indexOf('down('));
-    const statements=[...up.matchAll(/orm\.sql\.unsafe\(\s*(`[^`]*`|'[^']*')/g)].map(match=>match[1].slice(1,-1));
-    expect(statements.length,file).toBeGreaterThan(0);
-    await fs.writeFile(filename,`import { sql, type Migration } from '@cossackframework/database';\nexport default {name:${JSON.stringify(file.replace('.ts',''))},operations:{up:[${statements.map(text=>'sql.unsafe('+JSON.stringify(text)+')').join(',')}],down:[]}} satisfies Migration;\n`);
-  }
+  // The generated migrations are declarative operations: the plan reads them as they are.
   const middleware=path.join(root,'src/bootstrap/middlewares.ts');
   let content=await fs.readFile(middleware,'utf8');
   content="import { sessionMiddleware } from '../middlewares/orm';\n"+content.replace('ormRequestMiddleware,','ormRequestMiddleware, sessionMiddleware,');

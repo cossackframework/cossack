@@ -120,6 +120,9 @@ importers:
       '@cossackframework/core':
         specifier: workspace:*
         version: link:../core
+      '@cossackframework/database':
+        specifier: workspace:*
+        version: link:../database
       '@cossackframework/renderer':
         specifier: workspace:*
         version: link:../renderer
@@ -220,6 +223,9 @@ importers:
       '@cossackframework/core':
         specifier: workspace:*
         version: link:../../core
+      '@cossackframework/database':
+        specifier: workspace:*
+        version: link:../../database
       '@cossackframework/framework':
         specifier: workspace:*
         version: link:../../framework
@@ -242,17 +248,20 @@ importers:
         specifier: ^2.1.6
         version: 2.1.6(hono@4.13.18)
       '@romedb/client':
-        specifier: 0.2.24
-        version: 0.2.24
+        specifier: 0.2.27
+        version: 0.2.27
       '@romedb/node':
-        specifier: 0.2.24
-        version: 0.2.24
+        specifier: 0.2.27
+        version: 0.2.27
       cossack:
         specifier: workspace:*
         version: link:../../cossack
       hono:
         specifier: ^4.13.18
         version: 4.13.18
+      reflect-metadata:
+        specifier: ^0.2.2
+        version: 0.2.2
       sharp:
         specifier: ^0.35.5
         version: 0.35.5(@types/node@22.20.1)
@@ -388,6 +397,9 @@ importers:
       '@cossackframework/solar-icons':
         specifier: 0.7.1
         version: 0.7.1
+      uqr:
+        specifier: 0.1.3
+        version: 0.1.3
     devDependencies:
       '@cossackframework/database':
         specifier: workspace:*
@@ -711,15 +723,18 @@ importers:
   packages/romedb:
     dependencies:
       '@romedb/client':
-        specifier: 0.2.24
-        version: 0.2.24
+        specifier: 0.2.27
+        version: 0.2.27
       vite:
         specifier: ~8.1.6
         version: 8.1.6(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0)
     devDependencies:
+      '@cossackframework/database':
+        specifier: workspace:*
+        version: link:../database
       '@romedb/node':
-        specifier: 0.2.24
-        version: 0.2.24
+        specifier: 0.2.27
+        version: 0.2.27
       '@types/node':
         specifier: ^22.19.0
         version: 22.20.1
@@ -2172,12 +2187,12 @@ packages:
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
 
-  '@romedb/client@0.2.24':
-    resolution: {integrity: sha512-XSHCY3ExjcG2jOx9GyQB7H3yNYMOFlOnt+VEcarrpbX1IGyAsuZoYlV6BlRULTvgZKTFXugbAgQgb2UhSy0d9w==}
+  '@romedb/client@0.2.27':
+    resolution: {integrity: sha512-lD31hJk3TnOjeG7OXydIMWjvoDmRiC5SrMhWUfIDUm1GJDQ5zk4Fog25r/B6hHStzknr5RDPID9T+Zy4qIFa6w==}
     engines: {node: '>=22'}
 
-  '@romedb/node@0.2.24':
-    resolution: {integrity: sha512-HvYZmdZpmBr6LqObEZ4FXUF1Fl1VMgoj8vwjhEOMozowpFjaSoelYz3iTlyZWMTYv40j94lFbRPaWwTYp0M/og==}
+  '@romedb/node@0.2.27':
+    resolution: {integrity: sha512-lfjH/Esly4/nxyAqxvtYw0Wi8k19WIk1j8sjIIt+7vwXOLcF83ToLbHrZRYUeie4mSqclCuVobxZ1VqjNHx1kQ==}
     engines: {node: '>=22'}
 
   '@sagold/json-pointer@5.1.2':
@@ -6246,11 +6261,11 @@ snapshots:
 
   '@rolldown/pluginutils@1.0.1': {}
 
-  '@romedb/client@0.2.24': {}
+  '@romedb/client@0.2.27': {}
 
-  '@romedb/node@0.2.24':
+  '@romedb/node@0.2.27':
     dependencies:
-      '@romedb/client': 0.2.24
+      '@romedb/client': 0.2.27
 
   '@sagold/json-pointer@5.1.2': {}
 

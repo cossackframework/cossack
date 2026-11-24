@@ -56,6 +56,13 @@ from the package directory, whose `cossackVite({ root, runtime, mode, command })
 returns `setup` (plugins that go first), `plugins`, `pages` and `cloudflare` (options for
 those plugins), `pluginPolicy` and `config`.
 
+`cloudflare.config` adds to the Worker's configuration (an object, or a function of the
+configuration that returns one). The preset adds up every part's and then the project's
+(`cossackApp({ cloudflare: { config } })`), objects deeply and lists appended: a project's own
+variables never drop the CMS's development ones (`ROMEDB_URL`, `ROMEDB_TOKEN`) or its Worker
+exports. A later value wins for the same key. The other `cloudflare` options are replaced: the
+project's win over the parts'.
+
 ### Pages load on first use in development
 
 The development server does not import every page when it starts. It registers each route
@@ -109,6 +116,12 @@ client-only export during SSR does not throw, but reading or invoking it does,
 with guidance to move the access into `onMount()`, `clientInit()`, or an
 `@Client()` method. Never access these exports from SSR paths such as
 `render()`, `init()`, or server-side field initializers.
+
+A dynamic `import()` of a client-only module (`./chart.client`, or a package's
+`editor.client.js`) becomes a rejected promise in server environments, so a
+server build has no chunk of the module or of what it imports. The UI
+package's `CodeEditor` loads CodeMirror this way: a Workers build stays one
+server file. Load such a module in `onMount()` or an `@Client()` method.
 
 Use explicit exports in client-only modules. Type-only exports are ignored,
 while runtime `export *` is rejected because the plugin cannot safely derive a

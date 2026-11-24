@@ -40,3 +40,17 @@ it('adds the palette and the theme toggle when asked, and takes translated label
     expect(output).not.toContain('data-dashboard-taskbar');
     expect(output).toContain('Could not sign out.');
 });
+
+it('takes a brand mark in markup and a slot at the top of the sidebar footer', () => {
+    const output = renderToString(component(DashboardShell, { ...base, brand: { name: 'RomeDB Cloud', mark: html`<span class="brand-mark">R</span>` },
+        sidebarFooter: html`<div id="organization-switcher">Acme Inc.</div>` }, html`<p>Body</p>`));
+    expect(output).not.toContain('<img');
+    expect(output.match(/class="brand-mark"/g)?.length).toBeGreaterThanOrEqual(3);
+    expect(output).toContain('RomeDB Cloud');
+    const footer = output.indexOf('data-sidebar-footer');
+    expect(footer).toBeGreaterThan(-1);
+    expect(output.indexOf('id="organization-switcher"')).toBeGreaterThan(footer);
+    expect(output.indexOf('id="organization-switcher"')).toBeLessThan(output.indexOf('id="dashboard-account-menu"'));
+    // A logo-only mark names the brand for assistive technology.
+    expect(renderToString(component(DashboardShell, { ...base, brand: { name: 'Acme', mark: html`<b>A</b>`, logoOnly: true } }, html``))).toContain('role="img" aria-label="Acme"');
+});

@@ -19,13 +19,12 @@ const split = (script: string): Statement[] => script.split(';').map(rql => rql.
     .map(rql => ({ rql: rql.replace(/\bIF NOT EXISTS\s+/g, '') }));
 
 export const HOST_TABLES = [
-    'cms_migrations', 'cms_schema_state', 'cms_users', 'cms_roles', 'cms_user_roles', 'cms_auth_sessions', 'cms_oauth_states',
-    'cms_password_resets', 'cms_sessions', 'cms_session_values', 'cms_grants', 'cms_audit', 'cms_revisions', 'cms_outbox', 'cms_files',
-    'cms_terms', 'cms_settings', 'cms_collections', 'cms_taxonomies', 'cms_field_groups', 'cms_menus', 'cms_menu_locations',
-    'cms_preview_tokens', 'cms_autosaves', 'cms_file_variants', 'cms_redirects', 'cms_api_tokens', 'cms_webhooks', 'cms_webhook_deliveries',
-    'cms_comments', 'cms_user_security', 'cms_passkeys', 'cms_auth_challenges', 'cms_areas', 'cms_form_sends', 'cms_form_mail', 'cms_form_results', 'cms_crawler_visits', 'cms_not_found', 'cms_cache',
-    'cms_accounts', 'cms_sites', 'cms_site_domains', 'cms_handoffs', 'cms_session_sites', 'cms_memberships', 'cms_network', 'cossack_jobs', 'cossack_notifications',
-    'cms_drafts', 'cms_notes', 'cms_note_mentions', 'cms_schedules', 'cms_automations', 'cms_registrations', 'cms_search', 'cms_attempts', 'cms_schema_generations',
+    'cms_migrations', 'cms_schema_state', 'cms_grants', 'cms_audit', 'cms_revisions', 'cms_outbox', 'cms_files', 'cms_terms', 'cms_settings',
+    'cms_collections', 'cms_taxonomies', 'cms_field_groups', 'cms_menus', 'cms_menu_locations', 'cms_preview_tokens', 'cms_autosaves',
+    'cms_file_variants', 'cms_redirects', 'cms_webhooks', 'cms_webhook_deliveries', 'cms_comments', 'cms_areas', 'cms_form_sends', 'cms_form_mail',
+    'cms_form_results', 'cms_crawler_visits', 'cms_not_found', 'cms_cache', 'cms_network', 'cossack_jobs', 'cossack_notifications', 'cms_drafts',
+    'cms_notes', 'cms_note_mentions', 'cms_schedules', 'cms_automations', 'cms_search', 'cms_attempts', 'cms_schema_generations', 'cms_assertions',
+    'cms_authors',
 ] as const;
 
 export const HOST_STEPS: readonly HostStep[] = [{
@@ -294,6 +293,55 @@ export const HOST_STEPS: readonly HostStep[] = [{
     statements: [
         // 1 for an account created waiting for a site's approval: it is not an unconfirmed registration, so another registration of its email never replaces it.
         { rql: 'ALTER TABLE cms_accounts ADD COLUMN held INTEGER' },
+    ],
+}, {
+    version: 14,
+    description: 'Guarded write batches',
+    statements: [
+        // A write batch (`CmsHost.batch`) inserts one row per condition, held = 1 when it holds, and deletes them in its last statement: a condition that does not hold fails the CHECK, and the whole batch rolls back. No row outlives its batch.
+        { rql: 'CREATE TABLE cms_assertions (id TEXT PRIMARY KEY, held INTEGER NOT NULL CHECK (held = 1))' },
+    ],
+}, {
+    version: 15,
+    description: 'Field values of users and terms are documents',
+    statements: [
+        // The values of the field groups attached to users are fields of a document under the member's ID, in the storage of the internal resource cms/user_fields: they can be indexed, kept unique and written one at a time. The JSON text they were kept in goes.
+        { rql: 'ALTER TABLE cms_users DROP COLUMN meta' },
+        // A term's, in the storage of its taxonomy's internal resource (cms/tf_<taxonomy>), which exists while groups are attached to the taxonomy.
+        { rql: 'ALTER TABLE cms_terms DROP COLUMN meta' },
+    ],
+}, {
+    version: 16,
+    description: 'Author slugs beside the people port',
+    statements: [
+        // With users kept by the application (the people port, specs/cms-on-dashboard.md), the CMS keeps a user's author slug itself, under the user's ID.
+        { rql: 'CREATE TABLE cms_authors (user_id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE)' },
+    ],
+}, {
+    version: 17,
+    description: 'Accounts, roles, sessions and sites are the application\'s',
+    statements: [
+        // Who signs in, their roles and sessions, second factors, application passwords, and a network's sites and members are kept by the
+        // application now (the dashboard package's tables, specs/cms-on-dashboard.md). The CMS's own tables for them go; nothing is carried over.
+        { rql: 'DROP TABLE IF EXISTS cms_users' },
+        { rql: 'DROP TABLE IF EXISTS cms_roles' },
+        { rql: 'DROP TABLE IF EXISTS cms_user_roles' },
+        { rql: 'DROP TABLE IF EXISTS cms_auth_sessions' },
+        { rql: 'DROP TABLE IF EXISTS cms_oauth_states' },
+        { rql: 'DROP TABLE IF EXISTS cms_password_resets' },
+        { rql: 'DROP TABLE IF EXISTS cms_sessions' },
+        { rql: 'DROP TABLE IF EXISTS cms_session_values' },
+        { rql: 'DROP TABLE IF EXISTS cms_api_tokens' },
+        { rql: 'DROP TABLE IF EXISTS cms_user_security' },
+        { rql: 'DROP TABLE IF EXISTS cms_passkeys' },
+        { rql: 'DROP TABLE IF EXISTS cms_auth_challenges' },
+        { rql: 'DROP TABLE IF EXISTS cms_accounts' },
+        { rql: 'DROP TABLE IF EXISTS cms_sites' },
+        { rql: 'DROP TABLE IF EXISTS cms_site_domains' },
+        { rql: 'DROP TABLE IF EXISTS cms_handoffs' },
+        { rql: 'DROP TABLE IF EXISTS cms_session_sites' },
+        { rql: 'DROP TABLE IF EXISTS cms_memberships' },
+        { rql: 'DROP TABLE IF EXISTS cms_registrations' },
     ],
 }];
 

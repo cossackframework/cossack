@@ -53,7 +53,7 @@ export const GET = defineApi({ handler: async ({ c }) => {
   const phase = c.req.query('phase');
   if (phase === 'expire' || phase === 'purpose') {
     const key = c.req.query('key')!;
-    await Session.update({ id: key }, phase === 'expire' ? { expiresAt: new Date(0) } : { meta: { type: 'password_reset' } });
+    await Session.update({ id: key }, phase === 'expire' ? { expiresAt: new Date(0) } : { kind: 'password_reset' });
     return c.json({ accepted: true });
   }
   if (phase === 'summary') {

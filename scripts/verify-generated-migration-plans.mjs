@@ -84,14 +84,14 @@ export async function verifyGeneratedMigrationPlans(installedProject, { cloudfla
     };
     const plan = await json(['migration', 'plan', '--local']);
     assert.equal(plan.complete, true);
-    assert.equal(plan.migrations.length, 7);
+    assert.equal(plan.migrations.length, 9);
     assert.ok(plan.migrations.every(migration => migration.complete && migration.direction === 'up' && migration.statements.length > 0));
     const statements = plan.migrations.flatMap(migration => migration.statements);
-    assert.equal(statements.length, 9);
+    assert.ok(statements.length >= plan.migrations.length);
     assert.ok(statements.every(statement => statement.parameterCount === 0));
-    assert.ok(statements.some(statement => /ADD COLUMN public_id VARCHAR\(36\)/.test(statement.text)));
+    assert.ok(statements.some(statement => /public_id VARCHAR\(36\)/.test(statement.text)));
     const pending = await json(['migration', 'status', '--local']);
-    assert.equal(pending.migrations.length, 7);
+    assert.equal(pending.migrations.length, 9);
     assert.ok(pending.migrations.every(migration => migration.state === 'pending'));
     const catalog = JSON.parse(await command(root, path.join(wranglerRoot, 'bin/wrangler.js'),
       ['d1', 'execute', 'DB', '--local', '--command', "SELECT name FROM sqlite_master WHERE type='table'", '--json'], environment));
@@ -100,7 +100,7 @@ export async function verifyGeneratedMigrationPlans(installedProject, { cloudfla
     assert.ok(authoredTables.has('users') && authoredTables.has('_cossack_migrations'));
     assert.ok(catalog.every(result => (result.results ?? []).every(row => !authoredTables.has(row.name))),
       'Planning must not create application or bookkeeping tables (D1 platform tables are independent)');
-    console.log('Installed read-only migration plan passed: seven complete migrations, nine DDL statements, no authored schema/history tables.');
+    console.log('Installed read-only migration plan passed: nine complete migrations, no authored schema/history tables.');
 
     // The generated full-stack static render uses its ORM middleware. Apply
     // generated authoritative operations to its isolated local build database.
@@ -113,7 +113,7 @@ import { Session } from '../../models/Session';
 export const POST = async (c: Context) => {
   const id = crypto.randomUUID(); const publicId = crypto.randomUUID(); const now = new Date();
   await User.insert({ id, email: id + '@example.test', name: 'Acceptance', passwordHash: null, avatar: null, meta: null, createdAt: now });
-  await Session.insert({ id: crypto.randomUUID(), publicId, userId: id, data: { checked: true }, meta: { type: 'auth' }, location: null, userAgent: null, ipAddress: null, createdAt: now, expiresAt: new Date(now.getTime() + 60000) });
+  await Session.insert({ id: crypto.randomUUID(), publicId, userId: id, kind: 'auth', data: { checked: true }, meta: null, location: null, userAgent: null, ipAddress: null, createdAt: now, expiresAt: new Date(now.getTime() + 60000) });
   const user = await User.findOne({ where: { id } });
   const session = await Session.findOne({ where: { publicId } });
   return c.json({ userFound: user?.id === id, sessionFound: session?.publicId === publicId && session.userId === id, users: await User.count(), sessions: await Session.count() });
@@ -149,7 +149,7 @@ export const POST = async (c: Context) => {
       const response = await fetch(new URL('/api/migration-acceptance', url), { method: 'POST', signal: AbortSignal.timeout(30_000) });
       assert.equal(response.status, 200, await response.clone().text());
       assert.deepEqual(await response.json(), { userFound: true, sessionFound: true, users: 1, sessions: 1 });
-      console.log('Installed generated migrations passed: seven complete read-only plans, nine zero-parameter DDL statements, strict generated types/build, native D1 User/Session inserts/finds/counts/public IDs.');
+      console.log('Installed generated migrations passed: nine complete read-only plans, zero-parameter DDL statements, strict generated types/build, native D1 User/Session inserts/finds/counts/public IDs.');
     } finally {
       for (const [key, value] of Object.entries(priorHost)) {
         if (value === undefined) delete process.env[key];

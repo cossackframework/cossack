@@ -41,6 +41,10 @@ const SUITES = [
     args: ['--filter', '@cossackframework/database', 'run', 'test', '--watch=false'],
   },
   {
+    name: 'account migrations on PostgreSQL and MySQL',
+    args: ['--filter', '@cossackframework/scaffold', 'run', 'test', '--watch=false', 'tests/account-migrations-live.test.js'],
+  },
+  {
     name: 'Studio live introspection tests',
     args: ['--filter', '@cossackframework/studio', 'run', 'test', '--watch=false', 'tests/live-introspection.test.ts'],
   },

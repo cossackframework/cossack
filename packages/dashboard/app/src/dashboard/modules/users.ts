@@ -12,6 +12,7 @@ const descriptor: DashboardModule = {
   children: [
     { label: 'All users', href: '/dashboard/users' },
     { label: 'Add user', href: '/dashboard/users/new' },
+    { label: 'Registrations', href: '/dashboard/users/registrations' },
   ],
 };
 

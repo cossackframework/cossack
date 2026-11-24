@@ -1,13 +1,16 @@
-import type { Context, MiddlewareHandler } from 'hono';
+import type { Context, MiddlewareHandler, Next } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { enforceRateLimit, getClientIp, getSupportedLocales, LOCALE_COOKIE_NAME, setRequestLocale } from '@cossackframework/core';
-import { ANONYMOUS, escapeHtml, hasPermission, PERMISSIONS, type Principal, DEFAULT_ICON_STYLE, isIconStyle } from '@cossackframework/cms';
-import { MAIN, MAIN_SITE, networkSite, type SiteResolution } from '@cossackframework/cms/server';
+import { ANONYMOUS, escapeHtml, hasPermission, PERMISSIONS, userPrincipal, type Principal, DEFAULT_ICON_STYLE, isIconStyle } from '@cossackframework/cms';
+import { MAIN_SITE, networkSite, type SiteResolution } from '@cossackframework/cms/server';
 import { cmsFor, networkFor, type CmsBindings } from './index';
-import { handoff } from './handoff';
+import { inTenantDatabase, sharedSignInOnMainHost, sharedSignInOnTenantHost } from '../middlewares/tenant';
+import { hostName, mainHost } from '../tenants';
 import { dashboardPalette } from '../dashboard/head';
 import { runMaintenance } from './maintenance';
-import { accountNeedsSecondFactor, secondFactorRequired, type PublicUser } from '../auth';
+import { answered, withRequestCalls } from './request-calls';
+import { apiTokenUser, secondFactorRequired, securityStatus, type PublicUser } from '../auth';
+import { authOptions } from '../auth-options';
 
 /**
  * For `createApp({ isPluginActive })`: a rendered plugin's pages, layouts and HTTP handlers
@@ -28,11 +31,20 @@ const lastMaintenance = new Map<string, number>();
  * Maintenance also runs at most once a minute for each site. A host no site claims gets a 404,
  * an alias redirects to its site's primary domain, and an archived site shows only its dashboard.
  */
-export const cmsMiddleware: MiddlewareHandler = async (c, next) => {
+export const cmsMiddleware: MiddlewareHandler = (c, next) => withRequestCalls(c, () => serveSite(c, next));
+
+async function serveSite(c: Context, next: Next): Promise<Response | void> {
     const network = networkFor(c.env as CmsBindings);
     const url = new URL(c.req.url);
-    // Before setup the registry does not exist yet: the main site answers.
-    let found: SiteResolution = await network.resolve(url.host).catch(() => ({ kind: 'site', site: MAIN }));
+    // Before setup the registry does not exist yet and the main site answers (`resolve` says so).
+    // A lookup that fails answers 503: serving the main site at another site's address would show,
+    // and let caches keep, the wrong site's pages.
+    let found: SiteResolution;
+    try { found = await network.resolve(url.host); }
+    catch (error) {
+        console.error('[cms] could not look up the site of', url.host, error);
+        return c.text('The site is unavailable for a moment. Try again shortly.', 503, { 'retry-after': '5', 'cache-control': 'no-store' });
+    }
     // API clients name a site on the network host: `X-Cossack-Site: blog` (or `?site=blog` on the MCP
     // endpoint) serves that site, so a tool need not reach the site's own address.
     const requested = requestedSite(c, url);
@@ -59,16 +71,21 @@ export const cmsMiddleware: MiddlewareHandler = async (c, next) => {
     c.set('site', found.site);
     c.set('network', network);
     c.set('principal', ANONYMOUS);
-    // Sign-in happens on the network host; other sites get their sessions through a handoff.
-    const routed = await handoff(c, network, found.site);
-    if (routed) return routed;
+    // A site of the network is a tenant of the dashboard package: its accounts and sessions are in
+    // its own database, which the rest of the request runs in. People with a network account
+    // sign in on the network host, which sends them back with a one-time code (shared sign-in).
+    const site = found.site;
+    const serve = async (): Promise<Response | void> => {
     // Before setup the definition tables do not exist yet; built-in collections apply.
     await cms.ready().catch(error => console.error('[cms] could not load collections', error));
     // Settings → Interface: the style every icon of this request is drawn in (`iconStyle()` in
     // cms/icons.ts reads it) and the dashboard's palettes (`dashboardHead()` in dashboard/head.ts).
-    const [style, palette, accent] = await Promise.all((['interface.iconStyle', 'interface.palette', 'interface.accent'] as const).map(key => cms.settings.get(key).catch(() => undefined)));
+    const settings = await cms.settings.all().catch(() => undefined);
+    const style = settings?.['interface.iconStyle'];
     c.set('cms.iconStyle', isIconStyle(style) ? style : DEFAULT_ICON_STYLE);
-    c.set('cms.palette', dashboardPalette(palette, accent));
+    c.set('cms.palette', dashboardPalette(settings?.['interface.palette'], settings?.['interface.accent']));
+    // The shared sign-in code reads registration and two-step sign-in from these (src/auth-options.ts).
+    c.set('cms.settings', settings ?? {});
     // Until a user picks a language (Profile → Dashboard language), the dashboard speaks the
     // site's default one when a catalog has it. Site pages then switch to their content's language.
     const supported = getSupportedLocales();
@@ -78,6 +95,8 @@ export const cmsMiddleware: MiddlewareHandler = async (c, next) => {
     }
     const writes = cms.outboxWrites;
     await next();
+    // The outbox and maintenance below outlive the answer: their database calls must not end with it.
+    answered(c);
     securityHeaders(c, url);
     // The API answers for the site `X-Cossack-Site` names: a shared cache keeps one answer per site.
     if (url.pathname.startsWith('/api/') && !/(^|,)\s*x-cossack-site\s*(,|$)/i.test(c.res.headers.get('vary') ?? '')) c.header('vary', 'X-Cossack-Site', { append: true });
@@ -87,7 +106,14 @@ export const cmsMiddleware: MiddlewareHandler = async (c, next) => {
         lastMaintenance.set(found.site.database, now);
         later(c, runMaintenance(cms, { warm: false }));
     }
-};
+    };
+    if (site.id === MAIN_SITE) return sharedSignInOnMainHost(c) ?? serve();
+    const main = mainHost();
+    // An API client that names the site on the network host is not a visitor to send elsewhere.
+    const routed = main && !requested ? sharedSignInOnTenantHost(c, hostName(c.req.url), main) : null;
+    if (routed) return routed;
+    return inTenantDatabase(c, { id: site.id, slug: site.id, name: site.name ?? site.id, database: site.database, status: 'active', ...(site.host ? { primaryHost: site.host } : {}) }, serve);
+}
 
 /**
  * Headers every response carries unless the route set its own: no MIME sniffing, a tight
@@ -108,9 +134,22 @@ function securityHeaders(c: Context, url: URL): void {
  * application password (`Authorization: Bearer cms_…`) signs the request in instead; read-only
  * passwords may only read, and token requests skip the session's same-origin checks.
  */
+/** The request principal of a signed-in user: their roles' names and permissions here; a network administrator's role carries `*`. */
+export function principalOf(user: PublicUser): Principal {
+    return userPrincipal(user.id, user.roles.map(role => role.id), user.roles.flatMap(role => role.permissions));
+}
+
+/** Whether Settings → General ask this account for two-step sign-in and it has no second factor yet. */
+async function accountNeedsSecondFactor(user: PublicUser): Promise<boolean> {
+    const { requireTwoFactor, twoFactorRoles } = authOptions.security;
+    if (!requireTwoFactor || (twoFactorRoles.length > 0 && !user.roles.some(role => twoFactorRoles.includes(role.id) || twoFactorRoles.includes(role.name)))) return false;
+    const status = await securityStatus(user.id);
+    return !status.totp && status.passkeys.length === 0;
+}
+
 export const cmsPrincipal: MiddlewareHandler = async (c, next) => {
     const user = c.get('user') as PublicUser | undefined;
-    let session = user?.principal as Principal | undefined;
+    let session = user ? principalOf(user) : undefined;
     // Staff that General settings require to use two-step sign-in act with their session only
     // once they have a second factor. Until then the session is anonymous everywhere (the site,
     // Live Edit, previews, server methods), so no page has to repeat the check; signing in and
@@ -122,10 +161,11 @@ export const cmsPrincipal: MiddlewareHandler = async (c, next) => {
     c.set('principal', session ?? ANONYMOUS);
     const header = c.req.header('authorization') ?? '';
     if (!user && /^Bearer cms_/i.test(header) && API_PATH.test(c.req.path)) {
-        const token = await c.get('cms').tokenPrincipal(header.slice(7).trim()).catch(() => null);
-        if (!token) return c.json({ error: 'The application password is not valid.', code: 'CMS_UNAUTHENTICATED' }, 401, { 'www-authenticate': 'Bearer' });
+        const verified = await apiTokenUser(header.slice(7).trim()).catch(() => null);
+        if (!verified) return c.json({ error: 'The application password is not valid.', code: 'CMS_UNAUTHENTICATED' }, 401, { 'www-authenticate': 'Bearer' });
+        const token = { principal: principalOf(verified.user), scope: verified.scope };
         // An application password made before the requirement was turned on stops working too.
-        if (token.principal.kind === 'user' && await accountNeedsSecondFactor({ id: token.principal.id, principal: token.principal }).catch(() => true)) return secondFactorRefusal(c);
+        if (await accountNeedsSecondFactor(verified.user).catch(() => true)) return secondFactorRefusal(c);
         if (token.scope === 'read' && c.req.path !== MCP_PATH && !['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) return c.json({ error: 'This application password can only read.', code: 'CMS_FORBIDDEN' }, 403);
         c.set('principal', token.principal);
         c.set('cms.token', true);

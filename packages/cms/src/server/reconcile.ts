@@ -25,14 +25,14 @@ export function cmsReconcilers(): { [kind: string]: Reconciler } {
         'cms.forms': drop,
         // Field group and collection writes: the dashboard action that made them is repeated.
         'cms.fieldGroups': drop, 'cms.collections': drop,
-        'cms.migration': drop, 'cms.session': drop, 'cms.auth.session': drop, 'cms.auth.oauth': drop, 'cms.users': drop,
+        'cms.migration': drop, 'cms.users': drop,
         'cms.outbox': drop, 'cms.files': drop, 'cms.import': drop, 'cms.jobs': drop, 'cms.notifications': drop,
         // The rest are writes a person repeats (a dashboard save, a sign-in) or that are fenced by
         // their own keys; once replay is impossible, the pending write is dropped and the action runs again.
-        'cms.accounts': drop, 'cms.areas': drop, 'cms.audit': drop, 'cms.automations': drop, 'cms.autosaves': drop,
-        'cms.cache': drop, 'cms.comments': drop, 'cms.revisions': drop, 'cms.drafts': drop, 'cms.grants': drop, 'cms.handoffs': drop,
+        'cms.areas': drop, 'cms.attempts': drop, 'cms.audit': drop, 'cms.automations': drop, 'cms.autosaves': drop,
+        'cms.cache': drop, 'cms.comments': drop, 'cms.revisions': drop, 'cms.drafts': drop, 'cms.grants': drop,
         'cms.menus': drop, 'cms.network': drop, 'cms.notes': drop, 'cms.previews': drop, 'cms.redirects': drop,
-        'cms.schedules': drop, 'cms.search': drop, 'cms.security': drop, 'cms.settings': drop, 'cms.sites': drop,
-        'cms.terms': drop, 'cms.tokens': drop, 'cms.traffic': drop, 'cms.webhooks': drop,
+        'cms.schedules': drop, 'cms.search': drop, 'cms.settings': drop,
+        'cms.terms': drop, 'cms.traffic': drop, 'cms.webhooks': drop,
     };
 }

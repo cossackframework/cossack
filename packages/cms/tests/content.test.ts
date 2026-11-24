@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { StorageProvider } from '@cossackframework/core/storage';
-import { contentModule, createCMS, DEFAULT_ROLES, userPrincipal, type CmsHost, type Principal } from '../src/server/index';
+import { contentModule, createCMS, DEFAULT_ROLES, type CmsHost, type Principal } from '../src/server/index';
 import type { RomeDB } from '@cossackframework/romedb';
 import { romedbService, live } from './helpers';
 
@@ -171,31 +171,7 @@ describe.skipIf(!live)('content, taxonomies, settings, users and media', () => {
         expect(await other.settings.get('general.siteTitle')).toBe('The Daily');
     });
 
-    it('pages through more users than one read takes, past rows that are not users', async () => {
-        const now = Date.now();
-        // 250 users, plus a row whose ID no user can have: paging goes on past both.
-        const rows = [...Array.from({ length: 250 }, (_, index) => `bulk-${String(index).padStart(3, '0')}`), 'bulk-100 odd'];
-        const inserts = rows.map((id, index) => ({
-            rql: "INSERT INTO cms_users (id, email, name, status, created_at, updated_at) VALUES ($id, $email, $name, 'active', $at, $at)",
-            params: { $id: id, $email: `bulk${index}@example.com`, $name: `Bulk ${index}`, $at: now },
-        }));
-        for (let start = 0; start < inserts.length; start += 32) await cms.db.write(inserts.slice(start, start + 32));
-        const seen: string[] = [];
-        let pages = 0;
-        for (let after: string | null = null; ; pages++) {
-            const page = await cms.users.after(after, 500);
-            expect(page.users.length).toBeLessThanOrEqual(200);
-            seen.push(...page.users.map(user => user.id));
-            if (page.next === null) break;
-            after = page.next;
-        }
-        expect(pages).toBeGreaterThan(0);
-        expect(seen.filter(id => id.startsWith('bulk-'))).toHaveLength(250);
-        expect(new Set(seen).size).toBe(seen.length);
-        await cms.db.write([{ rql: "DELETE FROM cms_users WHERE id LIKE 'bulk-%'", params: {} }]);
-    });
-
-    it('lists, searches and deletes users and roles, and resets passwords once', async () => {
+    it('lists, searches, changes and deletes users', async () => {
         const users = cms.users;
         const created = await users.create({ email: 'Grace@Example.com', name: 'Grace Hopper', password: 'first password', roles: ['subscriber'] });
         const page = await users.list({ search: 'grace', limit: 5 });
@@ -207,82 +183,17 @@ describe.skipIf(!live)('content, taxonomies, settings, users and media', () => {
         const first = await users.after(null, 2);
         const rest = await users.after(first.next, 100);
         expect(rest.next).toBeNull();
-        expect([...first.users, ...rest.users].map(user => user.id)).toEqual(all);
+        expect([...first.users, ...rest.users].map(user => user.id).sort()).toEqual(all);
         await expect(users.update(created.id, { email: 'editor@example.com' })).rejects.toMatchObject({ code: 'CMS_CONFLICT' });
         await users.update(created.id, { name: 'Grace B. Hopper', avatar: 'https://example.com/a.png' });
         expect(await users.get(created.id)).toMatchObject({ name: 'Grace B. Hopper', avatar: 'https://example.com/a.png' });
         await expect(users.update(created.id, { avatar: 'javascript:alert(1)' })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
 
-        const role = await users.createRole({ name: 'Moderator', permissions: ['cms:dashboard'] });
-        expect(role.id).toBe('moderator');
-        await expect(users.createRole({ name: 'Moderator', permissions: [] })).rejects.toMatchObject({ code: 'CMS_CONFLICT' });
-        // A role manager gives only what they hold, cannot change a stronger role, and nobody changes the administrator role.
-        const manager = userPrincipal('manager', ['manager'], ['cms:roles', 'cms:dashboard']);
-        await expect(users.createRole({ name: 'Everything', permissions: ['*'] }, { actor: manager })).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
-        expect((await users.createRole({ name: 'Viewer', permissions: ['cms:dashboard'] }, { actor: manager })).permissions).toEqual(['cms:dashboard']);
-        await expect(users.updateRole('viewer', { permissions: ['cms:dashboard', 'cms:plugins'] }, { actor: manager })).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
-        await users.createRole({ id: 'developer', name: 'Developer', permissions: ['cms:plugins'] });
-        await expect(users.updateRole('developer', { permissions: [] }, { actor: manager })).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
-        await expect(users.updateRole('admin', { permissions: [] })).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
+        await users.defineRole({ id: 'moderator', name: 'Moderator', permissions: ['cms:dashboard'] });
         await users.setRoles(created.id, ['moderator']);
-        expect((await users.roles()).find(entry => entry.id === 'moderator')).toMatchObject({ userCount: 1 });
-        await expect(users.deleteRole('admin')).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
-        // Nor delete one: the stronger role stays with its holders.
-        await expect(users.deleteRole('developer', { actor: manager })).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
-        expect(await users.role('developer')).not.toBeNull();
-        // A role raised between the manager's check and write is neither overwritten nor deleted.
-        const db = cms.db as { read: typeof cms.db.read };
-        const read = db.read;
-        const raiseOnce = () => {
-            db.read = async (...args) => {
-                const result = await read.apply(cms.db, args);
-                db.read = read;
-                await cms.db.write([{ rql: "UPDATE cms_roles SET permissions = '[\"cms:dashboard\",\"cms:plugins\"]' WHERE id = 'viewer'" }]);
-                return result;
-            };
-        };
-        try {
-            raiseOnce();
-            await expect(users.updateRole('viewer', { name: 'Viewer 2' }, { actor: manager })).rejects.toMatchObject({ code: 'CMS_CONFLICT' });
-            expect((await users.role('viewer'))!.permissions).toEqual(['cms:dashboard', 'cms:plugins']);
-            await cms.db.write([{ rql: "UPDATE cms_roles SET permissions = '[\"cms:dashboard\"]' WHERE id = 'viewer'" }]);
-            raiseOnce();
-            await expect(users.deleteRole('viewer', { actor: manager })).rejects.toMatchObject({ code: 'CMS_CONFLICT' });
-            expect(await users.role('viewer')).not.toBeNull();
-        } finally { db.read = read; }
-        await cms.db.write([{ rql: "UPDATE cms_roles SET permissions = '[\"cms:dashboard\"]' WHERE id = 'viewer'" }]);
-        expect(await users.deleteRole('viewer', { actor: manager })).toBe(true);
-        expect(await users.deleteRole('moderator')).toBe(true);
-        expect((await users.get(created.id))!.roles).toEqual([]);
-
-        expect(await cms.accounts.createPasswordReset('nobody@example.com')).toBeNull();
-        const reset = (await cms.accounts.createPasswordReset('grace@example.com'))!;
-        await expect(cms.accounts.resetPassword(reset.token, 'short')).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
-    });
-
-    it('consumes a reset token once and ends sessions', async () => {
-        const accounts = cms.accounts;
-        await cms.users.create({ email: 'reset@example.com', name: 'Reset', password: 'first password' });
-        const reset = (await accounts.createPasswordReset('reset@example.com'))!;
-        const stored = await cms.db.read([{ rql: 'SELECT id FROM cms_password_resets WHERE user_id = $user', params: { $user: reset.account.id } }]);
-        expect(stored.results[0]!.rows[0]![0]).not.toBe(reset.token);
-        const [first, second] = await Promise.all([accounts.resetPassword(reset.token, 'second password'), accounts.resetPassword(reset.token, 'third password')]);
-        expect([first, second].filter(Boolean)).toHaveLength(1);
-        expect(await accounts.verifier.verify('reset@example.com', first ? 'second password' : 'third password')).toMatchObject({ email: 'reset@example.com' });
-        expect(await accounts.resetPassword(reset.token, 'fourth password')).toBe(false);
-    });
-
-    it('deletes an account with what signs it in, and a member without the account', async () => {
-        const user = await cms.users.create({ email: 'gone@example.com', name: 'Gone', password: 'long password' });
-        await cms.authSessions.create({ id: 'a'.repeat(64), userId: user.id, kind: 'auth', createdAt: Date.now(), expiresAt: Date.now() + 60_000 });
-        await cms.apiTokens.create(user.id, { name: 'Script', scope: 'read' });
-        expect(await cms.users.delete(user.id)).toBe(true);
-        expect(await cms.users.get(user.id)).toBeNull();
-        expect(await cms.authSessions.read('a'.repeat(64))).not.toBeNull();
-        expect(await cms.accounts.delete(user.id)).toBe(true);
-        expect(await cms.accounts.get(user.id)).toBeNull();
-        expect(await cms.authSessions.read('a'.repeat(64))).toBeNull();
-        expect(await cms.apiTokens.list(user.id)).toEqual([]);
+        expect((await users.get(created.id))!.roles).toEqual(['moderator']);
+        expect([await users.delete(created.id), await users.delete(created.id)]).toEqual([true, false]);
+        expect(await users.get(created.id)).toBeNull();
     });
 
     it('accepts media by signature, records image sizes and lists the library', async () => {

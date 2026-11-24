@@ -404,9 +404,37 @@ async function exercise(origin, routeIds, diagnostics) {
   await admin.action('auth/login/index.ts', 'login', [{ email: 'bea@example.com', password: 'long password' }]);
   lacks(await admin.page('/dashboard/tools/export'), 'data-database-file');
   expect((await admin.request('/api/cms/site-export?format=romedb')).status).toBe(403);
-  expect((await admin.request('/api/cms/site-export')).status).toBe(200);
+  const exported = await admin.request('/api/cms/site-export');
+  expect(exported.status).toBe(200);
+  const siteExport = await exported.text();
   expect((await web.action('dashboard/layout.ts', 'doLogout', [], { page: 'dashboard/index.ts' }))._cossack_redirect).toBe('/auth/login');
   expect((await web.request('/dashboard')).headers.get('location')).toBe('/auth/login');
+  return siteExport;
+}
+
+/** A new install takes a site's export, then one of the site's administrators takes it over on the setup page. */
+async function takeOver(origin, routeIds, diagnostics, siteExport) {
+  const web = browserless(origin, routeIds, diagnostics);
+  contains(await web.page('/auth/setup'), 'Set up your site');
+  const imported = await web.request('/auth/setup', { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json', 'x-cms-setup-code': 'setup-code-for-tests' }, body: siteExport });
+  expect(imported.status, await imported.clone().text()).toBe(200);
+  expect(await imported.json()).toEqual({ next: '/auth/setup' });
+  // The import brought members without passwords and nobody runs the install: setup is not done.
+  expect((await web.request('/auth/login')).headers.get('location')).toBe('/auth/setup');
+  const page = await web.page('/auth/setup');
+  contains(page, 'Take over this site');
+  lacks(page, 'Your site is set up');
+  expect((await web.post('/auth/setup', { code: 'setup-code-for-tests', email: 'nobody@example.com', password: 'a new password' })).headers.get('location')).toBe('/auth/setup');
+  expect((await web.post('/auth/setup', { code: 'setup-code-for-tests', email: 'ada@example.com', password: 'a new password' })).headers.get('location')).toBe('/dashboard');
+  contains(await web.page('/dashboard'), 'ada@example.com');
+  // Now it is set up: the page says so, and a second export is refused.
+  const fresh = browserless(origin, routeIds, diagnostics);
+  contains(await fresh.page('/auth/setup'), 'Your site is set up');
+  expect((await fresh.request('/auth/login')).status).toBe(200);
+  const again = await fresh.request('/auth/setup', { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json', 'x-cms-setup-code': 'setup-code-for-tests' }, body: siteExport });
+  expect(again.status).toBe(400);
+  await fresh.action('auth/login/index.ts', 'login', [{ email: 'ada@example.com', password: 'a new password' }]);
+  contains(await fresh.page('/dashboard'), 'ada@example.com');
 }
 
 describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
@@ -437,8 +465,13 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
     const environment = { APP_SECRET: 'generated-cms-test-secret-0123456789abcdef', ROMEDB_URL: path.join(root, 'storage/romedb/app.romedb'), ROMEDB_TOKEN: '', CMS_SETUP_CODE: 'setup-code-for-tests',
       ROMEDB_PENDING_DIR: path.join(root, '.cossack/romedb-pending'), MEDIA_DIR: path.join(root, 'storage/media') };
     const server = await productionServer(root, environment);
-    try { await exercise(server.origin, routeIds, () => server.diagnostics()); }
+    let siteExport;
+    try { siteExport = await exercise(server.origin, routeIds, () => server.diagnostics()); }
     finally { await server.close(); }
+    // The export in a new install: another database, the same application.
+    const second = await productionServer(root, { ...environment, ROMEDB_URL: path.join(root, 'storage/romedb/moved.romedb'), ROMEDB_PENDING_DIR: path.join(root, '.cossack/romedb-pending-moved') });
+    try { await takeOver(second.origin, routeIds, () => second.diagnostics(), siteExport); }
+    finally { await second.close(); }
     expect((await fs.stat(path.join(root, 'storage/romedb/app.romedb'))).mode & 0o777).toBe(0o600);
   }, 400_000);
 
@@ -847,7 +880,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       await fs.access(path.join(root, 'storage/romedb/token'));
       // The network dashboard waits until Settings → Network turns the network on.
       expect((await web.request('/dashboard/network')).headers.get('location')).toBe('/dashboard');
-      const network = { enabled: true, name: 'Dev network', subdomainSuffix: '', defaultTheme: '', defaultPlugins: [], defaultLanguage: '', siteExports: 'request' };
+      const network = { enabled: true, name: 'Dev network', subdomainSuffix: '', defaultTheme: '', defaultPlugins: [], defaultLanguage: '', siteExports: 'request', siteRegistration: false };
       expect((await web.action(SETTINGS, 'saveAll', [{ document: null, languages: null, permalinks: null, network, groups: {} }]))._cossack_return.error).toBe('');
       // Beside it, a directory service holds added sites' databases, which the Worker creates through ROMEDB_SITES_URL.
       if (servesDirectories()) {
@@ -880,9 +913,11 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
         // signs them in without a click; a visitor the network does not know comes back to the blog's own sign-in, once.
         const auto = new URL((await blogAdmin.request('/dashboard')).headers.get('location'));
         // The blog's state for this browser travels along and comes back with the code.
-        expect(auto.toString()).toMatch(new RegExp(`^${origin}/auth/handoff\\?site=blog&next=%2Fdashboard&state=[0-9a-f]{32}&auto=1$`));
-        const autoBack = new URL((await web.request(auto.pathname + auto.search)).headers.get('location'));
-        expect(`${autoBack.origin}${autoBack.pathname}`).toBe(`${blogOrigin}/auth/handoff`);
+        expect(auto.toString()).toMatch(new RegExp(`^${origin}/auth/tenant/redirect\\?host=blog\\.localhost&state=[0-9a-f]{32}&next=%2Fdashboard&auto=1$`));
+        const issued = await web.request(auto.pathname + auto.search);
+        expect(issued.status, await issued.clone().text()).toBe(302);
+        const autoBack = new URL(issued.headers.get('location'));
+        expect(`${autoBack.origin}${autoBack.pathname}`).toBe(`${blogOrigin}/auth/tenant/callback`);
         expect((await blogAdmin.request(autoBack.pathname + autoBack.search)).headers.get('location')).toBe('/dashboard');
         expect((await blogAdmin.request('/dashboard')).status).toBe(200);
         const stranger = browserless(blogOrigin, routeIds, () => output, { connect: '127.0.0.1' });
@@ -891,8 +926,8 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
         const strangerOnNetwork = browserless(origin, routeIds, () => output, { connect: '127.0.0.1' });
         expect((await strangerOnNetwork.request(strangerAuto.pathname + strangerAuto.search)).headers.get('location')).toBe(`${blogOrigin}/auth/login`);
         expect((await stranger.request('/dashboard')).headers.get('location')).toBe('/auth/login');
-        const toNetwork = new URL((await blogAdmin.request('/auth/handoff?next=/dashboard')).headers.get('location'));
-        expect(toNetwork.toString()).toMatch(new RegExp(`^${origin}/auth/handoff\\?site=blog&next=%2Fdashboard&state=[0-9a-f]{32}$`));
+        const toNetwork = new URL((await blogAdmin.request('/auth/tenant/start?next=/dashboard')).headers.get('location'));
+        expect(toNetwork.toString()).toMatch(new RegExp(`^${origin}/auth/tenant/redirect\\?host=blog\\.localhost&state=[0-9a-f]{32}&next=%2Fdashboard$`));
         const back = new URL((await web.request(toNetwork.pathname + toNetwork.search)).headers.get('location'));
         expect(back.origin).toBe(blogOrigin);
         // A code opened in another browser (a link made with someone else's account) does not sign it in.
@@ -952,8 +987,8 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       const exported = await own.json();
       expect(exported).toMatchObject({ format: 'cossack-site-export', version: 1, site: { id: 'main', name: 'Workers Dev' } });
       expect(exported.tables.map(table => table.name)).toContain('cms_settings');
-      expect(exported.tables.map(table => table.name)).not.toContain('cms_accounts');
-      expect(exported.tables.map(table => table.name)).not.toContain('cms_auth_sessions');
+      expect(exported.tables.map(table => table.name)).not.toContain('tenant_members');
+      expect(exported.tables.map(table => table.name)).not.toContain('sessions');
       if (servesDirectories()) {
         const blogExport = await (await web.request('/api/cms/network/sites/blog/export')).json();
         expect(blogExport.site).toEqual({ id: 'blog', name: 'Blog', host: 'blog.localhost' });
@@ -975,6 +1010,16 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
         contains(copyPage, 'thanh@example.com');
         lacks(copyPage, 'data-site-import');
         contains(await browserless(`http://copy.localhost:${devPort}`, routeIds, () => output, { connect: '127.0.0.1' }).page('/'), 'Hello World!');
+        // With People can register a site, a signed-in person registers one for their own account: the form asks for the site alone.
+        expect((await web.action(SETTINGS, 'saveAll', [{ document: null, languages: null, permalinks: null, network: { ...network, siteRegistration: true }, groups: {} }]))._cossack_return.error).toBe('');
+        const registration = await web.page('/auth/register-site');
+        contains(registration, 'data-signed-in-as');
+        lacks(registration, 'new-password');
+        const registered = await web.action('auth/register-site/index.ts', 'register', [{ siteName: 'Shop', subdomain: 'shop', name: '', email: '', password: '' }]);
+        expect(registered._cossack_redirect, JSON.stringify(registered)).toMatch(/^http:\/\/shop\.[^/]+\/auth\/tenant\/start\?next=%2Fdashboard$/);
+        contains(await web.page('/dashboard/network/sites/shop'), 'ada@example.com');
+        // A visitor who is not signed in still gives an account.
+        contains(await browserless(origin, routeIds, () => output, { connect: '127.0.0.1' }).page('/auth/register-site'), 'new-password');
       }
     } finally {
       if (child.connected) child.send('STOP'); else child.kill('SIGTERM');

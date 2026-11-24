@@ -30,6 +30,7 @@ On Workers, pass `url` and `token` instead of `connect`.
 | `@cossackframework/romedb/values` | `Float64`, `RecordId`, `Vector`, `toTransport`, `fromTransport` (client-safe) |
 | `@cossackframework/romedb/node` | `connectNode` (files through `@romedb/node`, `romedb serve` and Cloud by URL), `FilePendingWriteStore` |
 | `@cossackframework/romedb/cloudflare` | `RomeDBPendingWrites` Durable Object and `DurableObjectPendingWriteStore` |
+| `@cossackframework/romedb/orm` | `romedb(db)`, the adapter that runs the Cossack ORM (`@cossackframework/database`) on a RomeDB instance, with relational and document entities, and `romedbClient()`, the instance behind an ORM (see the database package's `docs/romedb.md`) |
 | `@cossackframework/romedb/dev` | `romedbDev()` Vite plugin: starts `romedb serve` for a loopback `ROMEDB_URL` and passes its token, and, unless `ROMEDB_SITES_URL` is set, `romedb serve --directory storage/romedb/sites` on the next port for a CMS network's added sites (`ROMEDB_SITES_URL`, `ROMEDB_SITES_TOKEN`); `romedbDevVars` hands them to the Cloudflare plugin |
 | `@cossackframework/romedb/testing` | `startRomeDBService` and `startRomeDBDirectory` for live tests against `romedb serve` |
 
@@ -55,7 +56,35 @@ Rules:
 - Every write is saved before dispatch. A lost response leaves an `UncertainWriteError`;
   `recoverPending()` replays the exact request. It never sends a replacement write.
 - Reads send explicit `workLimits` and retry 503/429 backpressure a bounded number of times.
+- The client allows 32 calls in flight. A call it refuses for lack of places (`RDB_LIMIT`,
+  outcome `not-sent`, `limit` `client-requests` or `client-bytes`) waits and tries again like
+  a 503, so a burst of requests queues instead of failing. `isClientFull(error)` tells such a
+  refusal from one about the call's size.
 - Request paths never warm a Cloud database. Call `warm()` from a schedule.
+
+## Requests that end early
+
+One binding serves every request of an isolate, and a call gives its place back when it
+settles. On Workers a call whose request ends first never settles: the visitor left, or the
+request failed while other calls of the same `Promise.all` were in flight, and the runtime
+cancelled their I/O with the request. Two things keep a binding serving:
+
+- `requestSignal`: a function that gives the signal of the current request. A call that passes
+  no `signal` of its own takes it, so its calls end, and give their places back, when it aborts.
+  The CMS passes one that aborts when the visitor leaves or the request fails. In your own
+  application, abort a controller from your first middleware the same way:
+
+  ```ts
+  import { getRequestContext } from '@cossackframework/core';
+
+  const db = createRomeDB({ url, token, pending, requestSignal: () => getRequestContext()?.get('requestCalls')?.signal });
+  ```
+
+  Work that runs after the answer under `waitUntil` should not take a signal that the end of the
+  answer aborts.
+- The client gives back the place of a call past its deadline (`timeoutMs`, 20 seconds by
+  default) when it is full, since `@romedb/client` 0.2.26. A call that never settles holds its
+  place until then; `requestSignal` gives it back at once.
 
 Live tests run when `COSSACK_TEST_ROMEDB_BIN` points at a `romedb` executable (or
 `romedb` is on `PATH`); `COSSACK_TEST_ROMEDB_URL` and `COSSACK_TEST_ROMEDB_TOKEN`

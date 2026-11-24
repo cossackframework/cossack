@@ -1,3 +1,4 @@
+import { networkAdminIds } from '#app/cms/network-accounts';
 import { Cossack, Page, State, type HeadValue } from '@cossackframework/core';
 import { Card, CardBody } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
@@ -24,8 +25,9 @@ export default class NetworkHome extends Cossack {
         const [active, archived, deleted] = await Promise.all((['active', 'archived', 'deleted'] as const).map(async status => (await net.sites.list({ status, limit: 1 })).total));
         // The main site counts as an active site.
         this.sites = { active: active + 1, archived, deleted };
-        this.accounts = await net.main.accounts.count();
-        this.admins = (await net.main.accounts.list({ networkAdmins: true, limit: 1 })).total;
+        // Accounts of the network are the main site's users.
+        this.accounts = await net.main.users.count();
+        this.admins = (await networkAdminIds()).size;
         this.canAdd = net.canAddSites;
     }
 

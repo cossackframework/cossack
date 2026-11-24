@@ -11,7 +11,7 @@ import { FIELD_BLOCKS, fieldGroupProblems, type FieldGroup } from './field-group
 import { defineAction, defineFilter, type ExtensionPoint } from '@cossackframework/core/hooks';
 import { cronProblem } from './cron';
 import { EXTENSION_POINTS } from './hooks';
-import { OWNER_NAME, resourceProblems, type ResourceAction, type ResourceDeclaration } from './resource';
+import { memberRuleProblems, OWNER_NAME, resourceProblems, type ResourceAction, type ResourceDeclaration } from './resource';
 import { themeProblems, type ThemeManifest } from './theme';
 import { pluginSettingsProblems, type PluginSettingsDeclaration } from './plugin-settings';
 
@@ -63,6 +63,16 @@ export interface SlotLink {
     /** A Solar icon name for the link in the dashboard navigation, such as `chart`; a plug when the dashboard has no such icon. */
     readonly icon?: string;
 }
+
+/** A role a plugin's manifest defines, such as `{ id: 'acme-manager', name: 'Manager', permissions: ['cms:dashboard', 'acme:approve'] }`. */
+export interface PluginRole {
+    readonly id: string;
+    readonly name: string;
+    readonly permissions: readonly string[];
+}
+
+/** CMS permissions a plugin's role may hold beside the plugin's own. */
+export const PLUGIN_ROLE_PERMISSIONS: ReadonlySet<string> = new Set(['cms:dashboard', 'cms:upload']);
 
 /** A plugin's maker as its manifest names them. */
 export interface PluginAuthor {
@@ -154,6 +164,13 @@ export interface CmsPluginManifest {
         readonly slots?: { readonly [slot: string]: readonly SlotLink[] };
     };
     readonly commands?: readonly PluginCommand[];
+    /**
+     * Roles the host defines on each site where the plugin is active: when it is granted, and on
+     * every site, new ones included, while the network enables it. IDs start with `<plugin>-`; a
+     * role holds `cms:dashboard`, `cms:upload` and the plugin's own permissions. A role the site
+     * has is left as the site changed it.
+     */
+    readonly roles?: readonly PluginRole[];
     /** Jobs the clock queues while the plugin is active; needs `permissions.jobs`. */
     readonly schedules?: readonly PluginSchedule[];
     /** `false` keeps the plugin in the application where it could run isolated: what `cossack add plugin --in-app` renders. */
@@ -198,7 +215,7 @@ export interface ManifestPattern {
 }
 const PATTERN_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-const KNOWN_FIELDS = new Set(['schemaVersion', 'name', 'version', 'description', 'author', 'compatibility', 'dependencies', 'resources', 'collections', 'blocks', 'fieldGroups', 'patterns', 'editor', 'hooks', 'permissions', 'ui', 'provides', 'commands', 'schedules', 'settings', 'theme', 'logo', 'cover', 'translations', 'package', 'source', 'isolation']);
+const KNOWN_FIELDS = new Set(['schemaVersion', 'name', 'version', 'description', 'author', 'compatibility', 'dependencies', 'resources', 'collections', 'blocks', 'fieldGroups', 'patterns', 'editor', 'hooks', 'permissions', 'ui', 'provides', 'commands', 'roles', 'schedules', 'settings', 'theme', 'logo', 'cover', 'translations', 'package', 'source', 'isolation']);
 const COLLECTION_NAME = /^[a-z][a-zA-Z0-9_]{0,40}$/;
 const ARTWORK = /^assets\/[A-Za-z0-9][A-Za-z0-9._-]{0,80}\.(?:png|jpe?g|webp|gif|avif|svg)$/;
 const HOST = /^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$|^localhost$/;
@@ -267,6 +284,14 @@ export function manifestProblems(manifest: unknown): string[] {
         for (const problem of resourceProblems({ ...resource, owner: name })) problems.push(`resource ${resource.name}: ${problem}`);
         if (resourceNames.has(resource.name)) problems.push(`resource ${resource.name} is declared twice.`);
         resourceNames.add(resource.name);
+    }
+    // Membership rules name the plugin's own resources, checked once all are known.
+    if (Array.isArray(value.resources) && typeof name === 'string') {
+        const declared = (id: string) => (value.resources as ResourceDeclaration[]).find(resource => resource && typeof resource === 'object' && `${name}/${resource.name}` === id);
+        for (const resource of value.resources) {
+            if (!resource || typeof resource !== 'object' || !resource.fields || typeof resource.fields !== 'object') continue;
+            for (const problem of memberRuleProblems(resource, name, declared)) problems.push(`resource ${resource.name}: ${problem}`);
+        }
     }
     const collectionNames = new Set<string>();
     for (const [index, collection] of (Array.isArray(value.collections) ? value.collections : value.collections === undefined ? [] : [null]).entries()) {
@@ -399,6 +424,22 @@ export function manifestProblems(manifest: unknown): string[] {
     if (value.author !== undefined) problems.push(...authorProblems(value.author));
     for (const key of ['logo', 'cover'] as const) {
         if (value[key] !== undefined && (typeof value[key] !== 'string' || !ARTWORK.test(value[key]))) problems.push(`${key} must name a PNG, JPEG, WebP, GIF, AVIF or SVG file in assets/, such as assets/${key}.png.`);
+    }
+    const roles = Array.isArray(value.roles) ? value.roles : value.roles === undefined ? [] : [null];
+    if (roles.length > 10) problems.push('roles: at most 10.');
+    const roleIds = new Set<string>();
+    for (const [index, role] of roles.entries()) {
+        if (!role || typeof role !== 'object') { problems.push(`roles[${index}] must be a role.`); continue; }
+        const id = String(role.id);
+        if (typeof role.id !== 'string' || !role.id.startsWith(`${name}-`) || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(role.id) || role.id.length > 80) problems.push(`roles[${index}]: IDs start with ${name}- and are lowercase letters, digits and hyphens.`);
+        else if (roleIds.has(id)) problems.push(`roles: ${id} is declared twice.`);
+        roleIds.add(id);
+        if (typeof role.name !== 'string' || !role.name.trim() || role.name.length > 80) problems.push(`roles: ${id} needs a name of at most 80 characters.`);
+        if (!Array.isArray(role.permissions) || role.permissions.length > 50) { problems.push(`roles: ${id} lists at most 50 permissions.`); continue; }
+        for (const permission of role.permissions) {
+            const own = typeof permission === 'string' && (permission.startsWith(`${name}:`) || permission.startsWith(`${name}/`)) && /^[a-z0-9-]+[:/][a-z0-9:/._*-]{1,127}$/.test(permission);
+            if (!own && !PLUGIN_ROLE_PERMISSIONS.has(permission)) problems.push(`roles: ${id} may hold ${[...PLUGIN_ROLE_PERMISSIONS].join(', ')} and ${name}'s own permissions, not ${String(permission)}.`);
+        }
     }
     const commandNames = new Set<string>();
     for (const command of value.commands ?? []) {

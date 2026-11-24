@@ -14,7 +14,7 @@ const resource = collectionResource(posts);
 function host(records: RecordShape[], editable: (record: RecordShape) => boolean): CmsHost {
     return {
         collection: () => posts,
-        resource: () => ({ list: async () => ({ records }), canUpdate: (entry: RecordShape) => editable(entry) }),
+        resource: () => ({ list: async () => ({ records }), canUpdate: async (entry: RecordShape) => editable(entry), editable: async (entries: RecordShape[]) => new Set(entries.filter(entry => editable(entry)).map(entry => entry.id)) }),
         resourceById: () => resource,
         entryUrls: async (_collection: unknown, entries: readonly RecordShape[]) => new Map(entries.map(entry => [entry.id, `/posts/${String(entry.slug)}`])),
     } as unknown as CmsHost;

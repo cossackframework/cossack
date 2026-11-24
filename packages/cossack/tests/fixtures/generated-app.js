@@ -98,9 +98,10 @@ export async function productionServer(root, environment = {}) {
       const listener = serve({ fetch, port: 0, hostname: '127.0.0.1' }, () => resolve(listener));
       listener.once('error', error => { console.error(error); process.exit(1); });
     });
-    env.APP_URL = 'http://127.0.0.1:' + server.address().port;
+    // TEST_APP_HOST names the application's host (tenants live under it); requests still reach 127.0.0.1.
+    env.APP_URL = 'http://' + (process.env.TEST_APP_HOST || '127.0.0.1') + ':' + server.address().port;
     runtime.attach(server, request => app.fetch(request, env));
-    console.log('RECIPE_ORIGIN=' + env.APP_URL);
+    console.log('RECIPE_ORIGIN=http://127.0.0.1:' + server.address().port);
     process.once('SIGTERM', async () => {
       await runtime.dispose();
       server.close(() => process.exit(0));

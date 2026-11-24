@@ -66,10 +66,11 @@ export default class ReplacePage extends Cossack {
         try {
             for (let offset = 0; offset < 1000; offset += 100) {
                 const page = await resource.list({ limit: 100, offset, order: { field: 'updatedAt', direction: 'desc' } }, { principal });
+                const editable = await resource.editable(page.records, { principal });
                 for (const record of page.records) {
                     // Only entries this user may change are searched: a count over one they may not would
                     // tell what a protected or members-only entry says.
-                    if (!resource.canUpdate(record, principal)) continue;
+                    if (!editable.has(record.id)) continue;
                     this.scanned++;
                     const changed: Record<string, unknown> = {};
                     const touched: string[] = [];

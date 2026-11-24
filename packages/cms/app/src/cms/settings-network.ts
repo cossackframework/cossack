@@ -19,6 +19,7 @@ export interface NetworkSettingsInput {
     defaultPlugins: string[];
     defaultLanguage: string;
     siteExports: SiteExportPolicy;
+    siteRegistration: boolean;
 }
 export interface NetworkSettingsData extends NetworkSettingsInput {
     /** What new sites' addresses end with while `subdomainSuffix` is empty. */
@@ -40,7 +41,7 @@ export async function loadNetworkSettings(network: CmsNetwork): Promise<NetworkS
     ]);
     return {
         enabled, name: settings.name, subdomainSuffix: settings.subdomainSuffix, defaultTheme: settings.defaultTheme,
-        defaultPlugins: [...settings.defaultPlugins], defaultLanguage: settings.defaultLanguage, siteExports: settings.siteExports, fallbackSuffix: network.subdomainSuffix,
+        defaultPlugins: [...settings.defaultPlugins], defaultLanguage: settings.defaultLanguage, siteExports: settings.siteExports, siteRegistration: settings.siteRegistration, fallbackSuffix: network.subdomainSuffix,
         themes: network.main.themes().filter(theme => !theme.problems.length && !policy.hiddenThemes.has(theme.name)).map(theme => ({ name: theme.name, label: theme.label })),
         plugins: status.plugins.filter(plugin => !plugin.themeOnly && !plugin.unrestricted && plugin.network === 'available').map(plugin => plugin.name),
         canAddSites: network.canAddSites, sites: active.total + archived.total,
@@ -51,12 +52,12 @@ export async function loadNetworkSettings(network: CmsNetwork): Promise<NetworkS
 export async function saveNetworkSettings(network: CmsNetwork, principal: Principal, input: NetworkSettingsInput): Promise<NetworkSettingsResult> {
     const text = (value: unknown) => typeof value === 'string';
     if (!input || typeof input.enabled !== 'boolean' || ![input.name, input.subdomainSuffix, input.defaultTheme, input.defaultLanguage].every(text)
-        || !Array.isArray(input.defaultPlugins) || !input.defaultPlugins.every(text) || (input.siteExports !== 'request' && input.siteExports !== 'self')) return { data: null, error: __('The network settings are invalid.'), fields: {} };
+        || !Array.isArray(input.defaultPlugins) || !input.defaultPlugins.every(text) || (input.siteExports !== 'request' && input.siteExports !== 'self') || typeof input.siteRegistration !== 'boolean') return { data: null, error: __('The network settings are invalid.'), fields: {} };
     try {
         if (input.enabled !== await network.enabled()) await network.setEnabled(input.enabled, { principal });
         const patch: Partial<NetworkSettings> = {
             name: input.name, subdomainSuffix: input.subdomainSuffix.trim(), defaultTheme: input.defaultTheme,
-            defaultPlugins: input.defaultPlugins, defaultLanguage: input.defaultLanguage.trim().toLowerCase(), siteExports: input.siteExports,
+            defaultPlugins: input.defaultPlugins, defaultLanguage: input.defaultLanguage.trim().toLowerCase(), siteExports: input.siteExports, siteRegistration: input.siteRegistration,
         };
         const saved = await network.settings();
         // Turning the network on or off leaves the rest alone, even when a stored value went stale.
@@ -69,7 +70,7 @@ export async function saveNetworkSettings(network: CmsNetwork, principal: Princi
 
 export const networkDraft = (data: NetworkSettingsData): NetworkSettingsInput => ({
     enabled: data.enabled, name: data.name, subdomainSuffix: data.subdomainSuffix, defaultTheme: data.defaultTheme,
-    defaultPlugins: [...data.defaultPlugins], defaultLanguage: data.defaultLanguage, siteExports: data.siteExports,
+    defaultPlugins: [...data.defaultPlugins], defaultLanguage: data.defaultLanguage, siteExports: data.siteExports, siteRegistration: data.siteRegistration,
 });
 
 export type NetworkSettingsProps = {
@@ -138,6 +139,9 @@ export class NetworkSettingsForm extends Cossack {
                     </div>` : null}
                     ${input('defaultLanguage', __('Language'), __('A language code, such as en, fr or pt-br. Add site can choose another.'), 'en')}
                 </fieldset>` : null}
+                ${show('siteRegistration') ? component(Checkbox, { id: 'network-siteRegistration', checked: form.siteRegistration, '@change': (event: Event) => this.set({ siteRegistration: (event.target as HTMLInputElement).checked }) },
+                    html`<span><span class="block font-medium">${__('People can register a site')}</span>
+                        <span class="text-xs text-muted-foreground">${__('Anyone can create an account and a site at /auth/register-site, and becomes its administrator once their email is confirmed. Each account registers at most three sites a day.')}</span></span>`) : null}
                 ${show('siteExports') ? html`<fieldset class="min-w-0 space-y-2">
                     <legend class="mb-2 text-base font-semibold text-foreground">${__('Site exports')}</legend>
                     ${([['request', __('Site admins request an export; a network admin approves it'), __('The site can then download it under Tools → Export for 7 days. Requests wait on the site\'s page under Network → Sites.')],

@@ -1,3 +1,4 @@
+import { registrations } from '#app/auth';
 import type { Context } from 'hono';
 import { ANONYMOUS, applyDashboardMenu, dashboardLinkModuleId, dashboardMenuOf, dashboardNotices as noticesPoint, dashboardNoticesOf, dashboardTaskbar, EMPTY_DASHBOARD_MENU, evaluateRule, hasPermission, isCmsError, isNetworkAdmin, PERMISSIONS, recordTitle, taskbarItemsOf, type DashboardNotice, type Principal, type WriteActor } from '@cossackframework/cms';
 import { MAIN_SITE, type CmsHost } from '@cossackframework/cms/server';
@@ -51,7 +52,7 @@ export function waitingRegistrations(c: Context): Promise<number> {
     return remember(c, 'counts.registrations', async () => {
         const cms = c.get('cms') as CmsHost;
         const principal: Principal = c.get('principal') ?? ANONYMOUS;
-        return hasPermission(principal, PERMISSIONS.manageUsers) ? cms.users.registrationCount().catch(() => 0) : 0;
+        return hasPermission(principal, PERMISSIONS.manageUsers) ? registrations().then(waiting => waiting.length, () => 0) : 0;
     });
 }
 
@@ -329,7 +330,7 @@ export async function dashboardFind(c: Context, text: string): Promise<{ id: str
     const found = await Promise.all(searched.map(async collection => {
         const resource = cms.resourceById(`cms/${collection.name}`);
         try {
-            const records = openMatches(cms, resource.id, await cms.resource(resource.id).search(text, { limit: 5 }, { principal }), principal);
+            const records = await openMatches(cms, resource.id, await cms.resource(resource.id).search(text, { limit: 5 }, { principal }), principal);
             return records.map(record => {
                 const href = `/dashboard/content/${collection.name}/${record.id}`;
                 return { id: href, label: recordTitle(record, resource.titleField), group: collection.label, href };

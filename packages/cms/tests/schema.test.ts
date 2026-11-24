@@ -37,10 +37,11 @@ describe.skipIf(!live)('schema planner and migration ledger', () => {
         const db = service.database();
         const cms = createCMS({ db, resources: [tickets] });
         const plan = await cms.plan();
-        expect(plan.steps.map(step => step.kind)).toEqual([...HOST_STEPS.map(() => 'host'), 'additive']);
+        // The host's own document table for users' field values is planned beside the resource.
+        expect(plan.steps.map(step => [step.kind, step.resource])).toEqual([...HOST_STEPS.map(() => ['host', null]), ['additive', 'app/tickets'], ['additive', 'cms/user_fields']]);
         expect(plan.steps.every(step => step.statements.length <= 30)).toBe(true);
         expect(plan.blocked).toEqual([]);
-        const create = plan.steps.find(step => step.kind === 'additive')!.statements.map(statement => statement.rql);
+        const create = plan.steps.find(step => step.resource === 'app/tickets')!.statements.map(statement => statement.rql);
         expect(create[0]).toBe('CREATE TABLE r__app__tickets');
         expect(create).toContain('DEFINE FIELD "subject" ON r__app__tickets TYPE string REQUIRED CHECK(length("subject") <= 120)');
         expect(create).toContain(`DEFINE FIELD "status" ON r__app__tickets TYPE string REQUIRED DEFAULT 'open' CHECK("status" IN ('open', 'closed'))`);
@@ -49,13 +50,13 @@ describe.skipIf(!live)('schema planner and migration ledger', () => {
         expect(create).toContain('CREATE SEARCH INDEX r__app__tickets__text ON r__app__tickets("subject", "body") USING FULLTEXT');
         const report = await cms.migrate();
         expect(report.failed).toBeUndefined();
-        expect(report.applied).toHaveLength(HOST_STEPS.length + 1);
+        expect(report.applied).toHaveLength(HOST_STEPS.length + 2);
         const again = await cms.plan();
         expect(again.steps).toEqual([]);
-        expect(again.current).toEqual(['app/tickets']);
+        expect(again.current).toEqual(['app/tickets', 'cms/user_fields']);
         expect((await cms.status()).resources).toEqual([{ id: 'app/tickets', active: true }]);
         const ledger = await db.read([{ rql: 'SELECT kind, resource, engine_version, rql FROM cms_migrations ORDER BY applied_at, id' }]);
-        expect(ledger.results[0]!.rows.map(row => row[0])).toEqual([...HOST_STEPS.map(() => 'host'), 'additive']);
+        expect(ledger.results[0]!.rows.map(row => row[0])).toEqual([...HOST_STEPS.map(() => 'host'), 'additive', 'additive']);
         expect(ledger.results[0]!.rows[HOST_STEPS.length]![2]).toMatch(/^0\./);
         expect(ledger.results[0]!.rows[HOST_STEPS.length]![3]).toContain('CREATE TABLE r__app__tickets');
     });

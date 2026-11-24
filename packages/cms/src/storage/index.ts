@@ -27,4 +27,10 @@ export interface CmsStorage<Env = never> {
     imageTransformer(env: Env): ImageTransformer | undefined;
     /** The `fetch` of webhook deliveries; unset uses the runtime's own. */
     readonly webhookFetch?: typeof fetch;
+    /**
+     * The runtime cancels a request's I/O when the request ends (Workers): a database call of a
+     * request that ended first never settles and keeps one of the client's 32 places for good.
+     * The CMS then ends a request's database calls when its visitor leaves or it fails.
+     */
+    readonly cancelsRequestIo?: boolean;
 }

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { RomeDB } from '@cossackframework/romedb';
-import { CmsNetwork, contentModule, createCMS, field, NETWORK_ADMIN, networkSite, systemPrincipal, type Block, type CmsHost, type NetworkSite, type PluginRegistrationLike, type Principal } from '../src/server/index';
-import { romedbService, live } from './helpers';
+import { CmsNetwork, contentModule, createCMS, field, memorySites, NETWORK_ADMIN, networkSite, systemPrincipal, type Block, type CmsHost, type NetworkSite, type PluginRegistrationLike, type Principal } from '../src/server/index';
+import { networkPeople, romedbService, live } from './helpers';
 
 const networkAdmin: Principal = { kind: 'user', id: 'root', roles: ['admin', NETWORK_ADMIN], permissions: ['*'] };
 const siteAdmin: Principal = { kind: 'user', id: 'site-admin', roles: ['admin'], permissions: ['*'] };
@@ -35,10 +35,12 @@ describe.skipIf(!live)('network plugin and theme states', () => {
     let plugins: PluginRegistrationLike[] = [promo(['api.example.com']), ...themes];
 
     /** A network whose hosts get today's plugin code, as a deploy would give them. */
+    const people = networkPeople();
+    const sites = memorySites();
     const open = () => {
         const db = service.database();
         const next: CmsNetwork = new CmsNetwork({
-            db, open: site => added.get(site.database)?.db ?? other.db, networkHost: () => 'example.com',
+            db, open: site => added.get(site.database)?.db ?? other.db, networkHost: () => 'example.com', sites, memberSites: people.memberSites,
             directory: {
                 async create(name) {
                     if (!added.has(`db-${name}`)) added.set(`db-${name}`, await service.fresh());
@@ -46,7 +48,7 @@ describe.skipIf(!live)('network plugin and theme states', () => {
                 },
                 async delete() {},
             },
-            host: (site, siteDb) => createCMS({ db: siteDb, network: db, site: site.id, modules: [contentModule], plugins }),
+            host: (site, siteDb) => createCMS({ db: siteDb, network: db, site: site.id, modules: [contentModule], plugins, people: people.of(site.id) }),
         });
         return next;
     };
@@ -165,7 +167,7 @@ describe.skipIf(!live)('network plugin and theme states', () => {
                 return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
             },
         });
-        const second = new CmsNetwork({ db: racing, open: () => other.db, networkHost: () => 'example.com', host: (site, siteDb) => createCMS({ db: siteDb, network: racing, site: site.id, modules: [contentModule], plugins }) });
+        const second = new CmsNetwork({ db: racing, open: () => other.db, networkHost: () => 'example.com', sites, memberSites: people.memberSites, host: (site, siteDb) => createCMS({ db: siteDb, network: racing, site: site.id, modules: [contentModule], plugins, people: people.of(site.id) }) });
         await second.setPluginState('promo', 'hidden', { principal: networkAdmin });
         await second.setThemeState('plain', 'hidden', { principal: networkAdmin });
         expect(raced).toBe(2);
@@ -193,7 +195,7 @@ describe.skipIf(!live)('network plugin and theme states', () => {
         await expect(network.saveSettings({ defaultLanguage: 'French' }, { principal: networkAdmin })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         await network.saveSettings({ defaultTheme: 'folio', defaultPlugins: ['promo', 'promo'], defaultLanguage: 'fr' }, { principal: networkAdmin });
         expect(await network.settings()).toMatchObject({ defaultTheme: 'folio', defaultPlugins: ['promo'], defaultLanguage: 'fr' });
-        const owner = (await network.main.users.create({ email: 'owner@example.com', name: 'Owner', password: 'owns the place', networkRole: NETWORK_ADMIN })).id;
+        const owner = await people.admin(network.main, { email: 'owner@example.com', name: 'Owner' });
 
         const shop = network.hostOf(networkSite(await network.createSite({ name: 'Shop', host: 'shop.example.com', admin: owner }, { principal: networkAdmin })));
         await shop.ready();

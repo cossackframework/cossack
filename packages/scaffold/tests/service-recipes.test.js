@@ -75,6 +75,41 @@ it('renders Cloudflare queue bindings, independent D1 job state, migration and p
   expect(entry.default.fetch).toBeTypeOf('function');
 });
 
+it('keeps the ledger of a CMS project in its RomeDB database, with no D1 binding', async () => {
+  const result = await createApp('service', { cwd: await directory(), adapter: 'cloudflare', features: 'cms,jobs,schedules,notifications', interactive: false });
+  const root = result.projectDir;
+  const config = JSON.parse((await read(root, 'wrangler.jsonc')).replace(/^\s*\/\/.*$/gm, ''));
+  expect(config.d1_databases ?? []).toEqual([]);
+  expect(config.queues.producers).toEqual([{ binding: 'JOBS', queue: 'service-jobs' }]);
+  const recipe = resolveRecipe({ adapter: 'cloudflare', features: 'cms,jobs,schedules,notifications' });
+  expect(JSON.stringify(recipeCapabilityRequirements(recipe))).not.toContain('JOB_STATE');
+  await expect(fs.access(path.join(root, 'src/jobs/migrations'))).rejects.toThrow();
+  const ledger = await read(root, 'src/jobs/ledger.ts');
+  expect(ledger).toContain("from '../cms.config'");
+  expect(ledger).toContain('jobStateSchema');
+  expect(ledger).toContain('notificationStateSchema');
+  expect(ledger).toContain('cossack_notification_preferences');
+  for (const file of ['src/jobs/index.ts', 'src/notifications/index.ts', 'src/config/jobs.ts', 'src/config/notifications.ts']) {
+    const source = await read(root, file);
+    expect(source).not.toContain('JOB_STATE');
+    await expect(transform(source, { loader: 'ts' })).resolves.toBeDefined();
+  }
+  await expect(transform(ledger, { loader: 'ts' })).resolves.toBeDefined();
+  // The ledger runs on the CMS's own storage: its connection and pending store.
+  const made = [];
+  const module = await moduleFrom(ledger, {
+    '@cossackframework/romedb': { createRomeDB: options => { made.push(options); return { binding: true }; }, rqlDatabase: (db, options) => ({ db, options }) },
+    '@cossackframework/core/jobs': { jobStateSchema: 'JOBS SCHEMA' },
+    '@cossackframework/core/notifications': { notificationStateSchema: 'NOTIFICATIONS SCHEMA' },
+    '../cms.config': { storage: { databaseConnection: () => ({ url: 'https://db', token: 't' }), pendingWrites: () => 'pending' } },
+  });
+  const first = module.jobLedger({});
+  expect(module.jobLedger({})).toBe(first);
+  expect(made).toEqual([{ url: 'https://db', token: 't', pending: 'pending' }]);
+  expect(first.options.schema.slice(0, 1)).toEqual(['JOBS SCHEMA']);
+  expect(first.options.kind).toBe('jobs');
+});
+
 it('rejects Node jobs before creating or changing files', async () => {
   const cwd = await directory();
   await expect(createApp('unsupported', { cwd, adapter: 'node', preset: 'minimal', features: 'jobs', interactive: false })).rejects.toThrow(/jobs.*cloudflare|cloudflare.*jobs/i);

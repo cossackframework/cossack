@@ -23,6 +23,27 @@ describe("SQL fragments", () => {
     );
   });
 
+  it("writes a column type as each database's own", () => {
+    const fragment = sql.fragment`CREATE TABLE notes (id ${sql.type("varchar", { length: 36 })} PRIMARY KEY, meta ${sql.type("json")})`;
+    expect(compileSQL(fragment, postgresDialect).text).toBe("CREATE TABLE notes (id varchar(36) PRIMARY KEY, meta jsonb)");
+    expect(compileSQL(fragment, mysqlDialect).text).toBe("CREATE TABLE notes (id varchar(36) PRIMARY KEY, meta json)");
+    expect(compileSQL(fragment, sqliteDialect).text).toBe("CREATE TABLE notes (id varchar(36) PRIMARY KEY, meta json)");
+    expect(compileSQL(fragment, postgresDialect).parameters).toEqual([]);
+  });
+
+  it("binds a JSON value so each database compares it as JSON", () => {
+    const fragment = sql.fragment`SELECT id FROM sessions WHERE user_id = ${"u1"} AND meta = ${sql.json({ type: "auth" })}`;
+    expect(compileSQL(fragment, postgresDialect).text).toBe("SELECT id FROM sessions WHERE user_id = $1 AND meta = $2::jsonb");
+    expect(compileSQL(fragment, mysqlDialect).text).toBe("SELECT id FROM sessions WHERE user_id = ? AND meta = CAST(? AS JSON)");
+    expect(compileSQL(fragment, sqliteDialect).text).toBe("SELECT id FROM sessions WHERE user_id = ? AND meta = ?");
+    expect(compileSQL(fragment, sqliteDialect).parameters).toEqual(["u1", '{"type":"auth"}']);
+  });
+
+  it("binds a value with no JSON form as NULL", () => {
+    const compiled = compileSQL(sql.fragment`UPDATE users SET meta = ${sql.json(undefined)}`, mysqlDialect);
+    expect(compiled).toEqual({ text: "UPDATE users SET meta = ?", parameters: [null] });
+  });
+
   it("renumbers nested PostgreSQL fragments", () => {
     const left = sql.fragment`${1} + ${2}`;
     const right = sql.fragment`${3}`;

@@ -39,6 +39,15 @@ await cms.settings.update('general', { siteTitle: 'Acme', logo: '/media/abc/logo
   `CMS_VALIDATION`. `error.fields` names each field and its problem. Nothing is written then.
 - The result is the new `SiteSettings`.
 
+## Two-step sign-in
+
+General → **Require two-step sign-in** asks people who can use the dashboard to add an
+authenticator app or a passkey, and to use it when they sign in. **Only for these roles**
+(`general.twoFactorRoles`) limits it to people holding one of the checked roles, such as
+Administrator and Manager; others may still add a second factor. With no role checked, it
+applies to everyone who can use the dashboard. `twoFactorRequired(principal, { required, roles })`
+answers the same question in your own code.
+
 ## The dashboard menu
 
 Appearance holds the theme, its colors and the site's additional CSS (edited under Appearance →
@@ -95,8 +104,10 @@ createCMS({ /* ... */ settings: [shop] });
 - `choices` gives labels for enum values.
 - `source` fills a field's choices when the form renders: `roles`, `pages`, `categories`,
   `timezones`, or `media`, which opens the media library on images and stores a file URL.
-- `control` gives a string field a `color` or `file` editor. The value rules below apply
-  to host groups and plugin groups.
+- `control` gives a string field a `color` or `file` editor, or a `checklist`: the choices of
+  its `source` as checkboxes, stored as the checked values joined by commas (`admin,editor`).
+  `settingRoles(value)` reads such a value as a list. The value rules below apply to host
+  groups and plugin groups.
 - `permission` sets who may change the group.
 - `parent` nests the group beneath another group in the sidebar. Its keys keep the group's own ID.
   For example, Crawlers (`crawlers.*`) and IndexNow (`indexnow.*`) have `parent: 'seo'`. They

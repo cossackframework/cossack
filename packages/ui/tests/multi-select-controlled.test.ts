@@ -54,3 +54,27 @@ it('applies max to edits that are not yet rendered', () => {
     internals.add('Tile');
     expect(onValueChange.mock.calls).toEqual([[['Metal']]]);
 });
+
+it('keeps locked values: no remove button, Backspace skips them, and every change keeps them', async () => {
+    const onValueChange = vi.fn();
+    const { control, internals } = controlled({ value: ['Metal', 'Tile'], lockedValues: ['Metal'], onValueChange });
+    const { renderToString } = await import('@cossackframework/renderer');
+    const output = renderToString(control.render());
+    expect(output).not.toContain('aria-label="Remove Metal"');
+    expect(output).toContain('aria-label="Remove Tile"');
+    expect(output).toMatch(/<span data-locked[^>]*>\s*Metal\s*<\/span>/);
+    await internals.remove('Metal');
+    expect(onValueChange).not.toHaveBeenCalled();
+    const keydown = (control as unknown as { keydown(event: KeyboardEvent): void }).keydown.bind(control);
+    keydown(new KeyboardEvent('keydown', { key: 'Backspace', cancelable: true }));
+    await Promise.resolve();
+    expect(onValueChange.mock.calls).toEqual([[['Metal']]]);
+    // Only locked values are left: Backspace does nothing.
+    control.props = { ...control.props, value: ['Metal'] };
+    const event = new KeyboardEvent('keydown', { key: 'Backspace', cancelable: true });
+    keydown(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(onValueChange).toHaveBeenCalledTimes(1);
+    internals.add('Unknown');
+    expect(onValueChange.mock.lastCall).toEqual([['Metal', 'Unknown']]);
+});

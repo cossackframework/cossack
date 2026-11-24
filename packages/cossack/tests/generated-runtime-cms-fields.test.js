@@ -155,7 +155,8 @@ async function fields(origin, routeIds, diagnostics) {
   contains(manager, 'Content template');
   // Search engines stays mounted in its own hidden panel until selected.
   const seoPanel = manager.match(/<div\b[^>]*\bid=collection-panel-seo\b[^>]*>/)?.[0];
-  expect(seoPanel).toMatch(/\shidden(?:\s|>)/);
+  // Closed panels are hidden=until-found, so the browser's find-in-page can open them.
+  expect(seoPanel).toMatch(/\shidden(?:=|\s|>)/);
   contains(manager, 'collection-tab-seo');
   const searchManager = await web.page('/dashboard/collections/products?tab=seo');
   contains(searchManager, 'Structured data type');

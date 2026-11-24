@@ -24,13 +24,15 @@ import type {
 } from "./metadata/types.js";
 import { In, type DeleteOptions, type EntityShape } from "./query/types.js";
 import { dialectFor } from "./dialect/dialects.js";
-import { registerORM, unregisterORM } from "./scope.js";
+import { currentORM, nextScopeSequence, registerORM, unregisterORM } from "./scope.js";
 import type { OrmSchema } from "./schema/types.js";
 import { compileSQL, SQLFragment } from "./sql/fragment.js";
 import { createSQLTag, type SQLTag } from "./sql/tag.js";
 import { uuidv7 } from "./uuid.js";
 
 interface ScopeContext {
+  /** When this scope opened, among the scopes of every ORM. */
+  readonly sequence: number;
   readonly root: ORM;
   readonly orm: ORM;
   readonly driver: Driver;
@@ -60,6 +62,7 @@ function serializeMetadata(metadata: EntityMetadata): OrmSchema["entities"][numb
     relations: metadata.relations.map(({ target: _target, ...relation }) => relation),
     indexes: metadata.indexes,
     virtual: metadata.virtual,
+    ...(metadata.model === undefined ? {} : { model: metadata.model }),
   };
 }
 
@@ -106,6 +109,9 @@ export class ORM {
           throw new UnsupportedCapabilityError(`native array ${metadata.modelName}.${column.propertyName}`, this.driver.dialect);
         }
       }
+      if (metadata.model === "document" && !this.driver.capabilities.documents) {
+        throw new UnsupportedCapabilityError(`document entity ${metadata.modelName} (document tables need the RomeDB adapter)`, this.driver.dialect);
+      }
       this.metadataByTarget.set(metadata.target, metadata);
       this.metadataByName.set(metadata.modelName, metadata);
     }
@@ -116,8 +122,13 @@ export class ORM {
   run<T>(callback: () => T): T {
     this.assertOpen();
     const current = this.context();
-    if (current?.root === this) return callback();
-    const context: ScopeContext = { root: this, orm: this, driver: this.driver, transactionDepth: 0 };
+    // Already in this ORM's scope, and no other ORM's scope was opened inside it.
+    if (current?.root === this && currentORM() === current.orm) return callback();
+    // Inside another ORM's scope that was opened within this one (a tenant's database inside
+    // the application's): the same scope again, in front, so models reach this ORM.
+    const context: ScopeContext = current?.root === this
+      ? { ...current, sequence: nextScopeSequence() }
+      : { sequence: nextScopeSequence(), root: this, orm: this, driver: this.driver, transactionDepth: 0 };
     if (this.scope) return this.scope.run(context, callback);
     this.fallbackScopes.push(context);
     let result: T;
@@ -154,7 +165,7 @@ export class ORM {
       }
       const savepoint = `cossack_sp_${current.transactionDepth + 1}`;
       await current.driver.execute({ text: `SAVEPOINT ${savepoint}`, parameters: [] }, "raw");
-      const nested: ScopeContext = { ...current, transactionDepth: current.transactionDepth + 1 };
+      const nested: ScopeContext = { ...current, sequence: nextScopeSequence(), transactionDepth: current.transactionDepth + 1 };
       try {
         const result = await this.runContext(nested, callback);
         await current.driver.execute({ text: `RELEASE SAVEPOINT ${savepoint}`, parameters: [] }, "raw");
@@ -169,7 +180,7 @@ export class ORM {
     }
     return current.driver.transaction(async (transactionDriver) => {
       const transactionORM = this.scopedClone(transactionDriver);
-      const context: ScopeContext = { root: this, orm: transactionORM, driver: transactionDriver, transactionDepth: 1 };
+      const context: ScopeContext = { sequence: nextScopeSequence(), root: this, orm: transactionORM, driver: transactionDriver, transactionDepth: 1 };
       return this.runContext(context, callback);
     });
   }
@@ -180,7 +191,7 @@ export class ORM {
     const orm = this.scopedClone(driver);
     Object.defineProperty(orm, "managers", { value: new Map() });
     Object.defineProperty(orm, "states", { value: new WeakMap() });
-    return this.runContext({ root: this, orm, driver, transactionDepth: 0 }, () => callback(orm));
+    return this.runContext({ sequence: nextScopeSequence(), root: this, orm, driver, transactionDepth: 0 }, () => callback(orm));
   }
 
   async reserve<T>(callback: () => Promise<T>): Promise<T> {
@@ -191,7 +202,7 @@ export class ORM {
     }
     return current.driver.reserve(async (reservedDriver) => {
       const reservedORM = this.scopedClone(reservedDriver);
-      return this.runContext({ ...current, orm: reservedORM, driver: reservedDriver }, callback);
+      return this.runContext({ ...current, sequence: nextScopeSequence(), orm: reservedORM, driver: reservedDriver }, callback);
     });
   }
 
@@ -284,10 +295,15 @@ export class ORM {
       (entity as unknown as Record<string, unknown>)[column.propertyName] = value;
       snapshot[column.propertyName] = cloneValue(value);
     }
+    const raw = { ...row };
+    // Relation loading matches rows by key, so a record link is kept as the key it points at.
+    for (const column of metadata.columns) {
+      if (column.recordTable && column.columnName in raw) raw[column.columnName] = decodeValue(column, raw[column.columnName]);
+    }
     this.states.set(entity, {
       metadata,
       original: snapshot,
-      raw: { ...row },
+      raw,
       isNew: false,
     });
     await this.invokeHooks(entity, metadata, "after-load");
@@ -550,6 +566,12 @@ export class ORM {
     return this.context()?.root === this;
   }
 
+  /** @internal When this ORM's current scope opened, or 0 outside one: the highest is the innermost. */
+  currentScopeSequence(): number {
+    const context = this.context();
+    return context?.root === this ? context.sequence : 0;
+  }
+
   currentScopedORM(): ORM {
     return this.context()?.orm ?? this;
   }
@@ -742,14 +764,30 @@ export class ORM {
   }
 
   /**
+   * Run statements as one unit and give each one's result: one interactive transaction, or
+   * one provider batch where there is none (D1, RomeDB), which is also one request. Inside a
+   * transaction they join it. A provider with neither runs them one after another.
+   *
+   * Use it for a check and its write that must not be separated, such as a counter with a
+   * limit: pass `sql.fragment` statements, and read `meta.rowsAffected` of the one that decides.
+   */
+  async atomic(statements: readonly SQLFragment[]): Promise<readonly QueryResult[]> {
+    const scoped = this.currentScopedORM();
+    if (scoped !== this) return scoped.atomic(statements);
+    return this.executeAtomically(statements.map((fragment) => ({ fragment, operation: inferOperation(compileSQL(fragment, dialectFor(this.driver.dialect)).text) })));
+  }
+
+  /**
    * Runs statements in one interactive transaction, or one provider batch (D1),
    * or sequentially when already inside a transaction or neither is available.
    */
   private async executeAtomically(
     statements: readonly { fragment: SQLFragment; operation: QueryOperation }[],
-  ): Promise<void> {
+  ): Promise<readonly QueryResult[]> {
     const sequential = async () => {
-      for (const statement of statements) await this.executeFragment(statement.fragment, statement.operation);
+      const results: QueryResult[] = [];
+      for (const statement of statements) results.push(await this.executeFragment(statement.fragment, statement.operation));
+      return results;
     };
     const driver = this.currentScopedORM().driver;
     if (statements.length < 2 || (this.context()?.transactionDepth ?? 0) > 0) return sequential();
@@ -770,11 +808,10 @@ export class ORM {
         throw new UnsupportedCapabilityError("query parameter limit", driver.dialect);
       }
       try {
-        await driver.batch(compiled);
+        return await driver.batch(compiled);
       } catch (cause) {
         throw cause instanceof QueryError ? cause : new QueryError("Failed to execute batch.", compiled[0]!.query.text, cause);
       }
-      return;
     }
     return sequential();
   }
@@ -803,7 +840,9 @@ export class ORM {
     const result: BaseEntity[] = [];
     const limit = Math.max(1, this.driver.capabilities.parameterLimit);
     for (let index = 0; index < values.length; index += limit) {
-      const chunk = values.slice(index, index + limit);
+      // A join column that holds record links is compared with links, not with bare keys.
+      const column = metadata.columns.find((candidate) => candidate.columnName === physicalColumn);
+      const chunk = values.slice(index, index + limit).map((value) => column?.recordTable ? this.encode(column, value) : value);
       const fragment = this.sql.fragment`${this.sql.id(physicalColumn)} IN (${this.sql.join(chunk as never[])})`;
       result.push(...await this.model(metadata.target).query().where(fragment).getMany());
     }

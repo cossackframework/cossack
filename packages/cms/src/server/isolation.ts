@@ -166,6 +166,16 @@ export async function serveIsolatedCall(context: PluginContext, member: string, 
             }
             return call(context.cms.resource(String(id)), method, rest);
         }
+        case 'cms': {
+            // A batch, as a repository call: exactly the writes and the context, acting as a principal the call was given.
+            if (method !== 'batch' || args.length !== 2) throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} asked for ${member}.`);
+            const operation = args[1] as { principal?: unknown } | undefined;
+            const own = systemPrincipal(`plugin:${name}`);
+            if (!operation || typeof operation !== 'object' || !(samePrincipal(operation.principal, own) || principals.some(principal => samePrincipal(operation.principal, principal)))) {
+                throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} must act as the principal its handler was given, or as plugin:${name}.`);
+            }
+            return context.cms.batch(args[0] as never, operation as never);
+        }
         case 'fetch': {
             const request = args[0];
             if (!(request instanceof Request)) throw new CmsError('CMS_VALIDATION', `Plugin ${name} must fetch with a Request.`);

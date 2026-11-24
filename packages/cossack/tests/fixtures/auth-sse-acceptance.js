@@ -64,7 +64,7 @@ export const POST = defineApi({
     } else if (operation === 'expire') await Session.update({ id: token }, { expiresAt: new Date(0) });
     else if (operation === 'scope') await updateUserProfile(c.get('user').id, { meta: { allowed: true, team: team + '-changed' } });
     else if (operation === 'permission') await updateUserProfile(c.get('user').id, { meta: { allowed: false, team } });
-    else if (operation === 'purpose') await Session.update({ id: token }, { meta: { type: 'password_reset' } });
+    else if (operation === 'purpose') await Session.update({ id: token }, { kind: 'password_reset' });
     else if (operation === 'storage-failure') await sql\`DROP TABLE sessions\`;
     else return c.json({ accepted: false }, 400);
     return c.json({ accepted: true });

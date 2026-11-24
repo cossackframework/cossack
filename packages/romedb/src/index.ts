@@ -25,6 +25,7 @@ export {
     type ConnectOptions,
     type WarmResult,
     type Outcome,
+    type ClientLimit,
     type Value,
     type PortableValue,
 } from '@romedb/client';
@@ -42,6 +43,7 @@ export {
     EngineVersionError,
     UncertainWriteError,
     RequestTooLargeError,
+    isClientFull,
     MAX_STATEMENTS,
     LOCAL_REQUEST_BYTES,
     CLOUD_REQUEST_BYTES,

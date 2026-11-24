@@ -22,7 +22,8 @@ describe('dashboard recipe', () => {
       expect(files.has(rel), rel).toBe(true);
     // The session and the guard are one list from the package, after the ORM's request scope.
     expect(text(files, 'src/bootstrap/middlewares.ts')).toContain(`import { authMiddlewares } from '${DASHBOARD_PACKAGE}/app/middlewares/auth';`);
-    expect(text(files, 'src/bootstrap/middlewares.ts')).toMatch(/ormRequestMiddleware,\n {2}\.\.\.authMiddlewares,/);
+    // The database, then the request's tenant (which does nothing while tenants are off), then sign-in.
+    expect(text(files, 'src/bootstrap/middlewares.ts')).toMatch(/ormRequestMiddleware,\n {2}tenantMiddleware,\n {2}\.\.\.authMiddlewares,/);
     // Tailwind scans the served files, and the seeder takes plain helpers from the package.
     expect(text(files, 'src/style.css')).toContain(`@source "../node_modules/${DASHBOARD_PACKAGE}/app/src";`);
     expect(text(files, 'src/seeders/application.seeder.ts')).toContain(`from '${DASHBOARD_PACKAGE}/app/lib/permissions';`);
@@ -84,8 +85,8 @@ describe('dashboard recipe', () => {
 
   it('installs roles with every ORM sign-in, and seeds them only with a dashboard', async () => {
     const sessions = await render({ features: ['dashboard'], dashboardModules: ['sessions'] });
-    for (const rel of ['src/models/Role.ts', 'src/models/UserRole.ts', 'src/migrations/0003_create_roles.ts', 'src/migrations/0007_create_user_roles.ts']) expect(sessions.has(rel), rel).toBe(true);
-    expect(text(sessions, 'src/migrations/index.ts')).toContain("'./0007_create_user_roles'");
+    for (const rel of ['src/models/Role.ts', 'src/models/UserRole.ts', 'src/migrations/0003_create_roles.ts', 'src/migrations/0004_create_user_roles.ts']) expect(sessions.has(rel), rel).toBe(true);
+    expect(text(sessions, 'src/migrations/index.ts')).toContain("'./0004_create_user_roles'");
     expect(text(sessions, 'src/models/User.ts')).toContain('roleAssignments');
     expect(text(sessions, 'src/seeders/application.seeder.ts')).toContain('ALL_PERMISSIONS');
     const signIn = await render({ preset: 'auth' });

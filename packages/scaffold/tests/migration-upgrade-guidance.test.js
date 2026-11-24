@@ -19,7 +19,7 @@ async function migrations() {
 
 it('preserves applied callback definitions and data while planning/applying only new declarative migrations', async () => {
   const current = await migrations();
-  const pending = current.find(item => item.name === '0008_add_session_public_id');
+  const pending = current.find(item => item.name === '0009_create_tenants');
   expect(pending).toBeDefined();
   const legacy = current.filter(item => item !== pending).map(({ operations, ...definition }) => definition);
   const orm = database.createORM({ adapter: await nodeSQLite(), entities: [] });
@@ -28,20 +28,36 @@ it('preserves applied callback definitions and data while planning/applying only
       const oldRunner = new database.MigrationRunner(orm, legacy);
       await oldRunner.up();
       const history = await oldRunner.applied({ readOnly: true });
-      await orm.executeFragment(orm.sql.fragment`INSERT INTO sessions (id, data, meta, expires_at) VALUES (${'existing-token'}, ${'{"cart":2}'}, ${'{"type":"auth"}'}, ${'2099-01-01T00:00:00.000Z'})`, 'insert');
+      await orm.executeFragment(orm.sql.fragment`INSERT INTO sessions (id, kind, data, meta, expires_at) VALUES (${'existing-token'}, ${'auth'}, ${'{"cart":2}'}, ${'{"plan":"pro"}'}, ${'2099-01-01T00:00:00.000Z'})`, 'insert');
       const runner = new database.MigrationRunner(orm, [...legacy, pending]);
       const plan = await runner.plan();
       expect(plan).toHaveLength(1);
       expect(plan[0]).toMatchObject({ name: pending.name, complete: true, mode: 'apply' });
-      expect((await orm.executeFragment(orm.sql.unsafe('PRAGMA table_info(sessions)'), 'select')).rows.some(row => row.name === 'public_id')).toBe(false);
+      expect((await orm.executeFragment(orm.sql.unsafe("SELECT name FROM sqlite_master WHERE name = 'tenants'"), 'select')).rows).toEqual([]);
       expect(await runner.applyPlan(plan)).toEqual([pending.name]);
       expect((await runner.applied({ readOnly: true })).filter(row => row.name !== pending.name)).toEqual(history);
-      expect((await orm.executeFragment(orm.sql.unsafe('SELECT id, data, meta, public_id FROM sessions'), 'select')).rows).toEqual([{ id: 'existing-token', data: '{"cart":2}', meta: '{"type":"auth"}', public_id: null }]);
+      expect((await orm.executeFragment(orm.sql.unsafe('SELECT id, kind, data, meta, public_id FROM sessions'), 'select')).rows).toEqual([{ id: 'existing-token', kind: 'auth', data: '{"cart":2}', meta: '{"plan":"pro"}', public_id: null }]);
+      expect((await orm.executeFragment(orm.sql.unsafe("SELECT name FROM sqlite_master WHERE name = 'tenants'"), 'select')).rows).toEqual([{ name: 'tenants' }]);
       expect((await runner.status({ readOnly: true })).every(row => row.state === 'applied')).toBe(true);
       expect(await runner.plan()).toEqual([]);
       expect(await runner.down()).toEqual([pending.name]);
       expect(await oldRunner.applied({ readOnly: true })).toEqual(history);
       expect((await orm.executeFragment(orm.sql.unsafe('SELECT id, data FROM sessions'), 'select')).rows).toEqual([{ id: 'existing-token', data: '{"cart":2}' }]);
+    });
+  } finally { await orm.close(); }
+});
+
+it('keeps the database session store working on the sessions table: its rows are of kind data', async () => {
+  const { createDatabaseSessionStore } = await import('../../database/src/cossack/index.ts');
+  const orm = database.createORM({ adapter: await nodeSQLite(), entities: [] });
+  try {
+    await orm.run(async () => {
+      await new database.MigrationRunner(orm, await migrations()).up();
+      const store = createDatabaseSessionStore(orm);
+      const id = await store.create(60_000);
+      await store.set(id, 'cart', 2, 60_000);
+      expect(await store.get(id, 'cart')).toBe(2);
+      expect((await orm.executeFragment(orm.sql.unsafe('SELECT kind FROM sessions'), 'select')).rows).toEqual([{ kind: 'data' }]);
     });
   } finally { await orm.close(); }
 });

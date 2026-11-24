@@ -47,8 +47,10 @@
     "@cossackframework/auth": "workspace:*",
     "@aws-sdk/client-s3": "^3.1156.0",
     "sharp": "^0.35.5",
-    "@romedb/client": "0.2.24",
-    "@romedb/node": "0.2.24",
+    "@romedb/client": "0.2.27",
+    "@romedb/node": "0.2.27",
+    "@cossackframework/database": "workspace:*",
+    "reflect-metadata": "^0.2.2",
     "@cossackframework/node-adapter": "workspace:*",
     "@hono/node-server": "^2.1.6",
     "ws": "^8.18.0"

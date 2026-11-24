@@ -213,7 +213,13 @@ if (response) {
 }
 ```
 
-Redirects navigate and complete with undefined. Non-success HTTP statuses reject
+A method that calls `this.redirect()` completes with its return value while the
+browser navigates, so `const result = await this.remove(id)` has the declared
+type. A redirect from a guard means the method did not run: the call completes
+with undefined. A native response that redirects completes with undefined too.
+A call the browser cuts off while the page is leaving rejects with
+`COSSACK_RPC_CANCELLED`, and neither it nor a `server$` load cut off that way is
+logged as an error. Non-success HTTP statuses reject
 with an `RpcError` containing the status and known request ID. Native responses
 do not carry a state envelope. Use a typed data return to hydrate action state.
 WebSocket actions returning a native `Response` cancel its body and fail with
@@ -222,8 +228,9 @@ yield or terminal value: these, and nested `Response`, `Request`, or `Headers`
 in serialized trees, fail with `COSSACK_RPC_SERIALIZATION_FAILED` and their path.
 
 HTTP/SSE RPC redirects return metadata that the client proxy uses to navigate.
-The redirect envelope contains only `_cossack_redirect`, a nonempty URL using
-HTTP or HTTPS (including relative URLs). Malformed or conflicting metadata
+The redirect envelope contains `_cossack_redirect`, a nonempty URL using
+HTTP or HTTPS (including relative URLs), and `_cossack_return` when the method
+returned a value. Malformed or conflicting metadata
 rejects before navigation or hydration with `COSSACK_RPC_RESPONSE_INVALID`.
 Cookies from the action's native response, `cookie()`, and flash middleware are
 preserved together, including separate `Set-Cookie` values. Background transports
@@ -291,8 +298,15 @@ one. `status` describes an HTTP failure and is absent on WebSocket failures.
 
 Ordinary JSON replies and HTTP error bodies have a total 1 MiB byte limit,
 exported as `RPC_JSON_RESPONSE_MAX_BYTES`. The limit includes state, results,
-and diagnostics. Overflow rejects with `COSSACK_RPC_RESPONSE_TOO_LARGE`. Use an
-HTTP endpoint for larger bodies. Clients consume the body through EOF before
+and diagnostics: a method that returns nothing can still pass it with the state
+it changes. Raise it for one method with `@Server({ maxResponseBytes })` or for
+the application with `createApp({ rpc: { maxResponseBytes } })`, up to 16 MiB.
+The server measures the reply before it sends it. Over the limit, the call fails
+with `COSSACK_RPC_RESPONSE_TOO_LARGE` and the server logs `cossack.rpc.failure`
+with the route, the action, `bytes` and `limitBytes`. In development, a reply
+over half its limit logs a warning once. The server sends a raised limit in the
+`X-Cossack-Rpc-Limit` header and the browser reads up to it. Use an HTTP
+endpoint for larger bodies. Clients consume the body through EOF before
 hydration or completion, with cancellation and deadlines still active. Invalid
 UTF-8, JSON, or envelope shapes reject with `COSSACK_RPC_RESPONSE_INVALID` and
 the known header ID. Explicit service replies require an object in

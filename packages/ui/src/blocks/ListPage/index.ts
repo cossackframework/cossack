@@ -108,8 +108,10 @@ export interface ListTableOptions<T> {
     columns: readonly (ListColumn<T> | false | null | undefined)[];
     /** Row checkboxes and the "select all" box. */
     selection?: ListSelection<T>;
-    /** What an empty list says. Defaults to "Nothing found.". */
-    empty?: string;
+    /** The table's accessible name, such as "Members"; read by assistive technology, not shown. */
+    caption?: string;
+    /** What an empty list says, such as text with a link to create the first item. Defaults to "Nothing found.". It renders with `data-empty`. */
+    empty?: string | TemplateResult;
     /** The rows' data attribute, such as `data-user`, holding the key: tests and scripts find rows by it. Defaults to `data-row`. */
     rowAttribute?: string;
 }
@@ -129,6 +131,7 @@ export function listTable<T>(options: ListTableOptions<T>): TemplateResult {
     return component(Card, {}, component(CardBody, { class: 'p-0' }, html`
         <div class="overflow-x-auto">
             <table class="w-full text-sm">
+                ${options.caption ? html`<caption class="sr-only">${options.caption}</caption>` : null}
                 <thead><tr class="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
                     ${selection ? html`<th class="w-10 px-3 py-2">${selectAllBox(selectable, selection.selected, ids => selection.change(ids), selection.selectAllLabel)}</th>` : null}
                     ${columns.map(column => html`<th class=${`${TH} ${column.class ?? ''}`} aria-sort=${column.sort ?? 'none'}>${column.label}</th>`)}
@@ -142,7 +145,7 @@ export function listTable<T>(options: ListTableOptions<T>): TemplateResult {
                     </tr>`;
                 })}</tbody>
             </table>
-            ${options.rows.length ? null : html`<p class="px-3 py-8 text-center text-sm text-muted-foreground">${options.empty ?? 'Nothing found.'}</p>`}
+            ${options.rows.length ? null : html`<p data-empty class="px-3 py-8 text-center text-sm text-muted-foreground">${options.empty ?? 'Nothing found.'}</p>`}
         </div>`));
 }
 
@@ -160,6 +163,19 @@ export interface ListFiltersOptions {
     filterLabel?: string;
     /** The search box's icon. Defaults to Solar's line magnifier. */
     searchIcon?: IconEntry;
+    /**
+     * The text of a link back to the list without the search, shown while the search has a
+     * value, such as "Clear". The link keeps `hidden` values (the sort) and drops the search
+     * and the other filters. No link without it.
+     */
+    clearLabel?: string;
+}
+
+/** The list's address with only the values the filter form keeps hidden. */
+function clearHref(action: string, hidden: Readonly<Record<string, string>> = {}): string {
+    const params = new URLSearchParams(Object.entries(hidden).filter(([, value]) => value !== ''));
+    const query = params.toString();
+    return query ? `${action}${action.includes('?') ? '&' : '?'}${query}` : action;
 }
 
 /** The filter bar above a list: its filters, a search box with its icon, and the Filter button. */
@@ -172,6 +188,7 @@ export function listFilters(options: ListFiltersOptions): TemplateResult {
             ${component(Input, { type: 'search', name: options.search.name, value: options.search.value, size: 'sm', class: 'pl-8', placeholder: options.search.placeholder, 'aria-label': options.search.placeholder })}
         </div>
         ${component(Button, { type: 'submit', size: 'sm', variant: 'outline' }, options.filterLabel ?? 'Filter')}
+        ${options.clearLabel && options.search.value ? html`<a href=${clearHref(options.action, options.hidden)} data-clear-filters class="text-sm text-primary no-underline hover:underline">${options.clearLabel}</a>` : null}
     </form>`;
 }
 

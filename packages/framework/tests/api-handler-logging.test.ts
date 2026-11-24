@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { Cossack } from '@cossackframework/core';
@@ -9,7 +9,9 @@ const { rateLimit } = vi.hoisted(() => ({ rateLimit: vi.fn(async () => null) }))
 vi.mock('@cossackframework/core', async importOriginal => ({
     ...await importOriginal<typeof import('@cossackframework/core')>(), enforceMethodRateLimit: rateLimit,
 }));
-afterEach(() => { vi.restoreAllMocks(); rateLimit.mockReset(); rateLimit.mockResolvedValue(null); });
+// Production logs: development adds the cause on a line of its own.
+beforeEach(() => { vi.stubEnv('DEV', false); });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); rateLimit.mockReset(); rateLimit.mockResolvedValue(null); });
 
 it.each(['authorize', 'handler', 'output'] as const)('redacts class API %s failures and correlates a safe response', async stage => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {});

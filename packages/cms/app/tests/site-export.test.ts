@@ -3,7 +3,9 @@ import { ClientError } from '@cossackframework/romedb';
 import { FILE_EXPORT_EMPTIED_TABLES, type CmsHost } from '@cossackframework/cms/server';
 import { fileExportResponse } from '../src/cms/site-export';
 
-const host = (exportFile: (options: { emptyTables: string[] }) => Promise<unknown>) => ({ now: () => Date.UTC(2026, 10, 4), db: { exportFile } }) as unknown as CmsHost;
+const host = (exportFile: (options: { emptyTables: string[] }) => Promise<unknown>) => ({ now: () => Date.UTC(2026, 10, 4),
+    // The copy asks which tables exist: here the site's own and the application's sessions.
+    db: { exportFile, read: async () => ({ results: [{ rows: [[{ tables: [{ name: 'cms_users' }, { name: 'sessions' }] }]] }] }) } }) as unknown as CmsHost;
 const site = { id: 'blog' };
 const open = () => new AbortController().signal;
 
@@ -16,7 +18,8 @@ describe('a database file download', () => {
             emptied = options.emptyTables;
             return { sequence: 1, size: 4, body: new Response('file').body };
         }), site, open());
-        expect(emptied).toEqual([...FILE_EXPORT_EMPTIED_TABLES]);
+        // The CMS's own, and of the application's account tables the ones that are there.
+        expect(emptied).toEqual([...FILE_EXPORT_EMPTIED_TABLES, 'sessions']);
         expect(response.status).toBe(200);
         expect(response.headers.get('content-disposition')).toBe('attachment; filename="blog-2026-11-04.romedb"');
         expect(response.headers.get('content-length')).toBe('4');

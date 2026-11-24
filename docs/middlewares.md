@@ -101,6 +101,10 @@ export default class Dashboard extends Cossack {
 }
 ```
 
+## Middleware in the browser build
+
+The browser's copy of a page keeps the import of the middleware its `@Page({ middlewares })` names. The browser build replaces every module in `src/middlewares/` (and a plugin's `middlewares` file or folder) with an inert stub: each export can be called and read at load, so `guard.requireRole('admin')` in a decorator still works, and nothing the middleware imports (sessions, accounts, the database) reaches the browser. Keep route middleware in `src/middlewares/`. Code that only the server runs and that is not middleware goes in `src/server/` or a `*.server.ts` file: see [Client bundle](./client-bundle.md#server-only-application-code).
+
 ## `defineServerMiddleware()`
 
 Middlewares passed to `@Page` are only ever invoked by the Hono router on the server, so they never run in the browser. `defineServerMiddleware()` is a wrapper that documents this intent. It marks a middleware as server-only:

@@ -18,6 +18,24 @@ export function validateServerMethodTimeout(value: unknown): number | undefined 
     return validateRpcTimeout(value, 'Server method timeout');
 }
 
+/** The largest JSON response a server method may be given (`maxResponseBytes`): 16 MiB. */
+export const RPC_JSON_RESPONSE_LIMIT_MAX_BYTES = 16 * 1024 * 1024;
+
+/** Validate a server method's or an application's `maxResponseBytes`. */
+export function validateRpcResponseLimit(value: unknown, label = 'maxResponseBytes'): number | undefined {
+    if (value === undefined) return undefined;
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1 || value > RPC_JSON_RESPONSE_LIMIT_MAX_BYTES) {
+        throw new RangeError(`[Cossack] ${label} must be an integer from 1 to ${RPC_JSON_RESPONSE_LIMIT_MAX_BYTES} bytes (16 MiB).`);
+    }
+    return value;
+}
+
+/** The `maxResponseBytes` a class's server method declares, inherited declarations included. */
+export function serverMethodResponseLimit(constructor: unknown, action: string): number | undefined {
+    const limit = collectServerMethodMetadata(constructor)[action]?.maxResponseBytes;
+    return typeof limit === 'number' ? limit : undefined;
+}
+
 export function collectServerMethodMetadata(constructor: unknown): Record<string, any> {
     const result: Record<string, any> = Object.create(null);
     let current: object | null = typeof constructor === 'function' ? constructor : null;

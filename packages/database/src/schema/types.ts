@@ -38,7 +38,14 @@ export interface ColumnSchema {
   readonly updateDate?: boolean;
   readonly deleteDate?: boolean;
   readonly version?: boolean;
+  /** The column belongs to a document entity: values are stored as typed document fields. */
+  readonly document?: boolean;
+  /** The column holds a record link to this document table (a document entity's `id`, or its link to another). */
+  readonly recordTable?: string;
 }
+
+/** How an entity is stored: a relational table, or a document table (RomeDB only). */
+export type EntityModel = "relational" | "document";
 
 export type RelationKind = "one-to-one" | "one-to-many" | "many-to-one" | "many-to-many";
 
@@ -55,6 +62,8 @@ export interface RelationSchema {
   readonly joinProperty?: string;
   readonly referencedColumn?: string;
   readonly referencedProperty?: string;
+  /** The target is a document entity: no foreign key constraint can name it. */
+  readonly targetModel?: EntityModel;
   readonly joinTable?: {
     readonly name: string;
     readonly joinColumn: string;
@@ -84,6 +93,8 @@ export interface EntitySchema {
   readonly relations: readonly RelationSchema[];
   readonly indexes: readonly IndexSchema[];
   readonly virtual: boolean;
+  /** Absent for a relational table. */
+  readonly model?: EntityModel;
 }
 
 export interface OrmSchema {

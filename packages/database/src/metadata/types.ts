@@ -1,6 +1,7 @@
 import type { BaseEntity } from "../entity/base-entity.js";
 import type {
   ColumnSchema,
+  EntityModel,
   EntitySchema,
   IndexSchema,
   LogicalType,
@@ -21,6 +22,12 @@ export interface EntityOptions {
   readonly tableName?: string;
   readonly renamedFrom?: string;
   readonly virtual?: boolean;
+  /**
+   * `"document"` stores the entity in a RomeDB document table: fields keep their types,
+   * `json` columns hold nested objects and arrays, the primary column is the record's `id`,
+   * and a relation to another document entity is stored as a record link. Default `"relational"`.
+   */
+  readonly model?: EntityModel;
 }
 
 export interface ColumnOptions {

@@ -50,6 +50,8 @@ function comparableColumn(column: ColumnSchema, dialect?: OrmSchema['dialect'], 
   if (dialect === 'sqlite' && column.primary && logicalType === 'integer' && (generated === false || generated === 'increment')) {
     generated = false;
   }
+  // A uuid is made by the application, so the database holds an ordinary column.
+  if (generated === 'uuid') generated = false;
   // PostgreSQL renders "increment" as an identity column, and reads serial columns back as "increment".
   if (dialect === 'postgres' && generated === 'identity') generated = 'increment';
   if (dialect === 'mysql') {
@@ -123,8 +125,16 @@ export function diffSchemas(
     if (source.tableName !== target.tableName) {
       operations.push({ kind: "rename-table", from: source.tableName, to: target.tableName });
     }
+    const document = target.model === "document";
+    if ((source.model === "document") !== document) {
+      throw new DestructiveSchemaChangeError(
+        `${target.tableName} is a ${source.model ?? "relational"} table and the model declares a ${target.model ?? "relational"} one. ` +
+        "A table does not change its model: create a table under a new name and copy the data.",
+      );
+    }
     const matchedColumns = new Set<string>();
-    for (const desiredColumn of target.columns) {
+    // The fields of a document table are not declared, so only its indexes are compared.
+    for (const desiredColumn of document ? [] : target.columns) {
       const existingColumn = source.columns.find(
         (column) =>
           column.columnName === desiredColumn.columnName ||
@@ -161,7 +171,7 @@ export function diffSchemas(
         }
       }
     }
-    for (const existingColumn of source.columns) {
+    for (const existingColumn of document ? [] : source.columns) {
       if (!matchedColumns.has(existingColumn.columnName)) {
         const operation: SchemaOperation = {
           kind: "drop-column",
@@ -178,7 +188,7 @@ export function diffSchemas(
       const previous = existingIndexes.get(name);
       if (!previous || JSON.stringify(previous) !== JSON.stringify(index)) {
         if (previous) operations.push({ kind: "drop-index", tableName: target.tableName, indexName: name });
-        operations.push({ kind: "create-index", tableName: target.tableName, index });
+        operations.push({ kind: "create-index", tableName: target.tableName, index, ...(document ? { model: "document" as const } : {}) });
       }
     }
     for (const name of existingIndexes.keys()) {

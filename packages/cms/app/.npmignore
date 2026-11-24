@@ -13,6 +13,10 @@
 !/src/auth-bot-check.ts
 !/src/auth-bot-token.ts
 !/src/brand.ts
+!/src/mail.ts
+!/src/avatars.ts
+!/src/auth-events.ts
+!/src/tenants.ts
 !/src/passkeys.client.ts
 !/src/cms/
 !/src/config/
@@ -23,9 +27,11 @@
 !/src/lib/
 /src/lib/*
 !/src/lib/permissions.ts
+!/src/lib/uuid.ts
 !/src/middlewares/
 /src/middlewares/*
 !/src/middlewares/auth.ts
+!/src/middlewares/tenant.ts
 !/src/services/
 !/src/pages/
 !/src/plugins/

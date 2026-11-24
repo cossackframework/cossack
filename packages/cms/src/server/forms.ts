@@ -295,15 +295,15 @@ export class CmsForms {
             }
         }
         // One send per address in the window, counted in one conditional write once the send is checked, so a burst gets one through.
-        if (ipHash && !(await this.#host.security.attempt('form', ipHash, 1, THROTTLE_MS))) throw new CmsError('CMS_LIMIT', 'You sent this form a moment ago. Wait a few seconds and try again.');
+        if (ipHash && !(await this.#host.attempts.attempt('form', ipHash, 1, THROTTLE_MS))) throw new CmsError('CMS_LIMIT', 'You sent this form a moment ago. Wait a few seconds and try again.');
         // Once per user or address: sends at the same moment are held to one by a claim on the key
         // (a minute, by which time the first is stored), and stored ones by looking them up. A send
         // that goes no further gives its claims back, so a retry is not refused for nothing.
         const claims: string[] = [];
-        const release = () => Promise.all(claims.map(key => this.#host.security.release('form-once', key).catch(() => undefined)));
+        const release = () => Promise.all(claims.map(key => this.#host.attempts.release('form-once', key).catch(() => undefined)));
         const claim = async (key: string) => {
             const scoped = `${form.ref.id}:${key}`;
-            if (!(await this.#host.security.attempt('form-once', scoped, 1, ONCE_CLAIM_MS))) return false;
+            if (!(await this.#host.attempts.attempt('form-once', scoped, 1, ONCE_CLAIM_MS))) return false;
             claims.push(scoped);
             return true;
         };

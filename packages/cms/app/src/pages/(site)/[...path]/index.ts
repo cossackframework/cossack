@@ -205,7 +205,7 @@ export default class SitePath extends Cossack {
                 shown = { collection: resolved.collection.name, record: resolved.record };
                 // Editors read their protected and members-only entries; visitors unlock protected ones with the password, which a cookie remembers.
                 const reader = this.c.get('principal');
-                const editor = reader.kind === 'user' && cms.resource(`cms/${resolved.collection.name}`).canUpdate(resolved.record, reader);
+                const editor = reader.kind === 'user' && await cms.resource(`cms/${resolved.collection.name}`).canUpdate(resolved.record, { principal: reader });
                 const unlocked = isProtected(resolved.record) && getCookie(this.c, unlockCookie(resolved.record)) === await unlockToken(resolved.record);
                 const only = new Set([resolved.record.id]);
                 this.locked = entryLock(resolved.record, { unlocked: unlocked ? only : undefined, signedIn: reader.kind === 'user', roles: viewOptions.roles, editor });

@@ -147,6 +147,27 @@ before remote deployment. Apply its migration with an explicit remote target.
 Inspect the resource plan first. Generated local references are not evidence of
 remote resource ownership or existence. No framework code auto-creates tables.
 
+### The ledger in a CMS project
+
+A project with the CMS keeps the ledger in its RomeDB database instead, and needs no
+D1 binding. The recipe adds `src/jobs/ledger.ts`: `jobLedger(env)` opens the
+database that `storage` in `src/cms.config.ts` names (`ROMEDB_URL`), with the CMS's
+store of unconfirmed writes (`ROMEDB_PENDING`), and wraps it in `rqlDatabase`. The
+facade creates the tables on its first statement (`jobStateSchema`, the example
+job's receipts and, with notifications, `notificationStateSchema` and the
+preferences), so there is no migration to apply. The stores take the facade as it
+is: `createD1JobStore(jobLedger(env))`, with no cast.
+
+To keep a ledger in another RomeDB database, pass any binding to `rqlDatabase`:
+
+```ts
+import { createRomeDB, rqlDatabase } from '@cossackframework/romedb';
+import { createD1JobStore, jobStateSchema } from '@cossackframework/framework/jobs';
+
+const ledger = rqlDatabase(createRomeDB({ url, token, pending }), { kind: 'jobs', schema: jobStateSchema });
+const store = createD1JobStore(ledger);
+```
+
 `createD1JobStore(binding)` and `jobStateSchema` are available from
 `@cossackframework/framework/jobs` for manual composition. Apply schema statements
 through migrations or D1 prepared statements. D1's `exec` treats lines as separate

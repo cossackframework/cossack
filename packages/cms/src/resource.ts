@@ -8,11 +8,35 @@ import { field, fieldProblems, validateValue, type FieldDeclaration } from './fi
  * - `owner`: the user who created the record (requires `ownership`).
  * - `{ permission }`: users whose roles grant the permission.
  * - `{ where }`: anyone, on records whose fields equal these values, such as published posts.
- * - `{ any: [...] }`: the first rule that allows wins; owner and where rules combine.
+ * - `{ memberOf }`: signed-in users, on records that a row of a membership resource links
+ *   them to, such as the branches a member is assigned to (`MemberRule`).
+ * - `{ any: [...] }`: the first rule that allows wins; owner, where and memberOf rules combine.
  * - `none`: nobody, except the system principal.
  */
 export type AccessRule = 'public' | 'authenticated' | 'owner' | 'none' | { readonly permission: string }
-    | { readonly where: { readonly [field: string]: string | number | boolean } } | { readonly any: readonly AccessRule[] };
+    | { readonly where: { readonly [field: string]: string | number | boolean } } | { readonly memberOf: MemberRule } | { readonly any: readonly AccessRule[] };
+
+/**
+ * Records a user reaches through a membership resource of the same owner: a resource with a
+ * row per member and thing, such as `acme/user_branches` with `user` and `branch`. The record
+ * is in scope when a row of `resource` has the user's ID in `user` and, in `field`, the record
+ * itself (`field` is a reference to this resource) or the value of the record's `match` field.
+ */
+export interface MemberRule {
+    /** The membership resource, `<owner>/<name>`, owned by the same plugin or the application. */
+    readonly resource: string;
+    /** Its string field that holds the member's user ID. */
+    readonly user: string;
+    /** Its field that names what the member belongs to. */
+    readonly field: string;
+    /** This record's field that must equal `field`; omitted, the record itself. */
+    readonly match?: string;
+}
+
+const MEMBER_RULE_KEYS = new Set(['resource', 'user', 'field', 'match']);
+const RESOURCE_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\/[a-z][a-z0-9_]{0,40}$/;
+/** Field kinds a membership can compare: one value of a kind stored as itself. */
+const MEMBER_KINDS = new Set(['string', 'enum', 'integer', 'reference']);
 
 export type ResourceAction = 'read' | 'create' | 'update' | 'delete';
 
@@ -62,6 +86,12 @@ export interface ResourceDeclaration {
      */
     readonly schemaless?: boolean;
     readonly migrations?: readonly MigrationStep[];
+    /**
+     * The host's own storage, such as the field values of users: the schema planner keeps its
+     * indexes like any resource's, but it has no repository, no permissions of its own and is
+     * not listed with the resources people browse.
+     */
+    readonly internal?: boolean;
     /**
      * The field groups' blocks that lay the fields out, for the conditions on them: a field a
      * condition hides is not required and is cleared on write. Set by the host for collections.
@@ -187,8 +217,61 @@ function ruleProblems(at: string, rule: AccessRule, ownership: boolean, fields: 
             return error ? [`${at}: where ${name} ${error}`] : [];
         });
     }
+    if (typeof rule === 'object' && rule && 'memberOf' in rule) {
+        const member = rule.memberOf as MemberRule | null;
+        if (!member || typeof member !== 'object' || Object.keys(member).some(key => !MEMBER_RULE_KEYS.has(key))) return [`${at}: memberOf names resource, user, field and an optional match.`];
+        const problems: string[] = [];
+        if (typeof member.resource !== 'string' || !RESOURCE_ID.test(member.resource)) problems.push(`${at}: memberOf.resource must be a resource ID, such as acme/user_branches.`);
+        for (const key of ['user', 'field'] as const) if (typeof member[key] !== 'string' || !/^[a-z][a-zA-Z0-9]{0,62}$/.test(member[key])) problems.push(`${at}: memberOf.${key} must be a field name.`);
+        if (member.match !== undefined) {
+            const declared = typeof member.match === 'string' ? fields[member.match] : undefined;
+            if (!declared || declared.multiple || !MEMBER_KINDS.has(declared.kind)) problems.push(`${at}: memberOf.match names ${String(member.match)}, which is not a declared single string, enum, integer or reference field.`);
+        }
+        return problems;
+    }
     if (typeof rule === 'object' && rule && 'any' in rule && Array.isArray(rule.any) && rule.any.length) return rule.any.flatMap(entry => ruleProblems(at, entry, ownership, fields, depth + 1));
     return [`${at}: unknown rule.`];
+}
+
+/** The `memberOf` rules of a rule, through `any`. */
+export function memberRules(rule: AccessRule, depth = 0): MemberRule[] {
+    if (typeof rule !== 'object' || !rule || depth > 4) return [];
+    if ('memberOf' in rule) return [rule.memberOf];
+    if ('any' in rule && Array.isArray(rule.any)) return rule.any.flatMap(entry => memberRules(entry, depth + 1));
+    return [];
+}
+
+/**
+ * Problems of the `memberOf` rules of `resource` (owned by `owner`) against the declarations
+ * they name: the membership resource must belong to the same owner, hold the user's ID in a
+ * single string field, and compare a value of the same kind as the record or its `match` field.
+ */
+export function memberRuleProblems(resource: ResourceDeclaration, owner: string, declared: (id: string) => ResourceDeclaration | undefined): string[] {
+    const problems: string[] = [];
+    const id = `${owner}/${resource.name}`;
+    for (const [action, rule] of Object.entries(resource.access ?? {})) {
+        for (const member of memberRules(rule as AccessRule)) {
+            // A rule of another shape is reported by `resourceProblems`.
+            if (!member || typeof member !== 'object' || typeof member.resource !== 'string' || typeof member.user !== 'string' || typeof member.field !== 'string') continue;
+            const at = `access.${action}: memberOf ${member.resource}`;
+            if (!member.resource.startsWith(`${owner}/`)) { problems.push(`${at} must be a resource of ${owner}.`); continue; }
+            const membership = declared(member.resource);
+            if (!membership) { problems.push(`${at} is not a declared resource.`); continue; }
+            const user = membership.fields[member.user];
+            if (!user || user.kind !== 'string' || user.multiple) problems.push(`${at}: ${member.user} is not a single string field of it.`);
+            const target = membership.fields[member.field];
+            if (!target || target.multiple || !MEMBER_KINDS.has(target.kind)) { problems.push(`${at}: ${member.field} is not a single string, enum, integer or reference field of it.`); continue; }
+            if (member.match === undefined) {
+                if (target.kind !== 'reference' || target.target !== id) problems.push(`${at}: ${member.field} must be a reference to ${id}, or name this record's field in match.`);
+                continue;
+            }
+            const own = resource.fields[member.match];
+            if (!own) continue;
+            const kind = (declaration: FieldDeclaration) => declaration.kind === 'enum' ? 'string' : declaration.kind;
+            if (kind(own) !== kind(target) || (own.kind === 'reference' && own.target !== target.target)) problems.push(`${at}: ${member.field} and ${member.match} must hold the same kind of value.`);
+        }
+    }
+    return problems;
 }
 
 /** Collection name for a resource: `r__<owner>__<name>`, with hyphens as underscores. Injective for valid names. */

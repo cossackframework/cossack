@@ -1,5 +1,5 @@
 import type { GlobalAttributes } from '../native-attributes';
-import { html, component } from "@cossackframework/renderer";
+import { html, component, type TemplateResult } from "@cossackframework/renderer";
 import { Cossack, Component, Client, ClientState, createRef, type RefObject } from "@cossackframework/core";
 import { Button } from "./Button";
 
@@ -94,17 +94,25 @@ export class CopyField extends Cossack {
     }
 }
 
-export type SecretNoticeProps = Omit<CopyFieldProps, 'label'> & {
+export type SecretNoticeProps = Omit<CopyFieldProps, 'label' | 'title'> & {
     /** What the value is, such as "New API key": the field's accessible name. */
     label: string;
+    /** A heading above the instruction, such as "Invitation for ada@example.com". */
+    title?: string | TemplateResult;
     /** The instruction above the field. Defaults to "Copy it now. You will not see it again.". */
-    message?: string;
+    message?: string | TemplateResult;
+    /** A note under the field, such as when the invitation expires. */
+    note?: string | TemplateResult;
+    /** Shows a Done button that calls it; the caller then hides the notice. */
+    onDone?: () => unknown;
+    /** The Done button's text. Defaults to "Done". */
+    doneLabel?: string;
 };
 
 /**
  * Cossack UI SecretNotice — a value shown once: an API key, a token, an invitation code.
  *
- *   ${this.newKey ? html`<${SecretNotice} label="New API key" value=${this.newKey} />` : null}
+ *   ${this.newKey ? html`<${SecretNotice} label="New API key" value=${this.newKey} .onDone=${() => (this.newKey = '')} />` : null}
  *
  * The caller decides when it disappears; the server should not be able to show the value again.
  */
@@ -113,10 +121,13 @@ export class SecretNotice extends Cossack {
     declare props: SecretNoticeProps;
 
     render() {
-        const { message = 'Copy it now. You will not see it again.', id, class: className, style, ...field } = this.props;
+        const { title, message = 'Copy it now. You will not see it again.', note, onDone, doneLabel = 'Done', id, class: className, style, ...field } = this.props;
         return html`<div class="cs-secret-notice space-y-2 rounded-md border border-success/40 bg-success/5 p-3" ...=${{ id, class: className, style }} role="group" aria-label=${field.label}>
-            <p class="text-sm font-medium text-foreground">${message}</p>
+            ${title ? html`<p class="cs-secret-notice__title text-sm font-semibold text-foreground">${title}</p>` : null}
+            <p class="text-sm ${title ? 'text-muted-foreground' : 'font-medium text-foreground'}">${message}</p>
             ${component(CopyField, field as CopyFieldProps)}
+            ${note ? html`<p class="cs-secret-notice__note text-xs text-muted-foreground">${note}</p>` : null}
+            ${onDone ? html`<div class="flex justify-end">${component(Button, { type: 'button', size: 'sm', '@click': () => onDone() }, doneLabel)}</div>` : null}
         </div>`;
     }
 }

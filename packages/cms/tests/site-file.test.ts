@@ -5,13 +5,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createRomeDB, MemoryPendingWriteStore, type RomeDB } from '@cossackframework/romedb';
 import { connectNode } from '@cossackframework/romedb/node';
 import { servesDirectories, startRomeDBDirectory, startRomeDBService } from '@cossackframework/romedb/testing';
-import { CmsNetwork, contentModule, createCMS, DEFAULT_ROLES, FILE_EXPORT_EMPTIED_TABLES, formsModule, NETWORK_ADMIN, seedStarterContent, siteFile, systemPrincipal, type CmsHost, type NetworkSite } from '../src/server/index';
-import { romedbService, live } from './helpers';
+import { CmsNetwork, contentModule, createCMS, DEFAULT_ROLES, FILE_EXPORT_EMPTIED_TABLES, formsModule, memorySites, seedStarterContent, siteFile, systemPrincipal, type CmsHost, type NetworkSite } from '../src/server/index';
+import { networkPeople, romedbService, live } from './helpers';
 
 const modules = [contentModule, formsModule];
 const TOKEN = 'f00dcafe'.repeat(8);
 const SECRET = 'an old webhook secret that must not leave';
-let totpSecret = '';
+const TOTP = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
 
 const bytesOf = async (body: ReadableStream<Uint8Array>) => {
     const chunks: Uint8Array[] = [];
@@ -27,29 +27,33 @@ describe.skipIf(!live)('a site as a .romedb file', () => {
     let blog: CmsHost;
     let owner: string;
     let work: string;
+    const people = networkPeople();
 
     beforeAll(async () => {
         site = await service.fresh();
         work = await mkdtemp(path.join(os.tmpdir(), 'cossack-site-file-'));
         const db = service.database();
         network = new CmsNetwork({
-            db, open: () => site.db, networkHost: () => 'example.com',
-            host: (record, siteDb) => createCMS({ db: siteDb, network: db, site: record.id, modules, sessionsEnded: ended => network.endSessions(ended) }),
+            db, open: () => site.db, networkHost: () => 'example.com', sites: memorySites(), memberSites: people.memberSites,
+            host: (record, siteDb) => createCMS({ db: siteDb, network: db, site: record.id, modules, people: people.of(record.id) }),
         });
         expect((await network.main.migrate()).failed).toBeUndefined();
         await network.setEnabled(true, { principal: systemPrincipal('tests') });
-        owner = (await network.main.users.create({ email: 'owner@example.com', name: 'Owner', password: 'owns the place', roles: ['admin'], networkRole: NETWORK_ADMIN })).id;
+        for (const role of DEFAULT_ROLES) await network.main.users.defineRole({ ...role, permissions: [...role.permissions] });
+        owner = await people.admin(network.main, { email: 'owner@example.com', name: 'Owner', roles: ['admin'] });
         await network.sites.create({ id: 'blog', name: 'Blog', database: 'blog-db', domains: [{ host: 'blog.example.com' }] });
         blog = network.hostOf((await network.resolve('blog.example.com') as { site: NetworkSite }).site);
         expect((await blog.migrate()).failed).toBeUndefined();
         for (const role of DEFAULT_ROLES) await blog.users.defineRole({ ...role, permissions: [...role.permissions] });
         await blog.users.addMember(owner, { roles: ['admin'] });
         await seedStarterContent(blog, { principal: (await blog.users.principal(owner))! });
-        const reader = await blog.users.create({ email: 'reader@example.com', name: 'Reader', password: 'reads a lot', roles: ['subscriber'] });
-        await blog.authSessions.create({ id: TOKEN, userId: reader.id, kind: 'auth', createdAt: Date.now(), expiresAt: Date.now() + 60_000 });
-        totpSecret = await (await blog.storesOf(reader.id)).security.startTotp(reader.id);
-        // Application passwords would sign scripts in to the copy: the file leaves them out.
-        await (await blog.storesOf(reader.id)).apiTokens.create(reader.id, { name: 'Script', scope: 'write', expiresAt: null });
+        // The application's sign-in tables, as the dashboard package keeps them in a site's database.
+        await blog.db.write([
+            { rql: 'CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL)' },
+            { rql: 'CREATE TABLE user_security (user_id TEXT PRIMARY KEY, totp_secret TEXT)' },
+            { rql: 'INSERT INTO sessions (id, user_id) VALUES ($id, $user)', params: { $id: TOKEN, $user: owner } },
+            { rql: 'INSERT INTO user_security (user_id, totp_secret) VALUES ($user, $secret)', params: { $user: owner, $secret: TOTP } },
+        ], { kind: 'test' });
         await blog.db.write([{ rql: 'INSERT INTO cms_webhooks (id, name, url, events, collections, secret, active, created_at, updated_at) VALUES ($id, $name, $url, $events, $collections, $secret, 1, 1, 1)',
             params: { $id: 'hook', $name: 'Hook', $url: 'https://hooks.example.com', $events: '[]', $collections: '[]', $secret: SECRET } }]);
     }, 120_000);
@@ -64,7 +68,7 @@ describe.skipIf(!live)('a site as a .romedb file', () => {
         const plain = await bytesOf((await blog.db.exportFile()).body);
         expect(plain.includes(TOKEN)).toBe(true);
         expect(plain.includes(SECRET)).toBe(true);
-        expect(plain.includes(totpSecret)).toBe(true);
+        expect(plain.includes(TOTP)).toBe(true);
 
         const writes = Promise.all(Array.from({ length: 5 }, (_, index) => blog.settings.update('general', { tagline: `Writing ${index}` }, { principal: systemPrincipal('tests') })));
         const [file] = await Promise.all([siteFile(blog.db), writes]);
@@ -73,7 +77,7 @@ describe.skipIf(!live)('a site as a .romedb file', () => {
         expect(bytes.includes(TOKEN)).toBe(false);
         expect(bytes.includes(SECRET)).toBe(false);
         // Authenticator secrets are stored as they are: a copy would make valid codes.
-        expect(bytes.includes(totpSecret)).toBe(false);
+        expect(bytes.includes(TOTP)).toBe(false);
         await writeFile(path.join(work, 'blog.romedb'), bytes);
         await writeFile(path.join(work, 'unopened.romedb'), bytes);
 
@@ -81,18 +85,16 @@ describe.skipIf(!live)('a site as a .romedb file', () => {
         const counts = await opened.read(FILE_EXPORT_EMPTIED_TABLES.map(table => ({ rql: `SELECT count(*) FROM ${table}` })));
         expect(counts.results.map(result => result.rows[0]![0])).toEqual(FILE_EXPORT_EMPTIED_TABLES.map(() => 0n));
 
-        // It runs as its own install: site accounts keep their passwords, and setup takes it over.
+        // The application's sign-in tables are there and empty, and the file runs as its own install.
+        const signIn = await opened.read([{ rql: 'SELECT count(*) FROM sessions' }, { rql: 'SELECT count(*) FROM user_security' }]);
+        expect(signIn.results.map(result => result.rows[0]![0])).toEqual([0n, 0n]);
         const standalone = createCMS({ db: opened, modules });
         await standalone.ready({ force: true });
-        expect((await standalone.accounts.verifier.verify('reader@example.com', 'reads a lot'))?.email).toBe('reader@example.com');
-        expect(await standalone.accounts.hasNetworkAdmin()).toBe(false);
-        expect(await standalone.accounts.adoptMembers('main', owner, 'the new owner')).toBe(1);
-        const admin = (await standalone.users.principal(owner))!;
-        expect((await standalone.resource('cms/posts').list({}, { principal: admin })).records.map(record => record.title)).toEqual(['Hello World!']);
+        expect((await standalone.resource('cms/posts').list({}, { principal: systemPrincipal('tests') })).records.map(record => record.title)).toEqual(['Hello World!']);
         await opened.close();
 
         // The site itself is unchanged.
-        expect(await blog.authSessions.read(TOKEN)).not.toBeNull();
+        expect((await blog.db.read([{ rql: 'SELECT count(*) FROM sessions' }])).results[0]!.rows[0]![0]).toBe(1n);
         expect((await blog.db.read([{ rql: "SELECT count(*) FROM cms_webhooks WHERE id = 'hook'" }])).results[0]!.rows[0]![0]).toBe(1n);
     }, 60_000);
 
@@ -110,7 +112,7 @@ describe.skipIf(!live)('a site as a .romedb file', () => {
     it('opens in romedb serve', async () => {
         const served = await startRomeDBService({ file: path.join(work, 'blog.romedb') });
         const db = createRomeDB({ url: served.url, token: served.token, pending: new MemoryPendingWriteStore() });
-        try { expect((await db.read([{ rql: 'SELECT count(*) FROM cms_auth_sessions' }])).results[0]!.rows[0]![0]).toBe(0n); }
+        try { expect((await db.read([{ rql: 'SELECT count(*) FROM sessions' }])).results[0]!.rows[0]![0]).toBe(0n); }
         finally {
             await db.close();
             await served.stop();
@@ -125,7 +127,7 @@ describe.skipIf(!live)('a site as a .romedb file', () => {
         const directory = await startRomeDBDirectory({ directory: folder });
         const db = createRomeDB({ url: `${directory.url}/databases/${name}`, token: directory.token, pending: new MemoryPendingWriteStore() });
         try {
-            expect((await db.read([{ rql: 'SELECT count(*) FROM cms_auth_sessions' }])).results[0]!.rows[0]![0]).toBe(0n);
+            expect((await db.read([{ rql: 'SELECT count(*) FROM sessions' }])).results[0]!.rows[0]![0]).toBe(0n);
             expect((await db.preflight()).id).not.toBe((await blog.db.preflight()).id);
             // The organization route is the one Cloud has.
             await db.write([{ rql: 'INSERT INTO cms_cache (key, value) VALUES ($key, $value)', params: { $key: 'k', $value: TOKEN } }]);

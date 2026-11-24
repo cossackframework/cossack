@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { RomeDB } from '@cossackframework/romedb';
 import type { StorageProvider } from '@cossackframework/core/storage';
-import { CmsNetwork, createCMS, MAIN, prefixedStorage, siteHost, systemPrincipal, type CmsHost, type NetworkSite } from '../src/server/index';
+import { CmsNetwork, createCMS, MAIN, memorySites, prefixedStorage, siteHost, systemPrincipal, type CmsHost, type NetworkSite } from '../src/server/index';
 import { romedbService, live } from './helpers';
 
 function memoryStorage(): StorageProvider & { objects: Map<string, Uint8Array> } {
@@ -30,7 +30,7 @@ describe('site hosts and media keys', () => {
     it('keeps the hosts used last and never drops the main site', () => {
         const closed: string[] = [];
         const open = (site: NetworkSite) => ({ close: async () => { closed.push(site.database); } }) as unknown as RomeDB;
-        const network = new CmsNetwork({ db: { close: async () => {} } as unknown as RomeDB, open, host: stubHost, maxHosts: 2 });
+        const network = new CmsNetwork({ db: { close: async () => {} } as unknown as RomeDB, open, host: stubHost, maxHosts: 2, sites: memorySites() });
         const site = (id: string): NetworkSite => ({ id, name: id, database: `db-${id}`, status: 'active', host: `${id}.example.com` });
         const main = network.main;
         const a = network.hostOf(site('a'));
@@ -42,7 +42,7 @@ describe('site hosts and media keys', () => {
     });
 
     it('needs a database provider for added sites', () => {
-        const network = new CmsNetwork({ db: {} as RomeDB, host: stubHost });
+        const network = new CmsNetwork({ db: {} as RomeDB, host: stubHost, sites: memorySites() });
         expect(network.multisite).toBe(false);
         expect(() => network.hostOf({ ...MAIN, id: 'blog', database: 'db-blog' })).toThrow(/provider/);
     });
@@ -69,12 +69,12 @@ describe.skipIf(!live)('site registry and host resolution', () => {
     beforeAll(async () => {
         main = createCMS({ db: service.database() });
         expect((await main.migrate()).failed).toBeUndefined();
-        network = new CmsNetwork({ db: main.db, open: () => ({ close: async () => {} }) as unknown as RomeDB, host: stubHost, networkHost: () => 'example.com:5173', now: () => now });
+        network = new CmsNetwork({ db: main.db, open: () => ({ close: async () => {} }) as unknown as RomeDB, host: stubHost, networkHost: () => 'example.com:5173', now: () => now, sites: memorySites({ now: () => now }) });
     });
 
     it('serves the main site on every host while it is the only site', async () => {
         expect(await network.resolve('anything.test')).toEqual({ kind: 'site', site: MAIN });
-        expect(await new CmsNetwork({ db: main.db, host: stubHost }).resolve('preview.example.net')).toEqual({ kind: 'site', site: MAIN });
+        expect(await new CmsNetwork({ db: main.db, host: stubHost, sites: memorySites() }).resolve('preview.example.net')).toEqual({ kind: 'site', site: MAIN });
     });
 
     it('registers sites with their domains, and refuses a domain another site has', async () => {

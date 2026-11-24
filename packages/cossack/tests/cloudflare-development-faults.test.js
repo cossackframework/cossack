@@ -9,7 +9,7 @@ import { scaffoldLinkedApp } from './fixtures/linked-app.js';
 import { verifyCloudflareDevelopmentFaults } from './fixtures/cloudflare-development-faults.js';
 
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
-it('redacts native Cloudflare development API and SSR faults, correlates logs, and recovers after edit', async () => {
+it('keeps native Cloudflare development API and SSR fault responses and event lines private, logs the cause after them, and recovers after edit', async () => {
   const installedRoot = process.env.COSSACK_DEV_FAULTS_INSTALLED_ROOT;
   const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-native-dev-faults-'));
   try {

@@ -1,7 +1,13 @@
 import { In, sql } from '@cossackframework/database';
 import { ClientVisibleError } from '@cossackframework/core';
 import { uuidv7 } from '../lib/uuid';
-import { hashPassword, type PublicUser } from '../auth';
+import { canInvite, hashPassword, sendInvitation, type PublicUser } from '../auth';
+import { accounts, currentTenant } from '../tenants';
+import { forgetMemberships, joinCurrentTenant, leaveCurrentTenant, requireAnotherNetworkAdmin, tenantOwnAccount } from './tenants';
+import * as security from './security';
+import * as apiTokens from './api-tokens';
+import { defaultRole } from './roles';
+import { authOptions } from '../auth-options';
 import { User } from '@/models/User';
 import { UserRole } from '@/models/UserRole';
 import { Role } from '@/models/Role';
@@ -46,7 +52,7 @@ export interface CreateUserInput {
   email: string;
   /** Required unless `invite` is set. */
   password?: string;
-  /** Invitations need an email sender, which the CMS provides; here they are refused. */
+  /** Email a link to set the password instead of setting one here. It needs an email sender and APP_URL. */
   invite?: boolean;
   name?: string;
   /** Roles chosen by someone who may assign them; otherwise none. */
@@ -59,12 +65,13 @@ export interface UpdateUserInput {
   avatar?: string | null;
 }
 
-type RoleRow = { userId?: string; id: string; name: string; permissions: string | null };
+type RoleRow = { userId?: string; id: string; name: string; permissions: string | string[] | null };
 
-function safeParseStrings(raw: string | null): string[] {
+// A JSON column arrives as text from SQLite and already parsed from PostgreSQL and MySQL.
+function safeParseStrings(raw: string | string[] | null): string[] {
   if (!raw) return [];
   try {
-    const parsed = JSON.parse(raw);
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
     return Array.isArray(parsed) ? parsed.filter((value) => typeof value === 'string') : [];
   } catch {
     return [];
@@ -82,10 +89,11 @@ function parseRoles(rows: readonly RoleRow[]): RoleAssignment[] {
 /** Each user's newest auth session start. Sign-out deletes the session, and with it this time. */
 async function lastSignIns(userIds: readonly string[]): Promise<Map<string, string>> {
   if (!userIds.length) return new Map();
+  // The sessions of this host: a tenant's are in its own database.
   const rows = (await sql<{ userId: string; lastSignedInAt: string | null }>`
     SELECT user_id AS userId, MAX(created_at) AS lastSignedInAt
     FROM sessions
-    WHERE user_id IN (${userIds}) AND meta = ${JSON.stringify({ type: 'auth' })}
+    WHERE user_id IN (${userIds}) AND kind = 'auth'
     GROUP BY user_id
   `).rows;
   const times = new Map<string, string>();
@@ -119,8 +127,8 @@ export async function listUsers(options: ListUsersOptions = {}): Promise<ListUse
     : sql.fragment``;
 
   const [pageResult, countResult] = await Promise.all([
-    sql<{ id: string; email: string; name: string | null; avatar: string | null; createdAt: string }>`
-      SELECT u.id, u.email, u.name, u.avatar, u.created_at AS createdAt
+    sql<{ id: string; email: string; name: string | null; avatar: string | null; createdAt: string; tenantAccount: boolean | number }>`
+      SELECT u.id, u.email, u.name, u.avatar, u.created_at AS createdAt, u.tenant_account AS tenantAccount
       FROM users u
       WHERE 1 = 1 ${searchFilter} ${roleFilter}
       ORDER BY u.created_at DESC
@@ -131,8 +139,11 @@ export async function listUsers(options: ListUsersOptions = {}): Promise<ListUse
       WHERE 1 = 1 ${searchFilter} ${roleFilter}
     `,
   ]);
-  const items: UserSummary[] = pageResult.rows.map((row) => ({
+  // In a tenant, members whose account every tenant shares are marked.
+  const tenant = currentTenant() !== null;
+  const items: UserSummary[] = pageResult.rows.map(({ tenantAccount, ...row }) => ({
     ...row,
+    ...(tenant && !tenantAccount ? { badge: authOptions.accountLabels.shared } : {}),
     name: row.name ?? '',
     lastSignedInAt: null,
     roles: [],
@@ -170,11 +181,34 @@ export async function getUser(id: string): Promise<UserDetail | null> {
     createdAt: user.createdAt.toISOString(),
     lastSignedInAt: (await lastSignIns([id])).get(id) ?? null,
     roles: parseRoles(await roleRowsForUsers([id])),
+    // In a tenant a member's account is shared, so only its owner changes it. The tenant's own accounts are its to manage.
+    ...(currentTenant() && !user.tenantAccount ? { lockedProfile: authOptions.accountLabels.sharedNotice } : {}),
   };
 }
 
+/** A password nobody knows, for an account that is invited to set its own. */
+function unknownPassword(): string {
+  return btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));
+}
+
 export async function createUser(input: CreateUserInput): Promise<PublicUser> {
-  if (!input.password) throw new ClientVisibleError('Set a password: this site cannot send invitations.');
+  // In a tenant an existing main account joins without a password; only a new account needs one.
+  if (!input.invite && !input.password && !currentTenant()) throw new ClientVisibleError('Set a password or send an invitation.');
+  if (input.invite && !canInvite()) throw new ClientVisibleError('No email sender is configured, so invitations cannot be sent. Set a password instead.');
+  if (input.invite) input = { ...input, password: unknownPassword() };
+  // In a tenant: the account with this email becomes a member; a new account is made when there is none.
+  if (currentTenant()) {
+    const joined = await joinCurrentTenant({ email: input.email, ...(input.name ? { name: input.name } : {}), passwordHash: input.password ? await hashPassword(input.password) : null });
+    const roleIds = [...new Set(input.roleIds ?? [])];
+    if (roleIds.length) {
+      const known = await Role.find({ where: { id: In(roleIds) } });
+      if (known.length !== roleIds.length) throw new ClientVisibleError('Choose roles that exist.');
+      await syncUserRoles(joined.id, roleIds);
+    }
+    // A member with a main account has its password already.
+    if (input.invite && joined.created) await sendInvitation(joined.id);
+    return { id: joined.id, email: input.email, name: input.name ?? '', avatar: null, meta: null, roles: [] };
+  }
   if (await User.exists({ email: input.email })) {
     throw new ClientVisibleError('An account with this email already exists.');
   }
@@ -183,32 +217,81 @@ export async function createUser(input: CreateUserInput): Promise<PublicUser> {
     id,
     email: input.email,
     name: input.name ?? null,
-    passwordHash: await hashPassword(input.password),
+    passwordHash: await hashPassword(input.password!),
     avatar: null,
     meta: null,
     createdAt: new Date(),
   });
-  const roleIds = [...new Set(input.roleIds ?? [])];
+  // Roles chosen by someone who may assign them; otherwise the default role, when one is set.
+  const fallback = input.roleIds === undefined ? await defaultRole() : null;
+  const roleIds = [...new Set(input.roleIds ?? (fallback ? [fallback.id] : []))];
   if (roleIds.length) {
     const known = await Role.find({ where: { id: In(roleIds) } });
     if (known.length !== roleIds.length) throw new ClientVisibleError('Choose roles that exist.');
     await syncUserRoles(id, roleIds);
   }
+  if (input.invite) await sendInvitation(id);
   return { id, email: input.email, name: input.name ?? '', avatar: null, meta: null, roles: [] };
 }
 
+const SHARED_ACCOUNT = authOptions.accountLabels.sharedNotice;
+
 export async function updateUser(id: string, patch: UpdateUserInput): Promise<void> {
+  if (currentTenant() && !await tenantOwnAccount(id)) throw new ClientVisibleError(SHARED_ACCOUNT);
   if (Object.keys(patch).length) await User.update({ id }, patch);
 }
 
+/**
+ * Let a user sign in, or stop them: a disabled account is a guest with every session it has.
+ * In a tenant a member's account is shared, so only the tenant's own accounts change here.
+ */
+export async function setUserStatus(id: string, status: 'active' | 'disabled'): Promise<void> {
+  if (currentTenant() && !await tenantOwnAccount(id)) throw new ClientVisibleError(SHARED_ACCOUNT);
+  if (status === 'disabled') {
+    await requireAnotherAdmin(id, 'disabled');
+    if (!currentTenant()) await requireAnotherNetworkAdmin(id, 'disabled');
+  }
+  await User.update({ id }, { status });
+  if (status === 'disabled') await sql`DELETE FROM sessions WHERE user_id = ${id} AND kind = 'auth'`;
+}
+
 export async function changeUserPassword(id: string, newPassword: string): Promise<void> {
+  if (currentTenant() && !await tenantOwnAccount(id)) throw new ClientVisibleError(SHARED_ACCOUNT);
   if (!(await User.exists({ id }))) throw new ClientVisibleError('User not found.');
   await User.update({ id }, { passwordHash: await hashPassword(newPassword) });
 }
 
+/**
+ * Refuse a change that would leave nobody active with the admin role here (in this tenant, or
+ * in the application without tenants). `keeps` says whether the user still has the role after it.
+ */
+async function requireAnotherAdmin(userId: string, change: string, keeps = false): Promise<void> {
+  if (keeps) return;
+  const admin = await Role.findOne({ where: { id: 'admin' } });
+  if (!admin || !await UserRole.exists({ userId, roleId: admin.id })) return;
+  const others = (await sql<{ total: number }>`
+    SELECT COUNT(*) AS total FROM user_roles ur INNER JOIN users u ON u.id = ur.user_id
+    WHERE ur.role_id = ${admin.id} AND ur.user_id <> ${userId} AND u.status = 'active'
+  `).rows[0];
+  if (!Number(others?.total ?? 0)) throw new ClientVisibleError(`The last administrator cannot be ${change}.`);
+}
+
 export async function deleteUser(id: string): Promise<void> {
+  await requireAnotherAdmin(id, 'removed');
+  // In a tenant: a member leaves, and the account stays. The tenant's own account goes, with what belongs to it.
+  if (currentTenant() && await tenantOwnAccount(id)) {
+    await sql`DELETE FROM sessions WHERE user_id = ${id}`;
+    await apiTokens.revokeAll(id);
+    await security.reset(id);
+    await UserRole.delete({ userId: id });
+    await User.delete({ id });
+    return;
+  }
+  if (currentTenant()) return leaveCurrentTenant(id);
+  await requireAnotherNetworkAdmin(id, 'removed');
   await UserRole.delete({ userId: id });
   await User.delete({ id });
+  await forgetMemberships(id);
 }
 
 export async function assignRole(userId: string, roleId: string): Promise<void> {
@@ -219,10 +302,13 @@ export async function assignRole(userId: string, roleId: string): Promise<void> 
 }
 
 export async function removeRole(userId: string, roleId: string): Promise<void> {
+  if (roleId === 'admin') await requireAnotherAdmin(userId, 'left without the admin role');
   await UserRole.delete({ userId, roleId });
 }
 
 export async function syncUserRoles(userId: string, roleIds: string[]): Promise<void> {
+  const admin = await Role.findOne({ where: { id: 'admin' } });
+  await requireAnotherAdmin(userId, 'left without the admin role', !!admin && roleIds.includes(admin.id));
   await UserRole.delete({ userId });
   if (roleIds.length) {
     const createdAt = new Date();

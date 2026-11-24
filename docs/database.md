@@ -29,7 +29,7 @@ src/
 
 The model barrel imports `reflect-metadata` once and exports deterministic
 entity registration. Node recipes create one caller-owned ORM singleton.
-Workers recipes create an ORM per request from Turso, D1, or
+Workers recipes create an ORM per request from Turso, D1, RomeDB or
 Hyperdrive bindings. `ormMiddleware` closes factory-created instances after
 downstream work completes.
 
@@ -118,11 +118,33 @@ context through application services.
 
 | Runtime | Providers |
 |---|---|
-| Node | SQLite (`node:sqlite`), Turso, PostgreSQL, MySQL |
-| Workers | D1, remote Turso, Hyperdrive PostgreSQL, Hyperdrive MySQL |
+| Node | SQLite (`node:sqlite`), Turso, PostgreSQL, MySQL, RomeDB |
+| Workers | D1, remote Turso, Hyperdrive PostgreSQL, Hyperdrive MySQL, RomeDB |
 
 Hyperdrive recipes enable `nodejs_compat` and install only the selected
 PostgreSQL or MySQL driver. Other Workers recipes use `nodejs_als`.
+
+### RomeDB
+
+`cossack create my-app --database romedb` (or `cossack add database --database romedb`)
+keeps the ORM's tables in RomeDB. Entities can be relational or documents: see the ORM's
+[RomeDB guide](../packages/database/docs/romedb.md).
+
+- **Node:** `ROMEDB_URL` is a file path (default `storage/romedb/app.romedb`). The database
+  opens in the server process and is created on first use. A URL of `romedb serve` or
+  RomeDB Cloud needs `ROMEDB_TOKEN`.
+- **Workers:** `ROMEDB_URL` and `ROMEDB_TOKEN` name a RomeDB Cloud database. `pnpm dev`
+  starts `romedb serve` for the loopback URL in `.dev.vars` and passes its token. The
+  `ROMEDB_PENDING` Durable Object keeps writes that are not confirmed yet.
+- **Migrations apply when the server starts.** The first request applies the migrations
+  that are not applied yet (`applyPendingMigrations` in `src/orm/factory.ts`). A database
+  that is up to date costs one read.
+- **One process owns a RomeDB file.** Run `cossack migration` and `cossack seed` against a
+  file only while the server is stopped. With a URL, they run at any time.
+- **A CMS project** shares the CMS's RomeDB instance with the ORM, so both use one
+  connection. The CMS owns the tables whose names start with `cms_` and `cossack_`.
+- `romedbClient()` from `@cossackframework/romedb/orm` gives the RomeDB instance for
+  RomeQL the ORM does not write.
 
 ## Tooling
 

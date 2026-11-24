@@ -14,6 +14,7 @@ eagerly include Node built-ins, native SQLite packages, or unused drivers.
 | `@cossackframework/database/bun` | Native Bun SQL for SQLite, PostgreSQL, MySQL |
 | `@cossackframework/database/cloudflare` | D1 and Hyperdrive PostgreSQL/MySQL |
 | `@cossackframework/database/cloudflare-turso` | Remote Turso for Workers |
+| `@cossackframework/romedb/orm` | RomeDB, with relational and document entities: see [RomeDB](./romedb.md) |
 | `@cossackframework/database/adapter` | Public contracts for custom adapters |
 
 ## Node.js

@@ -1,5 +1,6 @@
 // src/index.ts
-export { RPC_JSON_RESPONSE_MAX_BYTES } from './shared/rpc-json';
+export { RPC_JSON_RESPONSE_MAX_BYTES, RPC_RESPONSE_LIMIT_HEADER } from './shared/rpc-json';
+export { RPC_JSON_RESPONSE_LIMIT_MAX_BYTES, serverMethodResponseLimit, validateRpcResponseLimit } from './shared/server-method-metadata';
 export * from './shared/cossack';
 export * from './shared/decorators';
 export * from './shared/environment';

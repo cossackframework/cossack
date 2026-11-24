@@ -377,7 +377,12 @@ export class MutationQueryBuilder<T extends BaseEntity> {
     }
     const rows = this.values ?? [];
     if (rows.length === 0) throw new ConfigurationError(`${this.kind} requires at least one value object.`);
-    const properties = [...new Set(rows.flatMap((row) => Object.keys(row)))];
+    // A document has no field for a value that is not set, so an insert names only the fields
+    // some row gives. (A null under an indexed nested path is refused by RomeDB.)
+    const document = this.metadata.model === "document" && this.kind !== "update";
+    const properties = [...new Set(rows.flatMap((row) => document
+      ? Object.keys(row).filter((key) => (row as Record<string, unknown>)[key] !== null && (row as Record<string, unknown>)[key] !== undefined)
+      : Object.keys(row)))];
     const columns = properties.map((property) => {
       const column = this.metadata.columnByProperty.get(property);
       if (!column) throw new ConfigurationError(`Unknown property ${this.metadata.modelName}.${property}.`);
@@ -513,6 +518,10 @@ export class MutationQueryBuilder<T extends BaseEntity> {
     ];
     if (this.orm.driver.dialect === "mysql") {
       nodes.push({ kind: "text", value: ` () VALUES ${Array.from({ length: count }, () => "()").join(", ")}` });
+    } else if (this.metadata.model === "document") {
+      // A document table takes no DEFAULT VALUES: an empty document gets a generated id.
+      if (count !== 1) throw new ConfigurationError("Inserting several empty documents needs one statement per document; use execute().");
+      nodes.push({ kind: "text", value: " DOCUMENT " }, { kind: "value", value: {} as never });
     } else {
       if (count !== 1) {
         throw new ConfigurationError("Inserting several rows without column values needs one statement per row; use execute().");

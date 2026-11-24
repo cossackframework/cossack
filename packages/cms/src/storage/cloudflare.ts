@@ -91,4 +91,6 @@ export const cloudflareStorage: CmsStorage<CloudflareStorageBindings> = {
         };
     },
     // Webhook deliveries use the Worker's own fetch, which cannot reach private networks.
+    // A request's subrequests are cancelled with it, so the CMS ends its database calls itself.
+    cancelsRequestIo: true,
 };

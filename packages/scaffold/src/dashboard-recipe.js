@@ -25,11 +25,19 @@ export const SERVED_DASHBOARD_PATHS = [
   'src/services/users.ts',
   'src/services/roles.ts',
   'src/services/rbac.ts',
+  'src/services/security.ts',
+  'src/services/api-tokens.ts',
+  'src/services/tenants.ts',
   'src/lib/permissions.ts',
   'src/lib/uuid.ts',
   'src/middlewares/auth.ts',
+  'src/middlewares/tenant.ts',
   'src/auth.ts',
   'src/auth-options.ts',
+  'src/mail.ts',
+  'src/avatars.ts',
+  'src/auth-events.ts',
+  'src/tenants.ts',
   'src/auth-providers.ts',
   'src/auth-input.ts',
   'src/auth-bot-check.ts',
@@ -41,6 +49,7 @@ export const SERVED_DASHBOARD_PATHS = [
 
 /** Whether the recipe's sign-in is the package's: `auth` with users in the database. */
 export function mountsDashboard(recipe) {
+  // A CMS project gets these pages from the CMS package, which ships a copy with its own.
   return recipe.resolvedFeatures.includes('auth') && authStore(recipe.resolvedFeatures) === 'database';
 }
 

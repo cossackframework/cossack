@@ -9,6 +9,12 @@ import { plugins } from '@cossackframework/framework/plugins';
 import { modules, options as projectOptions, resources, storage as projectStorage } from '@/cms.config';
 import { announceNoteEvent } from './notes-announce';
 import { reservedRouteSegments } from './reserved-paths';
+import { requestCallsSignal } from './request-calls';
+import { devMailTransport, markMailKeptOnly } from './dev-mail';
+import { ormPeople } from './people';
+import { tenantSites } from './sites';
+import { accounts, asMainAccount, withTenant } from '../tenants';
+import { TenantMember } from '@/models/TenantMember';
 import registry from 'virtual:cossack-pages';
 
 /**
@@ -94,7 +100,10 @@ export function networkFor(env: CmsBindings): CmsNetwork {
     const connection = store.databaseConnection(env);
     const key = `${connection.url}\n${connection.token ?? ''}`;
     if (current?.key !== key) {
-        const db = createRomeDB({ ...connection, pending: store.pendingWrites(env), reconcilers: cmsReconcilers() });
+        // On Workers a request's database calls end with it (cms/request-calls.ts), or a call of a
+        // request that ended first would keep one of the client's places for good.
+        const calls = store.cancelsRequestIo ? { requestSignal: requestCallsSignal } : {};
+        const db = createRomeDB({ ...connection, pending: store.pendingWrites(env), reconcilers: cmsReconcilers(), ...calls });
         const storage = store.mediaStorage(env);
         const images = store.imageTransformer(env);
         const mail = env.EMAIL;
@@ -106,23 +115,33 @@ export function networkFor(env: CmsBindings): CmsNetwork {
         const network: CmsNetwork = new CmsNetwork({
             db,
             networkHost: () => urlOf(env.APP_URL)?.host,
-            ...(multisite ? { open: site => createRomeDB({ ...store.siteDatabase(env, site.database)!, pending: store.pendingWrites(env, site.database), reconcilers: cmsReconcilers() }) } : {}),
+            ...(multisite ? { open: site => createRomeDB({ ...store.siteDatabase(env, site.database)!, pending: store.pendingWrites(env, site.database), reconcilers: cmsReconcilers(), ...calls }) } : {}),
             ...(directory ? { directory } : {}),
             hostUrl: host => siteUrl(env, { host })!,
+            // Sites are the dashboard package's tenants; a site's users are in the site's own database.
+            sites: tenantSites,
+            inSite: (site, work) => site.id === MAIN_SITE ? asMainAccount(() => accounts(work)) : withTenant({ id: site.id, slug: site.id, name: site.name ?? site.id, database: site.database, status: 'active' }, work),
+            memberSites: accountId => asMainAccount(() => accounts(async () => (await TenantMember.find({ where: { userId: accountId }, take: 500 })).map(member => member.tenantId))),
             host: (site, siteDb) => {
               // What the project sets in src/cms.config.ts goes over the defaults below.
               const project = typeof projectOptions === 'function' ? projectOptions(env as Record<string, unknown>, site) : projectOptions;
-              return createCMS({
+              // The project's transport, else the EMAIL binding. In development the mail is also kept for
+              // GET /api/cms/dev/mail and printed (cms/dev-mail.ts), with or without a transport.
+              const transport = project.mail ?? (mail ? { send: (message: Parameters<NonNullable<typeof mail>['send']>[0]) => mail.send(message) } : undefined);
+              const siteMail = localAddress(env.APP_URL) ? devMailTransport(site.id, transport) : transport;
+              // Health still reports a missing sender while development keeps the mail.
+              const made = (host: CmsHost) => siteMail && !transport ? markMailKeptOnly(host) : host;
+              return made(createCMS({
                 db: siteDb, network: db, site: site.id, modules, resources, plugins,
+                // Accounts, roles and sign-in are the dashboard package's, on the ORM (specs/cms-on-dashboard.md).
+                people: ormPeople,
                 // A site whose APP_URL is this machine is in development: its webhooks may stay local. No APP_URL is no exception.
                 localWebhooks: localAddress(env.APP_URL),
                 ...(webhookFetch && !localAddress(env.APP_URL) ? { webhookFetch } : {}),
                 // A site's media keys start with sites/<id>/; the main site keeps its own.
                 ...(storage ? { storage: site.id === MAIN_SITE ? storage : prefixedStorage(storage, `sites/${site.id}/`) } : {}),
                 ...(images ? { images } : {}), siteUrl: () => siteUrl(env, site),
-                ...(mail ? { mail: { send: message => mail.send(message) }, mailFrom: env.MAIL_FROM || 'no-reply@example.com' } : {}),
-                // Ending a network session ends the child sessions sites made from it.
-                sessionsEnded: ended => network.endSessions(ended),
+                ...(siteMail ? { mailFrom: env.MAIL_FROM || 'no-reply@example.com' } : {}),
                 // A note's webhooks and emails, from the outbox job its write queued.
                 announceNote: announceNoteEvent,
                 purgers: [...purgers(env, site), ...(project.purgers ?? [])],
@@ -133,11 +152,12 @@ export function networkFor(env: CmsBindings): CmsNetwork {
                 // Every binding, for a plugin granted unrestricted access.
                 env: env as Record<string, unknown>,
                 runner: pluginRunner,
-                ...(({ purgers: _purgers, reservedPaths: _reserved, updates: _updates, ...rest }) => rest)(project),
+                ...(({ purgers: _purgers, reservedPaths: _reserved, updates: _updates, mail: _mail, ...rest }) => rest)(project),
+                ...(siteMail ? { mail: siteMail } : {}),
                 // An entry's slug cannot take the address of a page: the CMS's routes, every page file of the
                 // application (the project's, the CMS's and plugins'), and what the project names itself.
                 reservedPaths: [...new Set([...DEFAULT_RESERVED_PATHS, ...reservedRouteSegments(Object.keys(registry.pages)), ...(project.reservedPaths ?? [])])],
-              });
+              }));
             },
         });
         current = { key, network };
@@ -188,4 +208,9 @@ export function currentCms(): CmsHost {
 export function localAddress(appUrl: string | undefined): boolean {
     const host = urlOf(appUrl)?.hostname;
     return host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host?.endsWith('.localhost') === true;
+}
+
+/** A site's RomeDB database by the site's ID, for the application's own tables there (src/orm/factory.ts: `tenantORM`). */
+export async function siteDatabase(env: CmsBindings, id: string) {
+    return networkFor(env).databaseOf(id);
 }

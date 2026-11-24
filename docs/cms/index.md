@@ -168,6 +168,11 @@ const cms = createCMS({ db, modules, resources, plugins, storage, images, mail }
   or any `{ send({ to, from, subject, text, html, replyTo? }) }`. Server code sends through
   `host.mail.send({ kind, to, subject, text })`, which adds the HTML part (Settings → Email) and
   runs [`cms.mail.before-send`](/docs/cms/hooks.md#mail).
+  While `APP_URL` names this machine (`localhost`, `127.0.0.1` or a `.localhost` host), every
+  email is also kept in memory and printed in the dev server's terminal, with or without a
+  transport. `GET /api/cms/dev/mail` lists it, oldest first (`?to=` keeps one recipient's), so a
+  script can follow an invitation's or a reset's link; `DELETE` forgets it. The route answers
+  404 unless both `APP_URL` and the request's address are local.
 - `runner` runs isolated plugins. The Cloudflare Worker entry sets `cloudflarePluginRunner()`
   from `@cossackframework/cms/cloudflare` and exports `PluginBridge` and `PluginTail`; see
   [Where server code runs](/docs/cms/plugins.md#where-server-code-runs).
@@ -177,6 +182,16 @@ const cms = createCMS({ db, modules, resources, plugins, storage, images, mail }
 
 `await cms.ready()` runs once per request. It loads the collections defined in the
 dashboard and applies host schema changes a package upgrade brought.
+
+**Requests that end early, on Workers.** One database client serves every request to a site in
+an isolate and allows 32 calls in flight. A call whose request ends first never settles on
+Workers, so its place would be lost for good. The CMS ends a request's database calls when its
+visitor leaves or it fails (`cancelsRequestIo` of `cloudflareStorage`, `cms/request-calls.ts`);
+work after the answer, such as the outbox, is left alone. A request that shared a cached read
+(settings, the site a host names, the activation state) with a request that ended reads again
+for itself. Should calls be stranded anyway, the client gives their places back once their
+deadline passes, and a burst waits for places instead of failing (see `@cossackframework/romedb`,
+"Requests that end early"). A site lookup that fails answers 503; it never serves the main site in its place.
 
 ## Data in one paragraph
 
@@ -188,6 +203,14 @@ Every mutation is one atomic batch: the record, its revision, an audit row and a
 event, guarded by the operation ID so a stale edit writes nothing. After commit, the outbox
 delivers `cms.resource.after-commit` to plugins, webhooks and notifications, with retries
 per plugin.
+
+**Field values.** A field group attaches to collections, taxonomies, users and menus. On a
+collection its values are fields of the entry. A user's and a term's are fields of a document
+under the same ID as the row: `cms/user_fields` for users, `cms/tf_<taxonomy>` for a taxonomy
+that has groups. So `index`, `unique` and reference fields work there as on a collection, a
+save sets the fields that changed, and SQL can join them
+(`JOIN r__cms__user_fields d ON record::id(d.id) = u.id`). These resources are internal:
+Tools → Schema shows them, the API does not. A menu item's values stay inside its menu.
 
 **Search.** Each collection with `search` fields has a RomeDB full-text index over them, which
 the dashboard's lists and pickers and the content API's `q` read. The site's search reads one

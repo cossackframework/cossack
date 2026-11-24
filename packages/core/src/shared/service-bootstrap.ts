@@ -321,7 +321,7 @@ export function proxyServiceMethods(component: any, serviceInstance: any): void 
 
                 if (data._cossack_redirect) {
                     window.location.href = data._cossack_redirect;
-                    return;
+                    return data._cossack_return;
                 }
 
                 let returnValue;

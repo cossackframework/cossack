@@ -22,6 +22,12 @@ export type MultiSelectProps = Omit<GlobalAttributes<HTMLInputElement>, 'id' | '
     allowCreate?: boolean;
     /** Maximum number of selections. Integer >= 0; zero means unlimited. */
     max?: number;
+    /**
+     * Selected values the user cannot remove: their tag has no remove button, Backspace skips
+     * them, and every list sent to onValueChange keeps them. A locked value that is not
+     * selected has no effect.
+     */
+    lockedValues?: readonly string[];
     onValueChange?: (value: string[]) => unknown;
     /** Validate every proposed addition, predefined or custom. Return a displayed error or null. */
     validate?: (value: string) => string | null;
@@ -91,7 +97,7 @@ export class MultiSelect extends Cossack {
     render() {
         const { id, options = [], value: _value, defaultValue: _default, name, form, disabled = false, readonly = false,
             required = false, placeholder = 'Add tag...', allowCreate: _create, max = 0, onValueChange: _change, validate: _validate,
-            error: _error, 'aria-describedby': description, emptyLabel = 'No options.', requiredMessage: _required,
+            error: _error, lockedValues = [], 'aria-describedby': description, emptyLabel = 'No options.', requiredMessage: _required,
             maxMessage: _max, createLabel = value => `Create "${value}"`, removeLabel = value => `Remove ${value}`, ...rest } = this.props;
         if (typeof id !== 'string' || !id || /\s/.test(id)) throw new Error('MultiSelect requires a nonempty, whitespace-free id.');
         if (!Number.isInteger(max) || max < 0) throw new Error('MultiSelect max must be an integer greater than or equal to zero.');
@@ -123,7 +129,9 @@ export class MultiSelect extends Cossack {
         };
         return html`<div class="cs-multiselect relative w-full">
             <div class="cs-multiselect__field flex flex-wrap items-center gap-1.5 min-h-9 w-full rounded-md border border-input bg-background px-2 py-1 transition-[color,box-shadow] shadow-xs focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]">
-                ${repeat(this.selected, value => value, value => html`<span class="cs-multiselect__tag inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-secondary text-sm text-secondary-foreground">
+                ${repeat(this.selected, value => value, value => lockedValues.includes(value)
+                    ? html`<span data-locked class="cs-multiselect__tag inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-secondary text-sm text-secondary-foreground">${value}</span>`
+                    : html`<span class="cs-multiselect__tag inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-secondary text-sm text-secondary-foreground">
                     ${value}<button type="button" ?disabled=${disabled || readonly} aria-label=${removeLabel(value)}
                         data-tag=${value} class="cs-multiselect__tag-remove inline-flex items-center justify-center size-5 rounded-sm hover:text-foreground text-muted-foreground cursor-pointer border-none bg-transparent focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50 disabled:cursor-not-allowed"
                         @click=${(event: ControlEvent<HTMLButtonElement, MouseEvent>) => this.remove(value, event)}><span aria-hidden="true">×</span></button>
@@ -157,6 +165,8 @@ export class MultiSelect extends Cossack {
     }
 
     @Client()
+    private locked(value: string) { return this.props.lockedValues?.includes(value) === true; }
+    @Client()
     private editable() { return !!this.input && !this.input.matches(':disabled') && !this.input.readOnly; }
     @Client()
     private show() {
@@ -178,9 +188,10 @@ export class MultiSelect extends Cossack {
     @Client()
     private keydown(event: ControlEvent<HTMLInputElement, KeyboardEvent>) {
         if (!this.editable() || event.isComposing || event.keyCode === 229) return;
-        if (event.key === 'Backspace' && !this.search && !event.ctrlKey && !event.metaKey && !event.altKey && this.selected.length) {
+        const removable = this.selected.filter(value => !this.locked(value));
+        if (event.key === 'Backspace' && !this.search && !event.ctrlKey && !event.metaKey && !event.altKey && removable.length) {
             event.preventDefault();
-            void this.remove(this.selected[this.selected.length - 1]);
+            void this.remove(removable[removable.length - 1]);
         } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
             event.preventDefault();
             if (event.altKey && event.key === 'ArrowUp') { this.close(); return; }
@@ -216,8 +227,8 @@ export class MultiSelect extends Cossack {
     }
     @Client()
     private async remove(value: string, event?: ControlEvent<HTMLButtonElement, MouseEvent>) {
-        if (!this.editable() || !this.selected.includes(value)) return;
-        const input = this.input!, button = event?.currentTarget, index = this.selected.indexOf(value), keyboard = event?.detail === 0;
+        if (!this.editable() || !this.selected.includes(value) || this.locked(value)) return;
+        const input = this.input!, button = event?.currentTarget, index = this.selected.filter(item => !this.locked(item)).indexOf(value), keyboard = event?.detail === 0;
         const next = this.base.filter(item => item !== value);
         this.draft = next;
         this.controlled.emit(this.props, next);

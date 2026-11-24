@@ -68,15 +68,30 @@ export interface DashboardShellLabels {
     help?: string;
 }
 
+/** The brand of {@link DashboardShellProps}: a name and an image (`logo`) or markup (`mark`). */
+export interface DashboardShellBrand {
+    name: string;
+    logo?: string;
+    mark?: TemplateResult;
+    logoOnly?: boolean;
+    href?: string;
+}
+
 export type DashboardShellIcons = Partial<Record<'light' | 'dark' | 'expand' | 'logout', IconEntry>>;
 
 export type DashboardShellProps = {
-    /** The site the dashboard belongs to. Its logo and name link to `href` (default `/`). `logoOnly`: the logo already shows the name. */
-    brand: { name: string; logo: string; logoOnly?: boolean; href?: string };
+    /**
+     * The site the dashboard belongs to. Its logo and name link to `href` (default `/`).
+     * `logo` is an image's address; `mark` is markup in its place, such as a letter mark, and
+     * wins over `logo`. `logoOnly`: the logo or mark already shows the name.
+     */
+    brand: DashboardShellBrand;
     /** The signed-in user, in the account menu. */
     account: { name: string; email: string; avatar?: string | null };
     /** The sidebar's items; the caller marks the active one. */
     navigation: readonly SidebarItem[];
+    /** Markup at the top of the sidebar's footer, above the theme toggle and the account menu, such as an organization switcher. */
+    sidebarFooter?: TemplateResult;
     /** The account menu's links, above Log out. */
     accountLinks?: readonly DashboardShellLink[];
     /** Sidebar collapsed to icons; the caller keeps it, such as in a cookie. */
@@ -110,6 +125,15 @@ const LABELS: Required<DashboardShellLabels> = {
 
 const ICONS: Required<DashboardShellIcons> = { light: { line: SunIcon }, dark: { line: MoonIcon }, expand: { line: AltArrowRightIcon }, logout: { line: Logout3Icon } };
 
+/** The brand's mark or logo image at `size` pixels; nothing when the brand has neither. `alt` names it when it stands for the name. */
+function logo(brand: DashboardShellBrand, size: number, className: string, alt = ''): TemplateResult | null {
+    if (brand.mark) return alt
+        ? html`<span class="inline-flex shrink-0 items-center justify-center" role="img" aria-label=${alt}>${brand.mark}</span>`
+        : html`<span class="inline-flex shrink-0 items-center justify-center" aria-hidden="true">${brand.mark}</span>`;
+    if (!brand.logo) return null;
+    return Image({ src: brand.logo, alt, width: size, height: size, loading: 'eager', class: className });
+}
+
 @Component()
 export class DashboardShell extends Cossack {
     declare props: DashboardShellProps;
@@ -134,12 +158,12 @@ export class DashboardShell extends Cossack {
                     title: brand.name,
                     brand: html`<a href=${home} class="flex items-center gap-2 no-underline group-[.is-collapsed]:hidden" aria-label=${labels.viewSite} title=${labels.viewSite}>
                         ${brand.logoOnly
-                            ? Image({ src: brand.logo, alt: brand.name, width: 32, height: 32, loading: 'eager', class: 'h-8 w-auto max-w-40 shrink-0 object-contain' })
-                            : html`${Image({ src: brand.logo, alt: '', width: 24, height: 24, loading: 'eager', class: 'h-6 w-auto max-w-24 shrink-0 object-contain' })}
+                            ? logo(brand, 32, 'h-8 w-auto max-w-40 shrink-0 object-contain', brand.name)
+                            : html`${logo(brand, 24, 'h-6 w-auto max-w-24 shrink-0 object-contain')}
                         <span class="text-sm font-semibold text-foreground truncate">${brand.name}</span>`}
                     </a>
                     <a href=${home} class="hidden group-[.is-collapsed]:flex items-center justify-center" aria-label=${labels.viewSite} title=${labels.viewSite}>
-                        ${Image({ src: brand.logo, alt: '', width: 24, height: 24, loading: 'eager', class: 'size-6 object-contain' })}
+                        ${logo(brand, 24, 'size-6 object-contain') ?? html`<span class="text-sm font-semibold text-foreground">${brand.name.slice(0, 1)}</span>`}
                     </a>`,
                     width: props.width ?? '248px',
                     collapsible: 'icon',
@@ -149,6 +173,7 @@ export class DashboardShell extends Cossack {
                     // Both theme labels render; the .dark class on <html> shows the current one, so the
                     // server's markup matches before the theme is known.
                     footer: html`
+                        ${props.sidebarFooter ? html`<div data-sidebar-footer>${props.sidebarFooter}</div>` : null}
                         ${props.onThemeToggle ? html`<div class="flex items-center gap-1">
                             <button type="button" @click=${() => props.onThemeToggle?.()} title=${labels.toggleTheme} aria-label=${labels.toggleTheme}
                                 class="flex-1 flex items-center justify-center gap-2 px-2 py-1.5 rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground cursor-pointer border-none bg-transparent group-[.is-collapsed]:px-0">
@@ -201,8 +226,8 @@ export class DashboardShell extends Cossack {
                     ${props.taskbar === false ? null : html`<footer data-dashboard-taskbar aria-label=${labels.taskbar} class="sticky bottom-0 z-30 hidden h-10 items-center gap-1 border-t border-border bg-background/95 px-3 text-xs text-muted-foreground backdrop-blur md:flex">
                         <a href=${home} class="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-foreground no-underline hover:bg-muted" title=${labels.viewSite}>
                             ${brand.logoOnly
-                                ? Image({ src: brand.logo, alt: brand.name, width: 24, height: 24, loading: 'eager', class: 'h-6 w-auto max-w-28 shrink-0 object-contain' })
-                                : html`${Image({ src: brand.logo, alt: '', width: 16, height: 16, loading: 'eager', class: 'h-4 w-auto max-w-16 shrink-0 object-contain' })}
+                                ? logo(brand, 24, 'h-6 w-auto max-w-28 shrink-0 object-contain', brand.name)
+                                : html`${logo(brand, 16, 'h-4 w-auto max-w-16 shrink-0 object-contain')}
                             <span class="max-w-40 truncate">${brand.name}</span>`}
                         </a>
                         <span aria-hidden="true" class="mx-1 h-4 w-px bg-border"></span>

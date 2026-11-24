@@ -1,4 +1,5 @@
 import type { ColumnMetadata } from "./metadata/types.js";
+import { isRecordLink, RecordLink, type RecordKey } from "./record-link.js";
 
 /**
  * SQLite and MySQL store datetimes as text without an offset, the same
@@ -26,8 +27,23 @@ function decodeDateTime(value: unknown): Date {
   return new Date(`${match[1]}T${match[2]}${zone.toUpperCase()}`);
 }
 
+/** A document field keeps its type: booleans, numbers, nested objects and arrays are stored as they are. */
+function encodeDocumentValue(column: ColumnMetadata, value: unknown, dialect: string): unknown {
+  if (column.recordTable) return isRecordLink(value) ? value : new RecordLink(column.recordTable, value as RecordKey);
+  switch (column.logicalType) {
+    case "boolean":
+      return Boolean(value);
+    case "json":
+    case "bigint":
+      return value;
+    default:
+      return encodeValue({ ...column, document: false }, value, dialect);
+  }
+}
+
 export function encodeValue(column: ColumnMetadata, value: unknown, dialect: string): unknown {
   if (value === undefined || value === null) return value ?? null;
+  if (column.document) return encodeDocumentValue(column, value, dialect);
   switch (column.logicalType) {
     case "boolean":
       return dialect === "sqlite" ? (value ? 1 : 0) : Boolean(value);
@@ -56,6 +72,11 @@ export function encodeValue(column: ColumnMetadata, value: unknown, dialect: str
 
 export function decodeValue(column: ColumnMetadata, value: unknown): unknown {
   if (value === undefined || value === null) return value ?? null;
+  // An entity holds the key of a linked record; the table is in the column's metadata.
+  if (column.recordTable && isRecordLink(value)) {
+    const key = value.key;
+    return typeof key === "bigint" && key >= BigInt(Number.MIN_SAFE_INTEGER) && key <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(key) : key;
+  }
   switch (column.logicalType) {
     case "boolean":
       return value === true || value === 1 || value === "1" || value === "true";
@@ -63,7 +84,8 @@ export function decodeValue(column: ColumnMetadata, value: unknown): unknown {
     case "date":
       return decodeDateTime(value);
     case "json":
-      return typeof value === "string" ? JSON.parse(value) : value;
+      // A document field is already the value: a stored string is a string, not encoded JSON.
+      return typeof value === "string" && !column.document ? JSON.parse(value) : value;
     case "bigint":
       return typeof value === "bigint" ? value : BigInt(String(value));
     case "blob":

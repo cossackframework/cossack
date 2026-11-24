@@ -10,6 +10,10 @@ export type SQLNode =
   | { readonly kind: "value"; readonly value: SQLPrimitive }
   | { readonly kind: "identifier"; readonly path: readonly string[] }
   | { readonly kind: "unsafe"; readonly value: string }
+  /** A column type by its logical name, written as the database's own type when the statement is compiled. */
+  | { readonly kind: "type"; readonly logicalType: string; readonly options?: Readonly<Record<string, unknown>> }
+  /** A JSON value as a parameter the database compares as JSON, not as text. */
+  | { readonly kind: "json"; readonly value: string }
   | { readonly kind: "fragment"; readonly value: SQLFragment };
 
 export interface CompiledQuery {
@@ -50,6 +54,15 @@ export function compileSQL(fragment: SQLFragment, dialect: Dialect): CompiledQue
     for (const node of nodes) {
       if (node.kind === "text" || node.kind === "unsafe") {
         text += node.value;
+      } else if (node.kind === "type") {
+        text += dialect.mapType(node.logicalType, node.options ? { ...node.options } : {});
+      } else if (node.kind === "json") {
+        parameters.push(node.value);
+        const placeholder = dialect.placeholder(parameters.length);
+        // SQLite keeps JSON as text, so the text is the value. The others need the cast:
+        // MySQL compares a JSON column with a bare string as with a JSON string.
+        text += dialect.name === "postgres" ? `${placeholder}::jsonb`
+          : dialect.name === "mysql" ? `CAST(${placeholder} AS JSON)` : placeholder;
       } else if (node.kind === "identifier") {
         text += node.path.map((part) => dialect.quoteIdentifier(part)).join(".");
       } else if (node.kind === "fragment") {

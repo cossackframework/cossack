@@ -1,3 +1,4 @@
+import { siteMemberCounts } from '#app/cms/network-accounts';
 import { Client, Cossack, Page, Server, State, flashed, type HeadValue } from '@cossackframework/core';
 import { AlertDialog } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
@@ -54,7 +55,7 @@ export default class NetworkSites extends Cossack {
         const [totals, memberships, mainName, networkIcon, requests] = await Promise.all([
             Promise.all(STATUSES.map(status => net.sites.list({ ...search, status, limit: 1 }).then(found => found.total))),
             // Network accounts by site, for sites whose database is not open: being created or deleted.
-            net.main.accounts.memberCounts(),
+            siteMemberCounts(),
             net.main.settings.get('general.siteTitle').then(title => title || __('Main site'), () => __('Main site')),
             // The main site's icon is the network's, for sites without one.
             siteIconUrl(this.c, net.main, { host: null }),
@@ -74,7 +75,8 @@ export default class NetworkSites extends Cossack {
             // Sites being created or deleted have no settings to read; open ones count site accounts too.
             const open = site.status === 'active' || site.status === 'archived' ? net.hostOf(networkSite(site)) : null;
             const own = open ? await siteIconUrl(this.c, open, { host }) : '';
-            const members = open ? await open.users.count().catch(() => memberships.get(site.id) ?? 0) : memberships.get(site.id) ?? 0;
+            // A site's users are in its own database.
+            const members = open ? await net.inSite(networkSite(site), () => open.users.count()).catch(() => memberships.get(site.id) ?? 0) : memberships.get(site.id) ?? 0;
             return { id: site.id, name: site.name, host, status: site.status, members, createdAt: site.createdAt, icon: own || networkIcon,
                 exportRequested: requests.get(site.id)?.approvedAt === null, ...siteLinks(this.c, { host }) };
         }))];

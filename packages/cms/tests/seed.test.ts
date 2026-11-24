@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { contentModule, DEFAULT_ROLES, formsModule, type Principal } from '../src/index';
-import { createCMS, seedStarterContent, type CmsHost } from '../src/server/index';
+import { createCMS, seedStarterContent, type CmsHost, memoryPeople } from '../src/server/index';
 import { romedbService, live } from './helpers';
 
 describe.skipIf(!live)('starter content', () => {
@@ -9,7 +9,7 @@ describe.skipIf(!live)('starter content', () => {
     let admin: Principal;
 
     beforeAll(async () => {
-        cms = createCMS({ db: service.database(), modules: [contentModule, formsModule] });
+        cms = createCMS({ people: memoryPeople(),  db: service.database(), modules: [contentModule, formsModule] });
         expect((await cms.migrate()).failed).toBeUndefined();
         await cms.ready({ force: true });
         for (const role of DEFAULT_ROLES) await cms.users.defineRole({ ...role, permissions: [...role.permissions] });

@@ -71,7 +71,7 @@ export default class RolesPage extends Cossack {
     /** Open the delete-confirmation dialog for a role (client-side). */
     @Client()
     requestDelete(r: RoleDetail) {
-        if (r.name === 'admin') return;
+        if (r.id === 'admin') return;
         this.pendingDelete = r;
     }
 
@@ -108,7 +108,7 @@ export default class RolesPage extends Cossack {
                             ${rowActions([
                                 { id: `role-${role.id}-edit`, label: __('Edit'), href: `/dashboard/roles/${role.id}` },
                                 { id: `role-${role.id}-users`, label: __('View users'), href: `/dashboard/users?role=${encodeURIComponent(role.name)}` },
-                                ...(role.name !== 'admin' ? [{ id: `role-${role.id}-delete`, label: __('Delete'), danger: true, run: () => this.requestDelete(role) }] : []),
+                                ...(role.id !== 'admin' ? [{ id: `role-${role.id}-delete`, label: __('Delete'), danger: true, run: () => this.requestDelete(role) }] : []),
                             ])}` },
                         { label: __('Users'), class: 'text-muted-foreground', cell: role => html`<a href="/dashboard/users?role=${encodeURIComponent(role.name)}" class="text-muted-foreground no-underline hover:text-primary">${role.userCount ?? 0}</a>` },
                     ],
