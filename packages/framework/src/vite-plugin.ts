@@ -36,6 +36,13 @@ export { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
 
 const virtualModuleId = 'virtual:cossack-pages';
 const resolvedVirtualModuleId = '\0' + virtualModuleId;
+/**
+ * The page files' route keys, without their modules. Code that needs only the names (the CMS's
+ * reserved paths) imports this, not the pages registry: the registry imports every layout on
+ * the server, so a module a layout reaches would import itself through it.
+ */
+const PAGE_FILES_MODULE_ID = 'virtual:cossack-page-files';
+const resolvedPageFilesModuleId = '\0' + PAGE_FILES_MODULE_ID;
 
 const resolvedRealtimeComponentsModuleId = '\0' + REALTIME_COMPONENTS_MODULE_ID;
 const resolvedPluginsModuleId = '\0' + PLUGINS_MODULE_ID;
@@ -449,6 +456,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
       }
       if (id === REALTIME_COMPONENTS_MODULE_ID) return resolvedRealtimeComponentsModuleId;
       if (id === PLUGINS_MODULE_ID) return resolvedPluginsModuleId;
+      if (id === PAGE_FILES_MODULE_ID) return resolvedPageFilesModuleId;
       // A served file imported by its package name is the file itself, not a dependency to pre-bundle.
       if (id.charCodeAt(0) !== 46 && id.charCodeAt(0) !== 47 && id.charCodeAt(0) !== 0) return servedSpecifierFile(projectRoot, id) ?? undefined;
     },
@@ -484,6 +492,10 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           if (error instanceof PluginIsolationError) this.error({ code: error.code, message: error.message, id: resolve(projectRoot, error.file) });
           throw error;
         });
+      }
+      if (id === resolvedPageFilesModuleId) {
+        const keys = [...scanPageSources(projectRoot, markdownEnabled).pageKeys].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+        return `export default ${JSON.stringify(keys)};\n`;
       }
       if (id === resolvedRealtimeComponentsModuleId) {
         // Server environments import exactly the realtime components; the
@@ -643,8 +655,10 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
             const handlers = registryFacts();
             if (knownHandlers !== undefined && handlers !== knownHandlers) {
               for (const environment of Object.values(server.environments ?? {})) {
-                const module = environment.moduleGraph.getModuleById(resolvedVirtualModuleId);
-                if (module) environment.moduleGraph.invalidateModule(module);
+                for (const id of [resolvedVirtualModuleId, resolvedPageFilesModuleId]) {
+                  const module = environment.moduleGraph.getModuleById(id);
+                  if (module) environment.moduleGraph.invalidateModule(module);
+                }
               }
               server.ws.send({ type: 'full-reload' });
             }
