@@ -298,6 +298,7 @@ The package states what it serves in its own `package.json`. Paths are relative 
     "host": ["cms.config.ts"],
     "hostTemplate": "0.10.0",
     "hostSteps": { "0.10.0": ["wrangler.jsonc: add the SEARCH binding."] },
+    "hostFiles": { "0.10.0": ["src/search/"] },
     "vite": "src/vite.js"
   }
 }
@@ -328,11 +329,12 @@ An override means the whole file. It stops receiving the package's fixes for tha
 
 #### What the package needs from the application
 
-Inside a served file, a relative import and a `#app/…` import stay inside the package, and an `@/…` import is a module the application provides. `#app/` is the package's name for its served root (`imports` in its `package.json`: `#app/cms/site` is `app/src/cms/site.ts`). It means nothing in the application's own files, which import a served module by the package's name (`@cossackframework/cms/app/cms/site`). The package lists these modules in `cossack.host`. The build stops when one is missing (`COSSACK_PACKAGE_HOST_MISSING`), or when the project's template is older than `cossack.hostTemplate` (`COSSACK_PACKAGE_HOST_OUTDATED`).
+Inside a served file, a relative import and a `#app/…` import stay inside the package, and an `@/…` import is a module the application provides. `#app/` is the package's name for its served root (`imports` in its `package.json`: `#app/cms/site` is `app/src/cms/site.ts`). It means nothing in the application's own files, which import a served module by the package's name (`@cossackframework/cms/app/cms/site`). The package lists these modules in `cossack.host`. The build and `cossack typecheck` stop when one is missing (`COSSACK_PACKAGE_HOST_MISSING`), or when the project's template is older than `cossack.hostTemplate` (`COSSACK_PACKAGE_HOST_OUTDATED`).
 
 - A missing module: run `cossack upgrade`, which writes it.
 - An older template, in a project whose files `cossack upgrade` updates: run `cossack upgrade`.
 - An older template, in a CMS project: its files are its own, so the message lists the changes to make (`cossack.hostSteps`, by the template that needs each). Make them, then set `cossack.template` in the project's `package.json` to the version the message names.
+- New files: `cossack.hostFiles` names the files a template adds, by that template, as paths from the project root. `cossack upgrade` writes them from the release's rendering of the project's recipe when the project lacks them. It writes a folder (a trailing slash) only when the project has no such folder, and never replaces a file. List the files in `hostSteps` too, for a project that already had the folder.
 
 A package raises `hostTemplate` only when a project file must change. Prefer a function the project already calls: a project's `vite.config.ts` is `cossackApp()` from `cossack/vite`, and a package adds its own Vite plugins and options through `cossack.vite` (see [Vite plugins](./vite-plugins.md#the-preset)).
 

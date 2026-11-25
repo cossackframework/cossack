@@ -70,8 +70,9 @@ codes), passkeys, and required two-step sign-in (`security` in `src/dashboard.co
   on each database.
 - Test: `packages/cossack/tests/generated-runtime-account-security.test.js`, the same flow
   on SQLite and on a RomeDB file.
-- Not done: a browser test of passkeys; `cossack.hostSteps` for projects made before this
-  migration; a schedule that calls `security.purgeExpired()`.
+- Not done: a browser test of passkeys; a schedule that calls `security.purgeExpired()`.
+  Projects made before this migration get host steps: the CMS and dashboard packages
+  ask for template 0.9.3.
 
 Built 2026-11-20, second slice: the rest of the features that are not about sites.
 

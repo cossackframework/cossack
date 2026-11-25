@@ -82,6 +82,16 @@
       "models/TenantSession.ts",
       "orm/factory.ts"
     ],
-    "hostTemplate": "0.9.0"
+    "hostTemplate": "0.9.3",
+    "hostSteps": {
+      "0.9.3": [
+        "Compare these files with a project that cossack create makes with the same --features and --database, and take its versions.",
+        "src/models/: User, Session, Role and OAuthAccount have new columns, and UserSecurity, Passkey, AuthChallenge, AuthAttempt, ApiToken and the Tenant models are new (cossack upgrade writes the missing ones). Register them all in src/models/index.ts.",
+        "src/migrations/: the account schema is nine migrations, 0001 to 0009, that each create a table whole. Replace the account migrations with them and recreate the database: nothing converts one made from the earlier migrations.",
+        "src/orm/factory.ts: export tenantORM, made with createTenantORMs from @cossackframework/database and given the migrations.",
+        "src/bootstrap/middlewares.ts: import { tenantMiddleware } from '@cossackframework/dashboard/app/middlewares/tenant' and list it after ormRequestMiddleware, before ...authMiddlewares.",
+        "src/seeders/application.seeder.ts: the admin role has the ID 'admin', and the first account has networkAdmin: true."
+      ]
+    }
   }
 }

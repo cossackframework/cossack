@@ -10,7 +10,7 @@ import {
   dropFileRecords,
   resolveRecipe,
 } from '@cossackframework/scaffold';
-import { hostStepsSince, mountedPackages, projectTemplate, versionBelow } from '@cossackframework/framework/package-mounts';
+import { hostFilesSince, hostStepsSince, mountedPackages, projectTemplate, versionBelow } from '@cossackframework/framework/package-mounts';
 import { readPluginState, upgradePlugin } from '@cossackframework/scaffold/plugins';
 import { loadUpgradeScaffold, resolveRegistryVersion } from '../upgrade-scaffold.js';
 import { mergeEjected } from '../eject.js';
@@ -114,8 +114,11 @@ async function upgradeCommandInner(args, ctx) {
         new Error('The project must declare an exact Cossack release (its @cossackframework/framework dependency, or cossack.template) before its dependencies can be planned.'),
         { code: 'COSSACK_UPGRADE_BASELINE_MISSING' });
       original = declared === target.version ? target : await loadUpgradeScaffold(declared);
-      const prior = await original.api.renderRecipe(recipeFromManifest(record, original.api.resolveRecipe), { projectName });
-      rendered = await target.api.renderRecipe(recipeFromManifest(record, target.api.resolveRecipe), { projectName });
+      // The declared release reads the recipe itself: this release's reading fills in its own
+      // defaults (a CMS project's database became romedb in 0.9.3), which an older release refuses.
+      const baseline = original === target ? record : await ownReading(original.api, root) ?? record;
+      const prior = await renderRelease(original, baseline, projectName);
+      rendered = await renderRelease(target, record, projectName);
       for (const rel of rendered.keys()) if (!safeRelative(rel)) throw Object.assign(new Error('Target scaffold contains an invalid relative path.'),
         { code: 'COSSACK_UPGRADE_TEMPLATE_INVALID' });
       merged = planDependencyChanges(projectPkg, JSON.parse(rendered.get('package.json').content.toString()),
@@ -247,17 +250,30 @@ async function upgradeCommandInner(args, ctx) {
         try { mounted = mountedPackages(root); } catch (error) { ctx.out.warn(error.message); }
         const template = projectTemplate(root).version;
         for (const entry of mounted) {
-          for (const module of entry.host) {
-            const relative = `src/${module}`;
+          const behind = versionBelow(template, entry.hostTemplate);
+          // The files a newer template adds come first, so a folder the project lacks is written
+          // whole before a host module goes into it. A folder the project has is its own.
+          const wanted = [];
+          if (behind) for (const file of hostFilesSince(entry, template)) {
+            if (!file.endsWith('/')) wanted.push(file);
+            else if (!await fs.access(path.join(root, file)).then(() => true, () => false)) {
+              wanted.push(...[...rendered.keys()].filter(relative => relative.startsWith(file)).sort());
+            }
+          }
+          wanted.push(...entry.host.map(module => `src/${module}`));
+          const written = [];
+          for (const relative of new Set(wanted)) {
             if (!rendered.has(relative) || await hashFile(path.join(root, relative)) !== null) continue;
+            await assertOwnedPath(root, relative);
             await fs.mkdir(path.dirname(path.join(root, relative)), { recursive: true });
             await fs.writeFile(path.join(root, relative), rendered.get(relative).content);
             applied.files.push(relative);
+            written.push(relative);
             ctx.out.file('created', path.join(root, relative));
           }
-          if (!versionBelow(template, entry.hostTemplate)) continue;
+          if (!behind) continue;
           const steps = hostStepsSince(entry, template);
-          applied.hostSteps.push({ package: entry.name, version: entry.version, template: entry.hostTemplate, steps });
+          applied.hostSteps.push({ package: entry.name, version: entry.version, template: entry.hostTemplate, steps, files: written });
           ctx.out.warn(`${entry.name} ${entry.version} needs changes in this project's own files (template ${entry.hostTemplate}; the project is at ${template}):`);
           for (const step of steps) ctx.out.warn(`  - ${step}`);
           if (!steps.length) ctx.out.warn(`  See the release notes of ${entry.name} ${entry.hostTemplate}.`);
@@ -339,6 +355,24 @@ async function runInstall(pm, cwd) {
   } catch (err) {
     throw Object.assign(new Error(`Dependency installation with ${pm} failed.`),
       { code: 'COSSACK_UPGRADE_INSTALL_FAILED' });
+  }
+}
+
+/** A release's own reading of the project's recipe, or null when it has none to give. */
+async function ownReading(api, root) {
+  if (typeof api.readManifest !== 'function') return null;
+  try {
+    const found = await api.readManifest(root);
+    return Array.isArray(found?.explicitFeatures ?? found?.resolvedFeatures) ? found : null;
+  } catch { return null; }
+}
+
+/** What a release renders for the recipe; a refusal names the release. */
+async function renderRelease(release, manifest, projectName) {
+  try { return await release.api.renderRecipe(recipeFromManifest(manifest, release.api.resolveRecipe), { projectName }); }
+  catch (error) {
+    throw Object.assign(new Error(`Cossack ${release.version} cannot render this project's recipe: ${error.message}`),
+      { code: 'COSSACK_UPGRADE_RECIPE_REFUSED' });
   }
 }
 

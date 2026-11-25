@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { hostContractProblems, hostStepsSince, mountedPackages, PackageMountError, projectTemplate, rewriteServedImports } from '../src/package-mounts';
+import { hostContractProblems, hostFilesSince, hostStepsSince, mountedPackages, PackageMountError, projectTemplate, rewriteServedImports } from '../src/package-mounts';
 import { listPlugins, overrideReport, pluginLocations, readRenderedPlugins, scanPageSources } from '../src/plugin-sources';
 import { discoverConfigSources, generateConfigTypes } from '../src/config-codegen';
 import { discoverRoutes, renderRouteSource } from '../src/route-codegen';
@@ -355,6 +355,14 @@ describe('mounted packages', () => {
     expect(projectTemplate(root)).toEqual({ version: '0.9.3', recorded: 'package' });
     write(root, { 'package.json': JSON.stringify({ name: 'app', cossack: { packages: ['@acme/kit'], template: '0.10.0' } }) });
     expect(hostContractProblems(root)).toEqual([]);
+  });
+
+  it('names the files a newer template adds, from the project root, and ignores unsafe paths', () => {
+    const { root, kit } = project();
+    write(kit, { 'package.json': JSON.stringify({ name: '@acme/kit', version: '1.4.0', cossack: { ...field,
+      hostFiles: { '0.10.0': ['orm.config.ts', 'src/models/'], '0.9.5': ['src/models/', 'src/seeders/'], '0.9.0': ['src/old.ts'], '0.9.9': ['../outside.ts'] } } }) });
+    expect(hostFilesSince(mountedPackages(root)[0]!, '0.9.3')).toEqual(['src/models/', 'src/seeders/', 'orm.config.ts']);
+    expect(hostFilesSince(mountedPackages(root)[0]!, '0.10.0')).toEqual([]);
   });
 
   it('fails the build on a broken host contract and prints overrides once', async () => {

@@ -794,12 +794,13 @@ See [typed URLs](./routing.md#typed-urls) for imports, parameters, and existing-
 
 ### `cossack typecheck`
 
-Write the generated types, then run the project's TypeScript compiler with `--noEmit`. A project's `typecheck` script is this command.
+Check the files the mounted packages need, write the generated types, then run the project's TypeScript compiler with `--noEmit`. A project's `typecheck` script is this command.
 
-1. Cloudflare projects: `wrangler types`, which writes `worker-configuration.d.ts` from `wrangler.jsonc`.
-2. `.cossack/routes.ts`: the typed URLs of the project's pages and of the pages a mounted package serves.
-3. `.cossack/config.d.ts`: the keys and types of `config()`.
-4. `tsc --noEmit`.
+1. The mounted packages' host files and template. A project behind a package's template stops here with `COSSACK_PACKAGE_HOST_OUTDATED` and the package's steps, as the build does, rather than with the type errors they cause.
+2. Cloudflare projects: `wrangler types`, which writes `worker-configuration.d.ts` from `wrangler.jsonc`.
+3. `.cossack/routes.ts`: the typed URLs of the project's pages and of the pages a mounted package serves.
+4. `.cossack/config.d.ts`: the keys and types of `config()`.
+5. `tsc --noEmit`.
 
 A clean checkout has none of the generated files, and the command needs no build to write them. When a release adds a generated file, the command writes it: the project's script does not change.
 
@@ -852,8 +853,8 @@ What it does, in order:
 1. **Dependencies.** The versions the recipe owns follow the release, with additions, removals and moves between dependency sections. What the recipe owns is what the release your project declares renders for it; local pins, dependencies you deleted and packages you added stay, and the plan lists them. A project without a recipe (`package.json#cossack.features`) gets only its Cossack packages moved.
 2. **`pnpm-workspace.yaml`.** The release's keys (build approvals, overrides) go over the file; your own stay. A file with nothing to add keeps its text.
 3. **The install.**
-4. **Host modules.** A module a mounted package needs and the project lacks (`cossack.host`) is written. An existing file is never replaced.
-5. **Host steps.** When a package needs a change in one of your files, the upgrade lists it (`cossack.hostSteps`). The build then stops with `COSSACK_PACKAGE_HOST_OUTDATED` and the same list until you make the change and set `cossack.template` in `package.json` to the version the message names.
+4. **Host modules.** A module a mounted package needs and the project lacks (`cossack.host`) is written, and so is a file a newer template adds (`cossack.hostFiles`): a folder only when the project has none. An existing file is never replaced.
+5. **Host steps.** When a package needs a change in one of your files, the upgrade lists it (`cossack.hostSteps`). The build and `cossack typecheck` then stop with `COSSACK_PACKAGE_HOST_OUTDATED` and the same list until you make the change and set `cossack.template` in `package.json` to the version the message names.
 6. **Ejected copies and plugins.** The package's new text is merged into each file copied with `cossack eject`, and each plugin that came from an npm package is rendered again from its installed version. A plugin rendered from a folder or a tarball is skipped: run `cossack plugins upgrade <name> --source <new source>` for it.
 
 A copy whose merge conflicts is kept as it is and listed. To resolve it, edit the file by hand, or run `cossack upgrade --conflicts=markers` and edit between the markers:
