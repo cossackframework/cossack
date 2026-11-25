@@ -2436,7 +2436,8 @@ async function promptCreationOptions(options, previous = {}, startAtLast = false
     options.database === undefined && {
       type: 'select', name: 'database', message: 'Database provider',
       choices: (answers) => databaseChoices(recipeFor(answers).adapter),
-      when: (answers) => recipeFor(answers).resolvedFeatures.includes('database'),
+      // A CMS project's database is RomeDB: there is nothing to choose.
+      when: (answers) => recipeFor(answers).resolvedFeatures.includes('database') && !recipeFor(answers).resolvedFeatures.includes('cms'),
     },
     options.theme === undefined && {
       type: 'select', name: 'theme', message: 'UI theme',
@@ -2509,6 +2510,13 @@ async function confirmPlan(plan, options, summary = undefined) {
   return result.value === true;
 }
 
+/** A CMS project's database is RomeDB: refuse another one the person named (`--database`). */
+function assertCmsDatabase(recipe, chosen) {
+  if (chosen === undefined || chosen === 'romedb' || !recipe.resolvedFeatures.includes('cms')) return;
+  throw Object.assign(new Error(`The cms feature keeps content and accounts in RomeDB, so it takes no --database ${chosen}. Leave out --database.`),
+    { code: 'COSSACK_CMS_DATABASE' });
+}
+
 export async function createApp(projectName, options = {}) {
   if (!projectName) throw Object.assign(new Error('Please provide a project name'), { code: 'COSSACK_ARGUMENT_MISSING' });
   const nameProblem = projectNameProblem(path.basename(path.resolve(options.cwd ?? process.cwd(), projectName)));
@@ -2520,6 +2528,7 @@ export async function createApp(projectName, options = {}) {
     const prompted = await promptCreationOptions(options, previous, startAtLast);
     const projectDir = path.resolve(prompted.cwd ?? process.cwd(), projectName);
     const recipe = ensureEnvironmentSecrets(resolveRecipe(prompted));
+    assertCmsDatabase(recipe, prompted.database);
     const existing = await fs.stat(projectDir).catch(error => {
       if (error?.code === 'ENOENT') return null;
       throw error;
@@ -3032,8 +3041,9 @@ async function promptAddOptions(
   const nextFeatures = resolveFeatures([
     ...new Set([...current.explicitFeatures, feature]),
   ]);
+  // A CMS project's database is RomeDB: there is nothing to choose.
   const databaseNeeded = !current.resolvedFeatures.includes('database') &&
-    nextFeatures.includes('database');
+    nextFeatures.includes('database') && !nextFeatures.includes('cms');
   const knownRuntime = ADAPTERS.includes(options.runtime)
     ? options.runtime
     : ADAPTERS.includes(options.adapter)
@@ -3190,6 +3200,7 @@ export async function addFeature(projectDir, feature, options = {}) {
       dashboardModules,
     });
     recipe = ensureEnvironmentSecrets(recipe, environment.secrets);
+    assertCmsDatabase(recipe, prompted.database !== current.config.database ? prompted.database : undefined);
     const addedFeatures = recipe.resolvedFeatures.filter(
       (candidate) => !current.resolvedFeatures.includes(candidate),
     );
