@@ -197,7 +197,7 @@ The browser entry of the renderer no longer has `renderToString`: import it from
 typed `(event: InputEvent) => void` no longer checks: type it `(event: Event)` and read
 the value from `event.currentTarget` or `event.target`.
 
-### Changes after 0.9.2
+### Changes in 0.9.3
 
 - A `@Server` method that calls `this.redirect()` completes in the browser with the value it
   returned, not `undefined`. A `!result` check after such a call can go.
@@ -218,3 +218,16 @@ the value from `event.currentTarget` or `event.target`.
   `memberOf` rules: `await repository.canUpdate(record, { principal })`. For lists,
   `readable(records, context)` and `editable(records, context)` give the allowed IDs, and
   `readerView(record, principal)` is `readerViews(records, context)`.
+- Accounts: the account migrations are nine files that create each table whole. They do not
+  apply over a database made from the earlier ones, and nothing converts it: recreate the
+  database (`cossack migration up`, then the seeder or `/auth/setup`).
+- `sessions.kind` holds what a row is (`auth`, `password_reset`, `verify`, `magic`,
+  `oauth_state`, or `data` for the database session store). `sessions.meta` is your own.
+- `meta`, `roles.permissions`, `sessions.data`, `user_security.recovery` and
+  `passkeys.transports` are JSON columns. In raw SQL, bind a JSON value with `sql.json(value)`:
+  on MySQL a bare string never matches a JSON column.
+- CMS: sign-in, accounts, roles and sessions are the dashboard package's, and a network's sites
+  are its tenants. The CMS's own account tables are dropped; make the accounts again through
+  `/auth/setup`.
+- A tenant's own domain with shared sign-in: the main host asks the visitor to confirm before
+  it signs them in there.
