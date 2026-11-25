@@ -2,7 +2,7 @@
 You are TypeScript developer working on Cloudflare Workers and Node.js runtime.
 
 ## Rules
-- Run type checks after code changes: `pnpm tsc --noEmit`
+- Run type checks after code changes: `pnpm typecheck`. It checks each package's `tsconfig.json`; a bare `pnpm tsc --noEmit` at the root checks no file.
 - Create/run tests for new features and bug fixes.
 - This project is a pnpm monorepo, all packages located at `packages` directory.
 - Check `/specs/architecture.md` and other specs for architectural guidelines before making significant changes.
