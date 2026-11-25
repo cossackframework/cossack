@@ -18,11 +18,11 @@ export function validateServerMethodTimeout(value: unknown): number | undefined 
     return validateRpcTimeout(value, 'Server method timeout');
 }
 
-/** The largest JSON response a server method may be given (`maxResponseBytes`): 16 MiB. */
+/** The largest JSON request or response limit a call may be given (`maxRequestBytes`, `maxResponseBytes`): 16 MiB. */
 export const RPC_JSON_RESPONSE_LIMIT_MAX_BYTES = 16 * 1024 * 1024;
 
-/** Validate a server method's or an application's `maxResponseBytes`. */
-export function validateRpcResponseLimit(value: unknown, label = 'maxResponseBytes'): number | undefined {
+/** Validate a byte limit of server method calls: `maxResponseBytes` or `rpc.maxRequestBytes`. */
+export function validateRpcByteLimit(value: unknown, label = 'maxResponseBytes'): number | undefined {
     if (value === undefined) return undefined;
     if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1 || value > RPC_JSON_RESPONSE_LIMIT_MAX_BYTES) {
         throw new RangeError(`[Cossack] ${label} must be an integer from 1 to ${RPC_JSON_RESPONSE_LIMIT_MAX_BYTES} bytes (16 MiB).`);

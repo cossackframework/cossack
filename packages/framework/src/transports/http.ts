@@ -13,21 +13,32 @@ export const RPC_JSON_REQUEST_MAX_BYTES = 1024 * 1024;
 export const RPC_UPLOAD_REQUEST_MAX_BYTES = 32 * 1024 * 1024;
 
 export interface RpcBodyLimits {
-    /** Maximum `/crpc` JSON body bytes. Default: 1 MiB. */
+    /** Maximum `/crpc` JSON body bytes (`rpc.maxRequestBytes`). Default: 1 MiB. */
     jsonBytes?: number;
     /** Maximum `/upload` (multipart or form) body bytes, files included. Default: 32 MiB. */
     uploadBytes?: number;
 }
 
-const tooLarge = () => new RpcError('COSSACK_RPC_REQUEST_TOO_LARGE', 'RPC request body is too large.', { status: 413 });
+/**
+ * A call over its request limit. The server stops reading at the limit, so `bytes` is known
+ * only when the request declared its length; the browser adds what it sent and why.
+ */
+export class RpcRequestTooLarge extends RpcError {
+    constructor(readonly limitBytes: number, readonly option: string, readonly bytes?: number) {
+        super('COSSACK_RPC_REQUEST_TOO_LARGE',
+            `The request${bytes === undefined ? '' : ` of ${bytes} bytes`} is over the ${limitBytes}-byte limit of server method calls (${option}).`,
+            { status: 413 });
+    }
+}
 
-async function readBody(c: Context, limit: number): Promise<Uint8Array<ArrayBuffer>> {
+async function readBody(c: Context, limit: number, option: string): Promise<Uint8Array<ArrayBuffer>> {
     const body = c.req.raw.body;
     if (declaredLengthExceeds(c.req.raw.headers, limit)) {
         void body?.cancel().catch(() => {});
-        throw tooLarge();
+        const declared = Number(c.req.raw.headers.get('Content-Length'));
+        throw new RpcRequestTooLarge(limit, option, Number.isSafeInteger(declared) ? declared : undefined);
     }
-    return body ? readBoundedBody(body, limit, tooLarge) : new Uint8Array();
+    return body ? readBoundedBody(body, limit, () => new RpcRequestTooLarge(limit, option)) : new Uint8Array();
 }
 
 /** Decode once for both transport guards and the shared action dispatcher. */
@@ -37,7 +48,7 @@ export async function readRpcRequest(c: Context, limits: RpcBodyLimits = {}): Pr
     let body: any;
     if (c.req.path === TRANSPORT_ROUTES.upload || c.req.header('Content-Type')?.startsWith('multipart/form-data')) {
         // Buffer at most the limit, then parse the bounded copy (never the raw stream).
-        const bytes = await readBody(c, limits.uploadBytes ?? RPC_UPLOAD_REQUEST_MAX_BYTES);
+        const bytes = await readBody(c, limits.uploadBytes ?? RPC_UPLOAD_REQUEST_MAX_BYTES, 'rpc.maxUploadBytes');
         const headers = new Headers(c.req.raw.headers);
         headers.delete('Content-Length');
         const fields = await parseBody(new Request(c.req.url, { method: 'POST', headers, body: bytes }), { all: true });
@@ -72,7 +83,7 @@ export async function readRpcRequest(c: Context, limits: RpcBodyLimits = {}): Pr
         };
         body.payload = restore(body.payload, 'payload', 0);
     } else {
-        const bytes = await readBody(c, limits.jsonBytes ?? RPC_JSON_REQUEST_MAX_BYTES);
+        const bytes = await readBody(c, limits.jsonBytes ?? RPC_JSON_REQUEST_MAX_BYTES, 'rpc.maxRequestBytes');
         body = JSON.parse(new TextDecoder().decode(bytes));
     }
     if (!body || typeof body !== 'object' || Array.isArray(body)) invalid('(root)');
