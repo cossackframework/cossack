@@ -35,7 +35,7 @@ engine, the next CMS release moves to it and documents the upgrade.
 - Plugins declare schema as data. The CMS plans additive DDL from the live catalog. Renames, backfills, and tightened constraints are explicit steps.
 - One Cloud organization per customer. Provisioning, migration, and release state machines run on Cossack Workflows.
 - RomeDB Cloud has no per-database request limit. Fairness is per-organization admission. Cost is rows read and written.
-- The renderer stays `html` templates with `component()`. Its diagnostics, component tags, and the `cossack specs` app model are the [renderer improvements plan](plan-renderer-improvements.md), a prerequisite of stage 2.
+- The renderer stays `html` templates with `component()`. Its diagnostics, component tags, and the `cossack specs` app model (`typescript-plugin`, `cossack specs`) are a prerequisite of stage 2.
 
 ## RomeDB capabilities
 
@@ -306,6 +306,8 @@ Platform contract. The Platform calls only published interfaces:
 | Ship a site design | A plugin with a manifest `theme` field and `templates/` files (or a `ui.ts` `theme` export); `cms.activateTheme()`, `cms.menus` |
 
 ## Sources
+
+RomeDB and RomeDB Cloud links point into the sibling RomeDB repository (`../../romedb/`, checked out elsewhere, for example `~/Sites/fastdb`); they do not resolve inside this repository.
 
 - Cossack: [architecture](architecture.md), [service providers decision](service-providers.md), [cache](cache.md), [SSE](sse.md), [auth sessions](../packages/auth/src/sessions.ts), [framework sessions](../packages/framework/src/session.ts), [SQL job ledger](../packages/core/src/jobs/sql-store.ts), [security transform](../packages/framework/src/vite-security-plugin.ts), [page globs](../packages/framework/src/vite-plugin.ts), [route discovery](../packages/framework/src/route-codegen.ts), [installed packages](../packages/cossack/src/installed-packages.js), and [scaffold registry](../packages/scaffold/src/registry.js).
 - RomeDB: [status](../../romedb/RomeDB.md), [RomeQL](../../romedb/RomeQL.md), [2.6.0](../../romedb/turso/romedb/docs/release-2.6.0.md), [2.7.0](../../romedb/turso/romedb/docs/release-2.7.0.md), [2.8.0](../../romedb/turso/romedb/docs/release-2.8.0.md), [service protocol](../../romedb/turso/romedb/docs/service-protocol.md), [service README](../../romedb/turso/romedb/service/README.md), [client types](../../romedb/turso/romedb/bindings/node/client.d.ts), [deployment](../../romedb/turso/romedb/docs/deployment.md), [language and filtered search](../../romedb/turso/romedb/docs/v2.2-language.md), [graph](../../romedb/turso/romedb/docs/graph.md), and [migrations](../../romedb/turso/romedb/docs/migrations.md).

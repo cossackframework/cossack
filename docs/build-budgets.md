@@ -24,16 +24,14 @@ second deployment invocation. Without budgets, normal commands keep their
 current measurement behavior. These settings require Cloudflare
 artifacts. They do not govern Node builds.
 
-New Cloudflare projects include this plugin. For an existing project, add it after
-`cloudflare()` to enforce budgets through direct `vite build`:
+`cossackApp()` adds the `cossackBuildBudgets()` plugin to every Cloudflare project, so a
+direct `vite build` enforces the budgets too. Pass the plugin's options (`environment`,
+`configPath`) through `budgets`:
 
 ```ts
-import { cloudflare } from '@cloudflare/vite-plugin';
-import { cossackBuildBudgets } from '@cossackframework/framework/vite-plugin';
+import { cossackApp } from 'cossack/vite';
 
-export default {
-  plugins: [cloudflare(), cossackBuildBudgets()],
-};
+export default cossackApp({ budgets: { environment: 'staging' } });
 ```
 
 The plugin measures the primary deployment Worker after Cloudflare's application

@@ -217,7 +217,7 @@ configuration, the per-runtime glue, and any file it chose to override.
    an entry slug `pricing`.
 5. Docs: `docs/cms/index.md` (what the project holds, how it updates),
    `themes.md` (child theme first), `api.md`, `collaboration.md`, `cossack-cli.md`
-   (`add cms`), and `packages/cms/app/README` for contributors.
+   (`add cms`), and `packages/cms/app/README.md` for contributors.
 6. Projects that hold a copied CMS are not migrated; gif84 is rebuilt as a new
    project (`specs/upgrade-merges.md`).
 

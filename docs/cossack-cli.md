@@ -271,6 +271,21 @@ lists hints, such as a `component()` call that can be a component tag; JSON
 reports hints with `info` severity. The Vite build runs the same check. See
 [Template checks](/docs/template.md#template-checks).
 
+### `cossack inspect` and `cossack check`: providers, workflows, schedules
+
+```sh
+cossack inspect providers --env staging --json
+cossack check workflows
+cossack check schedules --env production
+```
+
+`providers` reports the declared cache and rate limiter backends: units, locality,
+persistence, consistency and supported operations; `check providers` fails on invalid
+requirements, binding names or limiter selection. `workflows` and `schedules` read the
+static manifests of [workflows](/docs/workflows.md) and [schedules](/docs/schedules.md).
+Modules are never executed, so dynamic configuration stays unknown. See
+[Cache](/docs/cache.md) and [Rate Limiting](/docs/rate-limiting.md).
+
 ### `cossack deploy`
 
 Build and deploy a Cloudflare application with the project's installed tools:
@@ -288,6 +303,30 @@ generated types. They test deployment without uploading or provisioning.
 `--json` emits one versioned result with diagnostics and step results. Raw tool
 output is suppressed. Required remote secrets are not tested during a local
 dry run. See [Deployment](./deployment.md) for environment and secret setup.
+
+### `cossack preview`
+
+```sh
+cossack preview create --account <ID> --name pr-42 [--secrets-file staging.json] [--dry-run]
+cossack preview inspect --account <ID>
+cossack preview cleanup --account <ID>
+```
+
+Deploys a Cloudflare preview with staging bindings after the production build gate,
+records what it created in `.cossack/preview.json`, and later inspects or removes it.
+Cleanup never deletes storage bound from outside. See
+[Cloudflare Previews](/docs/cloudflare-previews.md).
+
+### `cossack resources <plan|apply>`
+
+```sh
+cossack resources plan --account <ID> --env staging
+cossack resources apply --account <ID> --select resources.json --verify
+```
+
+Plans which Cloudflare bindings the project still needs and writes chosen existing
+resources into `wrangler.jsonc`. It never creates or deletes cloud resources. See
+[Cloudflare Resources](/docs/cloudflare-resources.md).
 
 ### `cossack adapter <node|cloudflare>`
 
@@ -565,7 +604,7 @@ Options:
 | --- | --- |
 | `--auth-methods <methods>` | `credentials`, `oauth`, or both. |
 | `--oauth <providers>` | OAuth providers: `github`, `google`, `gitlab`, `facebook`, `microsoft`. |
-| `--database <d1\|sqlite\|turso>` | Database provider, validated against the runtime. |
+| `--database <d1\|sqlite\|turso\|postgres\|mysql\|hyperdrive-postgres\|hyperdrive-mysql\|romedb>` | Database provider, validated against the runtime. |
 
 #### `cossack add dashboard`
 
@@ -614,6 +653,20 @@ cossack remove database --dry-run
 See [Authentication](/docs/authentication.md) and [Social Login](/docs/oauth.md) for the concepts these files implement.
 
 ---
+
+### `cossack plugins <list|check|upgrade|remove> [name]`
+
+Manages plugins rendered into `src/plugins/<name>/` (render one with
+`cossack add plugin <directory|tarball|npm-package>`).
+
+- `list`: rendered plugins, installed plugin packages not rendered yet, and where each runs.
+- `check [name]`: the policy lints that builds with the CMS also run.
+- `upgrade <name>`: re-renders from the recorded source or `--source`. Edited files are kept;
+  an edited file that also changed upstream is a conflict unless you pass `--force`.
+  `--in-app` keeps the plugin in the application on Cloudflare.
+- `remove <name>`: deletes the plugin's unedited files.
+
+See [Plugins](/docs/cms/plugins.md#commands).
 
 ## CMS management
 
@@ -791,6 +844,41 @@ Routes that a mounted package serves are listed with the package's name after th
 Markdown requires a recorded scaffold feature or explicit `--markdown` selection.
 For a custom processor, configure the same feature in Vite.
 See [typed URLs](./routing.md#typed-urls) for imports, parameters, and existing-project setup.
+
+### `cossack config`
+
+Lists the project's configuration factories without running them. `--check --env <name>`
+validates their declared requirements against the selected Wrangler variables and
+bindings; `--generate` writes `.cossack/config.d.ts`. See [Configuration](/docs/config.md).
+
+### `cossack schema <pull|diff|check>`
+
+Compares the database with the ORM models in `orm.config.ts`. `pull` writes models from the
+database (`--output`, `--force`), `diff` prints the differences and `check` fails when they
+differ. `--remote` reads the remote database; `--allow-destructive` accepts drops. See
+[Migrations](/docs/migrations.md).
+
+### `cossack studio`
+
+Opens Studio, a database inspector on a loopback port, with the project's `orm.config.ts`.
+See [Studio](/docs/studio.md).
+
+### `cossack docs`
+
+Reads the installed packages' exports, the CLI command schemas and agent guidance offline.
+`--package <name> --symbols` indexes a package's declarations; `--symbol <name>` returns one.
+See [Local agent tools](/docs/local-agent-tools.md).
+
+### `cossack traces`
+
+Reads the browser snapshots saved by the opt-in development bridge, the latest by default
+(`--session <uuid>` for another). See [Development traces](/docs/development-traces.md).
+
+### `cossack test-results`
+
+Reads the reports `cossack/vitest-reporter` writes to `.vitest/cossack`, the latest run by
+default (`--run <uuid>` for another). It succeeds when the report can be read, even if tests
+failed. See [Stored test results](/docs/test-results.md).
 
 ### `cossack typecheck`
 

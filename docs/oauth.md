@@ -136,7 +136,7 @@ import { createOAuth } from '@cossackframework/auth';
 
 export const oauth = createOAuth({
     stateStore: oauthStateStore, // application-owned atomic create/consume callbacks
-    secret: env.OAUTH_STATE_SECRET, // ⚠️ at least 16 chars; use a 32-byte random value
+    secret: env.OAUTH_SECRET, // ⚠️ at least 16 chars; use a 32-byte random value
     providers: {
         github: {
             clientId: env.GITHUB_CLIENT_ID,
@@ -373,7 +373,7 @@ const discord = defineOAuthProvider({
 
 export const oauth = createOAuth({
     stateStore: oauthStateStore, // application-owned atomic create/consume callbacks
-    secret: env.OAUTH_STATE_SECRET,
+    secret: env.OAUTH_SECRET,
     providers: {
         discord: { clientId: '...', clientSecret: '...', redirectUrl: '/auth/discord/callback' },
     },
@@ -397,7 +397,7 @@ Clearing preserves these flags, including for raw or immutable custom Responses.
 ```ts
 createOAuth({
     stateStore: oauthStateStore, // application-owned atomic create/consume callbacks
-    secret: env.OAUTH_STATE_SECRET,
+    secret: env.OAUTH_SECRET,
     cookie: {
         name: 'my_oauth_state',  // default: 'cossack_oauth_state'
         maxAge: 300,             // seconds; default 600 (10 minutes)
@@ -434,7 +434,7 @@ Use stateless mode only when you cannot use cookies. Keep `cookie.maxAge`
 short. Custom `state` values from the application are rejected.
 
 ```ts
-createOAuth({ secret: env.OAUTH_STATE_SECRET, stateless: true, providers: { /* ... */ } });
+createOAuth({ secret: env.OAUTH_SECRET, stateless: true, providers: { /* ... */ } });
 ```
 
 ## Testing
