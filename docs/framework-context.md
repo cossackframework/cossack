@@ -70,7 +70,7 @@ interface CloudflareBindings {
     DB: D1Database;
     BUCKET: R2Bucket;
     KV: KVNamespace;
-    SESSION_DO: DurableObjectNamespace;
+    COSSACK_OBJECT: DurableObjectNamespace;
     // ... other bindings
 }
 

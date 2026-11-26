@@ -103,14 +103,21 @@ ui = { panel: { open: false, tab: 'details' } };
 togglePanel() { this.ui.panel.open = !this.ui.panel.open; }
 ```
 
-### `@Prop()`
+### Component props
 
-Semantic equivalent to `@ClientState()`. Indicates a component input from a parent. Use in reusable components.
+There is no `@Prop()` decorator. A parent passes props with `component(Child, props)` or a
+component tag (`<${Child} variant="primary">`), and the child reads them from `this.props`.
+Type them with `declare props`:
 
 ```typescript
-@Prop()
-variant: 'primary' | 'secondary' = 'primary';
+@Component()
+export class Badge extends Cossack {
+    declare props: { variant?: 'primary' | 'secondary' };
+    render() { return html`<span class=${this.props.variant ?? 'primary'}>${this.children}</span>`; }
+}
 ```
+
+Props are also assigned onto the instance, so do not name a prop like a method.
 
 ### `@Validate(options?)`
 

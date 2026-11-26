@@ -2,9 +2,7 @@
 
 This document outlines the architecture of the Cossack Framework, how its packages interact, and the lifecycle of a request.
 
-Two plans extend these packages: the [renderer improvements](plan-renderer-improvements.md)
-add template diagnostics, component tags, and a JSON app model to the renderer, and
-the [CMS and app-builder plan](cms-app-builder.md) adds `romedb`, `cms`, core hooks
+The [CMS and app-builder plan](cms-app-builder.md) adds `romedb`, `cms`, core hooks
 and `src/plugins/*/` composition. The app builder itself (Platform) is a separate
 private repository.
 
@@ -17,16 +15,52 @@ The framework is built on a strict separation between the library (`core`, `rend
 - Database (`@cossackframework/database`): The workspace Active Record ORM package owns decorated entities, queries, deterministic migrations/seeders, schema drift tooling, and adapters for all supported Node and Workers providers. `ormMiddleware` owns request factories and scopes downstream work. The Framework package does not depend on the database package. Generated applications compose the packages structurally.
 - Scaffold (`@cossackframework/scaffold`): Node-only recipe engine consumed
  by the `cossack` CLI. It owns base and feature templates,
- preset/provider/module registries, dependency resolution, conflict-safe
- change sets, and schema-v3 scaffold manifests. Creation and later
- `cossack add` operations render the same resolved recipe, so incremental
- composition has the same owned files as equivalent initial onboarding.
+ preset/provider/module registries, dependency resolution and conflict-safe
+ change sets. A project records only its recipe (`package.json#cossack`: runtime,
+ features, packages); no scaffold file is recorded (`readManifest` returns
+ `recordsFiles: false`). `.cossack/scaffold.json` exists only to list copies made by
+ `cossack eject`. `cossack upgrade` changes dependencies and merges only ejected copies
+ and plugins ([upgrade merges](upgrade-merges.md)).
  The pure `/registry` entry owns recipe metadata and its declarations. It does
  not import the Node filesystem API declarations or require Node ambient types.
  The root scaffold entry re-exports those types alongside its Node operations.
  Application runtime packages must not depend on this Node-only package.
 
 This separation keeps the framework core reusable and independent of any single implementation.
+
+## Package map
+
+Libraries never import `framework` or any application. Detailed design lives in the linked specs.
+
+| Package | Role |
+| --- | --- |
+| `core`, `renderer` | Base classes, decorators, RPC, `html` templates (above). |
+| `framework` | The meta framework: routing, entries, Vite security plugin, adapters glue. |
+| `node-adapter` | Node.js runtime adapter (Hono server, Node bindings). |
+| `auth` | Sessions, OAuth, passkeys and auth middleware ([Authentication diagnostic boundary](#authentication-diagnostic-boundary)). |
+| `database` | Active Record ORM and SQL adapters; RomeDB entities through `@cossackframework/romedb/orm` ([romedb-orm](romedb-orm.md)). |
+| `romedb` | RomeDB request bindings with exact write recovery on `@romedb/client`. |
+| `dashboard` | Served sign-in pages and dashboard ([dashboard-package](dashboard-package.md), [tenants](dashboard-tenants.md)). |
+| `cms` | Served CMS on RomeDB, a library plus `packages/cms/app` ([cms-served-app](cms-served-app.md), [cms-package-app](cms-package-app.md), [cms-on-dashboard](cms-on-dashboard.md), [invariants](cms-invariants.md)). |
+| `ui` | shadcn-inspired components ([Native UI contracts](#native-ui-contracts)). |
+| `studio` | Local browser-based database inspector. |
+| `desktop` | Secure Electron runtime ([Desktop runtime boundary](#desktop-runtime-boundary)). |
+| `typescript-plugin` | TS language service plugin: `html` template diagnostics and completions. |
+| `scaffold` | Node-only recipe engine (above). |
+| `cossack` | The CLI; consumes `scaffold`. |
+| `test-utils` | Private repository test helpers. |
+
+**Vite preset.** A project's `vite.config.ts` is `cossackApp()` from `cossack/vite`. A mounted
+package adds its Vite part through the `cossack.vite` field of its `package.json`
+(`docs/vite-plugins.md`).
+
+**Served packages.** A project does not copy dashboard or CMS pages: it lists the packages in
+`package.json#cossack.packages` and the framework mounts their routes ([package-routes](package-routes.md)).
+Served code reaches the project only through `@/` imports the package names in `cossack.host`.
+
+**Shell sync.** The sign-in and dashboard shell sources live in `packages/dashboard/app/src`.
+`pnpm sync` copies them into the dashboard development app and into `packages/cms/app`, which
+ships its copy with the CMS package. Edit the dashboard source, never the copies.
 
 Portable failure metadata lives at `@cossackframework/core/server-diagnostics`.
 Core and runtime adapters share fixed events without importing framework,

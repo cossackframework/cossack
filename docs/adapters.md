@@ -120,8 +120,8 @@ unmatched socket.
 
 ### Development with Vite
 
-Add `cossackNode()` from `@cossackframework/node-adapter/vite` to the Vite
-plugins. It serves the exported `app` from `/src/index.ts` and passes only `/ws/`
+`cossackApp()` adds `cossackNode()` from `@cossackframework/node-adapter/vite`
+to a Node project; pass its options as `cossackApp({ node: { ... } })`. It serves the exported `app` from `/src/index.ts` and passes only `/ws/`
 upgrades to the exported runtime. Vite keeps its own HMR WebSocket, and the
 runtime never sees HMR upgrades, whatever `destroyUnmatchedUpgrades` is set to.
 

@@ -105,11 +105,15 @@ dashboard shows when a version is available and can ask your pipeline to run the
   agent with `cossack cms`, the API under `/api/cms`, and the MCP server every site serves.
 - [Cache](/docs/cms/cache.md): what the site tells the caches in front of it, how changes
   purge Cloudflare or another CDN, and the Cache tool.
+- [Automations](/docs/cms/automations.md): emails sent when an entry is published, a form is
+  submitted or a payment completes, their bindings, and whose permissions they run with.
+- [Health and traffic](/docs/cms/health.md): the Health page's findings, crawler visits,
+  missing pages and how long they are kept.
 
-Tools under the dashboard's Tools menu: Health (search and answer engines, crawler visits, 404s),
+Tools under the dashboard's Tools menu: [Health](/docs/cms/health.md) (search and answer engines, crawler visits, 404s),
 Links, Redirects, Webhooks, Schema, Export, Cache, Jobs (the outbox: what waits, what failed for
 good, plugin schedules), Activity (the audit trail of writes), Find and replace (a phrase across
-a collection, previewed first) and Automations (when an entry is published, a form is submitted or
+a collection, previewed first) and [Automations](/docs/cms/automations.md) (when an entry is published, a form is submitted or
 a payment completes, send an email whose text binds `{{ $.title }}`, `{{ $site.title }}` and `{{ $user.name }}` as content does; Webhooks post the same events, including `payment.completed`, to a URL). Content → Calendar lists the month's published
 and scheduled entries. An entry's **Unpublish on** time takes it back to draft then, as its
 publish time publishes it (`runSchedule()`, which the maintenance run calls each minute).

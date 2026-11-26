@@ -94,7 +94,9 @@ mutations, redirects, session/flash writes, broadcasts, and client actions. See
 | Redirect | `this.redirect(url)` | Client-intercepted as soft SPA navigation |
 | Set `<head>` metadata / SEO / OG | `head(context)` returning `HeadValue` | `description`/`image` auto-expand to OG/Twitter |
 | Handle errors / 404 | `error/index.ts` and `404/index.ts` near the route | Hierarchical boundaries; see `references/errors.md` |
-| Add auth | `cossack add auth` (scaffolds it all) → `createAuth()` + `auth.middleware` from `@cossackframework/auth` | No hand-rolled session checks; see `references/auth.md` |
+| Add auth | `cossack add auth` mounts `@cossackframework/dashboard` (served sign-in pages; project keeps `src/dashboard.config.ts` and its schema) | No hand-rolled sessions or login pages; see `references/auth.md`, `references/dashboard-cms.md` |
+| Add a dashboard, CMS or tenants | `cossack add dashboard --features …`, `cossack add cms`, `tenants` in `src/dashboard.config.ts` | Served from packages; see `references/dashboard-cms.md` |
+| Upgrade, eject, type-check, Vite config | `cossack upgrade`, `cossack eject`, `cossack typecheck`, `cossackApp()` | See `references/project-upkeep.md` |
 | Add a native desktop target | `cossack add desktop` with any web adapter | Keep routes shared; normal server methods run in the Electron main process through local RPC; see `references/desktop.md` |
 | Real-time state sync | `@Page({ transport: 'sse' \| 'durable-object' })` + `channels`/`scope` | Default to `sse`; see `references/realtime.md` |
 | Broadcast a stateless event | `@Server() broadcastEvent(name)` + `@OnEvent(name)` | |
@@ -270,9 +272,11 @@ for each.
 - `references/reactive-store.md` — `createStore()` / `connectStore()` for global reactive state, the imperative-API pattern (e.g. `toast`)
 - `references/ui.md` — `@cossackframework/ui` components, theming, icons, ejecting; focus-management helpers (`focusTrap`/`focusNext`/…)
 - `references/loading.md` — the four loading mechanisms (`loading.ts`, `loadingTemplate()`, `this.loading`, `clientInit()`)
-- `references/database.md` — decorated entities, Active Record queries, scoped SQL, providers
+- `references/database.md` — providers, entities, queries, migrations, schema, Studio, RomeDB
 - `references/cache.md` — `cache` facade, `remember()`, stores, KV recommendation
 - `references/realtime.md` — SSE vs Durable Object transports, scope, channels, streaming, event-driven re-fetch
-- `references/auth.md` — `cossack add auth` scaffold, `createAuth()` flow, the session/PBKDF2 module, guards, `this.user`
+- `references/auth.md` — `cossack add auth` (dashboard mount), hand-wired `createAuth()`, guards, `this.user`
+- `references/dashboard-cms.md` — `src/dashboard.config.ts`, dashboard modules, the CMS, `cossack cms`, tenants
+- `references/project-upkeep.md` — `cossack upgrade`, `cossack eject`, `cossack typecheck`, `cossackApp()` and `cossack.vite`
 - `references/desktop.md` — independent Electron target, shared routes, automatic local server RPC, secure native APIs, persistence, and Forge packaging
 - `references/errors.md` — `404/index.ts` and `error/index.ts` hierarchical boundaries

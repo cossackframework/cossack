@@ -52,6 +52,14 @@ export const view = () => html\`<div />\`;
   await expect(buildProject(broken, false)).resolves.toBeDefined();
 }, 120_000);
 
+it('starts its worker without the options of an inline script', async () => {
+  const { workerExecArgv } = await import('../src/vite-template-diagnostics.ts');
+  // `node --input-type=module -e "<script>"`, as a test starts a development server.
+  expect(workerExecArgv(['--input-type=module', '-e', 'await server.listen()', '--max-old-space-size=4096'])).toEqual(['--max-old-space-size=4096']);
+  expect(workerExecArgv(['--eval=1', '--print', '2', '--conditions=development'])).toEqual(['--conditions=development']);
+  expect(workerExecArgv([])).toEqual([]);
+});
+
 it('reports development diagnostics as files change, and when they clear', async () => {
   const { startDevelopmentTemplateChecks } = await import('../src/vite-template-diagnostics.ts');
   const root = await project(`import { html } from '@cossackframework/renderer';
