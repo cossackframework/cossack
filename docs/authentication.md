@@ -19,7 +19,31 @@ You provide an auth provider. The library returns an auth kit.
 
 > `createAuth()` returns a kit object. Access `createLoginHandler` and `createSession` as `auth.createLoginHandler(...)` and `auth.createSession(...)`.
 
-> Run `cossack add auth` to generate a complete, working session-auth setup in your project. The setup includes PBKDF2 hashing, login/register/forgot-password/reset-password pages, a session middleware, a guard, and the `send_email` wiring for password resets.
+> Run `cossack add auth` to add a complete, working session-auth setup to your project. `@cossackframework/dashboard` serves the sign-in pages (login, register, forgot/reset password, two-step sign-in, OAuth callbacks), the session middleware, the guard and the dashboard. The project keeps `src/dashboard.config.ts` and the schema (`src/models`, `src/migrations`, `src/seeders`). On Cloudflare the recipe adds the `send_email` binding `EMAIL` for password resets and email verification.
+
+## Sign-in settings
+
+`src/dashboard.config.ts` exports `dashboard: DashboardConfig` (a type from
+`@cossackframework/dashboard`). The served pages read it:
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `authMethods` | `['credentials']` | `'credentials'` (email and password) and/or `'oauth'`. |
+| `oauth` | `[]` | `github`, `google`, `gitlab`, `facebook`, `microsoft`. See [OAuth](./oauth.md). |
+| `modules` | every module | `users`, `sessions`, `settings`, `roles`. A page of a module that is not listed answers 404. |
+| `dashboard` | `true` | `false` keeps sign-in without `/dashboard`. |
+| `redirectAfterLogin` | `/dashboard` (`/` without a dashboard) | `AUTH_REDIRECT_AFTER_LOGIN` replaces it. `AUTH_REDIRECT_AFTER_LOGOUT` defaults to `/auth/login`. |
+| `navigation` | none | Links to the project's own dashboard screens. |
+| `registration` | `{ open: true, verifyEmail: false, approve: false }` | `open` allows `/auth/register`; `verifyEmail` needs the `EMAIL` sender and `APP_URL`; `approve` holds new accounts for an administrator; `defaultRole` names a role for new accounts. |
+| `security` | `{ requireTwoFactor: false }` | `requireTwoFactor` requires an authenticator app or a passkey, for every user or only the roles in `twoFactorRoles`. |
+| `tenants` | off | See [Tenants](./tenants.md). |
+
+Read the values through `config('auth.redirectAfterLogin')` and
+`config('auth.redirectAfterLogout')`. With `SETUP_CODE` set and no administrator
+account, `/auth/login` sends visitors to `/auth/setup`, which creates the `admin`
+role and the first account with that code. Without `SETUP_CODE`, the seeder
+creates the first account from `ADMIN_EMAIL` and `ADMIN_PASSWORD` (defaults
+`admin@example.com` and `change-me-now`).
 
 The generated application uses the shared password, credential and session APIs.
 Read [credential and session primitives](./auth-primitives.md) for typed storage
@@ -215,8 +239,9 @@ nothing changed. Do not automatically repeat a mutation based on that assumption
 
 ### Alternative: Login via a Hono Route
 
-For a raw endpoint, for example for an API consumer, use `auth.createLoginHandler(...)` and mount it in `src/index.ts`:
-
+For a raw endpoint, for example for an API consumer, use `auth.createLoginHandler(...)` and mount it in `src/index.ts` (example below).
+`validateCredentials` returns the user, `null` (401) or a `Response` to send
+instead, such as a request for a second-factor code.
 
 The handler uses the provider's `createSession` when omitted. Pass a per-handler
 `createSession` to override it. If neither is configured, the handler returns
@@ -232,6 +257,7 @@ login CSRF, where another site signs the browser in to an attacker's account:
 | `Content-Type` is `application/json` (parameters such as `charset` are allowed) | 415 |
 | The body is valid JSON | 400 |
 | The JSON body is an object | 400 |
+| The body is at most 64 KiB | 413 |
 
 A cross-site HTML form cannot send `application/json` without a CORS preflight.
 Send credentials with `fetch()` and `Content-Type: application/json`. Clients on
@@ -301,7 +327,8 @@ shared caches do not store personalized HTML.
 
 ## Generated token boundaries
 
-The auth recipe stores login sessions and password-reset tokens in one table.
-It accepts only rows with `meta.type === 'auth'` for login, and only
-`meta.type === 'password_reset'` for password reset. A reset consumes the token
+The auth recipe stores login sessions and one-use tokens in the `sessions`
+table. Its `kind` column names the purpose (`auth`, `password_reset`, `verify`,
+`magic`, `oauth_state`, `data`). Login accepts only `kind = 'auth'` rows, and
+password reset only `kind = 'password_reset'` rows. A reset consumes the token
 once and revokes the user's existing sessions.

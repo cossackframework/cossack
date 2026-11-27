@@ -334,7 +334,7 @@ and its registry rows. The main site cannot be archived or deleted.
 ## Creating a site in code
 
 ```ts
-import { networkFor } from './cms/index';
+import { networkFor } from '@cossackframework/cms/app/cms/index';
 
 const network = networkFor(env);
 const site = await network.createSite(

@@ -16,7 +16,7 @@ values inside text. Both use `{{ }}`:
 {{ block core/button label="Buy {{ $.title }}" url="/" /}} a value in an attribute
 {{ block core/button url="/" }}Price is {{ $.price }}{{ /block }}
 {{ block core/group }} …blocks and text… {{ /block }}      a container and its children
-{{ pattern hero /}}                                        a synced pattern, by slug
+{{ pattern hero /}}                                        a synced pattern, by ID or title slug
 \{{ … }}                                                   written as is
 ```
 
@@ -102,11 +102,13 @@ field that a reference's body fills:
 
 These core blocks can be referenced:
 
-- Text: Paragraph, Heading, Quote and Quick answer. Their body is their text.
-- Button. Its body is its label.
-- Media: Image, Gallery, Video, Audio, Video embed and Card.
+- Text: Paragraph, Heading, Quote, Quick answer, Notice and an Icon list item. Their body is
+  their text.
+- Button and Stat. Their body is their label. Pricing plan: its body is its name.
+- Testimonial. Its body is its quote.
+- Media: Image, Gallery, Video, Audio, File, Embed, Map and Card.
 - Layout: Divider, Group, Columns, Column and Grid.
-- Latest entries.
+- Widgets: Latest entries, Site logo, Navigation, Search, Language switcher and Breadcrumbs.
 
 ## In code
 

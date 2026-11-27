@@ -304,6 +304,8 @@ The `@VisibleTask` decorator marks a method to run only on the client when the c
 - `threshold`: a number between 0 and 1. It is the percentage of visibility required to trigger the task (default: 0).
 - `selector`: an optional CSS selector string. It targets a specific element within the component. If omitted, the framework observes the component's root container.
 
+The method receives the element that became visible and its `IntersectionObserverEntry`. It runs once per observed element. With `'document-ready'` it runs once on mount with `null, null`. The intersection strategy needs the component's own container: nested `component()` children and pages composed into the App have none, so the task is not set up there (a development warning says so). Use `'document-ready'` or observe an element from `onMount()` in those components.
+
 ### Auto-Refresh on Navigation
 
 With a `selector`, `@VisibleTask` also observes new elements that match the selector after each SPA navigation. If your component renders new elements matching the selector during navigation to a new page, the visible task fires for those elements without extra configuration.
@@ -343,7 +345,7 @@ Cossack components have three lifecycle hooks you can override. They run only on
 Runs once after the component's first client render. Use it to initialize client-only state or start side effects.
 
 ```typescript
-import { Cossack, Page, ClientState } from '@cossackframework/core';
+import { Cossack, Page, ClientState, Client } from '@cossackframework/core';
 
 @Page()
 export default class MyComponent extends Cossack {
@@ -358,10 +360,10 @@ export default class MyComponent extends Cossack {
 
 ### `onNavigateComplete(pathname)`
 
-Runs after every SPA navigation completes. The framework calls it only on the App component. Page and layout components do not receive this callback. Use it for global concerns like analytics, scroll restoration, or refreshing observers.
+Runs after the first client load and after every SPA navigation completes. The framework calls it on the App component, the active layouts and the current page, in that order. Use it on the App for global concerns like analytics or scroll restoration, and in a persistent layout to react to route changes.
 
 ```typescript
-import { Cossack, Page } from '@cossackframework/core';
+import { Cossack, Page, Client } from '@cossackframework/core';
 
 @Page()
 export class App extends Cossack {
@@ -408,7 +410,7 @@ The `@On` decorator also accepts the lifecycle event names `'mount'` and `'navig
 | Decorator                | Equivalent hook        | Fires on                | Multiple allowed |
 | ------------------------ | ---------------------- | ----------------------- | ---------------- |
 | `@On('mount')`           | `onMount()`            | Any component (client)  | Yes              |
-| `@On('navigate-complete')` | `onNavigateComplete()` | App component only  | Yes              |
+| `@On('navigate-complete')` | `onNavigateComplete()` | App, active layouts, current page | Yes |
 
 ```typescript
 import { Cossack, Page, ClientState, On } from '@cossackframework/core';
@@ -439,7 +441,7 @@ import { Cossack, Page, On } from '@cossackframework/core';
 export class App extends Cossack {
     @On('navigate-complete')
     trackPageview(pathname: string) {
-        // Fires after every SPA navigation. App-only.
+        // Fires after the first load and every SPA navigation.
         analytics.track('pageview', { path: pathname });
     }
 }
@@ -690,7 +692,7 @@ This section helps you choose between `@Task`, `@VisibleTask`, `@On`, and the `o
 | Tear down a task's side effects automatically | return a cleanup fn from a task | Before next re-run + on destroy |
 | Run setup logic once on the client | `onMount()` or `@On('mount')` | Once after first client render |
 | Defer work until an element enters the viewport | `@VisibleTask` | Client-only, on intersection |
-| React to SPA navigation globally | `onNavigateComplete()` or `@On('navigate-complete')` | App component only, after each route change |
+| React to SPA navigation globally | `onNavigateComplete()` or `@On('navigate-complete')` on the App | App, active layouts and current page, after each route change |
 | Release resources before destroy | `onCleanup()` | Once, before destruction |
 | Handle a click/input on a specific element | Template `@click` | On the element event |
 | Handle document-wide events (keyboard shortcuts) | `@OnDocument` | On the document event (auto-cleaned) |
@@ -729,9 +731,9 @@ You can mix both on the same component. `@On('mount')` handlers fire before your
 ### `onMount()` on a Page vs `onNavigateComplete()` on the App
 
 - `onMount()` fires on every component (App, layouts, pages) when it first renders on the client. Page components are destroyed and re-created on each SPA navigation. A Page's `onMount()` therefore fires on every navigation to that page.
-- `onNavigateComplete(pathname)` fires only on the App component, after the new page has loaded. Use it for global concerns: analytics, scroll restoration, closing flyout menus, progress indicators.
+- `onNavigateComplete(pathname)` fires on the App, the active layouts and the current page, after the new page has loaded. Use it on the App for global concerns: analytics, scroll restoration, closing flyout menus, progress indicators.
 
-Use `@On('mount')` on a page for "this page just became active" logic. Use `@On('navigate-complete')` on the App for "a navigation just finished, regardless of which page" logic. Do not put `@On('navigate-complete')` on a Page component. It never fires there.
+Use `@On('mount')` on a page for "this page just became active" logic. Use `@On('navigate-complete')` on the App or a layout for "a navigation just finished, regardless of which page" logic. A layout instance is kept across navigations, so its `onMount()` does not run again, but its `onNavigateComplete()` does.
 
 ### Template `@click` vs `@On('click')`
 
@@ -741,6 +743,6 @@ Use `@On('mount')` on a page for "this page just became active" logic. Use `@On(
 ### Common Pitfalls
 
 - Do not access `window` / `document` / the DOM inside `@Task`. It runs during SSR where those globals are undefined. Use `@ClientTask` if the logic must re-run on every render. Use `onMount()` / `@On('mount')` if it is one-time setup. `@ClientTask` replaces the manual `if (this.isServer) return;` guard.
-- Do not use `@On('navigate-complete')` on a Page or Layout component. It only fires on the App. For page-specific "I just loaded" logic, use `@On('mount')`.
+- For page-specific "I just loaded" logic, prefer `@On('mount')`. `@On('navigate-complete')` on a page also fires, but only after the navigation that shows it has finished.
 - Do not call `addEventListener` manually for `document` or `window` events without a matching `removeEventListener` in `onCleanup()`. Use `@OnDocument` / `@OnWindow`. They handle cleanup automatically.
 - Use `@Task` or `onMount()` for cheap work or work that must run immediately. Use `@VisibleTask` to wait until an element enters the viewport.

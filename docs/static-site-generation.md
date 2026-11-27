@@ -140,6 +140,10 @@ export default cossackApp({
 });
 ```
 
+`plugins` gives the SSG runner Vite plugins it needs while it imports page source, such
+as plugins that provide virtual modules; pass fresh instances. `configPath` names the
+Wrangler file for URL discovery; the preset passes its own `configPath`.
+
 The `--base-url`, `--out-dir`, `--app`, `--template`, and `--project-root`
 flags are unsupported. The CLI warns when you supply them.
 
@@ -153,6 +157,8 @@ Select a Cloudflare environment before building:
 
 ```sh
 CLOUDFLARE_ENV=staging pnpm run build
+# or
+pnpm exec cossack build --env staging
 ```
 
 SSG uses `env.staging.vars.APP_URL` for that build. Wrangler variables do not
@@ -188,6 +194,7 @@ dist/client/
 │   └── bob/
 │       └── index.html            # /users/bob page
 ├── cossack-routes.json           # Route/ID manifest (emitted by the Vite plugin)
+├── cossack-ssg-report.json       # Outcome of each route (see Build reports below)
 ├── sitemap.xml                   # XML sitemap for SEO
 └── routes.json                   # List of generated routes
 ```

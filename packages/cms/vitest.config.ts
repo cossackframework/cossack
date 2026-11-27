@@ -7,6 +7,7 @@ export default defineConfig({
     resolve: { alias: {
         'virtual:cossack-plugins': fileURLToPath(new URL('./tests/stubs/cossack-plugins.ts', import.meta.url)),
         'virtual:cossack-pages': fileURLToPath(new URL('./tests/stubs/cossack-pages.ts', import.meta.url)),
+        'virtual:cossack-page-files': fileURLToPath(new URL('./tests/stubs/cossack-page-files.ts', import.meta.url)),
         // Served app code reaches the project through '@/'; here the project is the dev app.
         '@': fileURLToPath(new URL('./app/src', import.meta.url)),
     } },

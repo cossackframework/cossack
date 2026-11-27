@@ -1,6 +1,7 @@
 import { beginDevelopmentRpcTrace, type DevelopmentRpcTrace, type DevelopmentRpcOutcome } from './development-trace';
 import { collectReactiveMetadata } from './reactive-metadata';
 import { createStateApplier, snapshotTransportState, rpcSseCursor } from './rpc-state';
+import { callState, explainRequestTooLarge } from './call-state';
 export { applyStateToComponent } from './rpc-state';
 import { beginOptimisticCall, optimisticRequestState, finishOptimisticCall, optimisticHandlers as collectOptimisticHandlers, optimisticHandler, optimisticKeys, type OptimisticCall } from './optimistic-state';
 import { collectServerMethodMetadata, validateServerMethodTimeout } from './server-method-metadata';
@@ -330,6 +331,8 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
             let requestState: Record<string, any> = {};
             let payload: unknown[] = args;
             let request: Promise<Response>;
+            let requestBytes: number | undefined;
+            let upload = false;
             // Validate the RAW arguments before the walker runs: the upload
             // walker replaces DOM/Event values with null and Files with
             // references by design, but would silently EMPTY Maps, Sets, and
@@ -344,9 +347,11 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                 const files = new Map<string, File>();
                 const normalizedArgs = snapshotRpcValue(args, 'payload', { handled: handledByUpload }) as unknown[];
                 payload = normalizedArgs.map(arg => extractFilesFromArg(arg, files));
-                const liveState = optimisticRequestState(component, component.getPublicState());
+                // `send: false` fields stay out of the call (the reply brings them back if the method sets them).
+                const liveState = callState(component, optimisticRequestState(component, component.getPublicState()));
                 requestState = liveState;
                 requestState = snapshotTransportState(liveState);
+                upload = files.size > 0;
                 if (files.size) {
                     const formData = rpcFormData({ componentRouteId, target: component._id, action: name,
                         state: requestState, payload, scopeKey: initialState?.scopeKey,
@@ -367,18 +372,20 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                             headers: { ...trace?.requestHeaders, 'X-Cossack-Request-Id': requestId, Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
                         });
                 } else {
+                    const body = JSON.stringify({
+                        componentRouteId, target: component._id, action: name,
+                        state: requestState, payload, scopeKey: initialState?.scopeKey,
+                        // The page the browser is on. A persistent layout's
+                        // action runs under that page's guards and params.
+                        pageRouteId: initialState?.componentRouteId,
+                        pageParams: initialState?.metadata?.params || {},
+                    });
+                    requestBytes = new TextEncoder().encode(body).byteLength;
                     request = fetch(`${TRANSPORT_ROUTES.rpc}${window.location.search}`, {
                         method: 'POST',
                         headers: { ...trace?.requestHeaders, 'X-Cossack-Request-Id': requestId, 'Content-Type': 'application/json', Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
                         signal: controller.signal,
-                        body: JSON.stringify({
-                            componentRouteId, target: component._id, action: name,
-                            state: requestState, payload, scopeKey: initialState?.scopeKey,
-                            // The page the browser is on. A persistent layout's
-                            // action runs under that page's guards and params.
-                            pageRouteId: initialState?.componentRouteId,
-                            pageParams: initialState?.metadata?.params || {},
-                        }),
+                        body,
                     });
                 }
             } catch (cause) {
@@ -406,7 +413,8 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                     trace?.response(requestId);
                     trace?.server(response);
                     if (!response.ok) {
-                        throw await readRpcHttpError(response, controller.signal);
+                        throw explainRequestTooLarge(await readRpcHttpError(response, controller.signal),
+                            { action: name, state: requestState, bytes: requestBytes, upload });
                     }
                     if (response.headers?.get(RPC_NATIVE_RESPONSE_HEADER) === 'native') {
                         const result = await readRpcNativeResponse(response, controller.signal);

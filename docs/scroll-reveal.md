@@ -76,8 +76,12 @@ setupScrollReveal({
   threshold: 0.1, // IntersectionObserver threshold
   rootMargin: '0px 0px -50px 0px',
   once: true, // reveal once (default); false toggles on leave
+  root: null, // IntersectionObserver root; null is the viewport
 });
 ```
+
+The helper also scans again on each `cossack:ready` event (after hydration and
+every client navigation). On the server it does nothing.
 
 The helper returns a cleanup function that disconnects both observers.
 Call it in `onCleanup()`.

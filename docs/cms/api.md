@@ -7,9 +7,8 @@ description: 'Manage a CMS site from a terminal or an agent: the management API 
 
 A CMS site has three doors besides its dashboard, and they open with one key. The
 **management API** under `/api/cms/` does what the dashboard does: entries, publishing,
-revisions, notes, users, roles, settings, terms, media, menus, widget areas and, on a network,
-sites. The
-**`cossack cms`** commands call it from a terminal or a script. The **MCP server** at
+revisions, notes, users, roles, settings, terms, media, menus, widget areas, webhooks, comments,
+redirects and, on a network, sites. The **`cossack cms`** commands call it from a terminal or a script. The **MCP server** at
 `/api/cms/mcp` offers the same operations as tools to MCP clients such as Claude and Cursor.
 All three sign in with an application password and pick a site the same way.
 
@@ -21,16 +20,6 @@ one under Profile → Application passwords, or let the CLI make it:
 ```bash
 cossack cms login --url https://example.com
 ```
-
-The MCP server adds `list_webhooks`, `create_webhook`, `delete_webhook`, `list_comments` and
-`moderate_comment` for the same operations.
-
-`import wxr <file>` reads a WordPress export: categories and tags become terms (parents first),
-posts and pages become entries (their HTML as a Custom HTML block, plain text as paragraphs;
-`--posts` and `--pages` name other collections), nested pages keep their parents, and a permalink
-that differs from the new address becomes a redirect. A password-protected post keeps its password;
-in a collection without a password field it is imported as a draft, and the report says so. `--dry-run` reports without writing. Attachments and comments are counted and
-left: upload the media and update links; comments have no endpoint yet.
 
 `login` asks for the email and password (or reads `CMS_EMAIL` and `CMS_PASSWORD`), takes a
 second-factor code with `--code`, signs in, creates an application password named after the
@@ -50,10 +39,10 @@ that one, which every site shares, unless you pass `--network`.
 `COSSACK_CMS_URL` and `COSSACK_CMS_TOKEN` alone are enough in CI. A read-only password lists
 and reads; writes answer 403.
 
-Credentials go only over HTTPS, or plain HTTP to this machine (`localhost`, `*.localhost`,
-`127.x`, `::1`, `0.0.0.0`). For another development host, such as `myapp.test` or a LAN address,
-pass `--allow-http` or set `COSSACK_CMS_ALLOW_HTTP=1`. A password, token or recovery code from
-the shell goes to an address only the project's `.env` names once `--url` or `COSSACK_CMS_URL`
+Credentials go only over HTTPS, or plain HTTP to this machine (`localhost`, `127.x`, `::1`,
+`0.0.0.0`; not `*.localhost`, which some resolvers send on to DNS). For another development
+host, such as `myapp.test`, `app.localhost` or a LAN address, pass `--allow-http` or set
+`COSSACK_CMS_ALLOW_HTTP=1`. A password, token or recovery code from the shell goes to an address only the project's `.env` names once `--url` or `COSSACK_CMS_URL`
 confirms it. `cossack cms logout` forgets a stored login even where it may not send the
 password to revoke it.
 
@@ -87,7 +76,7 @@ dashboard reminds administrators to remove it. A network account resets on the n
 Every command takes `--site <id>` (`main` for the main site). The CLI sends it as an
 `X-Cossack-Site` header to the network host, which serves that site under `/api/` while the
 network is on, so a site's own address need not resolve from your machine. The MCP endpoint
-takes `?site=<id>` in its URL. A network account's password works on every site it belongs
+takes `?site=<id>` in its URL (or the same header). A network account's password works on every site it belongs
 to; a site account signs in with `--site`, and its password works on that site. Requests to a
 site's own address keep working as before.
 
@@ -100,17 +89,19 @@ cossack cms <command> [args] [--url …] [--site …] [--json]
 | Command | Does |
 | --- | --- |
 | `login`, `logout`, `whoami`, `mcp` | Sign in and out, show who the password acts as, print an MCP client configuration. |
+| `password reset --email <email> [--second-factors]` | Recovery mode (see above); needs no login. |
+| `import wxr <file> [--posts <collection>] [--pages <collection>] [--dry-run]` | A WordPress export into the site (see below). |
 | `collections list`, `collections schema <collection>` | The content types and their fields; the JSON Schema of one. |
 | `entries list <collection>` | Published entries; `--status draft` (or `pending`, `scheduled`, `published`, `trash`, `any`), `--q`, `--term categories:news`, `--filter field=value`, `--locale`, `--page`, `--per-page`, `--format html`. |
 | `entries search <words…>` | Search the site as visitors do: published entries of every collection, best first, with snippets; `--collection`, `--locale`, `--page`, `--per-page`. |
-| `entries get <collection> <id\|slug>` | One entry, with its `rev`, patterns and translations. |
+| `entries get <collection> <id\|slug>` | One entry, with its `rev`, patterns and translations; `--format html`. |
 | `entries create <collection>` | A new entry from `--data '{…}'` (or `@file`, `@-` for stdin) and `--set field=value`. |
 | `entries update <collection> <id>` | Change fields; the current revision is read first unless `--rev` is given. |
 | `entries publish <collection> <id> [--at <time>]` | Publish now, or schedule at an ISO 8601 time. |
 | `entries unpublish`, `entries trash <collection> <id>` | Back to a draft; into the trash. |
 | `entries revisions`, `entries revision <collection> <id> <n>`, `entries revert <collection> <id> <n>` | List revisions, read one, restore one. |
 | `entries delete <collection> <id> --yes` | Delete permanently. |
-| `notes list [<collection> <id>]`, `notes add <collection> <id> --body …`, `notes resolve\|reopen\|edit\|delete <noteId>` | Review notes on an entry, or across the site (`--status open`). `--target field:title` anchors a thread; `--reply-to` replies. |
+| `notes list [<collection> <id>]`, `notes add <collection> <id> --body …`, `notes resolve\|reopen\|edit\|delete <noteId>` | Review notes on an entry, or across the site (`--status open`). `--target field:title` anchors a thread (`--quote` with a `text:` target); `--reply-to` replies. |
 | `users list\|get\|create\|update\|delete`, `roles list` | Users with `--email`, `--password`, `--name`, `--role` (repeat; the complete list), `--status`. |
 | `settings get [group]`, `settings set <group> --set field=value`, `settings export [--out file]`, `settings import --data @file` | Settings by group, or as the document Settings → Export writes. |
 | `cache purge [--tag <tag>] [--path <url>]` | Purge the caches in front of the site: every page, or the tags and URLs given (see [Cache](/docs/cms/cache.md)). |
@@ -121,7 +112,7 @@ cossack cms <command> [args] [--url …] [--site …] [--json]
 | `menus list\|get\|create\|update\|delete` | Navigation menus (the appearance permission): `menus create "Main" --location primary --data '{"items":[…]}'`; `update <id>` takes `--name`, `--data` (the whole items tree) and `--location` (the complete list). |
 | `locations list`, `locations set <location> <menuId>`, `locations clear <location>` | The themes' menu locations and the menu shown at each. |
 | `areas list\|get <name>`, `areas set <name> --data '{"blocks":[…]}'`, `areas reset <name> --yes` | The themes' widget areas (header, footer, sidebars): their blocks, replaced whole, or forgotten so the theme's defaults show again. |
-| `sites list\|get\|create\|archive\|restore\|delete` | A network's sites, for network admins on the network host: `sites create Blog --host blog.example.com [--admin email --language en --no-starter]`. |
+| `sites list\|get\|create\|archive\|restore\|delete` | A network's sites, for network admins on the network host: `sites create Blog --host blog.example.com [--admin email --language en --id blog --no-starter]`; `sites list --status archived`. |
 
 `--set` values that are JSON are parsed (`--set menuOrder=3`, `--set featured=true`,
 `--set tags='["a"]'`); anything else is text, and `a.b=value` nests. `--data` is exact. Deletes
@@ -129,6 +120,14 @@ need `--yes`; nothing prompts. Under `--json` the envelope's `data` is the API's
 failures carry codes such as `COSSACK_CMS_UNAUTHENTICATED`, `COSSACK_CMS_FORBIDDEN`,
 `COSSACK_CMS_NOT_FOUND`, `COSSACK_CMS_CONFLICT` (a stale `--rev`), `COSSACK_CMS_INVALID` (with
 the fields' problems in the message) and `COSSACK_CMS_LOGIN_REQUIRED`.
+
+`import wxr <file>` reads a WordPress export: categories and tags become terms (parents first),
+posts and pages become entries (their HTML as a Custom HTML block, plain text as paragraphs;
+`--posts` and `--pages` name other collections), nested pages keep their parents, and a permalink
+that differs from the new address becomes a redirect. A password-protected post keeps its password;
+in a collection without a password field it is imported as a draft, and the report says so.
+`--dry-run` reports without writing. Attachments and comments are counted and left: upload the
+media and update the links; comments have no import endpoint yet.
 
 ```bash
 cossack cms entries create posts --set title="Hello" --set status=draft --data @body.json --json
@@ -181,7 +180,8 @@ The server's instructions tell the model what the site has. Its tools mirror the
 `create_entry`, `update_entry`, `delete_entry`, `publish_entry`, `unpublish_entry`,
 `set_entry_status`, `list_revisions`, `get_revision`, `restore_revision`, `list_notes`,
 `add_note`, `update_note`, `delete_note`, `list_users`, `get_user`, `create_user`,
-`update_user`, `delete_user`, `list_roles`, `get_settings`, `update_settings`, `purge_cache`,
+`update_user`, `delete_user`, `list_roles`, `get_settings`, `update_settings`, `list_webhooks`,
+`create_webhook`, `delete_webhook`, `list_comments`, `moderate_comment`, `purge_cache`,
 `list_taxonomies`, `list_terms`, `create_term`, `update_term`, `delete_term`, `list_media`, `update_media`, `list_themes`, `activate_theme`,
 `list_menus`, `get_menu`, `create_menu`, `update_menu`, `delete_menu`, `list_menu_locations`,
 `assign_menu_location`, `list_widget_areas`, `get_widget_area`, `update_widget_area`,
@@ -209,7 +209,7 @@ application password. A CMS refusal answers `{ error, code, fields? }` with its 
 | `GET /me/tokens`, `POST /me/tokens` `{ name, scope, expiresInDays? }`, `DELETE /me/tokens/<id>` | Application passwords; `POST` needs a session (a password cannot make one) and answers the token once; `expiresInDays` (1 to 3650) ends it on its own. |
 | `GET /collections`, `GET /schema/<collection>`, `GET /taxonomies` | Content types with fields; a JSON Schema; taxonomies. |
 | `GET /search?q=&collection=&locale=&page=&perPage=` | The site's search, as visitors get it: `{ items: [{ collection, id, title, url, snippet }], page, next, loose }`. Every word is required, and the last one is a prefix from two characters (`walr` finds walrus); `loose` is true when nothing had them all and the items have some. Titles rank above the same word in the text. A snippet is plain parts, `{ text, match }`, cut by RomeDB. No total: `next` says another page follows. The site's search box asks it for suggestions (`perPage=5`). |
-| `GET /content/<collection>` | Entries: `status`, `q`, `term`, `locale`, `filter[field]`, `page`, `perPage`, `format=html`. With `q`, the first `perPage` matches, without entries locked to the reader (protected, or members-only for a visitor). A filter or `sort` on a field locked entries withhold lists only entries the reader may open; for a signed-in reader who can't edit the collection, it reads at most 1,000 matches, and when there were more the answer has `truncated: true` and its `total` and `pages` cover only those. |
+| `GET /content/<collection>` | Entries: `status`, `q`, `term`, `locale`, `filter[field]`, `sort` (a scalar field, `field:desc` to reverse), `fields` (`title,slug`: only those, with `id` and `url`), `page`, `perPage` (10, at most 100), `format=html`. With `q`, the first `perPage` matches, without entries locked to the reader (protected, or members-only for a visitor). A filter or `sort` on a field locked entries withhold lists only entries the reader may open; for a signed-in reader who can't edit the collection, it reads at most 1,000 matches, and when there were more the answer has `truncated: true` and its `total` and `pages` cover only those. |
 | `POST /content/<collection>` | Create. |
 | `GET /content/<collection>/<id\|slug>` | One entry (`?preview=<token>` for a preview link). |
 | `GET /content/<collection>/<id\|slug>/blocks/<blockId>` | One block of the entry by its ID (set under Style → Advanced → Block ID), nested blocks and blocks embedded in rich text included, with the field it sits in. |
@@ -225,14 +225,34 @@ application password. A CMS refusal answers `{ error, code, fields? }` with its 
 | `GET /media?q=&kind=&page=&perPage=`, `POST /media` (multipart `file`), `PATCH /media/<id>` `{ title?, alt?, caption?, description? }` | The media library, newest first: `q` matches titles and names, `kind` is image, video, audio, document or archive; each file carries its `name`, `url`, `alt` and size, with `page`, `pages` and `total`. `PATCH` changes a file's details, for its owner or a media manager. |
 | `GET /appearance/themes`, `POST /appearance/themes/<name>/activate` | The themes the site may use, the active one marked; make one the site's. |
 | `GET /plugins`, `POST /plugins/<name>/grant`, `POST /plugins/<name>/revoke` | The installed plugins with what each asks for and still lacks, for the plugins permission; grant or disable one. A plugin asking for unrestricted access is refused here (409): the dashboard confirms that grant. |
-| `POST /import/<collection>` (a JSON list of entries) | Create entries, or update those whose `id` or slug exists: `{ created, updated, failed }`. A script fills a new site with it. |
+| `GET /export/<collection>` | Every entry the caller may read, whatever its status, as `{ collection, exportedAt, items }`, a download. |
+| `POST /import/<collection>` (a JSON list of entries, or an export) | Create entries, or update those whose `id` or slug exists: `{ created, updated, failed }`. A script fills a new site with it. |
+| `POST /uploads` `{ name, type, size }`, `PUT /uploads/<id>`, `POST /uploads/<id>/complete` | A browser upload in three steps: where to send the bytes (`{ id, url, method, headers, direct }`; `direct` when the bucket takes them itself), the bytes, then the check that makes the media file. |
+| `GET /forms/<slug>`, `POST /forms/<slug>` | A published form's inputs and whether it takes submissions now; a submission (same-origin form post, or JSON). |
+| `GET /forms/<slug>/submissions?status=&q=&limit=&after=`, `GET /forms/<slug>/submissions/export` | Submissions, newest first (`next` for the following page), and the same as CSV, for `cms:submissions`. |
+| `GET /comments?collection=&entry=`, `POST /comments` | An entry's approved comments, oldest first, for headless sites; a new comment from the site's form or as JSON (same-origin; Turnstile when it is on). |
+| `POST /commands/<plugin>/<command>` `{ input }` | A plugin command, as `cossack <plugin>:<command>` sends it: `{ result }`. |
 | `GET\|POST /appearance/menus`, `GET\|PATCH\|DELETE /appearance/menus/<id>` | Menus, for the appearance permission: `{ name, items, locations }`, `rev` on a change. `GET /menus/<location>` is the resolved menu visitors see. |
 | `GET /appearance/locations`, `PATCH /appearance/locations/<location>` `{ menu }` | The themes' menu locations and the menu at each (`menu` null for none). |
 | `GET /appearance/areas`, `GET\|PUT\|DELETE /appearance/areas/<name>` | Widget areas: `PUT` `{ blocks, rev }` replaces the blocks (`rev` 0 while the theme's defaults show), `DELETE` forgets them. |
 | `GET\|POST /network/sites`, `GET\|PATCH /network/sites/<id>` `{ status }` | Sites, for network admins on the network host. |
 | `POST /mcp` | The MCP server. |
-| `POST /api/auth/session` `{ email, password, code?, turnstile? }` | Signs in with a session cookie, for tools that make a password. While the Turnstile bot check is on it needs a `turnstile` token (403 `CMS_BOT_CHECK`); use an application password instead. When General settings require two-step sign-in, a session whose sign-in used no second factor (a code with `code`, or a passkey in the browser) gets 403 `CMS_SECOND_FACTOR_REQUIRED` from the API and no application passwords. |
+| `POST /api/auth/session` `{ email, password, code?, turnstile? }` | Signs in with a session cookie, for tools that make a password. An account with an authenticator app without `code` gets 401 `{ twoFactorRequired: true }`; a locked sign-in 429 `CMS_RATE_LIMITED`. While the Turnstile bot check is on it needs a `turnstile` token (403 `CMS_BOT_CHECK`); use an application password instead. When General settings require two-step sign-in, a session whose sign-in used no second factor (a code with `code`, or a passkey in the browser) gets 403 `CMS_SECOND_FACTOR_REQUIRED` from the API and no application passwords. |
 | `DELETE /api/auth/session` | Ends the session (same-origin), for tools that signed in to make a password. |
+
+## Webhooks
+
+A webhook (Tools → Webhooks, or `POST /webhooks`) posts events to a URL: `entry.created`,
+`entry.updated`, `entry.published`, `entry.unpublished`, `entry.deleted`, `form.submitted`,
+`note.created`, `note.resolved` and `payment.completed`, for every collection or the ones it
+names. Each delivery is a JSON `POST` (`{ event, eventId, at, collection?, entry?, form?,
+submission?, note?, … }`; `eventId` stays the same across retries) with the headers
+`X-Cossack-Event`, `X-Cossack-Delivery`, `X-Cossack-Timestamp` and `X-Cossack-Signature:
+sha256=<hex>`, the HMAC-SHA256 of `<timestamp>.<body>` with the webhook's secret;
+`verifyWebhookSignature(secret, timestamp, body, signature)` from
+`@cossackframework/cms/server` checks it. A receiver has ten seconds to answer with a 2xx; a
+failure is retried five times, from a minute to twelve hours apart. Tools → Webhooks shows a
+webhook's last twenty deliveries, sends one again, and sends a `ping` to test the URL.
 
 In the CMS package, every route calls `cms/manage.ts`, and so do the MCP tools in
 `cms/mcp-tools.ts`. These are the package's modules, not the project's. A project adds its own

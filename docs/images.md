@@ -61,7 +61,7 @@ In development mode (`import.meta.env.DEV`), the helper renders an `<img>` tag t
 
 ### 2. Production (Cloudflare)
 
-To use Cloudflare Image Resizing in production, set this environment variable in `wrangler.jsonc` or in your build environment:
+To use Cloudflare Image Resizing in production, set this variable in the build environment, for example in `.env` or in the shell that runs `vite build`. Vite inlines it into `import.meta.env` at build time, so a `vars` entry in `wrangler.jsonc` does not set it:
 
 ```bash
 VITE_COSSACK_IMAGE_PROVIDER=cloudflare

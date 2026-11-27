@@ -9,7 +9,7 @@ Cossack creates routes from the files and folders in `src/pages`. You do not nee
 
 ## How it Works
 
-The framework scans `src/pages` and its subdirectories for `.ts`, `.md`, and `.mdx` files. Each file path maps to a URL route.
+The framework scans `src/pages` and its subdirectories for `.ts` files, and for `.md` and `.mdx` files when Markdown is enabled (`cossack add markdown`). Each file path maps to a URL route. `layout.ts` and `loading.ts` files, `*.test.*`, `*.spec.*` and `.d.ts` files, and `__tests__`, `__fixtures__` and `fixtures` directories are not routes.
 
 ### Basic Routing
 
@@ -40,7 +40,11 @@ src/
 
 To create a dynamic route, put a URL segment in square brackets `[]` in a directory name. The page component can read that segment as a parameter.
 
-For example, a page at `src/pages/users/[id]/index.ts` will match URLs like `/users/123` or `/users/alice`.
+For example, a page at `src/pages/users/[id]/index.ts` will match URLs like `/users/123` or `/users/alice`. A file name works too: `src/pages/users/[id].ts`.
+
+A catch-all segment `[...name]` matches one or more segments, slashes included: `src/pages/docs/[...path]/index.ts` matches `/docs/guide/first-steps`. Optional segments (`[[id]]`, `[[...slug]]`) are not supported and fail with `COSSACK_ROUTE_PATTERN_UNSUPPORTED`; add a sibling `index.ts` for the empty case.
+
+Literal segments win over parameters, and parameters win over catch-alls, so `src/pages/users/new/index.ts` answers `/users/new` before `users/[id]`.
 
 ### Reserved paths
 
@@ -109,12 +113,25 @@ An ordinary parameter requires a string. A catch-all requires a nonempty array
 of strings. Each string becomes one encoded path segment. Missing parameters,
 extra parameters, incorrect types, and unknown names fail TypeScript checks.
 Narrow a union of route names before passing its parameters.
-For a manually authored registry, pass literal patterns directly or use `as const`.
+The module also exports `routePatterns`, the name-to-pattern map behind `routes`.
+For a manually authored registry, call `createRouteBuilder()` from
+`@cossackframework/core/routes` (also exported from `@cossackframework/core`)
+with Hono patterns, and pass literal patterns directly or use `as const`:
+
+```ts
+import { createRouteBuilder } from '@cossackframework/core/routes';
+
+const link = createRouteBuilder({ user: '/users/:id', docs: '/docs/:path{.+}' } as const);
+link('user', { id: 'alice' }); // /users/alice
+```
+
+`routeParameters(pattern)` from the same module lists a pattern's parameters as `{ name, catchAll }`.
 Widened strings and runtime-selected pattern unions cannot establish parameter types.
 
 The runtime also rejects empty strings, dot segments, invalid Unicode, sparse
-catch-all arrays, and parameter getters. It reports `RouteUrlError` with a code,
-route identity, and parameter name where available. The helper constructs path
+catch-all arrays, and parameter getters. It reports `RouteUrlError` with a code
+(`COSSACK_ROUTE_UNKNOWN`, `COSSACK_ROUTE_PATTERN_UNSUPPORTED` or
+`COSSACK_ROUTE_PARAMETER_INVALID`), route identity, and parameter name where available. The helper constructs path
 URLs. Query state and navigation completion have separate contracts.
 
 Vite generates `.cossack/routes.ts` at startup and build time. The development
@@ -144,7 +161,7 @@ pnpm exec cossack typecheck
 It writes `.cossack/routes.ts` (`cossack routes --generate` does that step alone) and runs `tsc --noEmit`.
 
 CLI generation does not execute your Vite configuration. It includes Markdown
-when the recorded scaffold recipe selects that feature. For a custom
+when the project's recipe (`package.json#cossack`) selects the `markdown` feature. For a custom
 `markdownProcessor`, add `--markdown` to the generation command. The processor
 must also exist in your Vite configuration.
 
@@ -246,11 +263,11 @@ src/
 ```
 
 Creating a layout:
-A layout is a Cossack component that accepts children in its `render` method and can provide metadata via its `head` method.
+A layout is a Cossack component that renders `this.children` (the nested page or layout) and can provide metadata via its `head` method.
 
 ```typescript
 import { Cossack, Page, HeadContext, HeadValue } from '@cossackframework/core';
-import { html, type TemplateResult } from '@cossackframework/renderer';
+import { html } from '@cossackframework/renderer';
 
 @Page()
 export default class MyLayout extends Cossack {
@@ -261,11 +278,11 @@ export default class MyLayout extends Cossack {
     };
   }
 
-  render(children: TemplateResult) {
+  render() {
     return html`
       <div class="layout">
         <nav>...</nav>
-        <main>${children}</main>
+        <main>${this.children}</main>
       </div>
     `;
   }
@@ -284,13 +301,14 @@ The application names the packages it mounts in `package.json`. Installing a pac
 }
 ```
 
-The package states what it serves in its own `package.json`. Paths are relative to `root`, and a trailing slash names a directory.
+The package states what it serves in its own `package.json`. Paths are relative to `root` (except `vite`, which is relative to the package directory), and a trailing slash names a directory. `alias` is the short name `cossack eject` accepts for the package.
 
 ```json
 {
   "exports": { "./app/*": "./app/src/*.ts" },
   "cossack": {
     "root": "app/src",
+    "alias": "cms",
     "pages": ["pages/"],
     "plugins": ["plugins/default-theme/"],
     "config": ["config/cms.ts"],
@@ -332,8 +350,7 @@ An override means the whole file. It stops receiving the package's fixes for tha
 Inside a served file, a relative import and a `#app/…` import stay inside the package, and an `@/…` import is a module the application provides. `#app/` is the package's name for its served root (`imports` in its `package.json`: `#app/cms/site` is `app/src/cms/site.ts`). It means nothing in the application's own files, which import a served module by the package's name (`@cossackframework/cms/app/cms/site`). The package lists these modules in `cossack.host`. The build and `cossack typecheck` stop when one is missing (`COSSACK_PACKAGE_HOST_MISSING`), or when the project's template is older than `cossack.hostTemplate` (`COSSACK_PACKAGE_HOST_OUTDATED`).
 
 - A missing module: run `cossack upgrade`, which writes it.
-- An older template, in a project whose files `cossack upgrade` updates: run `cossack upgrade`.
-- An older template, in a CMS project: its files are its own, so the message lists the changes to make (`cossack.hostSteps`, by the template that needs each). Make them, then set `cossack.template` in the project's `package.json` to the version the message names.
+- An older template: the project's files are its own, and `cossack upgrade` does not change them, so the message lists the changes to make (`cossack.hostSteps`, by the template that needs each). Make them, then set `cossack.template` in the project's `package.json` to the version the message names. (A project that still keeps its recipe in `.cossack/scaffold.json` is told to run `cossack upgrade`, which moves the recipe to `package.json`.)
 - New files: `cossack.hostFiles` names the files a template adds, by that template, as paths from the project root. `cossack upgrade` writes them from the release's rendering of the project's recipe when the project lacks them. It writes a folder (a trailing slash) only when the project has no such folder, and never replaces a file. List the files in `hostSteps` too, for a project that already had the folder.
 
 A package raises `hostTemplate` only when a project file must change. Prefer a function the project already calls: a project's `vite.config.ts` is `cossackApp()` from `cossack/vite`, and a package adds its own Vite plugins and options through `cossack.vite` (see [Vite plugins](./vite-plugins.md#the-preset)).
@@ -347,6 +364,6 @@ Use `src/App.ts` for logic outside the routing system, such as global CSS, theme
 Cossack enables soft navigation by default. When a user clicks a link such as `<a href="/about">`, the framework fetches the page and replaces the content without a full browser refresh. The server still renders each page.
 
 Optimizations:
-* Prefetching: Cossack fetches page data when a user points to a link.
-* Caching: Cossack stores visited pages in memory for back and forward navigation.
-* Persistent Layouts: If you navigate between pages that share a layout, for example `/login` to `/register`, the framework preserves the shared `AuthLayout` instance with its state and scroll position.
+* Prefetching: Cossack fetches page data when the pointer rests on a link for 50 ms.
+* Caching: Cossack keeps up to 20 prefetched or visited pages in memory, and clears them after any successful server action.
+* Persistent Layouts: If you navigate between pages that share a layout, for example `/login` to `/register`, the framework preserves the shared `AuthLayout` instance with its state. See [Layouts](./layouts.md).

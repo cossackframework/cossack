@@ -11,8 +11,9 @@ the frame around it. It opens the page at `?edit`: blocks become clickable, a sh
 edits the selected block's fields and style (a group's Width makes it a band across the page;
 its Advanced background takes a gradient, an image, a video and an overlay, see
 [Backgrounds](/docs/cms/themes.md#backgrounds)), the Blocks panel shows the page's trees, the
-Entry panel its title, slug and terms, and the Text panel its rich text body. Changes stay in a
-draft until Save; visitors never see the markers or the editor's code.
+Entry panel its title, slug and terms, the Text panel its rich text body, and *Notes* the
+entry's [notes](/docs/cms/notes.md); *Desktop*, *Tablet* and *Phone* preview the page at those
+widths. Changes stay in a draft until Save; visitors never see the markers or the editor's code.
 
 ## Documents
 
@@ -44,9 +45,10 @@ store, the layout renders the changed areas through its own server method a mome
 last change, and reloads the saved areas when the session ends. At the first paint the page
 hands the layout the documents it edits, so the areas carry their markers from the start.
 
-Markers are `display: contents` wrappers the helper adds in edit mode around every block,
-naming the block (`data-block-id`), its document (`data-cms-doc`, `entry` for the content) and,
-for a document the user may not change, `data-cms-locked`. Themes never see them, and a
+Markers are `display: contents` wrappers (`data-cms-edit="block"`) the helper adds in edit mode
+around every block, naming the block (`data-block-id`), its document (`data-cms-doc`: `entry`
+for the content, `area:<name>` or `pattern:<id>`) and, for a document the user may not change,
+`data-cms-locked`. Themes never see them, and a
 visitor's page has none.
 
 ## What stays code

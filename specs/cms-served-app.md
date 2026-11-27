@@ -134,7 +134,7 @@ configuration, the per-runtime glue, and any file it chose to override.
 - **The other direction:** the shell imports the `replaces` modules by relative path. `pages/dashboard/layout.ts` 6-12 and `pages/auth/layout.ts` import `dashboard/access`, `head`, `icons`, `brand` and `auth`. In turn, the replaced modules import CMS core (`auth.ts` 19-21, `brand.ts` 4-5, ...).
 - **Globals the CMS uses:** `config('app.name')` and `config('auth.redirectAfterLogout')` (`brand.ts:9`, `cms/guards.ts:16`, `(site)/layout.ts` 165 and 205, `services/rbac.ts:26`), and `__()`. They are typed by the app's `.cossack/config.d.ts`.
 - **The page registry:** `virtual:cossack-pages` is read by `(site)/sitemap.xml` and `sitemaps/[file]` through `cms/sitemaps.ts` 16 and 29-38, which strips `/src/pages/`. Route keys stay `/src/pages/...` under `specs/package-routes.md`, so this keeps working.
-- **Reserved slugs:** `packages/cms/src/server/host.ts:543` defaults to `api, auth, dashboard, feed, media, preview, search, author, indexnow, sitemaps`. The app's and the plugins' own top-level routes are not reserved.
+- **Reserved slugs:** `DEFAULT_RESERVED_PATHS` in `packages/cms/src/server/host.ts` is `api, auth, dashboard, feed, media, preview, search, author, indexnow, sitemaps`. `cms/index.ts` adds the first segment of every page file (the app's, the CMS's and the plugins'). It reads them from `virtual:cossack-page-files`, which holds names only. The pages registry imports every layout on the server, and the layouts reach `cms/index.ts`, so importing the registry there made an import cycle (requests.md C8). `packages/cms/tests/served-import-cycles.test.ts` keeps the served code free of cycles.
 - **Package shape:** `@cossackframework/cms` ships `src` and `app` as TypeScript (`main: src/index.ts`). Its `files` exclude `app/src/plugins/example`, and `app/.gitignore` keeps the rendered shell out of the tarball. There is no export into `app/`.
 - **The docs invite edits to core:**
   - "Edit or copy" the default theme: `docs/cms/index.md:14`, `themes.md:14`, `cossack-cli.md` 465-467.
@@ -219,7 +219,7 @@ configuration, the per-runtime glue, and any file it chose to override.
    an entry slug `pricing`.
 5. Docs: `docs/cms/index.md` (what the project holds, how it updates),
    `themes.md` (child theme first), `api.md`, `collaboration.md`, `cossack-cli.md`
-   (`add cms`), and `packages/cms/app/README` for contributors.
+   (`add cms`), and `packages/cms/app/README.md` for contributors.
 6. Projects that hold a copied CMS are not migrated; gif84 is rebuilt as a new
    project (`specs/upgrade-merges.md`).
 

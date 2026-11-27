@@ -40,6 +40,15 @@ export default class RefExample extends Cossack {
 2. Binding: When Cossack renders the template, the `ref` attribute assigns the DOM element to `.value`.
 3. Access: Read the DOM element in `onMount()` or a later method. `this.inputRef.value` is `undefined` during server-side rendering.
 
+Outside a decorated field, `createRef<T>()` from `@cossackframework/core` returns the same `{ value: undefined }` object:
+
+```typescript
+import { createRef } from '@cossackframework/core';
+
+const dialogRef = createRef<HTMLDialogElement>();
+html`<dialog ref=${dialogRef}></dialog>`;
+```
+
 ## Functional Refs
 
 You can also pass a function to the `ref` attribute instead of using the decorator.

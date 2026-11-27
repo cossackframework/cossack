@@ -72,6 +72,10 @@ Never put access keys in browser code or public Worker variables.
 
 Provider configuration and credentials belong to the server adapter. The portable core does not import a cloud SDK.
 Provider failures return fixed error codes and messages without provider credentials or object contents.
+Every failure is a `StorageError` (from `@cossackframework/core/storage`) with a `code`, such as
+`COSSACK_STORAGE_FORBIDDEN`, `COSSACK_STORAGE_SIZE_INVALID`, `COSSACK_STORAGE_TYPE_INVALID`,
+`COSSACK_STORAGE_KEY_INVALID` or `COSSACK_STORAGE_PROVIDER_FAILED`. A custom backend implements
+the `StorageProvider` interface (`name`, `put`, `get`, `head`, `delete`, and optionally `presign`).
 
 ## Signed application URLs
 
@@ -92,6 +96,9 @@ const url = await storage.signedUrl(context, key, 'put', {
 ```
 
 Replace `provider`, `signingSecret`, `context`, `key`, and `file` with your server values.
+`expiresIn` is in seconds, from 1 to 86,400 (one day). The endpoint must be an absolute
+`https:` URL without a query or hash (`http:` only on `localhost`, `127.0.0.1` or `[::1]`).
+A `put` URL requires `size` and binds it, `contentType` and `customMetadata` into the signature.
 Route the configured endpoint to `storage.handleSignedRequest(context, request)` with the current authenticated context.
 The handler makes sure again that the signature, expiry, operation, upload metadata, and authorization are valid.
 The URL targets your application endpoint. It does not expose bucket credentials or promise a direct provider upload.

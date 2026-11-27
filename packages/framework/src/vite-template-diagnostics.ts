@@ -60,6 +60,23 @@ export interface DevelopmentTemplateChecks {
 }
 
 /**
+ * The process's Node options for a worker started from a file, without those of an inline script:
+ * a development server started with `node --input-type=module -e …` would pass `--input-type`
+ * on, and the worker refuses it ("--input-type can only be used with string input").
+ */
+export function workerExecArgv(execArgv: readonly string[] = process.execArgv): string[] {
+  const kept: string[] = [];
+  for (let index = 0; index < execArgv.length; index++) {
+    const option = execArgv[index]!;
+    if (option.startsWith('--input-type')) continue;
+    if (['-e', '--eval', '-p', '--print'].includes(option)) { index++; continue; }
+    if (/^--(?:eval|print)=/.test(option)) continue;
+    kept.push(option);
+  }
+  return kept;
+}
+
+/**
  * Check templates in a worker as files change. `report` receives the lines
  * of each file whose diagnostics changed since the last report; a file that
  * became clean reports an empty list.
@@ -71,7 +88,7 @@ export function startDevelopmentTemplateChecks(root: string, report: (file: stri
     warn(MISSING);
     return undefined;
   }
-  const worker = new Worker(script, { workerData: { root } });
+  const worker = new Worker(script, { workerData: { root }, execArgv: workerExecArgv() });
   worker.unref();
   let reported = new Map<string, string>();
   let pending: string[] = [];

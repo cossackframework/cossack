@@ -11,11 +11,11 @@ Cossack Skills are instruction packs that teach AI coding assistants (Claude Cod
 
 | Skill | Type | Description |
 |-------|------|-------------|
-| `/setup-auth` | Task | Set up authentication with `@cossackframework/auth` (multi-file workflow) |
+| `/setup-auth` | Task | Add sign-in with `cossack add auth`: the dashboard package serves the pages, the project keeps `src/dashboard.config.ts` and its schema |
 | `/setup-websocket` | Task | Set up real-time features: pick SSE or Durable Object transport |
 | `/setup-ui` | Task | Set up the UI package (`@cossackframework/ui`): theme, CSS imports, component usage, focus helpers, Toaster |
 | `/create-desktop-app` | Task | Add an Electron Desktop side target, secure native shell capabilities, icons, lifecycle, and Forge packaging without changing the web runtime |
-| `cossack-best-practices` | Background | Guardrails for `@Server()` RPC, ORM entities, validation, caching, UI, tasks, stores, auth, and error handling. |
+| `cossack-best-practices` | Background | Guardrails for `@Server()` RPC, ORM entities, validation, caching, UI, tasks, stores, auth, dashboard/CMS/tenants, upgrades, and error handling. |
 
 The `cossack-best-practices` skill is not user-invocable. It auto-loads when you work on Cossack-specific files (`src/pages/**`, `src/components/**`, `src/services/**`, `src/middlewares/**`, `src/App.ts`, `src/root.ts`) and steers the AI toward framework built-ins.
 
@@ -26,7 +26,7 @@ The `cossack-best-practices` skill is not user-invocable. It auto-loads when you
 Install from the dedicated plugin repository:
 
 ```bash
-claude plugin install cossack-skills
+claude plugin install cossack
 ```
 
 The plugin repo ([cossackframework/skills](https://github.com/cossackframework/skills)) is auto-synced from the monorepo on every change to `skills/`.
@@ -45,7 +45,7 @@ cp -r /path/to/cossack/skills .claude/skills/cossack
 ln -s /path/to/cossack/skills .claude/skills/cossack
 ```
 
-After this, the plugin loads as `cossack@skills-dir` on the next Claude Code session. All skills (`/setup-auth`, `/setup-websocket`, `/setup-ui`, and the `cossack-best-practices` background skill) are immediately available.
+After this, the plugin loads as `cossack@skills-dir` on the next Claude Code session. All skills (`/setup-auth`, `/setup-websocket`, `/setup-ui`, `/create-desktop-app`, and the `cossack-best-practices` background skill) are immediately available.
 
 Global, for all projects:
 
@@ -93,6 +93,7 @@ Use the slash command syntax in your AI tool:
 /setup-auth
 /setup-websocket
 /setup-ui
+/create-desktop-app
 ```
 
 The skill guides the AI through the correct patterns and asks questions when it needs more information. For all other tasks, such as creating pages, layouts, components, adding state, and middleware, the `cossack-best-practices` background skill gives the AI the framework rules. Ask in plain language.

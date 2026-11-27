@@ -10,7 +10,8 @@ and shared `src/pages/` tree.
 
 ## Inspect and scaffold
 
-Read `.cossack/scaffold.json`, `package.json`, `vite.config.ts`, `src/index.ts`,
+Read `package.json` (the recipe is in `package.json#cossack`), `vite.config.ts` (a
+`cossackApp()` call from `cossack/vite`, which reads the recipe; do not add plugins by hand), `src/index.ts`,
 and existing Desktop files. Prefer:
 
 ```sh

@@ -14,7 +14,7 @@ Cossack generates a standard HTML document for server-rendered pages. Pass an `h
 Pass a function that receives helper functions and returns an HTML string:
 
 ```typescript
-import { createApp } from './router';
+import { createApp } from '@cossackframework/framework/router';
 
 const app = createApp({
     AppComponent: App,
@@ -35,7 +35,7 @@ const app = createApp({
 
 ### String Template
 
-For simpler cases, pass a plain string with `{{ cossackScripts }}` and `{{ cossackBody }}` placeholders:
+For simpler cases, pass a plain string with `{{ cossackScripts }}` and `{{ cossackBody }}` placeholders. New projects keep this string in `src/root.ts` as `export const template` and pass it to `createApp()` from `src/index.ts`:
 
 ```typescript
 const app = createApp({
@@ -54,6 +54,8 @@ const app = createApp({
     `,
 });
 ```
+
+String templates also accept `{{ cossackLang }}`, the request's resolved locale (escaped, `en` by default), for example `<html lang="{{ cossackLang }}">`. Each placeholder is replaced once: a second occurrence of the same placeholder stays as written. A function template receives only `cossackScripts` and `cossackBody`.
 
 ## Template Helpers
 
@@ -75,7 +77,8 @@ Both approaches provide the same two helpers:
   (`static styles`) the page rendered, after the application CSS. Component
   output carries no style elements, so keep `cossackScripts()` in `<head>`.
 - `window.__INITIAL_STATE__` script for client-side hydration
-- Module preload links for route-specific chunks
+- Module preload links for route-specific chunks, and for the predicted
+  locale chunk when the request's locale is not the default one
 - The client entry `<script type="module">` tag
 
 ## Important Notes
@@ -89,7 +92,7 @@ Both approaches provide the same two helpers:
 The `htmlTemplate` option accepts the `TemplateHelpers` type if you need explicit typing:
 
 ```typescript
-import type { TemplateHelpers } from './root';
+import type { TemplateHelpers } from '@cossackframework/framework/root';
 
 const app = createApp({
     htmlTemplate: (helpers: TemplateHelpers) => `
@@ -113,12 +116,18 @@ When `htmlTemplate` is not provided, the following default template is used:
 
 ```html
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en"> <!-- the request's resolved locale -->
     <head>
         <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
+        <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+        <link rel="shortcut icon" href="/favicon.ico" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+        <link rel="manifest" href="/site.webmanifest" />
         <!-- cossackScripts output -->
     </head>
-    <body>
+    <body class="antialiased">
         <!-- cossackBody output -->
     </body>
 </html>

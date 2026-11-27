@@ -38,8 +38,11 @@ export interface PluginRegistration {
   readonly assets: Readonly<Record<string, string>>;
 }
 
-export const plugins: readonly PluginRegistration[] = registry;
+// A live binding, not a copy: an in-app plugin's server code can import a module that imports
+// this one, and in development such a cycle can evaluate this module before the registry. A
+// copy made then would stay undefined until the server restarted.
+export { registry as plugins };
 
 export function getPlugin(name: string): PluginRegistration | undefined {
-  return plugins.find(plugin => plugin.name === name);
+  return registry.find(plugin => plugin.name === name);
 }

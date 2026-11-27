@@ -21,6 +21,7 @@ These mechanisms use different rules:
 | --- | --- | --- |
 | `@State()` | Assign a different value to the field | Public snapshots for hydration, RPC, and realtime |
 | `@Store()` | Replace the field, or change a nested plain object/array through its proxy | The complete public value |
+| `@State({ send: false })` | Assign a different value to the field | Hydration, and a call's reply when the method assigns it. Calls do not send it |
 | `@ClientState()` | Assign a different value to the field in the browser | No field snapshot |
 | `@ClientStore()` | Replace the field, or change a nested plain object/array in the browser | No field snapshot |
 | `@Computed()` | Reads calculate the value. Its reactive inputs request renders | No computed field snapshot |
@@ -130,6 +131,34 @@ Use server-only code for secrets.
 Initialize browser API values in `onMount` or `clientInit`.
 Field initializers and shared rendering can run on the server.
 For browser-only modules, use the `.client.ts` naming rule described in [Reactive Store](./reactive-store.md).
+
+## Keep large fields out of calls
+
+A call to a server method sends the component's public state with its arguments.
+A request is limited to 1 MiB (`rpc.maxRequestBytes`).
+A large field can make every call of the component fail with `COSSACK_RPC_REQUEST_TOO_LARGE`, even a call whose arguments are two numbers.
+Declare such a field with `send: false`:
+
+```typescript
+@State({ send: false }) storm: HailFile | null = null;
+```
+
+The server renders the field and the browser keeps it.
+Calls do not send it back.
+If a request sends it anyway, the server ignores it.
+In a server method, the field holds its initial value.
+A value that the method assigns comes back with the reply.
+That includes the initial value itself, so `this.storm = null` clears the field in the browser.
+A `@Store({ send: false })` also comes back when the method changes it in place.
+SSE snapshots follow the same rule.
+
+During a call, the server renders the component to find its child components.
+That render sees the initial value.
+The template must handle it, and the field must not decide which child components exist.
+A service's `send: false` field follows the same rules, in the service's own calls and in the calls of a component that injects it.
+
+For a file of several megabytes, an HTTP route that the browser fetches is often the better shape.
+In development, SSR warns about a component whose state is over half the request limit, and names its largest fields.
 
 ## Follow the public JSON contract
 

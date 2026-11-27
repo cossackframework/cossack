@@ -197,6 +197,14 @@ The browser entry of the renderer no longer has `renderToString`: import it from
 typed `(event: InputEvent) => void` no longer checks: type it `(event: Event)` and read
 the value from `event.currentTarget` or `event.target`.
 
+### Changes after 0.9.3
+
+- `createApp({ rpc: { maxJsonBytes } })` is `rpc.maxRequestBytes`, an integer from 1 byte to
+  16 MiB. Core's `validateRpcResponseLimit` is `validateRpcByteLimit`.
+- `@State({ send: false })` and `@Store({ send: false })` keep a field out of server method
+  calls ([State Management](./states.md#keep-large-fields-out-of-calls)). A page that moved a
+  large field to an HTTP route to stay under the request limit can keep it there, or mark it.
+
 ### Changes in 0.9.3
 
 - A `@Server` method that calls `this.redirect()` completes in the browser with the value it

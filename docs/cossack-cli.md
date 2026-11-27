@@ -36,6 +36,9 @@ cossack <command> [args] [options]
 
 - `cossack` or `cossack --help` lists every command.
 - `cossack <command> --help` prints command-specific options.
+- `cossack <command>:<subcommand>` is the same as `cossack <command> <subcommand>`, for
+  example `cossack image:optimize`. A name with a colon that is not a command runs a
+  [plugin command](#cossack-add-plugin) (`cossack <plugin>:<command>`).
 
 ### Global options
 
@@ -149,22 +152,38 @@ generated secret values. Errors use stable diagnostic codes and a nonzero exit
 code. JSON mode does not prompt. Specify the desired recipe through flags.
 Without a terminal, creation also uses flag values and defaults without prompts.
 
+Options:
+
+| Option | Description |
+| --- | --- |
+| `--adapter <cloudflare\|node>` | Web runtime adapter (default: `cloudflare`). |
+| `--preset <minimal\|database\|auth\|full-stack>` | Application preset (default: `full-stack`, or `minimal` with `--features cms`). |
+| `--features <list>` | Features to add to the preset, comma separated (see [`cossack add`](#cossack-add-feature)). |
+| `--database <provider>` | `d1`, `sqlite`, `turso`, `postgres`, `mysql`, `hyperdrive-postgres`, `hyperdrive-mysql` or `romedb`, validated against the adapter (default: `d1` on Cloudflare, `sqlite` on Node, `romedb` with `cms`). |
+| `--auth-methods <list>` | `credentials`, `oauth`, or both. |
+| `--oauth <list>` | OAuth providers: `github`, `google`, `gitlab`, `facebook`, `microsoft`. |
+| `--theme <name>` | UI theme: `default`, `neutral`, `zinc`, `stone`, `gray`, `slate`, `blue`, `green` or `red`. |
+| `--dashboard-features <list>` | Dashboard modules: `users`, `sessions`, `settings`, `roles` (default: all). |
+| `--package-manager <npm\|pnpm\|yarn\|bun>` | Package manager for the printed next steps (default: the one that ran the CLI). |
+| `--yes`, `-y` | Accept defaults without prompting. |
+| `--force`, `--dry-run`, `--json` | See [Global options](#global-options). |
+
 ### `cossack add desktop`
 
 Add the independent Electron target without changing the web adapter. The
 command writes `src/desktop/index.ts`, `forge.config.ts`, platform icons,
-Electron/Forge dependencies, and `desktop:dev`, `desktop:package`, and
+Electron/Forge dependencies, and `build:desktop`, `desktop:dev`, `desktop:package`, and
 `desktop:make` scripts. Electron installers are built on their native host.
 
 ### `cossack inspect routes` and `cossack check routes`
 
 ```bash
 cossack inspect routes --json
-cossack inspect routes /team
+cossack inspect routes /team --verbose
 cossack check routes --json
 ```
 
-Inspection lists route facts or explains a selected route. Method facts come
+Inspection lists route facts or explains a selected route; `--verbose` adds route details. Method facts come
 from the compiler: retained client implementations, explicit or automatic RPC,
 and stripped methods without RPC registration are separate categories.
 
@@ -271,6 +290,21 @@ lists hints, such as a `component()` call that can be a component tag; JSON
 reports hints with `info` severity. The Vite build runs the same check. See
 [Template checks](/docs/template.md#template-checks).
 
+### `cossack inspect` and `cossack check`: providers, workflows, schedules
+
+```sh
+cossack inspect providers --env staging --json
+cossack check workflows
+cossack check schedules --env production
+```
+
+`providers` reports the declared cache and rate limiter backends: units, locality,
+persistence, consistency and supported operations; `check providers` fails on invalid
+requirements, binding names or limiter selection. `workflows` and `schedules` read the
+static manifests of [workflows](/docs/workflows.md) and [schedules](/docs/schedules.md).
+Modules are never executed, so dynamic configuration stays unknown. See
+[Cache](/docs/cache.md) and [Rate Limiting](/docs/rate-limiting.md).
+
 ### `cossack deploy`
 
 Build and deploy a Cloudflare application with the project's installed tools:
@@ -289,6 +323,30 @@ generated types. They test deployment without uploading or provisioning.
 output is suppressed. Required remote secrets are not tested during a local
 dry run. See [Deployment](./deployment.md) for environment and secret setup.
 
+### `cossack preview`
+
+```sh
+cossack preview create --account <ID> --name pr-42 [--secrets-file staging.json] [--dry-run]
+cossack preview inspect --account <ID>
+cossack preview cleanup --account <ID>
+```
+
+Deploys a Cloudflare preview with staging bindings after the production build gate,
+records what it created in `.cossack/preview.json`, and later inspects or removes it.
+Cleanup never deletes storage bound from outside. See
+[Cloudflare Previews](/docs/cloudflare-previews.md).
+
+### `cossack resources <plan|apply>`
+
+```sh
+cossack resources plan --account <ID> --env staging
+cossack resources apply --account <ID> --select resources.json --verify
+```
+
+Plans which Cloudflare bindings the project still needs and writes chosen existing
+resources into `wrangler.jsonc`. It never creates or deletes cloud resources. See
+[Cloudflare Resources](/docs/cloudflare-resources.md).
+
 ### `cossack adapter <node|cloudflare>`
 
 Switch an existing schema-v3 scaffolded project to one active runtime. The
@@ -306,15 +364,15 @@ Options:
 
 | Option | Description |
 | --- | --- |
-| `--database <d1\|sqlite\|turso>` | Select a provider supported by the target runtime. Required for non-interactive or dry-run D1 → Node and SQLite → Cloudflare switches. |
+| `--database <provider>` | Select a provider supported by the target runtime: `d1`, `hyperdrive-postgres` or `hyperdrive-mysql` on Cloudflare; `sqlite`, `postgres` or `mysql` on Node; `turso` or `romedb` on both. Required for non-interactive or dry-run switches when the target runtime does not support the current provider. |
 | `--yes` | Apply without confirmation. |
 | `--dry-run` | Preview every write, deletion, and preserved edit without changing files. |
 | `--force` | Replace or delete conflicting runtime/provider-specific files. Unrelated application edits remain protected. |
 
-Turso works with either runtime and is preserved unless another provider is
-selected. D1 must change to SQLite or Turso when targeting Node. SQLite must
-change to D1 or Turso when targeting Cloudflare. If database support is not
-installed, the target runtime default is recorded silently.
+Turso and RomeDB work with either runtime and are preserved unless another provider is
+selected. D1 and Hyperdrive must change to a Node provider when targeting Node. SQLite,
+PostgreSQL and MySQL must change to a Cloudflare provider when targeting Cloudflare. If
+database support is not installed, the target runtime default is recorded silently.
 
 Recognized application, OAuth, and Turso values are transferred between `.env`
 and `.dev.vars`. Existing target-file values win, and the source file is never
@@ -329,17 +387,21 @@ scaffold manifest.
 
 ### `cossack dev`
 
-Starts the Vite dev server with hot module replacement. This is the default command for local development.
+Starts the Vite dev server (`vite dev`) with hot module replacement. This is the default command for local development.
+
+`--env <name>` sets `CLOUDFLARE_ENV` before Vite loads the project configuration. Other
+arguments are forwarded to Vite unchanged. `--json` emits lifecycle events (see
+[Machine-readable output contract](#machine-readable-output-contract)).
 
 ### `cossack build`
 
 Production build. Runs the project's `vite build`. Static site generation is not a separate step: the `cossackSsg()` Vite plugin pre-renders pages marked `ssg: true` (and Markdown pages) inside that build.
 
-`--env <name>` sets `CLOUDFLARE_ENV` before Vite loads the project configuration. Other arguments, such as `--mode`, are forwarded to `vite build` unchanged. When `package.json` declares `cossack.buildBudgets`, the command measures the built Worker against them and fails when a budget is exceeded (see [Build budgets](./build-budgets.md)). `--json` prints one result envelope with `exitCode` instead of Vite's output.
+`--env <name>` sets `CLOUDFLARE_ENV` before Vite loads the project configuration. Other arguments, such as `--mode`, are forwarded to `vite build` unchanged. When `package.json` declares `cossack.buildBudgets` (or `cossack.auxiliaryBuildBudgets`), the command measures the built Workers against them and fails when a budget is exceeded (see [Build budgets](./build-budgets.md)). `--json` prints one result envelope with `exitCode` instead of Vite's output.
 
 ### `cossack start`
 
-Starts the production server from the built output (Cloudflare Workers via `wrangler`, or the Node.js adapter).
+Starts the production server from the built output: `wrangler dev` on Cloudflare, or `node dist/server/index.js` on Node.js. Extra arguments are forwarded to that command. `--json` emits lifecycle events.
 
 ---
 
@@ -412,7 +474,7 @@ cossack g seeder posts
 
 ### `cossack delete` (alias: `d`)
 
-Delete a generated file and clean up its directory if it becomes empty.
+Delete a generated page, component, layout, middleware or service (`p`, `c`, `l`, `m`, `s`), and clean up its directory if it becomes empty.
 
 ```bash
 cossack delete page dashboard
@@ -453,9 +515,15 @@ cossack add <feature> [options]
 | `cms` | `ui`, `auth`, `dashboard`, `markdown` |
 
 Prerequisites are resolved transitively: `dashboard` also adds `ui` and
-`database` through `auth`. With `cms`, `auth` keeps users in RomeDB and does not
-add `database`. Files you changed are reported as conflicts and are not
-overwritten unless you pass `--force`. Run `pnpm install` afterwards.
+`database` through `auth`. With `cms`, `database` uses the `romedb` provider, so
+accounts are kept in the CMS's RomeDB database. Files you changed are reported as
+conflicts and are not overwritten unless you pass `--force`. Run `pnpm install` afterwards.
+
+`cossack add ui <component>` adds the `ui` feature when it is missing and copies one
+UI component (for example `button`, `modal` or `table`) into `src/components/ui/`. `--force` replaces a copy that exists.
+
+`--runtime <cloudflare|node>` names the runtime of a project whose recipe does not
+record one. `--yes` applies without prompts; `--dry-run` lists the planned changes.
 
 #### `cossack add cms`
 
@@ -494,11 +562,13 @@ images are resized with the Images binding (`IMAGES`) on Workers and `sharp` on
 Node. Maintenance runs every minute, publishing scheduled entries and delivering
 webhooks.
 
-A project whose `auth` already keeps users in the `database` feature cannot add
+A project whose `database` feature uses a provider other than `romedb` cannot add
 `cms`; create a new project with `--features cms`. The CMS serves the site's
 pages, so it cannot be combined with `examples`: `cossack create --features cms`
 starts from the minimal preset, and a project with the examples runs
-`cossack remove examples` first. OAuth sign-in is not available with `cms` yet.
+`cossack remove examples` first. Email and password sign-in is always on with `cms`;
+`--auth-methods credentials,oauth --oauth github` adds OAuth providers, which
+`src/cms.config.ts` lists under `oauth`.
 
 ```bash
 cossack add cms
@@ -565,7 +635,7 @@ Options:
 | --- | --- |
 | `--auth-methods <methods>` | `credentials`, `oauth`, or both. |
 | `--oauth <providers>` | OAuth providers: `github`, `google`, `gitlab`, `facebook`, `microsoft`. |
-| `--database <d1\|sqlite\|turso>` | Database provider, validated against the runtime. |
+| `--database <d1\|sqlite\|turso\|postgres\|mysql\|hyperdrive-postgres\|hyperdrive-mysql\|romedb>` | Database provider, validated against the runtime. |
 
 #### `cossack add dashboard`
 
@@ -615,6 +685,21 @@ See [Authentication](/docs/authentication.md) and [Social Login](/docs/oauth.md)
 
 ---
 
+### `cossack plugins <list|check|upgrade|remove> [name]`
+
+Manages plugins rendered into `src/plugins/<name>/` (render one with
+`cossack add plugin <directory|tarball|npm-package>`).
+
+- `list`: rendered plugins, installed plugin packages not rendered yet, and where each runs.
+- `check [name]`: the policy lints that builds with the CMS also run.
+- `upgrade <name>`: re-renders from the recorded source or `--source`. Edited files are kept;
+  an edited file that also changed upstream is a conflict unless you pass `--force`.
+  `--in-app` keeps the plugin in the application on Cloudflare. `--allow-unrestricted`
+  accepts a new version that starts asking for unrestricted access.
+- `remove <name>`: deletes the plugin's unedited files.
+
+See [Plugins](/docs/cms/plugins.md#commands).
+
 ## CMS management
 
 ### `cossack cms <command>`
@@ -642,8 +727,9 @@ the project's `APP_URL`, then the current login; `COSSACK_CMS_TOKEN` and `COSSAC
 override the login for CI. `--site <id>` acts on one site of a network through the network
 host. Writes take `--data '{…}'` (`@file`, `@-` for stdin) and `--set field=value`; deletes need
 `--yes`; nothing prompts under `--json`, whose `data` is the API's answer. Commands: `login`,
-`logout`, `whoami`, `mcp`, `collections`, `taxonomies`, `terms`, `entries`, `notes`, `users`,
-`roles`, `settings`, `media`, `sites`. Failures use `COSSACK_CMS_*` codes
+`logout`, `whoami`, `mcp`, `password reset`, `import wxr`, `collections`, `taxonomies`, `terms`,
+`entries`, `notes`, `users`, `roles`, `settings`, `media`, `menus`, `locations`, `areas`,
+`themes`, `plugins`, `cache purge`, `sites`. `cossack cms --help` lists every verb and option. Failures use `COSSACK_CMS_*` codes
 (`COSSACK_CMS_LOGIN_REQUIRED`, `COSSACK_CMS_FORBIDDEN`, `COSSACK_CMS_CONFLICT`,
 `COSSACK_CMS_INVALID`, …). The API, every command and the MCP tools are described in
 [Management API, CLI and MCP](./cms/api.md).
@@ -689,8 +775,22 @@ cossack migration rehash 0010_create_addresses 0011_create_outreach_records
 cossack migration plan --env staging --target remote --json
 ```
 
-The database tooling loads TypeScript configuration through `tsx`. Use
-`--env` and `--target local|remote` to select the database. `--dry-run` previews
+| Subcommand | Description |
+| --- | --- |
+| `generate <name>` | Generate a migration from the model snapshot diff (`--output <path>`, `--allow-destructive`). |
+| `snapshot` | Record the current model metadata as the generation baseline (`--force` replaces it). |
+| `squash <name>` | Generate one baseline migration from the current models (`--output <path>`; `--prune` replaces the migration files and barrel). |
+| `up` (`latest`) | Apply all pending migrations. |
+| `down` | Revert the most recent migration. |
+| `status` | List migration state and changed checksums. |
+| `rehash <name...>` | Accept the current checksums without running migrations. |
+| `check` | Fail unless all migrations are applied and checksums match. |
+| `baseline` | Record an existing schema after a clean drift check. |
+| `plan` | Preview pending migration SQL without applying it (`--direction up\|down`, default `up`). |
+
+The database tooling loads TypeScript configuration through `tsx`. `--config <path>`
+selects another ORM configuration (default: `orm.config.ts`). Use `--env` and
+`--target local|remote` (or `--local`, `--remote`) to select the database. `--dry-run` previews
 queued migration SQL or generated files without applying them. Incomplete
 plans are marked explicitly. See [Migrations](./migrations.md).
 
@@ -703,11 +803,16 @@ Application callbacks remain trusted code.
 
 ### `cossack seeder` (alias: `seed`)
 
-Run database seeders under `src/seeders/`.
+Run the seeders registered in `orm.config.ts`.
 
 ```bash
+cossack seeder list
 cossack seeder run
+cossack seeder run --only users,posts
 ```
+
+`--only` takes seeder names, comma separated. The database options are the same as for
+`cossack migration`.
 
 See [Database](/docs/database.md), [Queries](/docs/queries.md), [Migrations](/docs/migrations.md), and [Seeders](/docs/seeders.md).
 
@@ -781,6 +886,7 @@ On Cloudflare deployments, prefer runtime resizing via `/cdn-cgi/image/...`. See
 
 List all routes discovered in the project (pages, layouts, API routes).
 
+`--verbose` adds route details, and `--env <name>` selects the Cloudflare environment.
 Run `cossack routes --generate` to write `.cossack/routes.ts` before a standalone
 TypeScript compile. Use `--generate --dry-run --json` to preview generation without
 writes. Plain route inspection stays read-only. JSON output includes the shared
@@ -791,6 +897,56 @@ Routes that a mounted package serves are listed with the package's name after th
 Markdown requires a recorded scaffold feature or explicit `--markdown` selection.
 For a custom processor, configure the same feature in Vite.
 See [typed URLs](./routing.md#typed-urls) for imports, parameters, and existing-project setup.
+
+### `cossack config`
+
+Lists the project's configuration factories without running them. `--check --env <name>`
+validates their declared requirements against the selected Wrangler variables and
+bindings; `--generate` writes `.cossack/config.d.ts` (`--generate --dry-run` previews it). See [Configuration](/docs/config.md).
+
+### `cossack schema <inspect|pull|diff|check>`
+
+Compares the database with the ORM models in `orm.config.ts`. `inspect` reports the physical
+schema, `pull` writes models from the database (`--output`, `--force`), `diff` prints the
+differences and `check` fails when they differ. `--remote` reads the remote database;
+`--allow-destructive` (on `diff` and `check`) accepts drops. The database options are the
+same as for `cossack migration`. See
+[Migrations](/docs/migrations.md).
+
+### `cossack studio`
+
+Opens Studio, a database inspector on a loopback port, with the project's `orm.config.ts`.
+It needs `@cossackframework/studio` (`cossack add studio`).
+
+| Option | Description |
+| --- | --- |
+| `--port <number>` | Loopback port, 1 to 65535 (default: `4983`). |
+| `--driver <name>` | `d1`, `sqlite`, `turso`, `postgres`, `mysql`, `hyperdrive-postgres` or `hyperdrive-mysql`, when detection is not enough. |
+| `--remote` | Open the remote D1 database. Requires the D1 driver. |
+| `--database <binding>` | The D1 binding or database name. |
+| `--env <name>` | Cloudflare environment. |
+| `--no-open` | Do not open the browser. |
+| `--timeout <ms>` | Startup deadline under `--json` (default: `30000`, at most `300000`). |
+| `--dry-run` | Print the resolved options without starting Studio. |
+
+See [Studio](/docs/studio.md).
+
+### `cossack docs`
+
+Reads the installed packages' exports, the CLI command schemas and agent guidance offline.
+`--package <name> --symbols` indexes a package's declarations; `--symbol <name>` returns one.
+See [Local agent tools](/docs/local-agent-tools.md).
+
+### `cossack traces`
+
+Reads the browser snapshots saved by the opt-in development bridge, the latest by default
+(`--session <uuid>` for another). See [Development traces](/docs/development-traces.md).
+
+### `cossack test-results`
+
+Reads the reports `cossack/vitest-reporter` writes to `.vitest/cossack`, the latest run by
+default (`--run <uuid>` for another). It succeeds when the report can be read, even if tests
+failed. See [Stored test results](/docs/test-results.md).
 
 ### `cossack typecheck`
 
@@ -816,7 +972,8 @@ application class (decorators, props, state, server and client methods,
 `server$` resources, injected services and comments), and one UI tree per
 `render()` with element, component, control, text and expression nodes.
 Expressions carry their source text and TypeScript type. Project modules are
-never executed. `--schema` prints the document's JSON Schema;
+never executed. `--output <file>` writes the document to a file, and `--env <name>` selects
+the Cloudflare environment. `--schema` prints the document's JSON Schema;
 `@cossackframework/core/app-model` exports the schema, its types and
 `validateAppModel()`.
 

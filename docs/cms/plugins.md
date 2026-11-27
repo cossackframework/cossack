@@ -51,8 +51,9 @@ support-desk/
 - The source directory is `plugin/` unless the manifest's `source` field names another
   relative directory. It holds at most 2,000 files, 1 MiB each and 16 MiB in total, with no
   symbolic links or special files. The manifest is at most 256 KiB.
-- The plugin `name` is 1 to 64 lowercase letters, digits and single hyphens. `cms`,
-  `cossack`, `core`, `framework` and `app` are reserved.
+- The plugin `name` is 1 to 64 lowercase letters, digits and single hyphens. `cms`, `app`,
+  `core`, `system`, `form`, `editor`, `cossack` and `framework` are reserved, and so are names
+  starting with `cms-`.
 
 Every manifest field is described in [Plugin manifest](/docs/cms/manifest.md). A minimal one:
 
@@ -181,7 +182,7 @@ export function register(context: PluginContext) {
     console.log(context.files.url(report));
   });
   context.hooks.addAction(afterCommit, async event => {
-    if (event.resource === 'support-desk/tickets') await context.jobs.enqueue('notify', { ticket: event.recordId }, { key: `${event.recordId}:${event.revision}`, delayMs: 60_000 });
+    if (event.resource === 'support-desk/tickets') await context.jobs.enqueue('notify', { ticket: event.id }, { key: `${event.id}:${event.revision}`, delayMs: 60_000 });
   });
 }
 ```
@@ -196,8 +197,8 @@ export function register(context: PluginContext) {
 | `users.create({ email, name, password?, roles? })`, `setMeta(id, value)` | A new member with assignable roles only: roles whose every permission is the plugin's own (`<plugin>:<name>` or `<plugin>/<resource>:<action>`), or none, such as `subscriber`; a JSON value kept with the member under the plugin's key, null removes it. |
 | `cache.get`, `set(key, value, ttlMs?)`, `delete`, `remember(key, ttlMs, compute)` | The site's cache under `plugin:<name>:`; keys up to 150 characters. |
 | `secrets.get(name)` | A binding named in `permissions.secrets`, or undefined when the application has none; the name is a string literal the policy lint checks. |
-| `ai.complete({ system?, prompt, maxTokens? })` | The application's model answers; `CMS_UNAVAILABLE` when it has none (`ANTHROPIC_API_KEY`, or a Workers AI binding `AI`). Prompts are capped at 60,000 characters and answers at 4,000 tokens. |
-| `payments.checkout({ amount, currency, description } or { priceId }, successUrl, cancelUrl, customerEmail?, reference?, metadata? })`, `payments.provider` | A checkout with the application's provider (`STRIPE_SECRET_KEY`); the buyer goes to `url`. The result comes back as a `cms.payment.event` action with the `reference`, delivered from the outbox. |
+| `ai.complete({ system?, prompt, maxTokens? })` | The application's model answers; `CMS_UNAVAILABLE` when it has none (`ANTHROPIC_API_KEY`, with `ANTHROPIC_MODEL`, or a Workers AI binding `AI`, with `WORKERS_AI_MODEL`; or the `ai` option in `src/cms.config.ts`). Prompts are capped at 60,000 characters, the system text at 8,000 and answers at 4,000 tokens. |
+| `payments.checkout({ amount?, currency?, description?, priceId?, mode?, successUrl, cancelUrl, customerEmail?, reference?, metadata? })`, `payments.provider` | A checkout for an `amount` in the currency's minor unit or a provider `priceId` (`mode` `payment` or `subscription`) with the application's provider: Stripe when `STRIPE_SECRET_KEY` is set, whose webhook at `POST /api/cms/payments/webhook` needs `STRIPE_WEBHOOK_SECRET`, or the `payments` option in `src/cms.config.ts`. It returns `{ id, url }`; the buyer goes to `url`. The result comes back as a `cms.payment.event` action with the `reference`, delivered from the outbox. |
 
 Realtime needs no capability: a plugin's own realtime component
 (`@Component({ transport: 'durable-object' })` in its `components/` or `pages/`) runs as the
@@ -304,7 +305,7 @@ export const blocks = { contact: SupportContact };
   `ui.slots['dashboard.nav']`, not from code.
 - `blocks` maps each block the manifest declares (`support-desk/contact`) to a component,
   keyed by `contact` or by the full name. The site renders it with the props `block`
-  (the `RenderedBlock`: `id`, `type`, `data`, `children`) and `helpers` (the theme
+  (the `RenderedBlock`: `_id`, `type`, `data`, `html`, `media`, `children`) and `helpers` (the theme
   helpers). A block type is offered in the editor only while its plugin is active.
 - `head` (a `PluginHead`) adds tags to the document head of every site page while the plugin
   is active, under the theme's and the page's own: `({ site, helpers, plugin }) => HeadValue`, where
@@ -428,7 +429,8 @@ render → build → migrate → grant → active
    step rolls back and leaves the plugin inactive.
 4. **Grant.** An administrator opens Plugins in the dashboard and grants what the manifest
    requests: `plugin:enabled` plus every `resource:<id>:<action>` in `permissions.resources`,
-   every `network:<host>` and every `hook:<point>`. `cms.grantPlugin(name, principal)` does
+   every `network:<host>`, every `hook:<point>`, and the `capability:<name>`, `users:<action>`
+   and `secret:<NAME>` grants of the other `permissions`. `cms.grantPlugin(name, principal)` does
    the same from code. A plugin whose manifest only has a `theme` field is "theme only": it
    needs no grant and is managed under Appearance instead. A theme with ordinary plugin
    `settings` follows plugin activation rules for those settings' runtime reads.

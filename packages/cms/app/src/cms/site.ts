@@ -5,7 +5,7 @@
  */
 import {
     ENTRY_VIEW_REFUSED_BLOCKS, siteEntryView, validateBlocks, type EntryViewParts,
-    ANONYMOUS, ARTICLE_TYPES, withContentFields, authorUrl, entryAuthors, blockDocuments, SHARE_BRAND_URLS, blockIsData, blocksPlain, editedSize, fieldGroupDeclarations, hasBlockReference, parseBlockText, PATTERN_REFERENCE, resolveBindings, resolveBlockBindings, siteBindingScope, textBlocks, usesUserBinding, type BindingScopes, type ParsedText, flattenBlocks, escapeHtml, formatSiteDate, formInputs, formSettings, imageSrcset, imageUrl, imageWidths, IMAGE_WIDTHS, isCmsError, languageFlag, languageName, mediaUrl, notificationRules, recordTitle, resolvePresets, richTextBlocks, richTextParts, richTextPlain, systemPrincipal, templateCandidates, transformable, urlList,
+    ANONYMOUS, ARTICLE_TYPES, slugify, withContentFields, authorUrl, entryAuthors, blockDocuments, SHARE_BRAND_URLS, blockIsData, blocksPlain, editedSize, fieldGroupDeclarations, hasBlockReference, parseBlockText, PATTERN_REFERENCE, resolveBindings, resolveBlockBindings, siteBindingScope, textBlocks, usesUserBinding, type BindingScopes, type ParsedText, flattenBlocks, escapeHtml, formatSiteDate, formInputs, formSettings, imageSrcset, imageUrl, imageWidths, IMAGE_WIDTHS, isCmsError, languageFlag, languageName, mediaUrl, notificationRules, recordTitle, resolvePresets, richTextBlocks, richTextParts, richTextPlain, systemPrincipal, templateCandidates, transformable, urlList,
     type AuthorView, type Block,
     type Principal, type TemplatePage, type ThemeData, type ThemePresets,
     type ArchiveView, type BodyPart, type BrandIcon, type CollectionDefinition, type CommentShape, type CommentView, type CommentsView, type EntryReference, type EntryView, type FieldDeclaration, type FieldFilter,
@@ -547,23 +547,34 @@ function docMediaIds(cms: CmsHost, doc: RichTextDoc, into: Set<string>): void {
     }
 }
 
-/** Synced patterns the blocks and documents use, by ID: their blocks. Patterns inside patterns are not expanded. */
+/**
+ * Synced patterns the blocks and documents use: their blocks, by ID, and by the name a
+ * `{{ pattern … /}}` gave. Patterns have no slug field, so that name is a pattern's ID or the
+ * slug of its title. Patterns inside patterns are not expanded.
+ */
 async function usedPatterns(cms: CmsHost, docs: readonly RichTextDoc[], blocks: readonly Block[] = []): Promise<Map<string, Block[]>> {
     const all = [...docs.flatMap(doc => richTextBlocks(doc)), ...flattenBlocks(blocks)];
     const ids = [...new Set(all.filter(block => block.type === 'core/pattern').map(block => String(block.data.pattern ?? '')))].filter(Boolean);
-    // `{{ pattern hero /}}` in text names a pattern by its slug.
-    const slugs = [...new Set(all.flatMap(block => referencedBlocks(cms, block as { type: string; data: Record<string, unknown> })).filter(block => block.type === PATTERN_REFERENCE).map(block => String(block.data.pattern ?? '')))].filter(Boolean).slice(0, 50);
-    if (!ids.length && !slugs.length) return new Map();
-    try {
-        const repository = cms.resource('cms/patterns');
-        const patterns = ids.length ? await repository.getMany(ids, renderer) : new Map<string, RecordShape>();
-        const named = slugs.length ? (await repository.list({ where: { slug: { in: slugs } }, limit: 50 }, renderer)).records : [];
-        return new Map([...[...patterns].flatMap(([id, record]) => Array.isArray(record.content) ? [[id, record.content as Block[]] as const] : []),
-            ...named.flatMap(record => Array.isArray(record.content) && typeof record.slug === 'string' ? [[record.slug, record.content as Block[]] as const] : [])]);
-    } catch (error) {
-        if (isCmsError(error)) return new Map();
-        throw error;
-    }
+    const names = [...new Set(all.flatMap(block => referencedBlocks(cms, block as { type: string; data: Record<string, unknown> })).filter(block => block.type === PATTERN_REFERENCE).map(block => String(block.data.pattern ?? '')))].filter(Boolean).slice(0, 50);
+    if (!ids.length && !names.length) return new Map();
+    const repository = cms.resource('cms/patterns');
+    const found = new Map<string, Block[]>();
+    const keep = (key: string, record: RecordShape) => { if (Array.isArray(record.content)) found.set(key, record.content as Block[]); };
+    const guarded = async (read: () => Promise<void>) => {
+        try { await read(); } catch (error) { if (!isCmsError(error)) throw error; }
+    };
+    await guarded(async () => {
+        for (const [id, record] of await repository.getMany([...new Set([...ids, ...names])], renderer)) keep(id, record);
+    });
+    const unnamed = names.filter(name => !found.has(name));
+    if (unnamed.length) await guarded(async () => {
+        const { records } = await repository.list({ limit: 100 }, renderer);
+        for (const record of records) {
+            const name = typeof record.title === 'string' ? slugify(record.title) : '';
+            if (unnamed.includes(name) && !found.has(name)) keep(name, record);
+        }
+    });
+    return found;
 }
 
 /**

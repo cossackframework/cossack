@@ -48,7 +48,8 @@ profileForm.setFieldValue('address.age', '42');
 const result = await profileForm.submit(async data => saveProfile(data));
 if (result.status === 'submitted') console.log('Profile saved.');
 
-// Keep a successful submission's edited values, or restore the initial values.
+// Restore the initial values. reset(profileForm.values) instead keeps the
+// submitted values as the new initial values.
 profileForm.reset();
 
 function saveProfile(data: InputOf<typeof profileSchema>) {
@@ -65,7 +66,13 @@ in-flight validation and ignores its stale result. `submit()` prevents a second
 concurrent submit and copies field errors from Cossack validation failures. If
 the values change while the submit handler is pending, the framework reports the
 result as `stale`. The handler can already complete its external effects.
-Call `setFieldError()` or `setFormError()` for other server responses. The
+Call `setFieldError()` or `setFormError()` for other server responses, or
+`applyServerError(error)` to copy an `ActionValidationError` or `RpcError`'s
+field errors yourself (it returns `false` when the error has none).
+`clearErrors(path?)` removes them. Read state through `values`, `errors`,
+`formError`, `touched`, `isDirty`, `isSubmitting`, `isSubmitted`, or
+`getField(path)` (`{ value, error, touched, dirty }`). `setValues()` replaces all
+values at once. The
 controller does not render markup. Use `createFormBindings()` to connect native
 controls, labels, errors and keyboard submission. Array values work as whole
 fields or indexed paths such as `items.0.name`. Indices must be nonnegative
@@ -285,7 +292,7 @@ async validateDiscountCode(code: string): Promise<boolean> {
 
 ## Form and Field Templates
 
-Define your form in the `render()` method. Point the `@submit` event handler to the `@Server()` handler method. The native `@submit` event causes a page reload. The `preventDefault()` helper prevents the default behavior and calls the handler method instead. You can also write `@submit=${e => { e.preventDefault(); this.handleSubmit(); }` by hand. The helper function is more convenient.
+Define your form in the `render()` method. Point the `@submit` event handler to the `@Server()` handler method. The native `@submit` event causes a page reload. The `preventDefault()` helper prevents the default behavior and calls the handler method instead. You can also write `@submit=${e => { e.preventDefault(); this.handleSubmit(); }}` by hand. The helper function, imported from `@cossackframework/renderer`, is more convenient. It also adds `novalidate` to the form; pass `preventDefault(this.handleSubmit, { novalidate: false })` to keep the browser's native validation.
 
 ```ts
 @Server()

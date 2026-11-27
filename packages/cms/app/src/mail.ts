@@ -3,7 +3,7 @@
 // for `GET /api/cms/dev/mail`.
 import { currentCms } from './cms/index';
 
-export interface Mail { to: string; subject: string; text: string }
+export interface Mail { to: string; subject: string; text: string; kind?: 'verification' | 'reset' | 'magic-link' | 'invitation' | 'other' }
 
 /** The site's mailer, or null when the site has no email sender. */
 export function mailer(): { send(mail: Mail): Promise<void> } | null {
@@ -11,5 +11,5 @@ export function mailer(): { send(mail: Mail): Promise<void> } | null {
   try { cms = currentCms(); } catch { return null; }
   const mail = cms.mail;
   if (!mail) return null;
-  return { async send(message) { await mail.send({ to: message.to, from: cms.mailFrom, subject: message.subject, text: message.text }); } };
+  return { async send(message) { await mail.send({ ...(message.kind ? { kind: message.kind } : {}), to: message.to, from: cms.mailFrom, subject: message.subject, text: message.text }); } };
 }

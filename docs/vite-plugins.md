@@ -35,6 +35,9 @@ finds them in `src/` and in the mounted packages, so the file lists none.
 | `cloudflare`, `node` | More options for the runtime's plugin, such as `auxiliaryWorkers`. |
 | `budgets`, `security` | More options for `cossackBuildBudgets()` and `cossackSecurityPlugin()`. |
 | `plugins` | More Vite plugins, after the preset's. |
+| `parts` | More `cossackVite` functions, each adding a part as a mounted package's does (see below). |
+| `runtime` | `'cloudflare'` or `'node'`, in place of the project's (default: the recipe's runtime, then `package.json#cossack.runtime`, then `'cloudflare'`). |
+| `root` | The project directory (default: the working directory). |
 | `config` | More Vite configuration, or a function of `{ mode, command }` that returns it. It is merged last, so it wins. |
 
 ```ts
@@ -189,7 +192,7 @@ environment being built.
 Unused provider-specific modules outside the route set do not make portable
 code unsupported. Generated recipes declare selected SQLite filesystem needs
 and, only for Desktop builds, native filesystem needs. Their diagnostic source is
-`.cossack/scaffold.json`, or `package.json` for a CMS project. Unselected recipe defaults contribute no requirements.
+`package.json`, where the recipe is recorded. Unselected recipe defaults contribute no requirements.
 Generated D1/Hyperdrive recipes also declare `cloudflareBindings: ['DB']` or
 `['HYPERDRIVE']`. The shared model requires their names in the selected Cloudflare
 configuration and rejects them on process runtimes, including Desktop. The check

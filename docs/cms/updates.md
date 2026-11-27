@@ -46,7 +46,7 @@ The request body is:
 { "event_type": "cossack-update", "client_payload": { "version": "0.10.0" } }
 ```
 
-The version is the one the update check stored. The browser cannot name another.
+The version is the one the update check stored. The browser cannot name another. When the update server's `minimumFrom` is newer than the installed version, the button refuses and names the version to update to first (`cossack upgrade --tag <minimumFrom>`).
 
 ### With GitHub
 
@@ -60,7 +60,7 @@ The version is the one the update check stored. The browser cannot name another.
 The workflow:
 
 1. Installs the locked dependencies.
-2. Runs `cossack upgrade --tag <version>`, which updates the dependencies and merges the project's files with your edits.
+2. Runs `cossack upgrade --tag <version>`, which updates the dependencies and merges pages you ejected and plugins you added with your edits.
 3. Type-checks and builds.
 4. Opens a pull request with the plan in its description.
 
