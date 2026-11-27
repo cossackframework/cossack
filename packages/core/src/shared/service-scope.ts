@@ -4,6 +4,7 @@ import { registerDevelopmentScope, developmentName } from './development-inspect
 import { collectReactiveMetadata } from './reactive-metadata';
 import { beginOptimisticCall, optimisticRequestState, finishOptimisticCall, optimisticHandlers, optimisticHandler, optimisticKeys, ownRpcLoading } from './optimistic-state';
 import { createStateApplier } from './rpc-state';
+import { callState, explainRequestTooLarge } from './call-state';
 import { collectServerMethodMetadata, validateServerMethodTimeout } from './server-method-metadata';
 import './metadata';
 import type { Context } from 'hono';
@@ -411,6 +412,8 @@ export class ServiceScope {
                 if (timeoutMs !== undefined) setDeadline(timeoutMs);
                 let request: Promise<Response>;
                 let requestState: Record<string, unknown> = {};
+                let requestBytes: number | undefined;
+                let upload = false;
                 let success = false;
                 let finished = false;
                 const cleanup = () => {
@@ -422,7 +425,9 @@ export class ServiceScope {
                     finally { trace?.finish(success ? 'succeeded' : timedOut ? 'timeout' : controller.signal.aborted ? 'cancelled' : 'failed'); }
                 };
                 try {
-                    requestState = snapshotRpcValue(optimisticRequestState(entry.instance, getServiceState(entry.instance)), 'state') as Record<string, unknown>;
+                    // `send: false` fields stay out of the call (the reply brings them back if the method sets them).
+                    requestState = snapshotRpcValue(callState(entry.instance,
+                        optimisticRequestState(entry.instance, getServiceState(entry.instance))), 'state') as Record<string, unknown>;
                     const normalized = snapshotRpcPayload(payload);
                     // A layout scope outlives navigation between the pages of
                     // its subtree, so name the page the browser is on now. The
@@ -432,11 +437,14 @@ export class ServiceScope {
                     const body = { service: { ownerRouteId: this.ownerRouteId, slot: entry.slot },
                         componentRouteId: page?.componentRouteId, pageParams: page?.metadata?.params ?? {},
                         action, payload: normalized.payload, state: requestState };
-                    request = fetch(normalized.files.size ? TRANSPORT_ROUTES.upload : TRANSPORT_ROUTES.rpc, {
+                    upload = normalized.files.size > 0;
+                    const json = upload ? undefined : JSON.stringify(body);
+                    if (json !== undefined) requestBytes = new TextEncoder().encode(json).byteLength;
+                    request = fetch(upload ? TRANSPORT_ROUTES.upload : TRANSPORT_ROUTES.rpc, {
                         method: 'POST',
-                        headers: { ...trace?.requestHeaders, 'X-Cossack-Request-Id': requestId, ...(normalized.files.size ? {} : { 'Content-Type': 'application/json' }), Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
+                        headers: { ...trace?.requestHeaders, 'X-Cossack-Request-Id': requestId, ...(upload ? {} : { 'Content-Type': 'application/json' }), Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
                         signal: controller.signal,
-                        body: normalized.files.size ? rpcFormData(body, normalized.files) : JSON.stringify(body),
+                        body: json ?? rpcFormData(body, normalized.files),
                     });
                 } catch (cause) {
                     request = Promise.reject(cause instanceof RpcError ? cause : new RpcError(
@@ -453,7 +461,8 @@ export class ServiceScope {
                         trace?.response(requestId);
                         trace?.server(response);
                         if (!response.ok) {
-                            throw await readRpcHttpError(response, controller.signal);
+                            throw explainRequestTooLarge(await readRpcHttpError(response, controller.signal),
+                                { action, state: requestState, bytes: requestBytes, upload });
                         }
                         if (response.headers.get(RPC_NATIVE_RESPONSE_HEADER) === 'native') {
                             const value = await readRpcNativeResponse(response, controller.signal);

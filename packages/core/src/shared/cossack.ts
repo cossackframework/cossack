@@ -26,6 +26,7 @@ import { RpcError, isUncertainRpcError, rpcCancellations, sendRpcFrame, type Rpc
 import { isLeavingPage } from './page-exit';
 import { evaluateRateLimit, getRateLimitForAction } from './rate-limit';
 import { enterRender, exitRender, isRendering as isRenderingFn } from './server-fn';
+import { noteStateWrite } from './call-state';
 import type { Context } from 'hono';
 import type { CossackServerRuntime } from './runtime';
 import {
@@ -2340,6 +2341,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             // (client), honoring the bootstrapping suppression. `path` carries
             // the dotted mutation path for `@Task({ track })` filtering.
             const triggerReactivity = (path?: string) => {
+                noteStateWrite(this, key);
                 const current = isPublic
                     ? this._stateContainer.getPublic(key)
                     : this._stateContainer.getInternal(key);
@@ -2378,6 +2380,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 Object.defineProperty(this, key, {
                     get: () => readStoreValue(),
                     set: (newValue: any) => {
+                        // An assignment counts even when the value is unchanged: a
+                        // `send: false` store a method resets must still come back.
+                        noteStateWrite(this, key);
                         // Assigning the store's own proxy (or a nested store
                         // proxy) back must store the raw target; otherwise
                         // reads would wrap a proxy in a proxy.
@@ -2423,6 +2428,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                         return raw;
                     },
                     set: (newValue: any) => {
+                        noteStateWrite(this, key);
                         newValue = this._shallowMutationRaw.get(newValue) ?? newValue;
                         const oldValue = isPublic
                             ? this._stateContainer.getPublic(key)

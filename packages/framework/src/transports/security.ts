@@ -1,7 +1,8 @@
 import { isOriginAllowed, RpcError } from '@cossackframework/core';
 import type { Context, MiddlewareHandler } from 'hono';
 import type { RouterContext } from '../route-ids.js';
-import { readRpcRequest, RPC_JSON_REQUEST_MAX_BYTES } from './http.js';
+import { readRpcRequest, RPC_JSON_REQUEST_MAX_BYTES, RpcRequestTooLarge } from './http.js';
+import { logRpcFailure } from './rpc-logging.js';
 import { discardRequestBody } from '../request-body.js';
 import { withRuntimeRouteParams } from '../runtime-websocket.js';
 import { isTransportPath, TRANSPORT_ACTION, TRANSPORT_GUARD_PATH, TRANSPORT_TARGET_PATH } from '../transport-routes.js';
@@ -58,6 +59,7 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
             const requestId = suppliedId && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(suppliedId)
                 ? suppliedId : crypto.randomUUID();
             c.res.headers.set('X-Cossack-Request-Id', requestId);
+            const startedAt = performance.now();
             try {
                 const body = await readRpcRequest(c, ctx.rpcBodyLimits);
                 if (!body || typeof body !== 'object' || Array.isArray(body)) {
@@ -87,7 +89,11 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
                     }
                 }
             } catch (error) {
-                if (error instanceof RpcError && error.code === 'COSSACK_RPC_REQUEST_TOO_LARGE') {
+                if (error instanceof RpcRequestTooLarge) {
+                    // The body is unread, so the action and the component are unknown.
+                    const info = await ctx.runtimeInfo?.();
+                    logRpcFailure({ requestId, route: c.req.path, action: 'unknown', runtime: info?.adapter ?? info?.platform ?? 'unknown', startedAt },
+                        'request', 'COSSACK_RPC_REQUEST_TOO_LARGE', { bytes: error.bytes, limitBytes: error.limitBytes });
                     return c.json({ error: error.message, code: error.code, requestId }, 413);
                 }
                 return c.json({ error: error instanceof RpcError ? error.message : 'Invalid transport body',
