@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/typescript-plugin",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "description": "TypeScript language service plugin for Cossack html templates: template diagnostics and completions in the editor",
   "license": "MIT",
   "repository": {

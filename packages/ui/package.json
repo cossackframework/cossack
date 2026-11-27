@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/ui",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "type": "module",
   "sideEffects": false,
   "description": "UI component library for the Cossack Framework — token-driven, themeable components and Solar icons",
@@ -58,8 +58,8 @@
     "palettes": "node scripts/build-palettes.mjs"
   },
   "peerDependencies": {
-    "@cossackframework/core": "^0.9.3",
-    "@cossackframework/renderer": "^0.9.3",
+    "@cossackframework/core": "^0.9.4",
+    "@cossackframework/renderer": "^0.9.4",
     "@cossackframework/solar-icons": "^0.7.1"
   },
   "devDependencies": {
