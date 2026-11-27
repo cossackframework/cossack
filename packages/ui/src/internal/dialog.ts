@@ -64,7 +64,8 @@ export class DialogController {
         const generation = this.generation;
         queueMicrotask(() => { if (generation === this.generation && element === this.element) this.sync(); });
     }
-    private sync() {
+    /** Shows or closes the element to match the open state. */
+    sync() {
         const element = this.element;
         if (!element?.isConnected) return;
         const wanted = this.read().open ?? this.localOpen ?? this.initialOpen ?? false;

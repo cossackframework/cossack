@@ -92,6 +92,13 @@ window.fresh=(next={},other={})=>{window.unmount();props=next;second=other;windo
     await page.evaluate(()=>{window.accept=false;window.fresh({defaultOpen:true});});await browserExpect(dialog).toBeVisible();await dialog.getByRole('option',{name:'Locked'}).click({force:true});expect(await page.evaluate(()=>window.selections)).toEqual([]);await dialog.getByRole('option',{name:'Settings'}).click();await browserExpect(dialog).not.toBeVisible();expect(await page.evaluate(()=>window.selections)).toEqual(['settings']);
     await page.evaluate(()=>{window.fresh({shortcut:true});window.unmount();});await page.keyboard.press('Control+k');expect(await page.locator(':modal').count()).toBe(0);
     await page.evaluate(()=>{window.fresh({shortcut:true});const foreign=document.createElement('dialog');foreign.id='foreign';foreign.innerHTML='<button>Other modal</button>';document.body.append(foreign);foreign.showModal();});await page.keyboard.press('Control+k');await browserExpect(dialog).not.toBeVisible();await browserExpect(page.locator('#foreign')).toBeVisible();await page.evaluate(()=>{document.querySelector('#foreign').close();document.querySelector('#foreign').remove();});await page.keyboard.press('Control+k');await browserExpect(dialog).toBeVisible();expect(await page.locator(':modal').count()).toBe(1);await page.evaluate(()=>window.unmount());expect(await page.locator(':modal').count()).toBe(0);
+    // Esc closes the dialog at once but queues its close event: a Ctrl+K in between opens it again, controlled or not.
+    for(const next of [{shortcut:true,open:false},{shortcut:true}]){
+      await page.evaluate(next=>{window.accept=true;window.fresh(next);},next);await outside.focus();await page.keyboard.press('Control+k');await browserExpect(dialog).toBeVisible();
+      await page.evaluate(()=>{document.querySelector('#command').close();document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',ctrlKey:true,bubbles:true,cancelable:true}));});
+      await page.evaluate(()=>window.settle());await browserExpect(dialog).toBeVisible();expect(await page.locator(':modal').count()).toBe(1);
+      await page.keyboard.press('Escape');await browserExpect(dialog).not.toBeVisible();await page.evaluate(()=>window.unmount());
+    }
     expect(errors).toEqual([]);
   } finally {
     await browser?.close();
