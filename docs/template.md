@@ -74,6 +74,19 @@ html`<div>${unsafeHTML('<p>Hello</p>')}</div>`;
 A `<script>` inside the string does not run when the browser renders it, as with
 a `<script>` in a template.
 
+### `nothing` and `svg`
+
+`nothing` renders no content in a child position and removes the attribute in
+an attribute position. Use the `svg` tag for a fragment that sits inside an
+`<svg>` element, so its elements get the SVG namespace:
+
+```typescript
+import { html, svg, nothing } from '@cossackframework/renderer';
+
+html`<p title=${this.hint ?? nothing}>${this.error ? html`<b>${this.error}</b>` : nothing}</p>`;
+html`<svg viewBox="0 0 10 10">${svg`<circle cx="5" cy="5" r="4" />`}</svg>`;
+```
+
 ## Using Components in Templates
 
 Write a child component as a component tag: bind the class in tag position.
@@ -181,7 +194,7 @@ cossack check templates --json --verbose
 - **Hints**: a `component()` call with a literal class can be a component tag.
   Hints are listed with `--verbose`.
 
-Turn the build check off with `cossackPages({ templateDiagnostics: false })`.
+Turn the build check off with `cossackApp({ pages: { templateDiagnostics: false } })` in `vite.config.ts`.
 
 ### Editor
 
@@ -219,6 +232,8 @@ Cossack includes standard Lit directives.
 ### `repeat` (Keyed Lists)
 
 Renders lists by key. The framework reuses and reorders DOM nodes by key.
+The key and template functions receive `(item, index)`. With two arguments,
+`repeat(items, template)`, the index is the key.
 
 ```typescript
 import { repeat } from '@cossackframework/renderer';
@@ -253,12 +268,13 @@ dash-case. Custom properties (`--name`) are used exactly as written.
 
 ### `ref`
 
-Get a reference to the DOM element.
+Get a reference to the DOM element. The `ref` attribute is not a directive
+import: bind it to a function, which receives the element, or to an object with
+a `value` property, such as one from `createRef()` or `@Ref()` in
+`@cossackframework/core`. See [References](./refs.md).
 
 ```typescript
-import { ref } from '@cossackframework/renderer';
-
-html`<input ref="${(el) => console.log(el)}" />`;
+html`<input ref=${(el: HTMLInputElement) => console.log(el)} />`;
 ```
 
 ### `live`
@@ -317,6 +333,9 @@ Works for checkboxes too:
 ```typescript
 html`<input type="checkbox" .checked="${bind(this, 'active')}" />`;
 ```
+
+The field name can be a dot path into nested state, such as
+`bind(this, 'address.street')` on a `@Store` field.
 
 ### `key`
 

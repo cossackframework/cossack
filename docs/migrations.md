@@ -12,7 +12,7 @@ deterministically in `src/migrations/index.ts`.
 import type { Migration } from '@cossackframework/database';
 
 export default {
-  name: '0008_create_posts',
+  name: '0010_create_posts',
   up({ orm, schema }) {
     schema.raw(orm.sql.unsafe(`
       CREATE TABLE posts (
@@ -34,6 +34,7 @@ export default defineConfig({
   adapter: createToolingAdapter,
   entities: models,
   migrations,
+  migrationDirectory: './src/migrations',
   seeds,
 });
 ```
@@ -41,6 +42,7 @@ export default defineConfig({
 ## Commands
 
 ```sh
+cossack migration snapshot
 cossack migration generate add_posts
 cossack migration up
 cossack migration down
@@ -48,6 +50,8 @@ cossack migration status
 cossack migration rehash 0010_create_addresses 0011_create_outreach_records
 cossack migration check
 cossack migration baseline
+cossack migration squash 0001_schema
+cossack schema inspect
 cossack schema pull
 cossack schema diff
 cossack schema check
@@ -57,7 +61,19 @@ Applied migrations use `_cossack_migrations` with deterministic checksums.
 Changed applied files fail checks. Schema commands compare physical
 introspection with the logical schema emitted by decorators.
 
-There are no postinstall, dev-start, or request-start migration hooks.
+`migration snapshot` records the current models in `.cossack-schema.json`;
+`migration generate` diffs the models against that snapshot, not against the
+database. `migration squash <name>` writes one baseline migration from the
+current models, and `--prune` replaces the old files and barrel. See the ORM's
+[migrations guide](../packages/database/docs/migrations.md).
+
+There are no postinstall or dev-start migration hooks. Two exceptions apply
+pending migrations when the application first uses a database:
+`applyPendingMigrations(orm, migrations)` runs on the first request of a RomeDB
+application (one process owns a RomeDB file, so a command cannot migrate it
+beside the server), and `createTenantORMs()` migrates each tenant database the
+first time the process opens it. A database that is up to date costs one read,
+and two servers that start together apply each migration once.
 
 ## Accepting an intentional migration edit
 

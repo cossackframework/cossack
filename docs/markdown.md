@@ -16,7 +16,7 @@ import { processMarkdown } from './src/markdown-processor.ts';
 export default cossackApp({ markdownProcessor: processMarkdown });
 ```
 
-A processor takes the source text and returns `{ html, frontmatter }`. Its own packages (`unified`, remark and rehype plugins) are then your project's dependencies.
+A processor is an async function `(source, filename?) => Promise<{ html, frontmatter }>`. Its own packages (`unified`, remark and rehype plugins) are then your project's dependencies.
 
 ### Metadata via Frontmatter
 
@@ -34,7 +34,11 @@ image: "/images/og-image.png"
 Cossack is fast!
 ```
 
-The framework maps `title`, `description`, and `image` to the matching properties in `head()`. It merges them with values from layouts and the global app.
+The framework maps `title`, `description`, and `image` to the matching properties in `head()`, and adds a `<link rel="canonical">` (the `canonical` field, or the page's own route). It merges them with values from layouts and the global app. `author` and `date` render as a byline in the content. The validated frontmatter is also available as the page class's static `markdownFrontmatter` property.
+
+### Highlighted lines
+
+The built-in processor highlights code blocks with Sugar High. Mark lines to emphasize with a range in the fence's meta, such as ` ```ts {1,3-5} `, or with Docusaurus-style comments inside the block: `// highlight-next-line`, or `// highlight-start` and `// highlight-end` around a range. The comments are removed from the output. The plugin is exported as `remarkHighlightDirectives` for custom processors.
 
 ### Layout Support
 

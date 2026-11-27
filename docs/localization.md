@@ -17,8 +17,8 @@ pnpm exec cossack lang publish
 
 This creates `src/lang/en.json` and wires everything else automatically:
 
-- The framework injects `{{ cossackLang }}` into `<html lang="...">` in your `src/root.ts` (if you have one).
-- The framework adds `APP_LOCALE` to the `vars` block in `wrangler.jsonc`.
+- The command puts `{{ cossackLang }}` into `<html lang="...">` in your `src/root.ts` (if you have one). New projects already have it.
+- The command adds `APP_LOCALE` to the `vars` block in `wrangler.jsonc` (Cloudflare projects; new ones already have it).
 - The locale middleware, the `__()` global, and the `<html lang>` attribute are wired by the framework. No manual imports or middleware registration are needed.
 
 ```json
@@ -42,7 +42,7 @@ The framework detects `src/lang/*.json`, loads the active locale on the client, 
 
 ## Configuration
 
-Set the deployment-wide default locale with the `APP_LOCALE` environment variable in `wrangler.jsonc`:
+Set the deployment-wide default locale with the `APP_LOCALE` environment variable in `wrangler.jsonc` (Node.js projects: `.env`). `src/config/app.ts` reads it as `config('app.locale')`:
 
 ```jsonc
 {
@@ -56,9 +56,11 @@ To opt into automatic browser-language detection (based on the `Accept-Language`
 
 ```ts
 // src/index.ts
-import { createApp } from '@cossackframework/framework';
+import { createApp } from '@cossackframework/framework/router';
 
 const app = createApp({
+  AppComponent: App,
+  htmlTemplate: template,
   i18n: { autoDetectBrowser: true },
 });
 ```
@@ -80,7 +82,7 @@ import { setLocale } from '@cossackframework/core';
 await setLocale('es');
 ```
 
-`setLocale` is client-only. On the server, the framework resolves the locale per request (see [How it works](#how-it-works)). A call from server code throws.
+`setLocale` is client-only. On the server, the framework resolves the locale per request (see [How it works](#how-it-works)). A call from server code throws. It matches the code case-insensitively and falls back to the base language (`en-US` becomes `en`); a locale without a catalog throws.
 
 ## Runtime locale switching
 
@@ -288,7 +290,7 @@ Pluralization also works with translation-strings-as-keys.
 
 On Cloudflare Workers, a single isolate serves many concurrent requests. To prevent locale races, the framework wraps each request in an `AsyncLocalStorage` scope:
 
-1. The locale middleware runs before SSR and resolves the locale (cookie → `Accept-Language` → `config('app.locale')` → `en`).
+1. The locale middleware runs before SSR and resolves the locale (cookie → `Accept-Language` when `autoDetectBrowser` is on → `config('app.locale')` → the default locale, which always has a catalog).
 2. It loads the catalog and runs the rest of the request inside the ALS scope.
 3. `__()` and `getLocale()` read from the scope, so every visitor gets the right locale.
 
@@ -304,7 +306,7 @@ For predicted non-default locales (for example, when the `cossack_locale` cookie
 
 The `<html lang>` attribute is set automatically from the resolved locale for accessibility (screen-reader pronunciation) and SEO. It updates at runtime when `setLocale()` fires `localechange`.
 
-If you use a custom [template](/docs/template.md), use the `{{ cossackLang }}` placeholder:
+If you use a custom [HTML template](/docs/customizing-html-template.md), use the `{{ cossackLang }}` placeholder:
 
 ```ts
 export const template = `
@@ -326,6 +328,9 @@ export const template = `
 | `getLocale()` | Returns the current locale code. |
 | `isLocale(locale)` | Returns `true` if `locale` is a supported locale. |
 | `registerLocale(locale, messages)` | Registers a catalog programmatically (used internally for hydration). |
+| `getSupportedLocales()` | Returns the locale codes that have a catalog. |
+| `getDefaultLocale()` | Returns the default (fallback) locale. |
+| `LOCALE_COOKIE_NAME` | `'cossack_locale'`, the cookie `setLocale()` writes. |
 | `detectBrowserLocale(header, supported, fallback?)` | Parses an `Accept-Language` header and picks the best match. |
 | `AUTO_BROWSER` | Sentinel constant for `setLocale`. |
 | `DEFAULT_LOCALE` | `'en'`. |
@@ -337,8 +342,9 @@ export const template = `
 | `cossack lang publish` | Create `src/lang/en.json` with starter keys. Use `--locale=<code>` for a different default. |
 | `cossack lang add <locale>` | Create `src/lang/<locale>.json` with empty values, mirroring the default catalog's keys. Without a default catalog, it lists every literal `__()` key under `src`, leaving out `plugin::` keys. |
 | `cossack lang publish --locale=es` | Create `src/lang/es.json`, seeded from `en.json`'s keys. |
+| `cossack lang extract`, `check`, `types` | See [Check translations before building](#check-translations-before-building). |
 
-Both honor `--force` (overwrite) and `--dry-run` (preview without writing).
+`publish` and `add` honor `--force` (overwrite) and `--dry-run` (preview without writing).
 
 
 ## Check translations before building

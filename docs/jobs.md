@@ -91,7 +91,7 @@ Use a new key for intentional new work. Without an authored key each dispatch
 gets a new identity. `context.id` identifies one dispatch, while `context.key`
 identifies logical work across duplicate dispatches and worker restarts.
 
-The default lease is 15 minutes. Set it longer than the handler's maximum
+The default lease (`leaseMs`) is 15 minutes. Set it longer than the handler's maximum
 execution time, including cleanup. There is no heartbeat. After lease expiry a
 new worker can run the handler while the old handler is still completing an
 external call. Token fencing protects the ledger, not that external call.
@@ -103,7 +103,8 @@ does not provide exactly-once external execution.
 ## Retries and failure inspection
 
 `PermanentJobError` ends retries. `TransientJobError` and other handler errors
-retry until the store's logical attempt reaches `maxAttempts` (default 3).
+retry after `retryDelaySeconds` (default 5) until the store's logical attempt reaches
+`maxAttempts` (default 3).
 Provider attempt counters cannot reset this limit. Registered cleanup runs in
 reverse order and all hooks are awaited even when one throws. A failed handler
 retains its own retry classification. Cleanup failure after a successful handler
@@ -120,8 +121,10 @@ work. Terminal completion/failure is persisted before acknowledgement.
 ## Generated Cloudflare applications
 
 Use `cossack add jobs` in a Cloudflare application. The recipe adds the `JOBS`
-producer/consumer, a separate `JOB_STATE` D1 ledger, `src/jobs/index.ts` and the
-ledger/receipt migration. It does not add the ORM. The factory validates payloads
+producer/consumer (`max_retries: 5`), a separate `JOB_STATE` D1 ledger, the
+`JOB_NAMESPACE` variable, `src/jobs/index.ts`, a `queue(batch, env)` handler in
+`src/index.ts`, and the ledger/receipt migration (`cossack_jobs` and
+`cossack_job_receipts`). It does not add the ORM. The factory validates payloads
 and passes explicit actor/tenant scope. Call it from authorized server code:
 
 ```ts
@@ -169,7 +172,10 @@ const store = createD1JobStore(ledger);
 ```
 
 `createD1JobStore(binding)` and `jobStateSchema` are available from
-`@cossackframework/framework/jobs` for manual composition. Apply schema statements
+`@cossackframework/framework/jobs` (and `@cossackframework/core/jobs`) for manual
+composition. `createSqlJobStore` is the same store under a backend-neutral name: it takes
+any database with D1's `prepare().bind()` shape (`JobStateDatabase`) and keeps its rows in
+`cossack_jobs`. Apply schema statements
 through migrations or D1 prepared statements. D1's `exec` treats lines as separate
 statements and cannot directly consume multiline CREATE TABLE statements.
 Completed/failed ledger keys persist until an application-owned retention policy

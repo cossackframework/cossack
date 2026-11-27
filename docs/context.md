@@ -18,7 +18,7 @@ Read the request context through `this.c` on a component. The property works on 
 
 ### Accessing Route Parameters
 
-To read a URL parameter, use `this.c.req.param()`. For a page at `/pages/hello/[name]/index.ts`, read the `name` parameter like this.
+To read a URL parameter, use `this.c.req.param()`. For a page at `src/pages/hello/[name]/index.ts`, read the `name` parameter like this.
 
 API:
 ```typescript
@@ -31,7 +31,7 @@ Example:
 import { Cossack, Page, Server, State } from '@cossackframework/core';
 
 @Page()
-export class Greeting extends Cossack {
+export default class Greeting extends Cossack {
 
     @State()
     private greeting: string = '';
@@ -51,3 +51,19 @@ Behavior:
 2. The server runs `init()`. `this.c.req.param('name')` returns `"Cossack"`, and the method sets the initial value of `greeting`.
 3. The server renders the page and sends it to the client.
 4. The client hydrates the `Cossack` class and restores the same parameter. A client method can also read `"Cossack"` from `this.c.req.param('name')`.
+
+## Outside a component: `getRequestContext()`
+
+Server code without `this.c`, such as a service, a helper or a model hook, reads
+the active request's Hono `Context` with `getRequestContext()` from
+`@cossackframework/core`. It returns `undefined` outside a request and in the
+browser. Prefer the typed helpers built on it, `cookie()` and `session()`, when
+they cover what you need.
+
+```typescript
+import { getRequestContext } from '@cossackframework/core';
+
+export function currentPath(): string | undefined {
+    return getRequestContext()?.req.path;
+}
+```

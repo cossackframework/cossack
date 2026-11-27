@@ -22,8 +22,8 @@ number of browser requests. With an installed framework it also pre-bundles
 `@cossackframework/framework/client/devtools`, which the development trace
 bridge loads with every page. Vite would otherwise find it during the first page
 load, re-bundle, and reload the page. This does not make the dev bundle a
-measure of production size. After rebuilding a linked package, restart with
-`pnpm dev --force` to refresh Vite's dependency cache.
+measure of production size. A running dev server watches linked packages and
+restarts itself when one is rebuilt, so it bundles the new files again.
 
 Production builds remove unused library exports. The browser runtime also
 excludes the server action dispatcher, its input validation, and rate-limit
@@ -69,6 +69,7 @@ client:
 | `onMount()` | Client mount hook |
 | `onCleanup()` | Pre-destroy hook |
 | `onNavigateComplete()` | Post-navigation hook (App) |
+| `startViewTransition()` | View Transitions API wrapper |
 | `clientInit()` | Client-only init |
 | `loadingTemplate()` | Loading UI |
 | `escapeHtml()` | HTML escaping helper |
@@ -85,10 +86,11 @@ its full implementation:
 
 - `@Client()`: a client-only method. The server uses a stub. Use this decorator for helpers the transitive scan cannot detect.
 - `@Optimistic(action)`: optimistic UI handler
-- `@Computed()`: memoized getter
+- `@Computed()`: getter, recalculated on each read
 - `@Shared()`: runs locally on both client and server and is never proxied
 - `@On(event)` / `@OnDocument(event)` / `@OnWindow(event)` / `@OnEvent(event)`: event listeners
 - `@Task()`: runs on mount and every state update
+- `@ClientTask()`: like `@Task()`, but runs only on the client
 - `@VisibleTask()`: runs when an element enters the viewport
 - `@PreventNavigation()`: navigation guard
 - `@Validate(...)`: property validation (also marks the property)
@@ -163,8 +165,8 @@ and logs again when they change:
 ```
 
 Explicit `@Server` methods are not listed. The log follows the `devWarning`
-option. Set `cossackSecurityPlugin({ logRpcEndpoints: false })` to turn it off,
-or `true` to turn it on when `devWarning` is off. Production builds and Vitest
+option. Set `cossackApp({ security: { logRpcEndpoints: false } })` in
+`vite.config.ts` to turn it off, or `true` to turn it on when `devWarning` is off. Production builds and Vitest
 runs do not log unless `logRpcEndpoints` is `true`.
 
 ## `@Client()` as the escape hatch
@@ -237,7 +239,8 @@ anything they import reaches the browser:
 - `src/jobs/**`, `src/schedules/**` and `src/notifications/**`, which the
   recipes write;
 - a module that imports a server-only package (`@cossackframework/database`,
-  `@cossackframework/auth`, `@cossackframework/romedb`, the CMS's server
+  `@cossackframework/auth`, `@cossackframework/framework/session`,
+  `@cossackframework/romedb`, `@romedb/client`, `@romedb/node`, the CMS's server
   entries, `node:*`), unless it is a component module, whose `@Server` bodies
   are stripped first.
 

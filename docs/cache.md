@@ -5,7 +5,7 @@ description: "Configure cache stores in config/cache.ts and use cache.get(), cac
 
 # Cache
 
-The `cache` API stores data on the server. Define cache stores in `config/cache.ts`. Use the API to store results such as API responses and database queries until they expire.
+The `cache` API stores data on the server. Define cache stores in `src/config/cache.ts`. Use the API to store results such as API responses and database queries until they expire.
 
 ```typescript
 import { cache } from '@cossackframework/framework/cache';
@@ -56,7 +56,9 @@ export default ({ env }: { env: EnvFunction }): CacheConfig => ({
 });
 ```
 
-`cache.get()` uses `default`. `cache.store('kv')` uses a named store. Read any value with `config('cache.default')`.
+`cache.get()` uses `default`. `cache.store('kv')` uses a named store. Read any value with `config('cache.default')`. Without `src/config/cache.ts`, the default store is `memory`.
+
+A `kv` store's `binding` defaults to `CACHE` and its key `namespace` to `'cossack:cache:'`. A `durable-object` store's `binding` defaults to `CACHE_DO`. A `memory` store takes `maxEntries` and `maxBytes`.
 
 ## Choose a cache backend
 
@@ -121,9 +123,15 @@ One Durable Object instance backs the entire cache, so writes are linearized and
 // wrangler.jsonc
 {
   "durable_objects": {
-    "bindings": [{ "name": "CACHE_DO", "class_name": "CacheDurableObject" }]
+    "bindings": [
+      // ...the generated COSSACK_SSE and COSSACK_OBJECT bindings stay
+      { "name": "CACHE_DO", "class_name": "CacheDurableObject" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["CacheDurableObject"] }]
+  "migrations": [
+    // ...keep the generated "v1" and "realtime-v1" entries and append a new tag
+    { "tag": "cache-v1", "new_sqlite_classes": ["CacheDurableObject"] }
+  ]
 }
 ```
 
@@ -136,15 +144,15 @@ export default ({ env }) => ({
 
 > Durable Object mode requires one export. Cloudflare requires Durable Object classes to be exported from the Worker entry. Add `CacheDurableObject` to the exports in your `src/index.ts`:
 > ```ts
-> import { AppDurableObject } from '@cossackframework/framework/DurableObject'; // already there
 > import { CacheDurableObject } from '@cossackframework/framework/cache';
 >
-> export { AppDurableObject, CacheDurableObject };
+> // Beside the generated AppDurableObject and SseDurableObject exports.
+> export { CacheDurableObject };
 > ```
 
 ### Database
 
-`createDatabaseCacheStore()` stores cache data through the request-scoped ORM.
+`createDatabaseCacheStore(orm?, { tableName })` from `@cossackframework/database/cossack` stores cache data through the request-scoped ORM, in the `cache_items` table by default.
 
 New projects register it in `src/middlewares/orm.ts` and include migration `0006_create_cache_table.ts`.
 

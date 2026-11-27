@@ -97,11 +97,11 @@ plugin's resource is `<plugin>/<name>`.
 | `get(id, { principal })` | The record, or `null`. |
 | `count({ where }, { principal })` | The number of records the principal may read. |
 | `create(input, { principal })` | The new record. |
-| `update(id, patch, { principal, expectedRevision })` | The saved record. `expectedRevision` is the record's `revision` when you read it. |
+| `update(id, patch, { principal, expectedRevision })` | The saved record. `expectedRevision` is the record's `rev` when you read it. |
 | `delete(id, { principal, expectedRevision })` | Nothing. |
 
 `where` compares declared fields: a value for equality, or `{ ne }`, `{ in }`, a range
-(`{ gte, lt }`), `{ contains }`. Every call checks the principal's permissions and throws
+(`{ gte, lt }`), `{ contains }` or `{ containsAny }` for list fields such as terms. Every call checks the principal's permissions and throws
 when the principal may not do it.
 
 `cms.collections()` lists the collection definitions.
@@ -147,8 +147,9 @@ For a check of your own, read the user in `init()`, or test one permission with
 
 ## Sessions and accounts
 
-The sign-in pages are the CMS's (`/auth/login`, `/auth/register`). A page of your own
-that needs more imports the functions those pages use, from `@cossackframework/cms/app/auth`:
+The sign-in pages (`/auth/login`, `/auth/register`) and the accounts behind them are the
+shared ones of `@cossackframework/dashboard`, which the CMS package ships and serves. A page of
+your own that needs more imports the functions those pages use, from `@cossackframework/cms/app/auth`:
 `logout(c)`, `listUserSessions(c)`, `revokeSession(c, reference)`, `updateUserProfile(id, patch)`.
 
 ## An API route

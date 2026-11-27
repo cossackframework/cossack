@@ -22,7 +22,7 @@ export default ({ env }: { env: EnvFunction }): CacheConfig => ({
     // For most apps, set CACHE_DRIVER=kv and add a CACHE KV binding in
     // wrangler.jsonc — see docs/cache.md.
     // Set CACHE_DRIVER=database to use D1/Turso-backed caching (the 'database'
-    // driver is registered in src/middlewares/db.ts; the cache_items table is
+    // driver is registered in src/middlewares/orm.ts; the cache_items table is
     // created by the default migration 0006_create_cache_table.ts).
     default: env('CACHE_DRIVER', 'memory'),
 

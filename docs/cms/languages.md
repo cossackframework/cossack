@@ -216,8 +216,9 @@ cms-lang-vi/
 - A pack needs no grants. Install it with `pnpm exec cossack add plugin <package>`.
 
 To start a pack, run `pnpm exec cossack lang add vi` in a CMS application. Without a default
-catalog, the command writes `src/lang/vi.json` with every literal `__()` key under `src`,
-leaving out plugin keys. Translate the values, then move the file to the pack's
+catalog, the command writes `src/lang/vi.json` with every literal `__()` key under `src` and
+in the served files of the mounted packages (the CMS's pages and dashboard), leaving out
+plugin keys. Translate the values, then move the file to the pack's
 `plugin/translations/vi.json`.
 
 The active language's catalog ships inline with each page, like any `__()` catalog. Text

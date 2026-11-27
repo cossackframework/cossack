@@ -29,8 +29,10 @@ visit swaps it for an HttpOnly, `SameSite=Strict` cookie, and the token stops wo
 Studio in another browser, restart it for a new URL.
 
 Before it imports `orm.config.ts`, Studio loads the project's `.env` and `.dev.vars`; variables
-already set in the shell win. `DB_CONNECTION` or `COSSACK_STUDIO_DRIVER` picks the driver when
-several SQLite-family adapters could match. Credentials never reach the browser.
+already set in the shell win. `COSSACK_STUDIO_DRIVER`, then `DB_CONNECTION`, picks the driver
+when several SQLite-family adapters could match; `--driver` does the same for one run.
+Credentials never reach the browser. `cossack studio --help` lists every option, and
+[`cossack studio`](/docs/cossack-cli.md#cossack-studio) describes them.
 
 `--remote` opens the remote D1 database through the project's signed-in Wrangler. Changes there
 reach deployed data at once.
@@ -64,4 +66,4 @@ await runStudio({ projectRoot: process.cwd(), port: 4983, open: true });
 physical and model schema, relations, and applied or pending migrations. It never creates
 tables or applies migrations.
 
-See also [Database](/docs/database.md) and [`cossack schema`](/docs/cossack-cli.md#cossack-schema-pulldiffcheck).
+See also [Database](/docs/database.md) and [`cossack schema`](/docs/cossack-cli.md#cossack-schema-inspectpulldiffcheck).

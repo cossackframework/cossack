@@ -46,7 +46,7 @@ separate step. SSG browser tests use the separate
 
 ### Live Database Tests (Before a Release)
 
-PostgreSQL and MySQL tests run only on your machine, not in CI. Run them
+PostgreSQL, MySQL and RomeDB tests run only on your machine, not in CI. Run them
 before every release:
 
 ```bash
@@ -60,6 +60,8 @@ Prerequisites:
   `rt15_*`, `sl_*` and `se_*` objects, and create a temporary role on PostgreSQL.
 - Installed dependencies (`pnpm install`) and Playwright's Chromium
   (`pnpm --filter @cossackframework/studio exec playwright install chromium`).
+- A RomeDB 0.2.14+ executable, named by `COSSACK_TEST_ROMEDB_BIN` or on `PATH`. The
+  RomeDB client and CMS suites start `romedb serve` themselves.
 
 The command does the following:
 
@@ -75,11 +77,15 @@ The command does the following:
    - the database tests (`pnpm --filter @cossackframework/database run test`),
      including `test/live-dialects.test.ts` on SQLite, Turso, D1, PostgreSQL,
      MySQL and the Hyperdrive drivers;
+   - the account migrations on PostgreSQL and MySQL
+     (`packages/scaffold/tests/account-migrations-live.test.js`);
    - the Studio live introspection tests
      (`packages/studio/tests/live-introspection.test.ts`);
+   - the RomeDB client tests (`pnpm --filter @cossackframework/romedb run test`);
+   - the CMS tests (`pnpm --filter @cossackframework/cms run test`);
    - the Studio MySQL browser test (`packages/studio/e2e/mysql-definition.spec.ts`).
 
-It runs all three suites, prints a summary and exits non-zero if any suite
+It runs all six suites, prints a summary and exits non-zero if any suite
 fails. Without Docker and without both URLs, it stops with an error that says
 so.
 

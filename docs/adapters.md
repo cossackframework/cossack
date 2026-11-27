@@ -85,6 +85,23 @@ runtime.attach(server, fetch);
 installNodeShutdown(server, { dispose: () => runtime.dispose() });
 ```
 
+A generated project's `src/index.ts` does this through `nodeApplication()` from
+`@cossackframework/node-adapter`: it serves the hashed build output, builds the bindings
+(`createEnv`, which the Node Vite plugin shares), and starts the server with the shutdown
+handler when Node runs the built entry (`node dist/server/index.js`):
+
+```typescript
+export const runtime = createNodeAdapter();
+const frameworkApp = createApp({ AppComponent: App, htmlTemplate: template, runtimeAdapter: runtime });
+export const { app, createEnv, env } = await nodeApplication({
+  runtime, fetch: frameworkApp.fetch, entry: import.meta.url, dev: import.meta.env?.DEV,
+});
+```
+
+`nodeApplication()` also takes `bindings(variables)`, more bindings made from the
+environment variables, and `started(env)`, which runs once the server listens. With
+`SMTP_HOST`, `SMTP_USER` and `SMTP_PASS` set, the bindings include an `EMAIL` sender.
+
 `createNodeAdapter(options)` accepts:
 
 | Option | Default | Description |
@@ -129,8 +146,8 @@ You can generate a project pre-configured with this adapter using the `cossack` 
 
 ## Node static files
 
-The generated Node entry routes built files the same way as the generated
-Cloudflare configuration:
+The generated Node entry (`nodeApplication()`) routes built files the same way as the
+generated Cloudflare configuration:
 
 - It mounts `serveStatic` for `/assets/*` only, in front of the framework.
   Vite's hashed build output there skips global and page middleware. Hashed
@@ -152,8 +169,8 @@ The build also fails for a route at a framework transport path, on every
 runtime. See [Reserved paths](./routing.md#reserved-paths).
 Projects generated before this layout mount `serveStatic` for every path, so
 page and global policies do not protect their `public/` files. Change that
-mount to `app.use('/assets/*', ...)` as in a newly generated `src/index.ts`.
-`cossack upgrade` updates the entry, and merges the change if you edited it.
+mount to `app.use('/assets/*', ...)`, or call `nodeApplication()` as a newly
+generated `src/index.ts` does. `cossack upgrade` does not change the entry.
 Node does not read `public/_headers`. The entry sets the `/assets/*` cache
 header itself. Set headers for `public/` files in middleware.
 

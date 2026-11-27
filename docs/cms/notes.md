@@ -96,7 +96,12 @@ GET    /api/cms/content/posts/<id>/notes?status=open     → { threads: [{ root,
 POST   /api/cms/content/posts/<id>/notes                 { target, range?, quote?, body } or { parentId, body }
 PATCH  /api/cms/notes/<noteId>                           { body } (its author) and/or { status: "open" | "resolved" } (a root)
 DELETE /api/cms/notes/<noteId>
+GET    /api/cms/notes?status=open&limit=50                → { items: [{ collection, entryId, title, status, threads }] }
 ```
+
+`GET /api/cms/notes` lists the entries with notes across the site (at most 100), only those the
+caller may edit. The site's MCP server has the same operations as `list_notes`, `add_note`,
+`update_note` and `delete_note` (see [API](/docs/cms/api.md)).
 
 Reading takes the entry's read access; writing takes its update access, as a signed-in
 session (same-origin) or an application password. A note written through the API shows in

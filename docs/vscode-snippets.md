@@ -10,6 +10,10 @@ Cossack includes VS Code snippets for common tasks. The snippets work in TypeScr
 Snippets are included automatically when you scaffold a new app with
 `cossack create`. For existing projects, copy
 `.vscode/cossack.code-snippets` into your project's `.vscode/` directory.
+New projects also get `.vscode/settings.json`, which sets
+`typescript.tsserver.pluginPaths` so VS Code loads
+`@cossackframework/typescript-plugin` (template diagnostics and completions)
+from the project's `node_modules`.
 
 ## Scaffolding Snippets
 
@@ -18,7 +22,7 @@ These snippets create files and code structures.
 | Prefix | Description |
 |--------|-------------|
 | `cpage` | New page with transport selector (`http`, `durable-object`, `websocket`) |
-| `cpagelayout` | Page wrapped in a Layout component |
+| `cpagelayout` | Page wrapped in a `Layout` component imported from `@/components/Layout` (create that component first) |
 | `cpagedynamic` | Page with dynamic route params, `init()`, and `head()` |
 | `clayout` | Layout file (`layout.ts`) with `this.children` slot |
 | `ccomponent` | Reusable component with `declare props`, attribute spread, and content projection |
@@ -52,11 +56,12 @@ These insert individual decorators or methods into an existing class.
 | `conmount` | `onMount()` lifecycle hook (runs once after first client render) |
 | `concleanup` | `onCleanup()` lifecycle hook (runs before component destruction) |
 
-## Composition Snippet
+## Composition & Translation Snippets
 
 | Prefix | Description |
 |--------|-------------|
 | `ccompose` | Component tag to embed a child component with props and slot content |
+| `ctranslate` | `__()` translation call with an optional parameter object |
 
 ## Usage
 

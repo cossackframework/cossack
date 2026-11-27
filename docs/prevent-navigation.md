@@ -57,8 +57,10 @@ export default class UnsavedForm extends Cossack {
 
 1. Interception: When a user clicks a link managed by Cossack's client-side router, the framework checks the current page for any `@PreventNavigation` handler.
 2. Evaluation: The handler is executed. If it returns `true` (or a Promise resolving to `true`), the navigation is halted.
-3. State Update: The blocked navigation action is stored in `_pendingNavigation` and `_render()` is triggered to allow your UI to react.
+3. State Update: The blocked navigation action is stored in `_pendingNavigation` and the page re-renders so your UI can react.
 4. Resolution: `confirmNavigation(true)` runs the stored action without checking again. `confirmNavigation(false)` clears the pending state.
+
+Only the current page's `@PreventNavigation` method runs; a layout's is not checked. The guard covers client-side navigation and browser back/forward. A reload, closing the tab, or a link that the browser handles itself (another origin, `target`, `download`) does not reach it. For those, add a `beforeunload` listener, for example with `@OnWindow('beforeunload')`.
 
 
 ## Navigation completion contract
@@ -72,7 +74,7 @@ the page render, history change, and scroll update. Applications that call
 | `completed` | The page rendered, history updated, scroll policy applied. |
 | `redirected` | The server redirected during the fetch. `url` includes the final path, query, and fragment. |
 | `superseded` | A newer navigation took ownership. Revoked work cannot publish further changes. |
-| `canceled` | A `preventNavigation` handler stopped this navigation. |
+| `canceled` | A `@PreventNavigation` method stopped this navigation. |
 | `failed` | The fetch or render threw after the error event. `error` carries the cause. |
 
 ```ts

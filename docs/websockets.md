@@ -11,6 +11,32 @@ Cossack unifies client and server state management. For real-time applications i
 
 Both patterns belong to the real-time transport. They require a realtime owner: a page or a layout decorated with `@Page({ transport: 'durable-object' })`, or a child component decorated with `@Component({ transport: 'durable-object', scope })`.
 
+## Cloudflare setup
+
+On Cloudflare, every realtime instance is an `AppDurableObject`, reached through the
+`COSSACK_OBJECT` binding. Generated applications already declare it. In an existing
+application, add the binding and its SQLite migration to `wrangler.jsonc` and export the
+class from the Worker entry:
+
+```jsonc
+{
+  "durable_objects": {
+    "bindings": [{ "name": "COSSACK_OBJECT", "class_name": "AppDurableObject" }]
+  },
+  "migrations": [{ "tag": "realtime-v1", "new_sqlite_classes": ["AppDurableObject"] }]
+}
+```
+
+```typescript
+// src/index.ts
+import { AppDurableObject } from '@cossackframework/framework/DurableObject';
+export { AppDurableObject };
+```
+
+Named Cloudflare environments do not inherit bindings: repeat the binding in each one.
+See [Deployment](./deployment.md). Node keeps realtime instances in the server process and
+needs no binding.
+
 ## Calling actions over WebSockets
 
 `@Server()` methods on WebSocket-transport components are request-scoped RPC
@@ -631,7 +657,7 @@ This pattern is secure by default and prevents race conditions or accidental dat
 #### Example: Deleting a Task
 
 ```typescript
-import { Page, Server, State, OnEvent } from '@cossackframework/core';
+import { Cossack, Page, Server, State, OnEvent } from '@cossackframework/core';
 
 @Page({ transport: 'durable-object' })
 export class Tasks extends Cossack {
@@ -647,6 +673,7 @@ export class Tasks extends Cossack {
         }
     }
 
+    @Server()
     private async deleteTask(taskId: number) {
         // 1. Modify the source of truth (the in-memory array here)
         this.tasks = this.tasks.filter(task => task.id !== taskId);
@@ -685,6 +712,7 @@ export class LiveCounter extends Cossack {
     @State() // Uses the 'global' channel.
     private count: number = 0;
 
+    @Server()
     private increment() {
         this.count++;
     }

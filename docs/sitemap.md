@@ -87,11 +87,14 @@ interface SitemapOptions {
 
 ## Auto-Excluded Routes
 
-The generator excludes these routes from the sitemap:
+The generator excludes these routes from the sitemap. It compares whole path
+segments, so `/error-codes` and `/404-stories` stay:
 
-- API routes: paths that contain `/api/`, for example `/api/users`
-- 404 pages: paths that contain `/404`
-- Error pages: paths that contain `/error`
+- API routes: `/api` and paths under it, for example `/api/users`
+- 404 pages: paths that end with `/404`
+- Error pages: paths that end with `/error`
+
+A page with a canonical URL is listed under that absolute URL.
 
 ## Priority Settings
 
@@ -103,7 +106,9 @@ The generator excludes these routes from the sitemap:
 Customize the default priority in the options:
 
 ```typescript
-// In build-ssg.ts or your custom SSG build script
+// In your custom SSG build script
+import { generateSitemapFromUrls } from '@cossackframework/framework/sitemap-generator';
+
 const sitemap = generateSitemapFromUrls(routes, {
   baseUrl: 'https://example.com',
   defaultPriority: 0.7,
@@ -162,10 +167,11 @@ function generateSitemapIndex(
 
 ## Output Location
 
-The build saves the sitemap to:
+The build saves the sitemap, and a `routes.json` list of the rendered routes, to
+the client build's output directory (or the `outDir` option of `cossackSsg()`):
 
 ```
-dist/ssg/sitemap.xml
+dist/client/sitemap.xml
 ```
 
 ## Submitting to Search Engines

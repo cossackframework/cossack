@@ -13,7 +13,8 @@ site by the theme through `helpers.block()`.
 
 Every block has a Style tab (colors, spacing, font size and alignment from the theme's
 presets; containers also take an [advanced background](/docs/cms/themes.md#backgrounds)) and
-Advanced settings (an HTML id, class names, hiding at a container width). Layout and media
+Advanced settings (an HTML id, class names, hiding at a container width, and keeping search
+and answer engines from quoting it: `layout.nosnippet`, rendered as `data-nosnippet`). Layout and media
 blocks have a Width field: content width, wide, or full width; see
 [Widths and full-width sections](/docs/cms/themes.md#widths-and-full-width-sections).
 
@@ -51,6 +52,15 @@ and opening the tab a `#panel` link points at, and counts a stat up. The lightbo
 of *Before and after* and the carousel's thumbnails are scripts too: without them a gallery's
 images and a video's poster are links to the files, every pair shows split where it starts,
 and the carousel scrolls and swipes.
+
+## Patterns
+
+A pattern is a saved list of blocks, kept as an entry of the built-in `patterns` collection.
+A **synced** pattern (the default) is placed as one *Pattern* block (`core/pattern`, holding
+the pattern's ID), so editing the pattern changes every entry and mega menu panel that shows it; Live Edit edits it in place. An unsynced pattern is inserted as a copy of its
+blocks. *Starting layout for* lists the collections whose new entries may start from it.
+Patterns inside a pattern are left out when it renders. Themes and plugins ship patterns through
+the manifest ([the manifest](/docs/cms/manifest.md#patterns)).
 
 ## Icons
 
@@ -164,6 +174,7 @@ What the host does for the block:
   field form in the dashboard and in the Live Edit panel; a theme may instead replace a core
   renderer through the `blocks` map of its `theme` export.
 
-Test a plugin block the way the CMS tests its own: render the block through `themeHelpers`
-from a unit test, and through a generated application in an integration test (see
+Test a plugin block the way the CMS tests its own: check the declaration and sample data with
+`manifestProblems` and `validateBlocks` from `@cossackframework/cms` in a unit test, and render
+it through a generated application in an integration test (see
 [Testing a plugin](/docs/cms/plugins.md#testing-a-plugin)).

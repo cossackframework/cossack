@@ -21,20 +21,24 @@ Middleware definitions live in `src/middlewares/*.ts`. The ordered list in `src/
 ```ts
 // src/bootstrap/middlewares.ts
 import type { MiddlewareHandler } from 'hono';
-import { ormRequestMiddleware, sessionMiddleware } from '../middlewares/orm';
-import { auth } from '../auth';
+import { ormRequestMiddleware } from '../middlewares/orm';
+import { tenantMiddleware } from '@cossackframework/dashboard/app/middlewares/tenant';
+import { authMiddlewares } from '@cossackframework/dashboard/app/middlewares/auth';
 
 const middlewares: MiddlewareHandler[] = [
   ormRequestMiddleware,
-  sessionMiddleware,
-  auth.middleware,
+  tenantMiddleware,
+  ...authMiddlewares, // the auth session, then the sign-in guard
 ];
 
 export default middlewares;
 ```
 
-The framework session bag above is opt-in. Generated auth already supplies its
-own persistent cookie. Register the extra bag only on routes that need visitor
+This is the list a project with `auth` gets. A CMS project spreads
+`cmsMiddlewares` from `@cossackframework/cms/app/cms/middlewares` instead.
+`src/middlewares/orm.ts` also exports `sessionMiddleware`, the framework session
+bag. It is opt-in and not in the list: generated auth already supplies its own
+persistent cookie. Register the extra bag only on routes that need visitor
 state. Its new-visitor cookie prevents that response from being published as SSG.
 
 ```ts

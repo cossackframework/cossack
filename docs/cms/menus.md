@@ -51,7 +51,7 @@ children; otherwise it opens as a dropdown. Nothing else decides it.
 
 - **Headings** group the links under them into columns: nest a heading under the item, then
   the links under the heading. Links before the first heading form a column of their own.
-- The **panel** is a synced [pattern](/docs/cms/index.md#patterns) chosen on the item's
+- The **panel** is a synced [pattern](/docs/cms/blocks.md#patterns) chosen on the item's
   General tab (Edit pattern and New pattern open the pattern editor). It is the extra content
   a dropdown cannot say: a featured card, a call to action, latest posts, an image. The site
   renders it like a widget area, media and latest entries resolved, `{{ $site.… }}` and
@@ -84,11 +84,10 @@ three styles; it returns null for an empty menu.
 | `inline` | One row of links with children flattened, for footers. |
 | `list` | The whole tree as nested lists, for sidebars. |
 
-`label` names the `nav` for assistive technology (the location's name by default) and `class`
+`label` names the `nav` for assistive technology (the location's label by default) and `class`
 adds class names to it. The markup uses `cms-nav-*` and `cms-mega-*` classes styled in
 `cms/blocks.css` with the UI kit's variables, so the theme's accent applies; a theme restyles
-them in its own stylesheet, or draws the menu itself from `site.menus` as the fallback theme
-does. The current page's link carries `aria-current="page"`. Each item's class names and
+them in its own stylesheet, or draws the menu itself from `site.menus`. The current page's link carries `aria-current="page"`. Each item's class names and
 attributes land on its link.
 
 `motion` chooses how dropdowns and mega panels open, as `data-motion` on the `nav`:
@@ -161,14 +160,16 @@ the `mobile` location. Under Appearance → Widgets a navigation block in a foot
 }
 ```
 
-`assigned` is false when no menu is at the location; `items` then lists the top-level pages
-for `primary` and nothing elsewhere. Typed `fields` and the rendered `panel` are the same
+`assigned` is false when no menu is at the location; `items` is then empty, for `primary` too
+(the top-level pages the site shows there are its own fallback, not the API's). Typed `fields` and the rendered `panel` are the same
 shapes themes get, so a headless client renders them with its own components.
 
 Menus are also managed from outside the dashboard, by people with the appearance permission:
 `GET|POST /api/cms/appearance/menus` and `GET|PATCH|DELETE /api/cms/appearance/menus/<id>` hold
 the stored trees (`{ name, items, locations, rev }`; items may leave out their IDs), and
-`/api/cms/appearance/locations` the themes' locations with the menu at each. The `cossack cms
+`GET /api/cms/appearance/locations` the themes' locations with the menu at each;
+`PATCH /api/cms/appearance/locations/<location>` with `{ "menu": "<id>" }` or `{ "menu": null }`
+shows a menu there or none. The `cossack cms
 menus` and `locations` commands and the `create_menu`, `update_menu` and
 `assign_menu_location` MCP tools call them, so a script or an agent builds a mega menu from a
 JSON tree and places it at `primary`; see [Management API, CLI and MCP](/docs/cms/api.md).
