@@ -23,6 +23,29 @@ describe('cms recipe', () => {
     expect(() => resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'], authMethods: 'oauth', oauth: 'github' })).toThrow(/always signs in with email and password/);
   });
 
+  it('keeps a CMS project on RomeDB whatever database an older release read for it', async () => {
+    // Releases before 0.9.3 read a CMS project's database as d1 or sqlite (their default then), and
+    // their cossack upgrade renders the new release's recipe with it: the files must still be RomeDB's.
+    for (const [adapter, database] of [['cloudflare', 'd1'], ['node', 'sqlite']]) {
+      const recipe = resolveRecipe({ adapter, preset: 'minimal', features: ['cms'], database });
+      expect(recipe.config.database).toBe('romedb');
+      const files = await renderRecipe(recipe);
+      expect(text(files, 'src/orm/factory.ts')).toContain("import { romedb } from '@cossackframework/romedb/orm';");
+      expect(text(files, 'src/orm/factory.ts')).not.toMatch(/\bd1\(|sqlite/);
+    }
+  });
+
+  it('refuses another database a person names for a CMS project', async () => {
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-cms-database-'));
+    directories.push(cwd);
+    await expect(createApp('site', { cwd, adapter: 'cloudflare', preset: 'minimal', features: ['cms'], database: 'd1', interactive: false }))
+      .rejects.toMatchObject({ code: 'COSSACK_CMS_DATABASE', message: expect.stringContaining('--database d1') });
+    // RomeDB, named or not, is the CMS's own.
+    await createApp('site', { cwd, adapter: 'cloudflare', preset: 'minimal', features: ['cms'], database: 'romedb', interactive: false });
+    const root = path.join(cwd, 'site');
+    await expect(addFeature(root, 'jobs', { database: 'postgres', runtime: 'cloudflare', interactive: false })).rejects.toMatchObject({ code: 'COSSACK_CMS_DATABASE' });
+  });
+
   it('mounts the CMS from its package: the project holds its own configuration and no shell', async () => {
     const files = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'] }));
     // The application names the package it mounts; installing it alone adds no routes.

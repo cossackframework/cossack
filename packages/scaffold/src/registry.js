@@ -166,9 +166,11 @@ export function resolveRecipe(options = {}) {
     if (conflict.features.every(feature => resolvedFeatures.includes(feature))) throw new Error(conflict.reason);
   }
 
-  // The CMS is on RomeDB, and its accounts (the ORM's tables) are in the same database.
-  const database = options.database ??
-    (resolvedFeatures.includes('cms') ? 'romedb' : adapter === 'cloudflare' ? 'd1' : 'sqlite');
+  // The CMS is on RomeDB, and its accounts (the ORM's tables) are in the same database. A CMS
+  // project has no other: a database an older release read for one (its default then, d1 or
+  // sqlite) is not a choice, and `cossack create` and `add` refuse one a person names.
+  const database = resolvedFeatures.includes('cms') ? 'romedb'
+    : options.database ?? (adapter === 'cloudflare' ? 'd1' : 'sqlite');
   if (!DATABASE_PROVIDERS[database]) {
     throw new Error(`Unknown database provider "${database}". Supported values: ${Object.keys(DATABASE_PROVIDERS).join(', ')}`);
   }

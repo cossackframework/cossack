@@ -635,7 +635,7 @@ Options:
 | --- | --- |
 | `--auth-methods <methods>` | `credentials`, `oauth`, or both. |
 | `--oauth <providers>` | OAuth providers: `github`, `google`, `gitlab`, `facebook`, `microsoft`. |
-| `--database <d1\|sqlite\|turso\|postgres\|mysql\|hyperdrive-postgres\|hyperdrive-mysql\|romedb>` | Database provider, validated against the runtime. |
+| `--database <d1\|sqlite\|turso\|postgres\|mysql\|hyperdrive-postgres\|hyperdrive-mysql\|romedb>` | Database provider, validated against the runtime. A CMS project's database is RomeDB: another one is refused (`COSSACK_CMS_DATABASE`). |
 
 #### `cossack add dashboard`
 
