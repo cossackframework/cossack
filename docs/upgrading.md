@@ -197,13 +197,27 @@ The browser entry of the renderer no longer has `renderToString`: import it from
 typed `(event: InputEvent) => void` no longer checks: type it `(event: Event)` and read
 the value from `event.currentTarget` or `event.target`.
 
-### Changes after 0.9.3
+### Changes in 0.9.4
 
 - `createApp({ rpc: { maxJsonBytes } })` is `rpc.maxRequestBytes`, an integer from 1 byte to
   16 MiB. Core's `validateRpcResponseLimit` is `validateRpcByteLimit`.
 - `@State({ send: false })` and `@Store({ send: false })` keep a field out of server method
   calls ([State Management](./states.md#keep-large-fields-out-of-calls)). A page that moved a
   large field to an HTTP route to stay under the request limit can keep it there, or mark it.
+- A CMS project's database is always RomeDB. `cossack create` and `cossack add` refuse another
+  `--database` for it (`COSSACK_CMS_DATABASE`), and the prompts no longer ask.
+- A CMS project on 0.9.2 upgrades with two runs of `cossack upgrade`. The first runs the
+  project's 0.9.2 CLI, and the build then stops with the CMS's host steps. The second runs the
+  new CLI and writes the account files (see "Changes in 0.9.3" below). Then set
+  `cossack.template` to `0.9.3`.
+- CMS: `cms.mail.before-send` filters get the real `kind` of account emails (verification,
+  reset, magic link, invitation) instead of `other`.
+- CMS themes: `templates/members.ts` fills the `members` template. `{{ pattern name /}}`
+  matches a pattern's ID or the slug of its title.
+- A Workers CMS project with schedules: the `scheduled` handler runs app schedules only for
+  the crons they declare, so the CMS's every-minute tick no longer fails.
+- `plugins` from `@cossackframework/framework/plugins` is a live binding of the plugin
+  registry, not a copy made when the module loads.
 
 ### Changes in 0.9.3
 

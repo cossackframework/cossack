@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/dashboard",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "type": "module",
   "description": "Cossack sign-in pages and dashboard on the database ORM, served from the package",
   "license": "MIT",
