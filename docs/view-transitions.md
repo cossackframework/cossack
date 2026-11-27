@@ -147,7 +147,7 @@ this.redirect('/dashboard?tab=activity', {
 this.redirect('/login', { status: 302, types: ['fade'], scroll: 'top' });
 ```
 
-The `redirect(url, status)` signature also works.
+The `redirect(url, status)` signature also works. On the client, `redirect()` starts the navigation and returns nothing; use `await this.navigate(url, options)` when you need the outcome. `navigate()` accepts `types`, `scroll` and `history: 'push' | 'replace'` (see [Prevent Navigation](./prevent-navigation.md)).
 
 ## Same-Page Transitions
 
@@ -251,7 +251,10 @@ The `cossack:ready` event exposes the navigation kind through `event.detail.navi
 
 - `initial`: initial hydration.
 - `push`: a link or programmatic client navigation.
+- `replace`: a programmatic navigation with `this.navigate(url, { history: 'replace' })`.
 - `traverse`: browser back/forward navigation.
+
+The detail also carries `pathname`, and for client navigations `types` and the effective `scroll` policy. `cossack:before-navigate` fires on `document` before the fetch, with `fromPathname`, `toPathname` and `navigationType`.
 
 ## Closing Transient UI During Navigation
 
@@ -277,6 +280,8 @@ The built-in event decorator and lifecycle hook keep the listeners scoped to the
 ## Graceful Fallback
 
 If the browser does not support the View Transitions API, navigation and state changes happen normally without animation. No errors are thrown, and no degraded behavior occurs.
+
+To branch on support in your own code, `supportsViewTransitions()` and `supportsViewTransitionTypes()` from `@cossackframework/core` return whether the browser has `document.startViewTransition` and its `types` form. Both return `false` on the server.
 
 Development builds report the selected transition path through the
 [navigation diagnostic stream](./prevent-navigation.md#development-diagnostics).

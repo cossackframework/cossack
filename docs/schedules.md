@@ -26,7 +26,8 @@ validator for JSON configuration, compiler preflight, and inspection. It rejects
 duplicate names, invalid cron, unsafe JSON, and missing explicit scope.
 The job schema validates payload contents when dispatched. A valid schedule
 definition does not prove that its job exists in a separately supplied registry.
-Authored literal definitions preserve static job-name validation. An imported JSON
+`validateScheduleCron(expression)` checks and normalizes one cron expression the
+same way. Authored literal definitions preserve static job-name validation. An imported JSON
 registry must pass through `validateScheduleDefinitions(json)` before you supply
 it to a typed dispatcher. Its returned `ValidatedScheduleDefinitions` marks that
 explicit configuration boundary. Runtime construction validates it again, and the
@@ -89,3 +90,19 @@ It requires an explicit scheduler adapter or an external scheduler that calls
 `runOnce`/`scheduled`. The local one-shot API is for controlled execution, not
 durable production scheduling. Never retain an HTTP request or its facilities
 in a schedule definition. Resolve scoped facilities in the job handler.
+
+## Generated Cloudflare applications
+
+`cossack add schedules` requires the jobs feature. It adds `src/schedules.json` (one
+`hourly-record` schedule that dispatches the example `record` job), `src/schedules/index.ts`
+with `createSchedules(env)`, a `"triggers": { "crons": ["0 * * * *"] }` entry in
+`wrangler.jsonc`, and a `scheduled(controller, env)` handler in `src/index.ts` that awaits
+`createSchedules(env).scheduled(controller)`.
+
+The build checks the declarations before it compiles: the Vite preset adds
+`cossackSchedules()`, which validates `src/schedules.json` and requires that the
+`triggers.crons` of the selected Wrangler environment (`CLOUDFLARE_ENV`) name exactly the
+declared cron expressions. A mismatch fails with `COSSACK_SCHEDULE_TRIGGERS_MISMATCH`, and
+declarations on a runtime other than Cloudflare fail with
+`COSSACK_SCHEDULER_ADAPTER_REQUIRED`. `cossack inspect schedules [--env <name>]` and
+`cossack check schedules` report the same checks without running a handler.

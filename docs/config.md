@@ -180,6 +180,12 @@ For a deployed Worker, use Wrangler variables:
 }
 ```
 
+`@cossackframework/framework/cors` exports the `CorsConfig` type that
+`src/config/cors.ts` returns, `defaultCorsConfig`, `isCorsPath(path, paths)` and
+`createCorsMiddleware(getConfig?)`. The framework already registers that
+middleware with `config('cors')`. Call it yourself only to apply a different
+configuration in your own Hono app.
+
 CORS controls which responses browsers expose to cross-origin JavaScript. It
 does not replace authentication, authorization, CSRF protection, or rate limits.
 
@@ -189,6 +195,43 @@ does not replace authentication, authorization, CSRF protection, or rate limits.
 |--------|--------------|-------------|-------------|
 | `config('app.name')` | The evaluated configuration tree (from `src/config/*.ts`) | Any (generic) | Reading structured configuration values with dotted paths |
 | `env('APP_SECRET')` | A flat binding from `c.env` | Always `string` | Reading a raw binding directly, without a configuration file |
+| `binding<D1Database>('DB')` | A binding object from `c.env`, not stringified | `T \| undefined` | Reading D1, KV, R2, Durable Object, service or `send_email` bindings |
+
+`config`, `env` and `binding` are also globals: server code can call them
+without an import.
+
+### Required values
+
+`requireBinding<T>(name)` and `requireEnv(name)` throw a `ConfigBindingError`
+(`code: 'COSSACK_BINDING_MISSING'`) when the value is absent. The message names
+the binding and lists the names, never the values, of the bindings present.
+
+A config file can declare its variables and bindings in a literal
+`requirements` export. The build and request preparation test them (see
+[Build-time requirement checks](#build-time-requirement-checks)):
+
+```ts
+// src/config/search.ts
+export const requirements = {
+  variables: {
+    SEARCH_URL: { type: 'string', required: true, runtimes: ['cloudflare'] },
+    SEARCH_TOKEN: { type: 'string', required: true, secret: true },
+    SEARCH_LIMIT: { type: 'number', coerce: true },
+  },
+  bindings: {
+    SEARCH_CACHE: { kind: 'kv', required: false },
+  },
+} as const;
+
+export default ({ env }) => ({ url: env('SEARCH_URL') });
+```
+
+Variable types are `string`, `number` and `boolean`. Binding kinds are
+`object`, `d1`, `kv`, `r2`, `durable-object` and `service`. `runtimes`
+(`cloudflare`, `node`, `ssg`, …) limits a rule; without it, the rule applies
+everywhere. `configVariable('SEARCH_LIMIT', 'number')` reads a declared variable
+with its coerced type, and `requireConfigVariable()` throws a
+`ConfigRequirementError` when it is absent.
 
 ## Accessing config in components
 
@@ -264,7 +307,7 @@ Several framework features read from the configuration system:
 |---------|-----------|---------|
 | Localization (default locale) | `config('app.locale')` | `APP_LOCALE` |
 | SSG (site URL) | `config('app.url')` | `APP_URL` |
-| Flash data (signing secret) | `config('app.key')` | `APP_SECRET` |
+| Flash data (signing secret) | read from the binding directly | `APP_SECRET` (then `COSSACK_SECRET`, `SECRET`) |
 
 For example, the locale middleware resolves the default locale from `config('app.locale')` (which reads `APP_LOCALE` via `src/config/app.ts`). The SSG build injects the resolved site URL as `APP_URL` so `config('app.url')` works during static generation.
 
@@ -380,6 +423,10 @@ All exports come from `@cossackframework/framework/config`.
 |---|---|
 | `config(key, defaultValue?)` | Reads a value from the configuration tree via dotted notation (`'app.name'`). When `CossackConfigRegistry` is augmented, infers the return type and auto-completes paths. Returns `defaultValue` when the key is missing or no request scope is active. |
 | `env(key, defaultValue?)` | Reads a flat binding from the per-request env (`c.env`), coerced to a string. Returns `defaultValue` (or `''`) when the binding is unset or no request scope is active. |
+| `binding<T>(key)` | Reads a binding object without coercion. Returns `undefined` when it is unset or no request scope is active. |
+| `requireBinding<T>(key)` / `requireEnv(key)` | Like `binding()` / `env()`, but throw `ConfigBindingError` (`COSSACK_BINDING_MISSING`) when the value is absent. |
+| `configVariable(name, type)` / `requireConfigVariable(name, type)` | Read a variable declared in a `requirements` export, with its coerced type. They throw `ConfigRequirementError` for an undeclared name, a type mismatch or (the second) an absent value. |
+| `ConfigRequirements`, `VariableRequirement`, `BindingRequirement` | Types of a config file's `requirements` export. |
 | `ConfigFactory` | Type of a configuration file's default export: `({ env }) => Record<string, unknown>`. |
 | `EnvFunction` | Type of the `env` function passed to config factories: `(key, defaultValue?) => string`. |
 | `ConfigStore` | Internal: the per-request store (`{ env, config }`) held in ALS. |

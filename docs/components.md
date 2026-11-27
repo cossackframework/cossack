@@ -5,7 +5,7 @@ description: "Build reusable Cossack components with the same base class and sta
 
 # Components
 
-Reusable components extend the same `Cossack` base class as pages. Add them to a template with the component helper. This guide explains how to create them and manage their state.
+Reusable components extend the same `Cossack` base class as pages. Add them to a template with a component tag. This guide explains how to create them and manage their state.
 
 > Methods on `Cossack` subclasses that are not needed in
 > the browser are automatically stripped from the client bundle. See
@@ -150,9 +150,12 @@ async saveData(data: any) {
 
 render() {
     return html`
-        <${MyForm} @save=${this.saveData} />
+        <${MyForm} onSave=${this.saveData} />
     `;
 }
+
+// Child (MyForm) calls the prop
+this.props.onSave?.(data);
 ```
 
 ## Server Actions in Components
@@ -170,6 +173,7 @@ import { html } from "@cossackframework/renderer";
 export class Counter extends Cossack {
     @State() count = 0;
 
+    @Server()
     increment() {
         this.count++;
     }
@@ -186,7 +190,7 @@ export class Counter extends Cossack {
 
 When a component with `@Server` actions is used in a Page:
 
-1. Initial render (server): the component is rendered, and its state is included in the Page's initial state tree under `_children`.
+1. Initial render (server): the component is rendered, and its state is included in the Page's initial state tree under `children`, keyed by component ID.
 2. Client hydration: the component is restored with its server state.
 3. Action dispatch: when a `@Server` method is called, the framework sends the action to the server with the component's current state.
 4. State update: the server executes the action and returns the updated state.
@@ -284,6 +288,7 @@ export class LikeButton extends Cossack {
     @State() liked = false;
     @State() count = 0;
 
+    @Server()
     async toggleLike() {
         // Access database bindings
         const stmt = this.env.DB.prepare(

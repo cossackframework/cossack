@@ -222,7 +222,7 @@ When your `hasPermission` callback is synchronous (for example the user has a
 
 ```ts
 import { Page, Cossack } from '@cossackframework/core';
-import { html } from 'lit';
+import { html } from '@cossackframework/renderer';
 import { guard } from '../auth';
 
 @Page()
@@ -249,7 +249,7 @@ the client automatically and survives re-renders without re-querying:
 
 ```ts
 import { Page, Cossack, State, Server } from '@cossackframework/core';
-import { html } from 'lit';
+import { html } from '@cossackframework/renderer';
 import { guard } from '../auth';
 
 @Page()

@@ -13,7 +13,7 @@ checks every write against the group's declaration and fills in defaults when it
 
 `cms.settings.all()` returns every declared setting with defaults applied, as a
 `SiteSettings` object. `cms.settings.get(key)` returns one value. Reads are cached per
-isolate and the cache is cleared on every write.
+isolate for up to 30 seconds, and a write clears the cache of the isolate that made it.
 
 ```ts
 const cms = c.get('cms');
@@ -39,6 +39,23 @@ await cms.settings.update('general', { siteTitle: 'Acme', logo: '/media/abc/logo
   `CMS_VALIDATION`. `error.fields` names each field and its problem. Nothing is written then.
 - The result is the new `SiteSettings`.
 
+## Built-in groups
+
+The host declares `general`, `interface`, `media` (labelled Files), `email`, `appearance`,
+`dashboard`, `cache` and `analytics`; the content module adds `writing`, `reading`,
+`discussion`, `seo`, `crawlers`, `indexnow` and `languages`. `SiteSettings` lists every key.
+Some that the sections below do not cover:
+
+| Keys | Use |
+| --- | --- |
+| `general.usersCanRegister`, `general.defaultRole`, `general.verifyEmail`, `general.approveRegistrations` | Open registration, the new account's role, the confirmation email (accounts are active at once without an email sender) and approval under Users → Registrations. |
+| `general.maintenance`, `general.maintenanceMessage` | `off`, `maintenance` or `soon`: visitors without dashboard access get a holding page with status 503; the dashboard, sign-in, the API and assets keep answering. |
+| `writing.requireResolvedNotes`, `writing.notesEmail` | [Notes](/docs/cms/notes.md): open notes hold publishing; email the people a note names. |
+| `reading.notFoundPage` | A published page shown with status 404 for a missing address. |
+| `email.accentColor`, `email.logo`, `email.footer` | The HTML part of every email the site sends. |
+| `analytics.cloudflareToken`, `analytics.googleMeasurementId` | An outside service counts page views; the site adds its script to visitors' pages and stores nothing. Signed-in people are left out, and the Google tag does not load for a browser that sends Do Not Track or Global Privacy Control. |
+| `cache.hold` | How long a cache in front of the site may hold a page: see [Cache](/docs/cms/cache.md). |
+
 ## Two-step sign-in
 
 General → **Require two-step sign-in** asks people who can use the dashboard to add an
@@ -47,6 +64,16 @@ authenticator app or a passkey, and to use it when they sign in. **Only for thes
 Administrator and Manager; others may still add a second factor. With no role checked, it
 applies to everyone who can use the dashboard. `twoFactorRequired(principal, { required, roles })`
 answers the same question in your own code.
+
+## Sign-in links and invitations
+
+The sign-in page offers *Email me a sign-in link*: an active account gets a link to
+`/auth/magic` that works once, for fifteen minutes. The page answers the same whether the
+account exists, and requests are limited per email and per address. Users → New user can send
+an invitation instead of setting a password: the email links to `/auth/reset-password`, good
+for seven days. Both need an email sender and the site's address (`APP_URL`; a `localhost`
+request works in development). They are laid out with the Email settings and go through
+`cms.mail.before-send` like every email the site sends (see [Hooks](/docs/cms/hooks.md)).
 
 ## The dashboard menu
 

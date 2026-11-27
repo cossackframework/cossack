@@ -15,8 +15,8 @@ data before calling the method. This applies to component actions, forwarded
 services and explicit service RPC, including multipart uploads.
 
 For standalone parsing, import the helpers from `@cossackframework/core/input`.
-This entry exports `input`, its types, `parseFormData`, `ActionValidationError`
-and `isActionValidationError` without component or runtime imports.
+This entry exports `input`, `isArgsSchema`, its types, `parseFormData`,
+`ActionValidationError` and `isActionValidationError` without component or runtime imports.
 Use `pnpm exec cossack docs --package @cossackframework/core --json` to read
 installed examples for schemas, nested forms and validation cancellation.
 
@@ -114,8 +114,8 @@ date strings received over JSON.
 
 Fields are required by their type unless marked `.optional()`. That permits
 `undefined` and omits absent object fields. `.nullable()` permits `null`. It does
-not make a field optional. Typed action contracts accept at most one argument.
-A missing argument is parsed as `undefined`. An extra positional argument fails.
+not make a field optional. A contract other than `input.args(...)` accepts at most
+one argument. A missing argument is parsed as `undefined`. An extra positional argument fails.
 Object schemas allow at most 1,024 fields. Parsing limits depth to 32, visited
 nodes to 4,096, and reported errors to 128. Cycles and prototype/accessor inputs
 are rejected. Parsing does not mutate incoming objects or arrays.
@@ -417,6 +417,28 @@ The `errors` object (the `errorProperty`, default `'errors'`) remains a single f
 
 ### Mixing stores and individual states
 Use `@Store` with `@State` or `@ClientState` on the same component. A `@Validate` decorator on a store property creates dot-path rules. On a `@State` property, it creates one rule keyed by the property name. Both rules appear in the same `errors` object.
+
+## Validating Plain Objects
+
+`validateObject<T>(data, rules)` runs a `storeRules<T>()` map against a plain
+object without a component. `getFormData({ rules })` uses it. It never throws and
+resolves to `{ data, errors, flatErrors, valid }`: `errors` mirrors `T`,
+`flatErrors` is keyed by dot-path, and `coerce` rules write their typed values back
+into `data`. A `customAsync` rule receives `undefined` as its `component`.
+
+```typescript
+import { validateObject, storeRules } from '@cossackframework/core';
+
+const { data, errors, valid } = await validateObject<SignupForm>(parsed, storeRules<SignupForm>({
+    age: { coerce: 'number', min: 18 },
+}));
+```
+
+`validateValue(value, rule)` and `validateValueAsync(value, rule)` check one value
+and return `{ valid, message?, value? }`. To show an error that came from elsewhere,
+such as a server response, call `setValidationError(this, 'email', message)`, and
+remove it with `clearValidationError(this, 'email')`. Both write the component's
+`errorProperty`.
 
 ## Complete Example
 

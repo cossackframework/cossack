@@ -26,7 +26,7 @@ give it on the Tenants screen. Without `APP_URL` every request is the main tenan
 | --- | --- |
 | Accounts (`users`, with the password) | A member row in `users` under the account's ID: email and name copied, no password |
 | The main host's sessions, OAuth accounts, second factors, passkeys, application passwords | The tenant's sessions, `roles` and `user_roles` |
-| `tenants`, `tenant_domains`, `tenant_members`, `tenant_sessions` | Your own tables |
+| `tenants`, `tenant_domains`, `tenant_members`, `tenant_sessions`, `tenant_handoffs`, `tenant_network` | Your own tables |
 
 `tenants`, `tenant_domains` and `tenant_members` each have a `meta` column (JSON, as `users`,
 `roles`, `sessions`, `oauth_accounts` and `api_tokens` do) for the project's own data about a
@@ -157,7 +157,7 @@ The database user needs the right to create tables in each tenant's database.
 
 - A member's email and name in a tenant are copied when they join and are not updated when
   the account changes.
- Nothing purges
-  deleted tenants on a schedule or drops their databases.
+- Nothing purges deleted tenants on a schedule or drops their databases: call
+  `purgeDeletedTenants()` from a schedule of yours and drop each returned database.
 - Uploaded files are not separated by tenant.
 - The Workers bindings (D1, Hyperdrive, RomeDB Cloud) are written and not yet run in a test.

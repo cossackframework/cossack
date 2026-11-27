@@ -95,7 +95,7 @@ random state. Rows contain no authorization code, PKCE verifier or credential.
 The signed cookie still binds the nonce and verifier to the browser.
 
 The generated store writes anonymous `sessions` rows with
-`meta: { type: 'oauth_state', provider }`. One conditional SQL `DELETE` checks the
+`kind = 'oauth_state'` and `data = { provider }`. One conditional SQL `DELETE` checks the
 key, provider, purpose, anonymous owner and current expiry. A read followed by
 delete is insufficient. OAuth state cannot authenticate as a session or act as
 a password-reset token. Remove abandoned expired rows through application cleanup.
@@ -148,7 +148,10 @@ export const oauth = createOAuth({
 ```
 
 The `secret` signs the state cookie. Generate one with, for example,
-`openssl rand -base64 32`. Keep it out of version control.
+`openssl rand -base64 32`. Keep it out of version control. On Workers, where
+bindings exist only per request, pass a resolver instead:
+`secret: (c) => c.env.OAUTH_SECRET`. A provider entry also takes `scopes` to
+replace the provider's default scopes.
 `oauthStateStore` is the application's implementation described above. In the
 generated auth module it is declared before constructing the OAuth kit.
 
@@ -190,6 +193,7 @@ app.get('/auth/github/callback', oauth.callback('github', {
         console.error('GitHub OAuth failed:', err.toJSON());
         return c.redirect('/login?error=oauth_failed');
     },
+    // successRedirect: '/', // used when onUser returns no Response (default '/')
 }));
 
 export default app;
@@ -284,7 +288,10 @@ oauth_accounts
   PRIMARY KEY (provider, provider_user_id)
 ```
 
-This lets one user connect multiple providers to the same account.
+This lets one user connect multiple providers to the same account. The
+generated `oauth_accounts` table (`0005_create_oauth_accounts`) keeps `id`,
+`user_id`, `provider`, `provider_user_id`, `meta` and `created_at`, and stores
+no provider tokens.
 
 ## The `OAuthUser` shape
 
@@ -403,6 +410,7 @@ createOAuth({
         maxAge: 300,             // seconds; default 600 (10 minutes)
         secure: true,            // auto-set when request is HTTPS
         sameSite: 'strict',      // default 'lax'
+        path: '/',               // default '/'
     },
     providers: { /* ... */ },
 });

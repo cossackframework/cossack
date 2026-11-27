@@ -25,11 +25,13 @@ This creates or updates `worker-configuration.d.ts` in your project root. `pnpm 
 The generated file is an ambient declaration in `tsconfig.json`. The `CloudflareBindings` type is available throughout your project. Pass it to the base class without importing it:
 
 ```typescript
-import { Cossack, Page, html } from '@cossackframework/core';
+import { Cossack, Page, State, html } from '@cossackframework/core';
 
 @Page()
 export default class DataPage extends Cossack<CloudflareBindings> {
-    
+    @State()
+    data: string | null = null;
+
     async init() {
         // Full autocompletion for your bindings!
         const value = await this.env.MY_KV_NAMESPACE.get('some-key');
@@ -53,7 +55,7 @@ API routes also benefit from typed environment bindings. You can build backends 
 
 ```typescript
 @Page({ transport: 'http' })
-export class MyApi extends Cossack<CloudflareBindings> {
+export default class MyApi extends Cossack<CloudflareBindings> {
     async get() {
         const results = await this.env.DB.prepare('SELECT * FROM users').all();
         return this.c.json(results);
@@ -73,8 +75,9 @@ sign is often a failure in middleware.
 - A secret the app needs in production too: add its name to
   `secrets.required`, then set it with `wrangler secret put` before you deploy.
 - A value only development needs: set it in the Worker's configuration while
-  the dev server runs, through the Vite preset. The preset adds it to the CMS's
-  own development values; `vite build` leaves it out.
+  the dev server runs, through the Vite preset. The preset adds it to the
+  development values that mounted packages (such as the CMS or RomeDB) supply;
+  `vite build` leaves it out.
 
 ```ts
 // vite.config.ts

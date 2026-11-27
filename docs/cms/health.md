@@ -12,9 +12,10 @@ visitors miss, and what to fix.
 
 A list of checks, warnings first: the site hidden from search engines, no email sender or
 `MAIL_FROM`, no AI provider, no `APP_URL`, no publisher logo or profiles, IndexNow off, no cache
-purger, crawlers blocked in robots.txt, articles without a summary, entries with nothing to
-describe them, cornerstone entries marked noindex, and authors without a bio. Most link to the
-setting or entries to fix.
+purger, search engines or AI search crawlers blocked in robots.txt, a reminder that Cloudflare's
+bot settings can block AI crawlers whatever robots.txt says, articles without a summary, entries
+with nothing to describe them, cornerstone entries marked noindex, and authors without a bio.
+Most link to the setting or entries to fix.
 
 ## Crawler visits
 
@@ -47,4 +48,4 @@ times and not hit for 30 days.
 ## Site search
 
 The Health page also shows how many entries the site search has indexed. **Rebuild** clears the
-index and fills it again in the background.
+index and fills it again in the background; it needs the Manage settings permission.

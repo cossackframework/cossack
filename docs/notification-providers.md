@@ -57,9 +57,13 @@ const store = createD1NotificationStore(env.NOTIFICATION_STATE);
 // Apply notificationStateSchema through an explicit setup migration, not a request.
 ```
 
-The SQL creates `cossack_notifications` and its inbox index. A separate binding is
-optional: the generated notification recipe can reuse `JOB_STATE` while applying
-the additional notification migration explicitly. In a CMS project the recipe keeps
+The SQL creates `cossack_notifications` and its inbox index. `createSqlNotificationStore`
+is the same store under a backend-neutral name, also exported from
+`@cossackframework/core/notifications`. A store failure throws
+`NotificationPersistenceError` (code `NOTIFICATION_STORE_FAILED`). A separate binding is
+optional: the generated notification recipe reuses `JOB_STATE` and adds
+`src/jobs/migrations/0002_notifications.sql` (notifications and the
+`cossack_notification_preferences` table), which you apply with the jobs migrations. In a CMS project the recipe keeps
 the notifications in the job ledger in RomeDB (`jobLedger(env)` in
 `src/jobs/ledger.ts`, see [jobs](jobs.md#the-ledger-in-a-cms-project)), which creates
 the tables itself. `rqlDatabase` from `@cossackframework/romedb` is a database the

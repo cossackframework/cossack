@@ -36,9 +36,11 @@ keep their current behavior.
 
 Development SSR fallback pages show a fixed code, request ID and authored route.
 They do not publish exception text. Authored error boundary pages remain under
-application control. Optional access logging emits `cossack.request` with the
-matched route template and allowlisted HTTP method, omitting concrete paths and
-queries. SSG loader/render/cleanup diagnostics use fixed events and failed-page
+application control. The optional access-logging middleware emits
+`cossack.request` with the matched route template and allowlisted HTTP method,
+omitting concrete paths and queries. It is not a package export: copy
+`packages/framework/src/middlewares/logging.ts` into `src/middlewares/` and list
+it in `src/bootstrap/middlewares.ts`. SSG loader/render/cleanup diagnostics use fixed events and failed-page
 messages. Controlled public-route failures retain `COSSACK_SSG_NOT_PUBLIC`.
 
 CLI Cloudflare upload size budgets are described in [Build budgets](./build-budgets.md).

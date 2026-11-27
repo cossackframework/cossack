@@ -1,7 +1,7 @@
 # Updates this project to a Cossack release. It runs when someone presses Update under
 # Tools → Updates in the dashboard (the site sends a repository_dispatch), or when you start it by hand.
 #
-# It runs `cossack upgrade`, which updates the dependencies and merges the files the scaffold wrote
+# It runs `cossack upgrade`, which updates the dependencies and merges only ejected copies and plugins
 # with your edits. Then it type-checks and builds. The result is a pull request, or a push to the
 # default branch when the repository variable COSSACK_UPDATE_MODE is `push` and nothing needs a
 # person: no merge conflict, and the checks pass. Your normal deploy ships the commit.

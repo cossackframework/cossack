@@ -66,7 +66,8 @@ export default class ContactForm extends Cossack {
 | Prop | Description |
 |---|---|
 | `submit` | Submit handler (typically a `@Server()` method). When set, the native submit is prevented and `novalidate` is added by default. Omit for a native `<form method="post">` submission (read with `getFormData()`). |
-| `novalidate` | Override the `novalidate` default. Defaults to `true` when `submit` is set, `false` otherwise. |
+| `bindings` | Typed submit/reset bindings from `createFormBindings()` or `createUiFormBindings()` (see [Advanced Forms](/docs/forms-advanced.md)). Cannot be combined with `submit`. |
+| `novalidate` | Override the `novalidate` default. Defaults to `true` when `submit` or `bindings` is set, `false` otherwise. |
 | `...rest` | Any other props (`method`, `action`, `class`, …) spread onto the native `<form>`. |
 
 `submit` and `bindings` own the form's `@submit` listener (`bindings` also owns `@reset`). Passing a native `'@submit'` (or `'@reset'` with `bindings`) together with them throws, instead of silently dropping your listener. Use one owner per event.
@@ -108,13 +109,14 @@ A page's `post()` refuses a form that another site posts to it: the answer is
 403 with `COSSACK_CROSS_SITE_REQUEST`, and `post()` does not run. The browser
 tells where a request comes from:
 
-- `Sec-Fetch-Site: same-origin` passes. It decides alone, because a page
+- `Sec-Fetch-Site: same-origin` (or `none`) passes. It decides alone, because a page
   served with `Referrer-Policy: no-referrer` posts its own forms with
   `Origin: null`: a check that compares `Origin` with the host would refuse
   every form.
 - `cross-site` is refused.
 - For `same-site` (another subdomain), or without `Sec-Fetch-Site` (older
-  browsers, scripts), a present `Origin` must be the page's own.
+  browsers, scripts), a present `Origin` must be the page's own, or its
+  `https` form behind a proxy that sets `X-Forwarded-Proto: https`.
 
 The check covers bodies a form can send (URL-encoded, multipart, plain text,
 or none). A JSON request from another site needs a CORS preflight, which
@@ -257,6 +259,7 @@ interface ContactFormFields {
     email: string;
 }
 
+@Page({ transport: 'http' })
 export default class ContactForm extends Cossack {
   // `flash` / `old` options auto-bind flashed values and old input during
   // bootstrap, so there's no init() boilerplate. The flashed value wins over

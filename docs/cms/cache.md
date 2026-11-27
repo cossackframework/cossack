@@ -50,7 +50,8 @@ whose blocks or widget areas hold a *Latest entries* block; a term archive carri
 
 Drafts and private collections purge nothing. A new media file purges nothing: it shows on no
 page until a write that does. A plugin's own resources purge nothing; a plugin that shows them
-on the site queues its own purge with `cms.purge.queue(reason, { tags, urls })`.
+on the site queues its own purge with the host's `purge.queue(reason, { tags, urls })`
+(`cms.purge` in the application, `context.unrestricted().host.purge` in an unrestricted plugin).
 
 Purges ride the outbox like webhooks and IndexNow pings: a change queues a `CachePurgeEvent`
 (`tags`, `urls`, `reason`), the dispatcher runs the `cms.cache.purge` action after the
@@ -97,8 +98,9 @@ export function register(context: PluginContext) {
 }
 ```
 
-An application can also pass purgers to `createCMS({ purgers })`: objects with a `name` and
-`purge(event, { cache, signal })`, which is how the Cloudflare purger is added.
+A project can also list purgers in `src/cms.config.ts` (`purgers: [...]` in its `options`),
+added after the Cloudflare one: objects with a `name` and `purge(event, { cache, signal })`
+that throw a `PurgeError` with `retry: false` to record a refusal without retrying.
 
 A reverse proxy before a Node deployment (nginx, Varnish, Caddy) honors the same headers;
 purge it from such a handler, or with `cossack cms cache purge` after a deploy.

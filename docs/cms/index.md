@@ -46,9 +46,11 @@ export const storage = { ...nodeStorage, mediaStorage: () => myStorageProvider }
 ```
 
 `options` may set
-`reservedPaths`, `blocks`, `settings`, `taxonomies`, the `payments`, `ai`, `purgers` and `mail`
-providers, and `updates`. Give an object, or a function of the environment bindings and the
-site: `(env, site) => ({ ... })`. An option you leave out keeps its default.
+`reservedPaths`, `blocks`, `settings`, `taxonomies`, `oauth` (the sign-in page's OAuth providers),
+`files`, the `payments`, `ai`, `purgers` and `mail` providers, `mailFrom`, and `updates`. Give an
+object, or a function of the environment bindings and the site: `(env, site) => ({ ... })`. An
+option you leave out keeps its default; `reservedPaths` and `purgers` are added to the defaults,
+and every other option replaces its default.
 
 ## Changing the CMS
 
@@ -87,8 +89,9 @@ dashboard shows when a version is available and can ask your pipeline to run the
   [Settings](/docs/cms/settings.md#the-dashboard-menu)).
 - [Live Edit](/docs/cms/site-editing.md): editing an entry and the theme's areas around it in
   place, documents and their revisions, markers, and what stays code.
-- [Settings](/docs/cms/settings.md): reading and writing settings, declaring groups and
-  subpages, discussions, and the site logo.
+- [Settings](/docs/cms/settings.md): reading and writing settings, the built-in groups,
+  two-step sign-in, sign-in links and invitations, declaring groups and subpages, discussions,
+  and the site logo.
 - [Updates](/docs/cms/updates.md): the update notice, what it sends, the Update button and its
   hook, and backups.
 - [Multisite](/docs/cms/multisite.md): many sites from one application, one database per
@@ -97,12 +100,13 @@ dashboard shows when a version is available and can ask your pipeline to run the
   presence through the entry's room, the shared draft, and the rules that merge changes.
 - [Notes](/docs/cms/notes.md): review notes on a passage, a block, a field or the entry,
   mentions, the rail, resolving, and the publishing check.
-- [Blocks](/docs/cms/blocks.md): the core block library, sections built from it, the site
-  icons, and blocks a theme or plugin adds.
+- [Blocks](/docs/cms/blocks.md): the core block library, sections built from it, patterns, the
+  site icons, and blocks a theme or plugin adds.
 - [Block references](/docs/cms/block-references.md): blocks and bindings inside text, such
   as `{{ block core/button … /}}` and `{{ $site.title }}`.
 - [Management API, CLI and MCP](/docs/cms/api.md): manage a site from a terminal or an
-  agent with `cossack cms`, the API under `/api/cms`, and the MCP server every site serves.
+  agent with `cossack cms`, the API under `/api/cms`, the MCP server every site serves, and
+  webhooks.
 - [Cache](/docs/cms/cache.md): what the site tells the caches in front of it, how changes
   purge Cloudflare or another CDN, and the Cache tool.
 - [Automations](/docs/cms/automations.md): emails sent when an entry is published, a form is
@@ -111,10 +115,11 @@ dashboard shows when a version is available and can ask your pipeline to run the
   missing pages and how long they are kept.
 
 Tools under the dashboard's Tools menu: [Health](/docs/cms/health.md) (search and answer engines, crawler visits, 404s),
-Links, Redirects, Webhooks, Schema, Export, Cache, Jobs (the outbox: what waits, what failed for
+Links, Redirects, SEO editor (SEO titles, meta descriptions and summaries of a collection's entries in
+one table, each row saved with a revision check), Webhooks, Schema, Export, Cache, Jobs (the outbox: what waits, what failed for
 good, plugin schedules), Activity (the audit trail of writes), Find and replace (a phrase across
 a collection, previewed first) and [Automations](/docs/cms/automations.md) (when an entry is published, a form is submitted or
-a payment completes, send an email whose text binds `{{ $.title }}`, `{{ $site.title }}` and `{{ $user.name }}` as content does; Webhooks post the same events, including `payment.completed`, to a URL). Content → Calendar lists the month's published
+a payment completes, send an email whose text binds `{{ $.title }}`, `{{ $site.title }}` and `{{ $user.name }}` as content does; [Webhooks](/docs/cms/api.md#webhooks) post the same events, including `payment.completed`, to a URL), and [Updates](/docs/cms/updates.md). Content → Calendar lists the month's published
 and scheduled entries. An entry's **Unpublish on** time takes it back to draft then, as its
 publish time publishes it (`runSchedule()`, which the maintenance run calls each minute).
 **Members only** (a sidebar switch on posts and pages, the `members` collection feature) shows an
@@ -131,7 +136,8 @@ dashboard access see the site), asks new registrants to confirm their email when
 send one, and can hold new accounts for an administrator's approval (Users → Registrations;
 user managers see a notice while any waits). With `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY`
 set, the sign-in, registration and password reset forms check for bots as forms and comments do. New users can be invited by email instead of given a password; people can delete their
-own account from Profile, and sign in with a one-time link emailed from the sign-in page. Ctrl/Cmd+K
+own account from Profile, and sign in with a one-time link emailed from the sign-in page
+([Sign-in links and invitations](/docs/cms/settings.md#sign-in-links-and-invitations)). Ctrl/Cmd+K
 opens a palette of every dashboard screen. The entry editor's Assistant box suggests a title, an
 excerpt or a summary when the application has an AI provider (`ANTHROPIC_API_KEY`, or a Workers AI
 binding `AI`).
@@ -144,7 +150,10 @@ contract (resources, repositories, collections, blocks) in more depth.
 | Import | Use |
 | --- | --- |
 | `@cossackframework/cms` | Client-safe: collections, fields, blocks, rich text, menus, the theme contract, permissions, settings, the extension points, manifests and media helpers. |
-| `@cossackframework/cms/server` | Server-only: `createCMS`, the host, repositories, accounts (who signs in) and users (a site's members), taxonomies, menus, settings, files, auth and stores. |
+| `@cossackframework/cms/server` | Server-only: `createCMS`, the host, repositories, the people port (`PeoplePort`) and users (a site's members), taxonomies, menus, settings, files and stores. |
+| `@cossackframework/cms/storage/cloudflare`, `@cossackframework/cms/storage/node` | The runtime's storage for `src/cms.config.ts`. |
+| `@cossackframework/cms/cloudflare` | Isolated plugins on Workers: `cloudflarePluginRunner()`, `createPluginBridge()`, `PluginTail`. |
+| `@cossackframework/cms/app/<path>` | A module of the served CMS application, such as `@cossackframework/cms/app/cms/index`. |
 
 Plugin code imports from `@cossackframework/cms` only. The host is handed to a plugin's
 `register()` as a context; importing `@cossackframework/cms/server` from plugin source fails
@@ -159,11 +168,14 @@ request:
 import { createCMS } from '@cossackframework/cms/server';
 import { plugins } from '@cossackframework/framework/plugins';
 
-const cms = createCMS({ db, modules, resources, plugins, storage, images, mail });
+const cms = createCMS({ db, people, modules, resources, plugins, storage, images, mail });
 ```
 
-- `db` is the RomeDB client. `modules` are the built-in groups of resources, such as the
-  content module with posts and pages. `resources` are the application's own declarations.
+- `db` is the RomeDB client. `people` is the `PeoplePort`: accounts, roles and sign-in are the
+  dashboard package's (`@cossackframework/dashboard`, on the ORM), and `cms.users` reads and
+  writes them through it, keeping only the author slug and user field values itself. `modules`
+  are the built-in groups of resources, such as the content module with posts and pages.
+  `resources` are the application's own declarations.
 - `plugins` is the static registry the framework builds from `src/plugins/*/`: each entry
   carries the plugin's rendered manifest, its `server.ts` module, its `ui.ts` module, its
   `templates/*.ts` modules and the URLs of its `assets/`. An isolated plugin's entry carries
@@ -177,8 +189,9 @@ const cms = createCMS({ db, modules, resources, plugins, storage, images, mail }
   transport. `GET /api/cms/dev/mail` lists it, oldest first (`?to=` keeps one recipient's), so a
   script can follow an invitation's or a reset's link; `DELETE` forgets it. The route answers
   404 unless both `APP_URL` and the request's address are local.
-- `runner` runs isolated plugins. The Cloudflare Worker entry sets `cloudflarePluginRunner()`
-  from `@cossackframework/cms/cloudflare` and exports `PluginBridge` and `PluginTail`; see
+- `runner` runs isolated plugins. The Cloudflare Worker entry re-exports `PluginBridge` and
+  `PluginTail` from `@cossackframework/cms/app/cms/worker`, which sets `cloudflarePluginRunner()`
+  from `@cossackframework/cms/cloudflare`; see
   [Where server code runs](/docs/cms/plugins.md#where-server-code-runs).
 - A request middleware sets `cms` and `principal` on the Hono context. Server code reads
   them with `c.get('cms')` and `c.get('principal')`; every repository call takes the

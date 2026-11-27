@@ -73,6 +73,14 @@ no policy implementation. Add the hook above or enforce access before every call
 Use explicit imports such as `../workflows/index`, because `src/workflows.json`
 is the static inspection manifest and shares the directory's basename.
 
+Each manifest entry is `{ name, version, binding, className }`, with unique names and
+bindings. The Vite preset adds `cossackWorkflows()`, which checks the manifest before
+the build: on Cloudflare every entry needs exactly one `workflows` binding with the same
+`binding` and `class_name` and a non-empty `name` in the selected Wrangler environment
+(`COSSACK_WORKFLOW_BINDINGS_MISMATCH` otherwise), and another runtime fails with
+`COSSACK_WORKFLOW_PROVIDER_REQUIRED`. `cossack inspect workflows [--env <name>]` and
+`cossack check workflows` report the same checks.
+
 Inside an authorized server handler:
 
 ```ts

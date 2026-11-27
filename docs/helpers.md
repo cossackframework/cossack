@@ -53,26 +53,26 @@ Use this with the `@PreventNavigation` decorator to resolve a blocked navigation
 See the [Prevent Navigation](./prevent-navigation.md) documentation for more details.
 
 
-### `this.back()`
+### `this.back(fallback = '/')`
 
-Redirects the user to the previous page. On the server it follows the `Referer` header only when it has the same origin as the request; otherwise it redirects to the fallback (default `/`). Use it after a form submission or another action that returns the user to the previous page.
+Redirects the user to the previous page. On the server it follows the `Referer` header only when it has the same origin as the request; otherwise it redirects to the fallback (default `/`). On the client it calls `history.back()`, or navigates to the fallback when there is no history entry. Use it after a form submission or another action that returns the user to the previous page. On the server it returns the redirect `Response`, so `return` it.
 
 ```typescript
 post() {
   // Handle form submission logic here
 
-  this.back(); // Redirect back to the previous page
+  return this.back(); // Redirect back to the previous page
 }
 ```
 
 ### `this.redirect(url, status = 302)`
 
-Redirects the user to a specified URL with an optional HTTP status code (default is 302 for temporary redirects).
+Redirects the user to a specified URL with an optional HTTP status code (default is 302 for temporary redirects). On the server it returns the redirect `Response`, so `return` it. On the client it navigates with the SPA router. The second argument can also be `{ status, types, scroll }`, where `types` and `scroll` are the client navigation's [view transition types](./view-transitions.md) and scroll behavior.
 
 ```typescript
 post() {
   // Handle form submission logic here
 
-  this.redirect('/thank-you', 303); // Redirect to a thank you page
+  return this.redirect('/thank-you', 303); // Redirect to a thank you page
 }
 

@@ -21,11 +21,17 @@ The recipe creates:
 orm.config.ts
 src/
 ├── orm/factory.ts
+├── orm/tooling.ts        # Workers only: the CLI's adapter
 ├── middlewares/orm.ts
 ├── models/index.ts
 ├── migrations/index.ts
 └── seeders/index.ts
 ```
+
+`src/middlewares/orm.ts` exports `ormRequestMiddleware` and an opt-in
+`sessionMiddleware` (database sessions), and registers the `database` cache
+driver. `src/migrations` starts with `0006_create_cache_table` for that driver,
+plus the account migrations when the project has `auth`.
 
 The model barrel imports `reflect-metadata` once and exports deterministic
 entity registration. Node recipes create one caller-owned ORM singleton.
@@ -152,12 +158,15 @@ keeps the ORM's tables in RomeDB. Entities can be relational or documents: see t
 arrays. The ORM tooling installed in the application powers all commands:
 
 ```sh
+cossack migration snapshot
 cossack migration generate add_posts
-cossack migration up
+cossack migration up          # alias: migration latest
 cossack migration down
 cossack migration status
 cossack migration check
 cossack migration baseline
+cossack migration squash 0001_schema
+cossack schema inspect
 cossack schema pull
 cossack schema diff
 cossack schema check
@@ -165,8 +174,21 @@ cossack seed list
 cossack seed run
 ```
 
-Migration history is stored in `_cossack_migrations`. Cossack never mutates an
-application schema during startup, development, or package installation.
+`migrate` is an alias of `migration`, and `seed` of `seeder`.
+
+Migration history is stored in `_cossack_migrations`. Development and package
+installation never change an application schema. Two generated factories apply
+pending migrations from inside the application, with `applyPendingMigrations(orm,
+migrations)` from `@cossackframework/database`:
+
+- **RomeDB:** the first request applies the main database's pending migrations,
+  because one process owns a RomeDB file and a command cannot open it beside the
+  server.
+- **Tenant databases** (`tenants` in `src/dashboard.config.ts`, any provider):
+  `createTenantORMs()` applies a tenant database's migrations the first time the
+  process opens it.
+
+Every other database changes only through `cossack migration`.
 
 See [Queries](/docs/queries.md), [Migrations](/docs/migrations.md), and
 [Seeders](/docs/seeders.md).

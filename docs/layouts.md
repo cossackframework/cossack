@@ -1,27 +1,29 @@
 ---
 title: "Layouts"
-description: "Layouts are components decorated with @Page and named layout.ts. They receive a children argument with the nested page content."
+description: "Layouts are components decorated with @Page and named layout.ts. They render the nested page content through this.children."
 ---
 
 # Layouts
 
-In Cossack, a layout is a component marked with `@Page` and named `layout.ts`. Its `render` method receives a `children` argument with the rendered nested page or layout.
+In Cossack, a layout is a component marked with `@Page` and named `layout.ts`. The framework sets `this.children` to the rendered nested page or layout before the layout renders.
 
 ```typescript
 @Page({ transport: 'http' })
 export default class MyLayout extends Cossack {
-    render(children: TemplateResult) {
+    render() {
         return html`
             <div class="wrapper">
                 <header>My Header</header>
-                <main>${children}</main>
+                <main>${this.children}</main>
             </div>
         `;
     }
 }
 ```
 
-Layouts can have state, transport, and middleware, like regular pages.
+Layouts can have state, transport, and middleware, like regular pages. A layout can also own services with `@Page({ services: [...] })`; see [Services](./services.md).
+
+The server runs the layout's `init()` before the page's `init()`. During client navigation between pages under the same layout, the browser keeps the layout instance: its `@State` keeps the values from the first page, and only its `server$` resources, route params and user are refreshed. To show data about the current page in a layout, have the page publish it with `this.c.set()` and read it in a layout `server$` field, which runs at render time.
 
 ## Realtime layouts
 

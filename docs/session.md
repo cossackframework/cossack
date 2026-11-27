@@ -59,7 +59,8 @@ const values = await session().getAll();
 
 The middleware creates an anonymous session when no live session ID is available.
 It replaces unknown and expired cookie IDs with a new server-generated ID.
-The cookie is HTTP-only and same-site lax. Sessions last `ttl` milliseconds
+The cookie is named `cossack_sid` (`cookieName`), HTTP-only (`httpOnly`, default
+`true`) and same-site lax. Sessions last `ttl` milliseconds
 (default 30 days) after the last `set()`:
 
 - `set()` extends the stored expiry by `ttl` and re-sends the cookie with a
@@ -117,6 +118,11 @@ yield. Session bag `set()` and `unset()` remain storage operations on the live
 row and do not issue a replacement cookie. A `set()` that runs after response
 middleware finishes cannot refresh the cookie `Max-Age`. See [RPC timing](./rpc.md).
 
+`createDatabaseSessionStore(orm?, { tableName })` uses the request ORM scope
+unless you pass an ORM, and the `sessions` table unless you name another.
+The `store` option also accepts a per-request factory `(c) => store`. Without
+`store`, the middleware reads a `sessionStore` value set earlier on the Hono context.
+
 The database store preserves the shared physical row representation:
 `id`, `user_id`, `data`, `meta`, tracking fields, `created_at`, and
 `expires_at`.
@@ -164,7 +170,9 @@ return this.c.redirect('/form');
 ```
 
 On the following page request, read `old('name')`, `old('address.city')` and
-`flashed('success')`. The middleware expires the cookie. On Cloudflare, the
+`flashed('success')`. `hasFlashed(key)` tests for a message, and `flashedAll()`
+returns every message. `flash({ success: 'Saved.', tab: 'billing' })` sets
+several at once. The middleware expires the cookie. On Cloudflare, the
 `COSSACK_SSE` Durable Object binding provides durable one-use consumption, so
 replaying a copied cookie does not repeat its data. Generated Cloudflare
 projects include this binding and its SQLite migration. A Cloudflare app without

@@ -27,6 +27,7 @@ src/plugins/my-theme/
 │   ├── archive.ts       a list of entries
 │   ├── home.ts          the front page (optional)
 │   ├── search.ts        search results (optional)
+│   ├── author.ts        an author's entries (optional)
 │   ├── not-found.ts     404 (optional)
 │   ├── password.ts      the password form of a protected entry (optional)
 │   ├── members.ts       the sign-in prompt of a members-only entry (optional)
@@ -80,9 +81,10 @@ src/plugins/my-theme/
 | `presets` | The palette, gradients, font sizes and spacing steps blocks pick from: `colors` (up to 24), `gradients` (12, CSS gradients that may read the palette's variables), `fontSizes` (8) and `spacing` (8), each `{ slug, name, value }`. Missing kinds get defaults; the site adjusts colors and gradients under Customize. |
 | `extends` | A parent theme's plugin name. See [Child themes](#child-themes). |
 
-A manifest with a `theme` field and nothing that needs a grant (no resources, hooks,
-network or resource permissions) is "theme only": it needs no activation under Plugins.
-A theme that declares `collections` or whose loaders need `permissions.resources` is a
+A manifest with a `theme` field and nothing that needs a grant (no `settings`, resources,
+collections, blocks, hooks, commands or `ui.slots`, and no resource, network, `define` or
+`unrestricted` permissions) is "theme only": it needs no activation under Plugins.
+A theme that declares `collections` or `blocks`, or whose loaders need `permissions.resources`, is a
 plugin as well, granted under Plugins like any other; its templates render before the
 grant with empty loader data.
 
@@ -106,7 +108,7 @@ is a new key, so existing templates keep working.
 | `password.ts` | `LockedContext`: `{ view, site, helpers }` | The form asking for a protected entry's password; the host draws a plain one otherwise. |
 | `members.ts` | `MembersContext`: `{ view, site, helpers }` | What a members-only entry shows visitors who are not signed in; the host draws a plain sign-in prompt otherwise. |
 | `head.ts` | `HeadContext`: `{ site, helpers }`, returns `HeadValue` | Tags for the document head. The page's own title and meta win. |
-| `entry-<collection>.ts`, `archive-<collection>.ts`, `term.ts`, `term-<taxonomy>.ts` | as above | Narrower templates. Any other `entry-*` name is a template editors can choose per entry. |
+| `entry-<collection>.ts`, `archive-<collection>.ts`, `term.ts`, `term-<taxonomy>.ts`, `author.ts` | as above | Narrower templates. Any other `entry-*` name is a template editors can choose per entry. `author` lists an author's entries on their page at `/author/<name>` (`view.author`, an `AuthorView`), on while Settings → SEO → *Author pages* is. |
 
 The site picks the most specific template it has for each page:
 
@@ -115,6 +117,7 @@ The site picks the most specific template it has for each page:
 - A term: `term-<taxonomy>`, then `term`, then `archive-<collection>`, then `archive`.
 - A collection's archive: `archive-<collection>`, then `archive`.
 - Search: `search`, then `archive`.
+- An author page: `author`, then `archive`.
 
 A small entry template:
 
@@ -156,13 +159,13 @@ that export over the files, slot by slot.
 
 | View | What it carries |
 | --- | --- |
-| `SiteView` | The layout's and the head's `site`. Page templates and block renderers get `SiteBasics`: the same without `blog`, `areas` and `template`, since a page does not carry the widget areas. `title`, `tagline`, `blog` (the posts page URL), `menus` by location (`MenuItemView` items: `label`, `url`, null for a heading, `kind`, `newTab`, `description`, `className`, `attributes`, `fields`, the typed values of the field groups attached to menu items, `panel`, a mega menu's pattern rendered as blocks, and `children`), `locale`, `languages` (the page in each language), `searchUrl`, `homeUrl`, `areas` (rendered blocks by widget area), `template`, the entry's template name so a layout can leave out its frame, as the default theme does for `entry-blank`, `url`, the page's own absolute URL, and `breadcrumbs` (`BreadcrumbView` steps: `label`, `url`, null for the page itself), the way to the page. |
-| `EntryView` | `id`, `title`, `url`, `collection`, `kind` (the singular label), `date`, `authors` (each `name`, `url` of their author page or null, `avatar`; the main author first; empty outside article collections), `excerpt`, `content` (`RenderedBlock[]`), `image` (`MediaView`), `terms` by taxonomy, `fields` (every field by name as a typed `FieldView`: a scalar, a `MediaView`, an `EntryReference`, `TermLink[]`, `RenderedBlock[]` for blocks, rich text and Markdown, or, for a multiple field, the list of its kind's views), `details` (scalar fields as labelled text), `template`, `locale`, `comments` (`CommentsView`, or null) and `locked`: `'password'` for a protected entry the visitor has not unlocked, `'members'` for a members-only entry and a reader who is not signed in or has none of its member roles, else null. In lists, `content` is empty. A locked entry withholds its excerpt, content and fields. |
-| `ArchiveView` | `kind` (`home`, `archive`, `term`, `search`), `collection`, `taxonomy`, `title`, `description`, `entries`, `paging` (`page`, `pages`, `base`), `query` and, for search, `loose`: nothing had every word, so the entries have some of them. Search knows no total: `paging.pages` is one past the current page while more follow, and `base` carries `?q=`, so other pages add `&page=N`. Search entries carry `snippet`, the text around the matched words as plain parts (`{ text, match }`); the default theme wraps matches in `<mark>`. |
+| `SiteView` | The layout's and the head's `site`. Page templates and block renderers get `SiteBasics`: the same without `blog`, `areas` and `template`, since a page does not carry the widget areas. `title`, `tagline`, `logo` (its URL from Settings → General, or null), `blog` (the posts page URL), `menus` by location (`MenuItemView` items: `label`, `url`, null for a heading, `kind`, `newTab`, `description`, `className`, `attributes`, `fields`, the typed values of the field groups attached to menu items, `panel`, a mega menu's pattern rendered as blocks, and `children`), `locale`, `languages` (the page in each language), `searchUrl`, `homeUrl`, `areas` (rendered blocks by widget area), `template`, the entry's template name so a layout can leave out its frame, as the default theme does for `entry-blank`, `url`, the page's own absolute URL, and `breadcrumbs` (`BreadcrumbView` steps: `label`, `url`, null for the page itself), the way to the page. |
+| `EntryView` | `id`, `title`, `url`, `collection`, `kind` (the singular label), `date`, `updated` (the last change, in the site's format), `readingTime` (minutes at 200 words a minute; 0 without content), `authors` (each `name`, `url` of their author page or null, `avatar`; the main author first; empty outside article collections), `excerpt`, `summary` (the answer up front, from the entry's summary field, or empty), `content` (`RenderedBlock[]`), `image` (`MediaView`), `terms` (one `{ label, terms }` per taxonomy, each term a `TermLink`: `name`, `url`, `icon`), `fields` (every field by name as a typed `FieldView`: a scalar, a `MediaView`, an `EntryReference`, `TermLink[]`, `RenderedBlock[]` for blocks, rich text and Markdown, or, for a multiple field, the list of its kind's views), `details` (scalar fields as labelled text), `template`, `locale`, `comments` (`CommentsView`, or null) and `locked`: `'password'` for a protected entry the visitor has not unlocked, `'members'` for a members-only entry and a reader who is not signed in or has none of its member roles, else null. In lists, `content` is empty. A locked entry withholds its excerpt, content and fields. |
+| `ArchiveView` | `kind` (`home`, `archive`, `term`, `search`, `author`), `author` (an `AuthorView`: `name`, `slug`, `url`, `avatar`, `bio`, `jobTitle`, `website`, `profiles`) on an author page, `collection`, `taxonomy`, `title`, `description`, `entries`, `paging` (`page`, `pages`, `base`), `query` and, for search, `loose`: nothing had every word, so the entries have some of them. Search knows no total: `paging.pages` is one past the current page while more follow, and `base` carries `?q=`, so other pages add `&page=N`. Search entries carry `snippet`, the text around the matched words as plain parts (`{ text, match }`); the default theme wraps matches in `<mark>`. |
 | `LockedView` | `entry`, `action` (where the password form posts) and `error` after a wrong password. |
 | `MembersView` | `entry`, `signedIn` (true for a signed-in reader without one of the entry's member roles: signing in again does not help), `signIn` (the sign-in page, returning to the entry) and `register` (the registration page, or null when the site takes none or the reader is signed in). |
-| `MediaView` | `url`, `alt`, `width`, `height`, `contentType`, `caption`, `srcset` (variants in the widths of Settings → Files; `wideSrcset(media.srcset)` from `@cossackframework/cms` gives them in a 16:9 shape around the focal point), `sizes` (Settings → Files), `placeholder` (a tiny `data:` URL, or null when Settings → Files turns placeholders off or the image has transparency; `placeholderStyle()` blurs it behind the image, and the site's head script drops it once the image has loaded) and `priority` (the entry's first image: load it with `loading="eager" fetchpriority="high"`). |
-| `RenderedBlock` | `id`, `type`, `data`, `html` (Markdown fields rendered), `media` by file ID, `content` (rich text fields as `BodyPart[]`), `children`, `layout`, `style`, and `field` on a block that stands for one of the entry's rich text or Markdown fields. |
+| `MediaView` | `url`, `alt`, `width`, `height`, `contentType`, `name` and `size` (the file as uploaded), `caption`, `focus` (the focal point, `{ x, y }` from 0 to 1, or null), `srcset` (variants in the widths of Settings → Files; `wideSrcset(media.srcset)` from `@cossackframework/cms` gives them in a 16:9 shape around the focal point), `sizes` (Settings → Files), `placeholder` (a tiny `data:` URL, or null when Settings → Files turns placeholders off or the image has transparency; `placeholderStyle()` blurs it behind the image, and the site's head script drops it once the image has loaded) and `priority` (the entry's first image: load it with `loading="eager" fetchpriority="high"`). |
+| `RenderedBlock` | `_id`, `type`, `data`, `html` (Markdown fields rendered), `media` by file ID, `icons` (the brand icons of its `brand` fields, by URL), `content` (rich text fields as `BodyPart[]`), `entries` (`core/latest-entries`), `headings` (`core/toc`), `children`, `layout`, `style`, and `field` on a block that stands for one of the entry's rich text or Markdown fields. |
 
 ## Helpers
 
@@ -174,7 +177,7 @@ Every template receives `helpers`:
 | `presets` | The resolved presets; `presetStyle(helpers.presets)` from `@cossackframework/cms` renders them as CSS custom properties for the content root. |
 | `data.layout`, `data.page` | What the theme's loaders returned for the layout and for the page. Empty when there is no loader, or it failed. |
 | `asset(path)` | The URL of a file in the theme's `assets/`, such as `helpers.asset('assets/theme.css')`. Empty when the theme has none. |
-| `icon(name, { class, label })` | Any Solar icon by name, in the style Settings → Appearance picks: an SVG colored by `currentColor`, sized by `class` (default `size-5`), decorative unless `label` names it; null for a name outside the catalog. The artwork comes from a cached sprite, not the HTML. See [Icons](/docs/cms/blocks.md#icons). |
+| `icon(name, { class, label })` | Any Solar icon by name, in the style Settings → Interface picks: an SVG colored by `currentColor`, sized by `class` (default `size-5`), decorative unless `label` names it; null for a name outside the catalog. The artwork comes from a cached sprite, not the HTML. See [Icons](/docs/cms/blocks.md#icons). |
 | `breadcrumbs({ class, separator, home })` | The page's breadcrumbs (`site.breadcrumbs`) as a `nav`: links, then the page itself; null on the home page. `separator` is `chevron` (the default), `slash` or `arrow`; `home: false` leaves Home out. The `core/breadcrumbs` block renders the same. |
 | `search({ placeholder, style, class, suggest })` | A search form posting to the site's search page in the page's language: a box, or with `style: 'icon'` a button that opens one. While someone types, up to five entries of that language show under the box, from `/api/cms/search`; `suggest: false` turns that off. The `core/search` block renders the same, with a *Suggestions* switch. |
 | `block(blocks)` | Renders a block, or a list of blocks, through the theme's own renderer, a plugin's component or the core one. |
@@ -182,8 +185,8 @@ Every template receives `helpers`:
 | `content(parts)` | For block renderers: renders a block's rich text field (`block.content.<field>`), HTML runs and the blocks embedded in them. |
 | `isActive(url)` | Whether a URL is the current page or one of its ancestors, for menu styling. |
 | `menu(source, { style, mobile, collapse, motion, label, class })` | A location's menu (`site.menus[location]`), or items given directly, as a `nav`: `dropdowns` (the default) is a header menu with dropdowns, mega panels under items with a panel or heading children, and below the `collapse` width (`md` or `lg`) a hamburger drawer showing the `mobile` location's menu, or this one; `inline` one row for footers; `list` a tree for sidebars. `motion` picks how they open (`rise`, `fade`, `scale`, `none`). Null for an empty menu. The `core/navigation` block renders the same, so editors place a menu in widget areas and content. See [Menus](/docs/cms/menus.md#in-themes). |
-| `languages({ style, layout, class })` | The page in the site's other languages (`site.languages`) as a `nav` of links, named by `names` (the default), `flags`, `flags-names` or `codes`, in a row (`inline`) or a column (`list`); null on a site with one language. The default theme's *Language switcher* option puts it in the header, the footer, both or nowhere, and *Show languages as* picks the style. The `core/languages` block renders the same, so editors place a switcher in widget areas and content. See [Languages](/docs/cms/languages.md#language-switcher). |
-| `logo({ class })` | The site's logo from Settings → General as an image with the site title as its alternative text; null when none is set. `site.logo` holds its URL. See [Settings](/docs/cms/settings.md#site-icon-app-icon-and-logo). |
+| `languages({ style, layout, class })` | The page in the site's other languages (`site.languages`) as a `nav` of links, named by `names` (the default), `flags`, `flags-names` or `codes`, in a row (`inline`, the default) or a column (`list`); null on a site with one language. The `core/languages` block renders the same, so editors place a switcher in widget areas and content. See [Languages](/docs/cms/languages.md#language-switcher). |
+| `logo({ class })` | The site's logo from Settings → General as an image with the site title as its alternative text, sized by `class` (default `h-10 w-auto`); null when none is set. `site.logo` holds its URL. See [Settings](/docs/cms/settings.md#site-icon-app-icon-and-logo). |
 
 Render content through `helpers.block`. Besides the core renderers and plugin blocks, that
 is what makes an entry editable on the public page for signed-in editors: the helper marks
@@ -228,6 +231,11 @@ manifest's top-level `patterns` ([the manifest](/docs/cms/manifest.md#patterns))
 stored in the patterns collection as `<theme>-<slug>` when the theme is activated, offered in
 the pattern picker and, with `starter`, as a starting layout for a collection's new entries.
 The site then owns its copy: a pattern it edited or deleted is left alone.
+
+A theme ships [field groups](/docs/cms/manifest.md#fieldgroups) the same way: the manifest's top-level
+`fieldGroups` are stored when the theme (or its parent) is active, with no grant, so its
+templates can read the values they need. The default theme's *Menu item details* adds an icon
+and a badge to menu items for its mega panels (see [Menus](/docs/cms/menus.md#field-groups-on-items)).
 
 ## Widths and full-width sections
 
@@ -328,8 +336,8 @@ import type { EntryLoaderContext, ThemeLoaders } from '@cossackframework/cms/ser
 export const loaders: ThemeLoaders = {
   async 'entry-projects'({ entry, cms, principal }: EntryLoaderContext) {
     const projects = cms.resource('cms/projects');
-    const page = await projects.list({ where: { status: 'published', id: { ne: entry.id } }, limit: 3 }, { principal });
-    return { related: page.records.map(record => ({ id: record.id, title: record.title })) };
+    const page = await projects.list({ where: { status: 'published' }, limit: 4 }, { principal });
+    return { related: page.records.filter(record => record.id !== entry.id).slice(0, 3).map(record => ({ id: record.id, title: record.title })) };
   },
 };
 ```

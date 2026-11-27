@@ -68,10 +68,19 @@ Delivery states have distinct meanings:
 
 `inspect(id)` returns only IDs, template/channel, status, attempts, timestamps, and fixed failure codes. It excludes recipient emails, message bodies, provider message IDs, and exception messages. Never print the private adapter record as a diagnostic.
 
-Mail adapters implement `EmailDeliveryProvider`: `idempotency` is `provider` only if the provider actually enforces the supplied stable `idempotencyKey` across retries and restarts. Otherwise declare `none`. `send(message, context)` returns `{ status: 'provider-accepted', messageId? }`. It must not claim final delivery. An explicit rejection before provider acceptance can throw `new NotificationDeliveryError('rejected', { retryable: true })`. Ambiguous connection loss must throw `NotificationDeliveryError('unknown')` or an ordinary error. Never classify it as a known rejection to trigger a retry.
+Mail adapters implement `EmailDeliveryProvider`: `idempotency` is `provider` only if the provider actually enforces the supplied stable `idempotencyKey` across retries and restarts. Otherwise declare `none`. `send(message, context)` returns `{ status: 'provider-accepted', messageId? }`. It must not claim final delivery. An explicit rejection before provider acceptance can throw `new NotificationDeliveryError('rejected', { retryable: true })`. Ambiguous connection loss must throw `NotificationDeliveryError('unknown')` or an ordinary error. Never classify it as a known rejection to trigger a retry. `isNotificationDeliveryError(error)` tests for an error built with the `NotificationDeliveryError` constructor. An object that only has the same fields does not pass.
 
 Before calling an external mail provider, the store persists a fenced sending marker. For non-idempotent SMTP or Cloudflare email, a crashed or expired sending claim becomes `unknown` instead of sending again. Explicit pre-accept rejection can reset retry eligibility when no earlier attempt is uncertain. A later rejection cannot disprove an earlier ambiguous acceptance: recovery preserves `unknown`, including after provider removal or a capability downgrade. An idempotent provider can safely retry uncertainty using the same key. Its capability marker persists across restart, so replacing it with a non-idempotent provider cannot trigger a blind resend. Durable adapters must implement every store mutation atomically and respect claim tokens and lease expiry.
 
 After you authenticate a genuine provider webhook or delivery receipt, call `recordDelivered(id, { messageId })`. It succeeds only for an email in `provider-accepted` with the same stored message ID. Client events or an application's desire to mark a message delivered are not evidence. An accepted message without a provider message ID remains accepted unless the provider supplies a supported correlation mechanism.
 
 `MemoryNotificationStore` is an explicit process-only adapter for local tests and previews. Its snapshot/restore API simulates restart for deterministic tests. It is not durable infrastructure. Production applications must supply a durable store when using a durable job queue. Raw storage records contain private recipient/content data and must remain server-side. Database persistence is optional and lives outside core.
+
+## Generated Cloudflare applications
+
+`cossack add notifications` requires the jobs feature and adds `src/notifications/index.ts`.
+Its `createNotifications(env)` composes one example template (`notice`), the D1 store on
+the job ledger, the Cloudflare email provider on the `EMAIL` binding with `MAIL_FROM` as
+the sender, opt-in preferences from `cossack_notification_preferences`, and a
+`deliverNotification` job (five attempts) that calls `deliver`. See
+[notification providers](notification-providers.md) for the store and the providers.
