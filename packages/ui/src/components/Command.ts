@@ -85,7 +85,11 @@ export class Command extends Cossack {
                         && (!modal || modal === dialog) && (!editable || owner.isOpen || owner.props.shortcutInEditable));
                     eligible.sort(([left], [right]) => left === right ? 0 : left.compareDocumentPosition(right) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
                     if (eligible[0]?.[0] !== element) return;
-                    event.preventDefault(); this.setOpen(!this.controlled.base(this.props, this.isOpen));
+                    event.preventDefault();
+                    const open = this.controlled.base(this.props, this.isOpen);
+                    // Esc or light dismiss closed the element, and its close event is still queued: the state says open, so show it again.
+                    if (open && !element.open && !this.controlled.pending(this.props)) { this.dialog.sync(); return; }
+                    this.setOpen(!open);
                 };
                 document.addEventListener('keydown', shortcut);
                 this.removeShortcut = () => { document.removeEventListener('keydown', shortcut); owners!.delete(element); };
