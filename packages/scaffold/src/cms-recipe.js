@@ -102,7 +102,7 @@ export { RomeDBPendingWrites, PluginBridge, PluginTail } from '@cossackframework
   if (schedules) {
     return patched.replace(
       'async scheduled(controller: ScheduledController, env: CloudflareBindings) { await createSchedules(env).scheduled(controller); },',
-      'async scheduled(controller: ScheduledController, env: CloudflareBindings, ctx: ExecutionContext) {\n    cmsScheduled(env, ctx);\n    await createSchedules(env).scheduled(controller);\n  },',
+      'async scheduled(controller: ScheduledController, env: CloudflareBindings, ctx: ExecutionContext) {\n    cmsScheduled(env, ctx);\n    // The CMS\'s every-minute cron runs only its maintenance unless a schedule uses that cron too.\n    const schedules = createSchedules(env);\n    if (schedules.list().some(schedule => schedule.cron === controller.cron)) await schedules.scheduled(controller);\n  },',
     );
   }
   return patched.replace('fetch: app.fetch,', 'fetch: app.fetch,\n  // Recover unconfirmed writes, deliver outbox events and keep the Cloud database warm.\n  async scheduled(_controller: ScheduledController, env: CloudflareBindings, ctx: ExecutionContext) {\n    cmsScheduled(env, ctx);\n  },');

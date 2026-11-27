@@ -62,7 +62,7 @@ describe('projects that record no files', () => {
     expect(added.addedFeatures).toEqual(expect.arrayContaining(['jobs', 'schedules']));
     const merged = await fs.readFile(entry, 'utf8');
     expect(merged).toContain("import './instrumentation';");
-    expect(merged).toContain('await createSchedules(env).scheduled(controller);');
+    expect(merged).toContain('if (schedules.list().some(schedule => schedule.cron === controller.cron)) await schedules.scheduled(controller);');
     expect(merged).toContain('cmsScheduled(env, ctx);');
     expect(await exists(path.join(root, 'src/schedules/index.ts'))).toBe(true);
     // The recipe is recorded where it was; the project's template and its own keys stay.

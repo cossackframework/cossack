@@ -16,7 +16,7 @@ values inside text. Both use `{{ }}`:
 {{ block core/button label="Buy {{ $.title }}" url="/" /}} a value in an attribute
 {{ block core/button url="/" }}Price is {{ $.price }}{{ /block }}
 {{ block core/group }} …blocks and text… {{ /block }}      a container and its children
-{{ pattern hero /}}                                        a synced pattern, by slug
+{{ pattern hero /}}                                        a synced pattern, by ID or title slug
 \{{ … }}                                                   written as is
 ```
 

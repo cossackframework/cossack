@@ -5,7 +5,7 @@
  *   {{ block core/button label="Buy {{ $.title }}" url="/cart" /}}   a block without a body
  *   {{ block core/button }}Price is {{ $.price }}{{ /block }}        a body fills the type's `body` field
  *   {{ block core/group }} …blocks and text… {{ /block }}            a container's body is its children
- *   {{ pattern hero /}}                                              a synced pattern by slug
+ *   {{ pattern hero /}}                                              a synced pattern by ID or title slug
  *   \{{ … }}                                                         written as is
  *
  * Only block types that declare `inline: true` can be referenced. The parser turns text into
@@ -30,7 +30,7 @@ export function hasBlockReference(value: unknown): value is string {
     return typeof value === 'string' && /(?<!\\)\{\{\s*(?:block|pattern|\/block)\b/.test(value);
 }
 
-/** The pattern a `{{ pattern … }}` names, kept as a `core/pattern` block whose `pattern` is the slug until the site resolves it. */
+/** The pattern a `{{ pattern … }}` names, kept as a `core/pattern` block whose `pattern` is the name until the site resolves it. */
 export const PATTERN_REFERENCE = 'core/pattern';
 
 type Tag =
@@ -142,7 +142,7 @@ function parseTag(inner: string): Tag | string | null {
     if (typeof tokens === 'string') return tokens;
     const [first, ...others] = tokens;
     if (keyword === 'pattern') {
-        if (!first || first.value !== undefined || others.length) return '{{ pattern … /}} names one pattern by its slug.';
+        if (!first || first.value !== undefined || others.length) return '{{ pattern … /}} names one pattern by its ID or the slug of its title.';
         return { kind: 'pattern', ref: first.name };
     }
     if (!first || first.value !== undefined || !NAME.test(first.name)) return `{{ block ${rest.trim()} }} names no block type, such as core/button.`;
