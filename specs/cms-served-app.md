@@ -69,8 +69,10 @@ Built the same day, from the first open item of `NOTES.md` ("no tracked files").
     so an edit is merged and a clash on the same lines stops the command.
   - A release that needs a change in a project file raises `cossack.hostTemplate`
     and lists the change in `cossack.hostSteps`. The upgrade prints the steps, the
-    build stops with them (`COSSACK_PACKAGE_HOST_OUTDATED`), and the project sets
-    `cossack.template` when they are done. Nothing else raises `template`.
+    build and `cossack typecheck` stop with them (`COSSACK_PACKAGE_HOST_OUTDATED`),
+    and the project sets `cossack.template` when they are done. Nothing else raises
+    `template`. New files go in `cossack.hostFiles`: the upgrade writes those the
+    project lacks (a folder only when it has none) and never replaces one.
   - A CMS manifest from before (schema 4 with `files`) is read without its file
     records; the next add, remove or upgrade moves the recipe and deletes them.
 - **Projects without the CMS** followed the same day: their sign-in pages and

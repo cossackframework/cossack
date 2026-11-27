@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { generateRoutes } from '@cossackframework/framework/route-codegen';
 import { generateConfigTypes } from '@cossackframework/framework/config-codegen';
+import { hostContractProblems } from '@cossackframework/framework/package-mounts';
 import { commandSpecs } from '../command-specs.js';
 import { showCommandHelp, validateCommand } from '../command-spec.js';
 import { buildEffectiveRouteModel } from '../scan-routes.js';
@@ -23,6 +24,15 @@ export async function typecheckCommand(args, ctx) {
   const exists = file => fs.access(path.join(root, file)).then(() => true, () => false);
   const say = message => { if (ctx.flags.json !== true) console.log(message); };
 
+  // A mounted package's contract first: its steps say what the type errors they cause cannot.
+  let problems;
+  try { problems = hostContractProblems(root); }
+  catch (error) { problems = [error]; }
+  if (problems.length) {
+    for (const problem of problems) console.error(problem.message);
+    return 1;
+  }
+
   // Cloudflare: the bindings of wrangler.jsonc as the CloudflareBindings interface.
   for (const file of WRANGLER_FILES) {
     if (!await exists(file)) continue;
@@ -42,12 +52,15 @@ export async function typecheckCommand(args, ctx) {
 export function typecheckHelp() {
   return commandSpecs.typecheck.help(`cossack typecheck
 
-Write the generated types, then run the project's TypeScript compiler with --noEmit:
+Check the files the mounted packages need, write the generated types, then run the
+project's TypeScript compiler with --noEmit:
 
-  1. Cloudflare projects: wrangler types (worker-configuration.d.ts).
-  2. .cossack/routes.ts: typed URLs of the project's and the mounted packages' pages.
-  3. .cossack/config.d.ts: the keys and types of config().
-  4. tsc --noEmit.
+  1. The mounted packages' host files and template: a project behind a package's
+     template gets the package's steps (COSSACK_PACKAGE_HOST_OUTDATED), as the build does.
+  2. Cloudflare projects: wrangler types (worker-configuration.d.ts).
+  3. .cossack/routes.ts: typed URLs of the project's and the mounted packages' pages.
+  4. .cossack/config.d.ts: the keys and types of config().
+  5. tsc --noEmit.
 
 The project's "typecheck" script runs this command.`);
 }

@@ -4,6 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { createHash } from 'node:crypto';
 
+import * as scaffold from '@cossackframework/scaffold';
 import {
   addFeature,
   createApp,
@@ -18,6 +19,13 @@ import {
   upgradeCommand,
 } from '../src/commands/upgrade.js';
 import { parseFlags } from '../src/flags.js';
+
+// An older release, when a test sets one: loading its version gives this instead of the registry's.
+const releases = vi.hoisted(() => ({ older: null }));
+vi.mock('../src/upgrade-scaffold.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, loadUpgradeScaffold: tag => tag === releases.older?.version ? releases.older : actual.loadUpgradeScaffold(tag) };
+});
 
 let temporaryParent;
 const installedVersion = JSON.parse(await fs.readFile(new URL('../../scaffold/package.json', import.meta.url), 'utf8')).version;
@@ -75,6 +83,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  releases.older = null;
   vi.restoreAllMocks();
   await fs.rm(temporaryParent, { recursive: true, force: true });
 });
@@ -259,9 +268,88 @@ describe('a project\'s own files', () => {
     expect(code).toBe(0);
     expect(output.data.applied.files).toContain('src/stores.client.ts');
     expect(await exists(path.join(root, 'src/stores.client.ts'))).toBe(true);
-    expect(output.data.applied.hostSteps).toEqual([{ package: '@cossackframework/cms', version: '0.9.0', template: '99.0.0', steps: ['wrangler.jsonc: add the SEARCH binding.'] }]);
+    expect(output.data.applied.hostSteps).toEqual([{ package: '@cossackframework/cms', version: '0.9.0', template: '99.0.0',
+      steps: ['wrangler.jsonc: add the SEARCH binding.'], files: ['src/stores.client.ts'] }]);
     // The project raises its template itself, when the changes are made.
     expect(JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8')).cossack.template).toBe(before);
+  });
+
+  it('writes the files a newer template adds when the project lacks them, and a folder only when it has none', async () => {
+    const root = await cmsProject();
+    for (const relative of ['orm.config.ts', 'src/orm', 'src/models', 'src/seeders']) await fs.rm(path.join(root, relative), { recursive: true });
+    // A folder the project has is its own: nothing goes into it.
+    await fs.rm(path.join(root, 'src/migrations'), { recursive: true });
+    await write(root, 'src/migrations/0001_own.ts', '// The project\'s own migration.\n');
+    await installCms(root, { host: ['cms.config.ts', 'stores.client.ts', 'orm/factory.ts', 'models/User.ts'], hostTemplate: '99.0.0',
+      hostSteps: { '99.0.0': ['src/bootstrap/middlewares.ts: list ormRequestMiddleware first.'] },
+      hostFiles: { '99.0.0': ['orm.config.ts', 'src/orm/', 'src/models/', 'src/migrations/', 'src/seeders/'], '0.1.0': ['src/old.ts'] } });
+
+    const [code, output] = await upgradeJson(root, []);
+    expect(code).toBe(0);
+    const [steps] = output.data.applied.hostSteps;
+    expect(steps.steps).toEqual(['src/bootstrap/middlewares.ts: list ormRequestMiddleware first.']);
+    expect(steps.files).toContain('orm.config.ts');
+    expect(steps.files).toContain('src/orm/factory.ts');
+    expect(steps.files).toContain('src/models/index.ts');
+    expect(steps.files).toContain('src/models/User.ts');
+    expect(steps.files).toContain('src/seeders/index.ts');
+    expect(steps.files.filter(file => file.startsWith('src/migrations/'))).toEqual([]);
+    expect(await fs.readdir(path.join(root, 'src/migrations'))).toEqual(['0001_own.ts']);
+    expect(await exists(path.join(root, 'src/models/CacheItem.ts'))).toBe(true);
+
+    // A second run writes nothing again, and replaces nothing.
+    await fs.writeFile(path.join(root, 'src/models/User.ts'), '// The project\'s own model.\n');
+    const [, again] = await upgradeJson(root, []);
+    expect(again.data.applied.hostSteps[0].files).toEqual([]);
+    expect(await fs.readFile(path.join(root, 'src/models/User.ts'), 'utf8')).toBe('// The project\'s own model.\n');
+  });
+
+  const older = text => String(text).replaceAll(`^${installedVersion}`, '^0.9.2');
+  /** A project whose dependencies 0.9.2 set. */
+  async function declareOlder(root) {
+    const file = path.join(root, 'package.json');
+    await fs.writeFile(file, older(await fs.readFile(file, 'utf8')));
+  }
+  /** 0.9.2 knew no romedb database: this release's reading of a CMS recipe names one. */
+  const olderRelease = (overrides = {}) => ({ version: '0.9.2', close: async () => {}, api: {
+    ...scaffold,
+    resolveRecipe(input) {
+      if (input.database === 'romedb') throw new Error('Unknown database provider "romedb". Supported values: d1, sqlite.');
+      return scaffold.resolveRecipe(input);
+    },
+    async readManifest(root) {
+      const own = await scaffold.readManifest(root);
+      return { ...own, config: { ...own.config, database: undefined } };
+    },
+    async renderRecipe(recipe, options) {
+      const files = await scaffold.renderRecipe(recipe, options);
+      const pkg = files.get('package.json');
+      files.set('package.json', { ...pkg, content: Buffer.from(older(pkg.content)) });
+      return files;
+    },
+    ...overrides,
+  } });
+
+  it('renders what the declared release owned from that release\'s own reading of the recipe', async () => {
+    const root = await cmsProject();
+    await declareOlder(root);
+    releases.older = olderRelease();
+    const [code, output] = await upgradeJson(root, ['--dry-run']);
+    expect(code).toBe(0);
+    expect(output.data.status).toBe('dry-run');
+    expect(output.data.plan.dependencies.updates).toContainEqual(expect.objectContaining({
+      name: '@cossackframework/framework', from: '^0.9.2', to: `^${installedVersion}`, changed: true }));
+  });
+
+  it('names the release that refuses the recipe', async () => {
+    const root = await cmsProject();
+    await declareOlder(root);
+    releases.older = olderRelease({ readManifest: undefined });
+    const [code, output] = await upgradeJson(root, ['--dry-run']);
+    expect(code).toBe(1);
+    const text = JSON.stringify(output);
+    expect(text).toContain('COSSACK_UPGRADE_RECIPE_REFUSED');
+    expect(text).toContain('Cossack 0.9.2 cannot render this project\'s recipe: Unknown database provider \\"romedb\\"');
   });
 
   it('moves a recipe from an older manifest into package.json and removes the file records', async () => {

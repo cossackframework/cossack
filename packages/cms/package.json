@@ -126,7 +126,25 @@
       "models/TenantNetwork.ts",
       "models/TenantSession.ts"
     ],
-    "hostTemplate": "0.9.0"
+    "hostTemplate": "0.9.3",
+    "hostSteps": {
+      "0.9.3": [
+        "src/bootstrap/middlewares.ts: import { ormRequestMiddleware } from '../middlewares/orm' and list ormRequestMiddleware first, before ...cmsMiddlewares.",
+        "package.json scripts: \"migrate\": \"cossack migration up\" and \"schema:check\": \"cossack schema check\".",
+        "Accounts, sessions and roles are the dashboard's, in ORM models on the CMS's RomeDB database: orm.config.ts, src/orm/, src/models/, src/migrations/, src/seeders/ and src/middlewares/orm.ts. cossack upgrade writes those the project lacks; a folder the project already has is left as it is, so compare it with a project that cossack create --features cms makes.",
+        "The CMS's own account tables are gone, and nothing moves their rows: make the first account again at /auth/setup."
+      ]
+    },
+    "hostFiles": {
+      "0.9.3": [
+        "orm.config.ts",
+        "src/orm/",
+        "src/models/",
+        "src/migrations/",
+        "src/seeders/",
+        "src/middlewares/orm.ts"
+      ]
+    }
   },
   "peerDependenciesMeta": {
     "@aws-sdk/client-s3": {

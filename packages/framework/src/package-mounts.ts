@@ -53,6 +53,13 @@ export interface MountedPackage {
    */
   hostSteps?: Record<string, string[]>;
   /**
+   * Files a template version adds to the project, by that version (`cossack.hostFiles`), as
+   * paths from the project root: `{ "0.9.3": ["orm.config.ts", "src/models/"] }`. `cossack upgrade`
+   * writes them from the release's rendering of the recipe when the project lacks them, and a
+   * folder (a trailing slash) only when the project has no such folder; it never replaces a file.
+   */
+  hostFiles?: Record<string, string[]>;
+  /**
    * Real path of the module that gives the package's part of the Vite configuration
    * (`cossack.vite`, a path from the package directory). The `cossack/vite` preset calls its
    * `cossackVite` export.
@@ -168,6 +175,7 @@ export function mountedPackages(projectRoot: string): MountedPackage[] {
       ...(typeof field.hostTemplate === 'string' ? { hostTemplate: field.hostTemplate } : {}),
       ...(typeof field.vite === 'string' && safe(field.vite) ? { vite: join(directory, field.vite) } : {}),
       ...(hostStepsOf(field.hostSteps) ? { hostSteps: hostStepsOf(field.hostSteps) } : {}),
+      ...(hostStepsOf(field.hostFiles, safe) ? { hostFiles: hostStepsOf(field.hostFiles, safe) } : {}),
       ...(exportedRoot(manifest.exports, field.root) ? { exported: exportedRoot(manifest.exports, field.root) } : {}),
     });
   }
@@ -243,11 +251,11 @@ export function versionBelow(version: string | undefined, minimum: string | unde
  * The `@/` modules a mounted package needs must exist, and the project's template must not be
  * older than the package asks for. Returns the problems; an empty list is a pass.
  */
-function hostStepsOf(value: unknown): Record<string, string[]> | undefined {
+function hostStepsOf(value: unknown, valid: (entry: unknown) => boolean = entry => typeof entry === 'string'): Record<string, string[]> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
   const steps: Record<string, string[]> = {};
   for (const [version, list] of Object.entries(value as Record<string, unknown>)) {
-    if (Array.isArray(list) && list.every(step => typeof step === 'string')) steps[version] = list as string[];
+    if (Array.isArray(list) && list.every(valid)) steps[version] = list as string[];
   }
   return Object.keys(steps).length ? steps : undefined;
 }
@@ -265,12 +273,22 @@ export function projectTemplate(projectRoot: string): { version: string | undefi
   return { version: typeof manifest === 'string' ? manifest : undefined, recorded: 'manifest' };
 }
 
-/** The steps a package names for templates newer than `template`, oldest first. */
-export function hostStepsSince(mounted: MountedPackage, template: string | undefined): string[] {
-  return Object.keys(mounted.hostSteps ?? {})
+/** The entries of `byVersion` for templates newer than `template`, oldest first. */
+function entriesSince(byVersion: Record<string, string[]> | undefined, template: string | undefined): string[] {
+  return Object.keys(byVersion ?? {})
     .filter(version => versionBelow(template, version))
     .sort((a, b) => versionBelow(a, b) ? -1 : versionBelow(b, a) ? 1 : 0)
-    .flatMap(version => mounted.hostSteps![version]);
+    .flatMap(version => byVersion![version]);
+}
+
+/** The steps a package names for templates newer than `template`, oldest first. */
+export function hostStepsSince(mounted: MountedPackage, template: string | undefined): string[] {
+  return entriesSince(mounted.hostSteps, template);
+}
+
+/** The files a package adds for templates newer than `template`, oldest first. */
+export function hostFilesSince(mounted: MountedPackage, template: string | undefined): string[] {
+  return [...new Set(entriesSince(mounted.hostFiles, template))];
 }
 
 export function hostContractProblems(projectRoot: string): PackageMountError[] {

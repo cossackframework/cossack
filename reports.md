@@ -36,3 +36,61 @@
 Docs: `packages/romedb/README.md` ("Requests that end early"), `docs/cms/index.md`. Tests:
 `packages/romedb/tests/places.test.ts`, `packages/cms/tests/request-calls-unit.test.ts`.
 ACME's `requestFetch`, the `requestLifetime` middleware and its client replacement can go.
+
+## 0.9.3 `cossack upgrade` cannot take a CMS project from 0.9.2 to 0.9.3
+
+**Found in:** GIF84 (`~/Sites/gif84-cossack-cms`), a CMS project on Workers with RomeDB, linked to this checkout at 0.9.3 plus `c5c552bd` (2026-11-25). Its `package.json` declared `^0.9.2` and `cossack.template` `0.9.2`.
+
+There are two faults. The first stops the upgrade. The second would leave the project broken if the upgrade ran.
+
+### 1. The upgrade stops: `Unknown database provider "romedb"`
+
+**What happened:** `pnpm exec cossack upgrade --dry-run` prints only `Unknown database provider "romedb". Supported values: d1, sqlite, turso, postgres, mysql, hyperdrive-postgres, hyperdrive-mysql` and exits 1. With `--json` the diagnostic is `COSSACK_COMMAND_FAILED` with no cause.
+
+**Cause (read in the source):** `upgradeCommandInner` (`packages/cossack/src/commands/upgrade.js`) reads the recipe with the installed 0.9.3 `readManifest`, which gives a CMS project `config.database: "romedb"`. It then loads the scaffold of the declared release (0.9.2) and calls that release's `resolveRecipe` with this recipe, to render what 0.9.2 owned. The 0.9.2 `DATABASE_PROVIDERS` (`packages/scaffold/src/registry.js` at `bc8b21cf`) has no `romedb`: the provider came with 0.9.3. So the baseline cannot be rendered for any CMS project that declares 0.9.2 or earlier.
+
+**How to reproduce:** in a CMS project whose `@cossackframework/framework` is `^0.9.2`, with 0.9.3 installed, run `cossack upgrade --dry-run`.
+
+**Expected:** the upgrade plans the dependency changes. For example: read the recipe for the baseline with the baseline release's own reading of the project, or leave out a `database` value that the baseline release does not know and let it take its default. The error should also say which release refused the recipe.
+
+### 2. The CMS package does not tell a 0.9.2 project what 0.9.3 needs of its files
+
+**What happened:** with the dependencies at 0.9.3, `cossack typecheck` gave 123 errors, all in `packages/cms/app/src` (`Cannot find module '@/orm/factory'`, `'@/models/User'`, and the errors that follow from them). 0.9.3 (`97db33e2`) moved sign-in, accounts and roles to the dashboard package, so the served CMS code now imports the project's ORM factory and account models.
+
+**Cause:** `packages/cms/package.json` adds `orm/factory.ts` and sixteen `models/*.ts` to `cossack.host`, but `hostTemplate` is still `0.9.0` and there are no `hostSteps`. So `hostContractProblems` and the upgrade see nothing to report for a project at template 0.9.0 to 0.9.2. The upgrade would write the missing `host` files, but they are not enough on their own: `src/orm/factory.ts` imports `../migrations` and `../models`. A 0.9.2 project also lacks these, and none is in `host`:
+
+- `orm.config.ts`, `src/orm/tooling.ts`
+- `src/models/index.ts`, `src/models/CacheItem.ts`
+- `src/migrations/` (nine migrations and `index.ts`), `src/seeders/`
+- `src/middlewares/orm.ts`, and `ormRequestMiddleware` before `cmsMiddlewares` in `src/bootstrap/middlewares.ts`
+- the `migrate` and `schema:check` scripts (the dependencies `@cossackframework/database` and `reflect-metadata` are the recipe's, so the upgrade would add those)
+
+**Expected:** `hostTemplate` of `@cossackframework/cms` is `0.9.3`, with `hostSteps` for 0.9.3 that list the files and the middleware line above, so the upgrade and the build name them. The upgrade could write the new files itself, since the project has none of them. `docs/upgrading.md` ("Changes in 0.9.3") says the CMS's account tables are dropped but not that the project needs these files.
+
+**Workaround in GIF84:** rendered the 0.9.3 recipe with the local scaffold (`resolveRecipe` and `renderRecipe`, cloudflare, `features: ['cms']`, `database: 'romedb'`), copied the files above into the project, added the two dependencies and two scripts, and set the versions and `cossack.template` to 0.9.3 by hand. Typecheck, `check routes`, `check templates` and `vite build` then pass. Not tested: a running server, and the migrations against a database.
+
+**Status:** Fixed.
+
+1. The upgrade renders what the declared release owned with that release's own reading of the
+   recipe (its `readManifest`), so a default that a later release added does not reach it. A
+   release that refuses the recipe is named: `COSSACK_UPGRADE_RECIPE_REFUSED`, "Cossack 0.9.2
+   cannot render this project's recipe: ...".
+2. `@cossackframework/cms` and `@cossackframework/dashboard` ask for template 0.9.3, with
+   `hostSteps` for 0.9.3. The CMS's steps are the middleware line, the two scripts, the account
+   files, and a new first account at `/auth/setup`. The dashboard's steps are the models,
+   migrations, factory, seeder and middleware of auth and dashboard projects, which changed in
+   0.9.3 too. A package's new `cossack.hostFiles` names the files a template adds. The upgrade
+   writes those the project lacks, and a folder only when the project has none (CMS:
+   `orm.config.ts`, `src/orm/`, `src/models/`, `src/migrations/`, `src/seeders/`,
+   `src/middlewares/orm.ts`). `cossack typecheck` now stops with the steps
+   (`COSSACK_PACKAGE_HOST_OUTDATED`) before `tsc`, as the build does.
+
+Checked on a copy of GIF84's committed tree set to 0.9.2 and linked to this checkout. The
+upgrade planned and installed the dependencies (adding `@cossackframework/database` and
+`reflect-metadata`), wrote the 34 files, and listed the two manual steps. After those steps,
+typecheck, `check routes`, `check templates` and `vite build` passed. A copy that declares 0.9.0
+is refused by name: published 0.9.0 has no `cms` feature, since GIF84 was built against linked
+sources. Not tested: a running server and the migrations against a database. Docs:
+`docs/upgrading.md` ("Changes in 0.9.3"), `docs/routing.md`, `docs/cossack-cli.md`. Tests:
+`packages/cossack/tests/upgrade.test.js`, `packages/cossack/tests/typecheck-host.test.js`,
+`packages/framework/tests/package-mounts.test.ts`.

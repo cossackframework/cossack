@@ -91,12 +91,12 @@ The Update button in the CMS dashboard runs the same steps in your pipeline. See
 1. It sets the dependencies the recipe owns to the new release's versions. The ones you added or pinned stay.
 2. It puts the release's keys into `pnpm-workspace.yaml` (build approvals, overrides) and keeps yours.
 3. It installs.
-4. It writes a file a mounted package needs and your project does not have (`src/cms.config.ts`, `src/dashboard.config.ts`, `src/stores.client.ts`). It never replaces one.
+4. It writes a file a mounted package needs and your project does not have (`src/cms.config.ts`, `src/dashboard.config.ts`, `src/stores.client.ts`), and the files a release adds to projects like yours, such as a CMS project's account models in 0.9.3. It writes a folder only when your project has none, and never replaces a file.
 5. It merges ejected pages and plugins, as described below.
 
 Your `vite.config.ts` and `src/index.ts` call into the packages (`cossackApp()`, `nodeApplication()`, `cmsAppOptions`), and the `typecheck` script is `cossack typecheck`. A release changes what those calls do, not your files.
 
-Rarely, a release needs a change in one of your files: a new binding in `wrangler.jsonc`, or a migration for a new column of the `users` table. The upgrade then lists the steps, and the build stops with `COSSACK_PACKAGE_HOST_OUTDATED` and the same list until they are done. Make the changes, then set `cossack.template` in `package.json` to the version the message names.
+Rarely, a release needs a change in one of your files: a new binding in `wrangler.jsonc`, or a migration for a new column of the `users` table. The upgrade then lists the steps, and the build and `cossack typecheck` stop with `COSSACK_PACKAGE_HOST_OUTDATED` and the same list until they are done. Make the changes, then set `cossack.template` in `package.json` to the version the message names.
 
 `cossack add` and `cossack remove` still change files: they compare your file with what your recipe renders, write the feature's part, and merge it with your edits. They stop when both changed the same lines.
 
@@ -236,6 +236,15 @@ the value from `event.currentTarget` or `event.target`.
   on MySQL a bare string never matches a JSON column.
 - CMS: sign-in, accounts, roles and sessions are the dashboard package's, and a network's sites
   are its tenants. The CMS's own account tables are dropped; make the accounts again through
-  `/auth/setup`.
+  `/auth/setup`. The accounts are ORM models on the CMS's RomeDB database, so a CMS project
+  needs `orm.config.ts`, `src/orm/`, `src/models/`, `src/migrations/`, `src/seeders/` and
+  `src/middlewares/orm.ts`. `cossack upgrade` writes the ones the project lacks and adds
+  `@cossackframework/database` and `reflect-metadata`. By hand: `ormRequestMiddleware` goes
+  first in `src/bootstrap/middlewares.ts`, and the `migrate` and `schema:check` scripts go in
+  `package.json`.
+- Auth and dashboard projects: `src/models/`, `src/migrations/`, `src/orm/factory.ts` (which
+  exports `tenantORM`), `src/seeders/application.seeder.ts` and `src/bootstrap/middlewares.ts`
+  (`tenantMiddleware`) change. Compare them with a project that `cossack create` makes with the
+  same features and database. The upgrade writes the new models the project lacks.
 - A tenant's own domain with shared sign-in: the main host asks the visitor to confirm before
   it signs them in there.
