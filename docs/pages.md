@@ -87,7 +87,7 @@ Every user on this page shares the same state.
 
 ### How scope works
 
-The server evaluates the scope function during SSR and embeds the computed `scopeKey` in the page's initial state. The client sends it back to the SSE endpoint and `/crpc`. The scope key is an identifier, not a credential: both endpoints evaluate the scope function again with the live authenticated user and the page's route params, and reject a different key with 403. They do not receive the page's query string, so build the scope from the user and route params, not from query params.
+The server evaluates the scope function during SSR and embeds the computed `scopeKey` in the page's initial state. The client sends it back to the SSE endpoint and `/crpc`. The scope key is an identifier, not a credential: both endpoints evaluate the scope function again with the live authenticated user and the page's route params, and reject a different key with 403. The client forwards the page's query string to both, so a scope may read query params as well; a visitor who changes them only reaches another scope's state, so do not treat a query param as access control.
 
 ## Layouts and Nested Pages
 

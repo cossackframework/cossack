@@ -991,7 +991,7 @@ export interface SiteTheme {
 }
 
 /** Template files that fill the theme's named slots; every other file is a specific template. */
-const TEMPLATE_FILES: { readonly [stem: string]: keyof SiteTheme } = { layout: 'layout', entry: 'entry', archive: 'archive', home: 'home', search: 'search', 'not-found': 'notFound', head: 'head', password: 'password' };
+const TEMPLATE_FILES: { readonly [stem: string]: keyof SiteTheme } = { layout: 'layout', entry: 'entry', archive: 'archive', home: 'home', search: 'search', 'not-found': 'notFound', head: 'head', password: 'password', members: 'members' };
 /** Names a specific template can have. */
 export const SPECIFIC_TEMPLATE = /^(?:entry-[a-z][a-z0-9_-]*|archive-[a-z][a-z0-9_-]*|term(?:-[a-z][a-z0-9_-]*)?|author)$/;
 
@@ -1056,7 +1056,7 @@ export function siteThemeProblems(theme: unknown): string[] {
     const value = theme as { [name: string]: unknown };
     const problems: string[] = [];
     for (const name of ['layout', 'entry', 'archive']) if (typeof value[name] !== 'function') problems.push(`theme.${name} must be a function.`);
-    for (const name of ['home', 'search', 'notFound', 'head']) if (value[name] !== undefined && typeof value[name] !== 'function') problems.push(`theme.${name} must be a function.`);
+    for (const name of ['home', 'search', 'notFound', 'head', 'password', 'members']) if (value[name] !== undefined && typeof value[name] !== 'function') problems.push(`theme.${name} must be a function.`);
     if (value.templates !== undefined) {
         if (typeof value.templates !== 'object' || value.templates === null) problems.push('theme.templates must map template names to functions.');
         else for (const [name, template] of Object.entries(value.templates)) {

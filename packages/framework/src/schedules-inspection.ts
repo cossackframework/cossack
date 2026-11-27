@@ -19,6 +19,14 @@ export async function readScheduleDefinitions(root: string) {
         throw new SchedulePreflightError('COSSACK_SCHEDULES_INVALID');
     }
 }
+/** The cron the CMS's Worker entry runs its maintenance on (scaffold cms-recipe). */
+const CMS_MAINTENANCE_CRON = '* * * * *';
+async function mountsCms(root: string): Promise<boolean> {
+    try {
+        const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
+        return Boolean(pkg?.dependencies?.['@cossackframework/cms'] ?? pkg?.devDependencies?.['@cossackframework/cms']);
+    } catch { return false; }
+}
 export async function inspectSchedules(root: string, environment?: string) {
     const diagnostics: { code: string; severity: 'error'; message: string; source: string }[] = [];
     const add = (code: string) => diagnostics.push({ code, severity: 'error', message: 'Check schedule declarations and the selected scheduler configuration.', source: 'src/schedules.json' });
@@ -34,8 +42,10 @@ export async function inspectSchedules(root: string, environment?: string) {
                 const config = await readCloudflareDeclarationConfig(root, configPath, environment);
                 const crons = config.triggers?.crons;
                 if (!Array.isArray(crons)) throw new SchedulePreflightError('COSSACK_SCHEDULE_TRIGGERS_MISMATCH');
-                const configured = [...new Set(crons.map(validateScheduleCron))].sort();
                 const declared = [...new Set(definitions.map(item => item.cron))].sort();
+                // A mounted CMS adds its own every-minute maintenance cron, which no schedule needs to declare.
+                const owned = await mountsCms(root) ? [CMS_MAINTENANCE_CRON] : [];
+                const configured = [...new Set(crons.map(validateScheduleCron))].filter(cron => declared.includes(cron) || !owned.includes(cron)).sort();
                 if (JSON.stringify(configured) !== JSON.stringify(declared)) throw new SchedulePreflightError('COSSACK_SCHEDULE_TRIGGERS_MISMATCH');
             } catch (error) { add(error instanceof SchedulePreflightError ? error.code : 'COSSACK_SCHEDULE_CONFIGURATION_UNKNOWN'); }
         }

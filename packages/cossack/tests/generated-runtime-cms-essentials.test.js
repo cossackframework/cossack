@@ -428,6 +428,12 @@ async function essentials(origin, routeIds, diagnostics, { runtime, cloudflare =
   contains(updatedPattern, 'Follow us everywhere');
   lacks(updatedPattern, 'Subscribe to our newsletter');
   expect(Object.values((await (await fetch(`${origin}/api/cms/content/posts/with-a-pattern`)).json()).patterns)).toEqual([expect.objectContaining({ title: 'Call to action' })]);
+  // `{{ pattern … /}}` in text names a pattern by its title's slug, and the Pattern block next to it still renders.
+  const footerId = await save(web, 'patterns', { title: 'Footer note', content: [{ _id: 'fn', type: 'core/paragraph', data: { text: 'Written in Kyiv' } }], synced: true, starter: '' });
+  await save(web, 'posts', post('Pattern by name', { content: [{ _id: 'named', type: 'core/paragraph', data: { text: 'Before {{ pattern call-to-action /}} after' } }, { _id: 'p2', type: 'core/pattern', data: { pattern: footerId } }] }));
+  const named = visible(await visitor.page('/posts/pattern-by-name'));
+  contains(named, 'Follow us everywhere');
+  contains(named, 'Written in Kyiv');
   expect((await fetch(`${origin}/api/cms/content/patterns`)).status).toBe(401);
 
   // Translations: French pages under /fr with alternates and a language switcher.
