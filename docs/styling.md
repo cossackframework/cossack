@@ -5,17 +5,24 @@ description: "Use Tailwind CSS 4.x classes and custom CSS in Cossack application
 
 # Styling
 
-Cossack uses Tailwind CSS 4.x by default. The scaffolded project includes its configuration.
+Cossack uses Tailwind CSS 4.x by default. New projects install `tailwindcss` and `@tailwindcss/vite` as dev dependencies.
 
 ## How It Works
 
-The preset in `vite.config.ts` loads Tailwind through the `@tailwindcss/vite` plugin when the project has it installed. The CSS entry point is `src/style.css`:
+The preset in `vite.config.ts` loads Tailwind through the `@tailwindcss/vite` plugin when the project has it installed. The CSS entry point is `src/style.css`. Projects with the `ui` feature start it with Tailwind and the UI theme:
 
 ```css
 @import "tailwindcss";
+@import "@cossackframework/ui/theme/base.css";
+@import "@cossackframework/ui/theme/theme.css";
+@source "../node_modules/@cossackframework/ui/dist";
 ```
 
-This file is imported by `src/client/entry-client.ts`, so Tailwind utilities are available in every page and component.
+`cossack create --theme <name>` (`neutral`, `zinc`, `stone`, `gray`, `slate`, `blue`, `green` or `red`; `default` adds nothing) adds `@import "@cossackframework/ui/theme/themes/<name>.css";` after `theme.css`. Import a theme file the same way to change it later.
+
+The minimal preset writes an empty `src/style.css`. Add `@import "tailwindcss";` to it to use Tailwind utilities.
+
+This file is imported by `src/client/entry-client.ts`, so Tailwind utilities are available in every page and component. In development the document links `/src/style.css`; production builds link the hashed CSS asset of the client entry.
 
 ## Using Tailwind Classes
 
@@ -181,13 +188,13 @@ Add global styles to `src/style.css` alongside the Tailwind import:
 
 ## Dependencies
 
-Tailwind CSS is included as a dev dependency in the framework package:
+New projects list Tailwind CSS as dev dependencies in their `package.json`:
 
 ```json
 {
     "devDependencies": {
-        "@tailwindcss/vite": "^4.1.0",
-        "tailwindcss": "^4.1.0"
+        "@tailwindcss/vite": "^4.3.3",
+        "tailwindcss": "^4.3.3"
     }
 }
 ```

@@ -207,13 +207,13 @@ layout can declare the same class to create an isolated instance for its own
 subtree:
 
 ```typescript
-// The outer dashboard subtree has one instance.
+// src/pages/dashboard/layout.ts: the outer dashboard subtree has one instance.
 @Page({ services: [PreferencesService] })
-export class DashboardLayout extends Cossack {}
+export default class DashboardLayout extends Cossack {}
 
-// Everything below this layout receives a different instance.
+// src/pages/dashboard/admin/layout.ts: everything below receives a different instance.
 @Page({ services: [PreferencesService] })
-export class AdminLayout extends Cossack {}
+export default class AdminLayout extends Cossack {}
 ```
 
 Duplicate entries in one `services` array are rejected, as are classes that do
@@ -326,7 +326,7 @@ export class BillingService {
 }
 
 @Page({ services: [AuditService, BillingService] })
-export class BillingLayout extends Cossack {}
+export default class BillingLayout extends Cossack {}
 ```
 
 Declare dependencies in the same layout or an ancestor when they must share
@@ -338,7 +338,7 @@ Constructor injection remains supported:
 
 ```typescript
 @Page()
-export class LegacyPage extends Cossack {
+export default class LegacyPage extends Cossack {
     constructor(private logger: LoggerService) {
         super();
     }

@@ -16,7 +16,7 @@ Use the App component for:
 
 ## Usage
 
-The App component is a standard Cossack component defined in `packages/framework/src/App.ts`. It must implement a `template` method that accepts `children`.
+The App component is a standard Cossack component defined in `src/App.ts`. Its `render()` method must place `this.children`, which holds the current page and its layouts.
 
 ```typescript
 import { Cossack, Page, State } from '@cossackframework/core';
@@ -38,7 +38,7 @@ export class App extends Cossack {
                 <!-- The current page (and its layouts) are rendered here -->
                 ${this.children}
                 
-                <GlobalFooter />
+                <${GlobalFooter} />
             </div>
         `;
     }
@@ -75,13 +75,13 @@ the server-rendered nodes, and the App's server-side head tags are missing.
     * The `App` instance remains active when the user navigates to a new page, for example through a link.
     * Only the `children` (the page content) are swapped out.
     * This preserves any state stored in the `App` component, like the `theme` variable in the example above.
-    * After each navigation completes, `onNavigateComplete(pathname)` is called on the `App` instance.
+    * After each navigation completes, `onNavigateComplete(pathname)` is called on the `App` instance, the active layouts, and the current page.
 
 ## Navigation Lifecycle Hooks
 
 ### `onNavigateComplete(pathname)`
 
-The framework calls this method on the `App` component after every navigation completes, including the initial page load and later SPA navigations. Override this method to react to route changes.
+The framework calls this method on the `App` component, the active layouts, and the current page after every navigation completes, including the initial page load and later SPA navigations. Override this method to react to route changes. A method decorated with `@On('navigate-complete')` receives the same `pathname`; a component can have several such methods.
 
 ```typescript
 import { Cossack, Page, State } from '@cossackframework/core';
@@ -117,7 +117,7 @@ The framework dispatches custom DOM events during the navigation lifecycle. You 
 // Listen for navigation completion
 document.addEventListener('cossack:ready', (e) => {
     console.log('Navigation complete:', e.detail);
-    // detail: { pathname: '/about', navigationType: 'initial' | 'spa' }
+    // detail: { pathname: '/about', navigationType: 'initial' | 'push' | 'replace' | 'traverse', types?, scroll? }
 });
 
 // Listen for navigation start

@@ -68,8 +68,8 @@ request ORM scope.
 `id`, `userId`, `kind: 'auth'`, `createdAt` and `expiresAt`. Times are Unix
 milliseconds. New tokens use 32 random bytes encoded as 64 lowercase hex digits.
 
-The default lifetime is seven days. Validation rejects exact expiry and never
-refreshes it. Rotation explicitly starts a new lifetime. The storage contract is:
+The default lifetime is seven days (`ttlSeconds`, at most 400 days). Validation
+rejects exact expiry and never refreshes it. Rotation explicitly starts a new lifetime. The storage contract is:
 
 | Callback | Required behavior |
 | --- | --- |
@@ -79,11 +79,11 @@ refreshes it. Rotation explicitly starts a new lifetime. The storage contract is
 | `revoke(id, context)` | Delete the auth record. Preserve records for other purposes. |
 
 The generated adapter uses one conditional SQL `UPDATE`, matching token,
-account, creation time, expiry and the canonical `{"type":"auth"}` metadata.
-It also tests expiry at the write. One affected row means success. Its `DELETE`
-targets that same auth purpose. Reset tokens cannot authenticate, rotate or be
-removed by logout. Existing stores with other JSON encodings must adapt their
-conditional matching or normalize the metadata explicitly.
+account, creation time, expiry and the `kind = 'auth'` column of the `sessions`
+row. It also tests expiry at the write. One affected row means success. Its
+`DELETE` targets that same auth purpose. Reset tokens cannot authenticate,
+rotate or be removed by logout. A custom store that marks the purpose another
+way must match that marker in its conditional writes.
 
 Every callback receives the Hono request context. SQL, transactions and
 cross-process atomicity remain storage responsibilities. See the auth module that
@@ -122,8 +122,8 @@ that case.
 
 Session operations return `Headers` after storage succeeds. Apply these headers
 to the response. Default cookies use `session_id`, `Path=/`, `HttpOnly`, `Secure`
-and `SameSite=Lax`. Configure the name, path, domain and same-site policy through
-`cookie`. Clearing uses the same policy with `Max-Age=0`. Never copy tokens or
+and `SameSite=Lax`. Configure the name, path, domain, `secure` flag and same-site policy through
+`cookie` (`sameSite: 'None'` requires `secure: true`). Clearing uses the same policy with `Max-Age=0`. Never copy tokens or
 cookie headers into public page state.
 
 ## Generated session dashboard
@@ -151,6 +151,32 @@ does not authenticate a request or grant permission to revoke a session. Invalid
 foreign and current references produce the same fixed page error. Storage errors
 also use fixed messages. A mutation that commits before a later listing fails is
 not rolled back. An already-ended caller can receive a sign-in denial.
+
+## Second factors, passkeys and bot checks
+
+These helpers use Web APIs only and leave storage to the application. The
+dashboard package's auth module composes them for two-step sign-in.
+
+- `@cossackframework/auth` (also `@cossackframework/auth/two-factor`):
+  `generateTotpSecret()`, `totpUri({ secret, issuer, account })` for the QR code,
+  and `verifyTotp(secret, code, { window, afterStep })` (RFC 6238; 30-second,
+  6-digit codes by default). `verifyTotp` returns the matching step or `null`.
+  Store the step and pass it as `afterStep` so a code cannot be used twice.
+  `generateRecoveryCodes(count = 10)` makes single-use codes; store only
+  `hashRecoveryCode(code)`.
+- `@cossackframework/auth/passkeys` (WebAuthn through SimpleWebAuthn):
+  `passkeyRegistrationOptions(config, user, existing)`,
+  `verifyPasskeyRegistration(config, response, challenge)`,
+  `passkeyAuthenticationOptions(config, allow)`,
+  `verifyPasskeyAuthentication(config, response, challenge, passkey)` and
+  `passkeyUserId(response)`. `config` is `{ rpName, rpID, origin }`. The
+  application stores challenges and the `StoredPasskey` records, and saves the
+  returned `counter` after each sign-in.
+- `@cossackframework/auth/turnstile`: `createTurnstileVerifier({ secret,
+  expectedHostname, expectedAction, timeoutMs = 5000, retries = 0 })` checks a
+  Cloudflare Turnstile token on the server. `verify({ token, remoteIP })`
+  returns `{ success: true }` or `{ success: false, code, retryable }` with a
+  `COSSACK_TURNSTILE_*` code. Never trust a success flag from the browser.
 
 ## Diagnostics and limits
 

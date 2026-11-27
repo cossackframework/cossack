@@ -55,3 +55,13 @@ it('recognizes actual send_email name fields for declared EMAIL requirements', a
     await writeFile(join(root, 'wrangler.jsonc'), JSON.stringify({ name: 'email-test', main: 'src/throwing.ts', compatibility_date: '2026-10-05', send_email: [{ name: 'EMAIL' }] }));
     expect((await inspectConfigurationRequirements(root, { check: true })).diagnostics).toEqual([]);
 });
+it('accepts the CMS maintenance cron next to declared schedules only when the CMS is mounted', async () => {
+    const root = await fixture();
+    const wrangler = JSON.parse(await readFile(join(root, 'wrangler.jsonc'), 'utf8'));
+    await writeFile(join(root, 'wrangler.jsonc'), JSON.stringify({ ...wrangler, triggers: { crons: ['0 * * * *', '* * * * *'] } }));
+    expect((await inspectSchedules(root)).diagnostics[0]?.code).toBe('COSSACK_SCHEDULE_TRIGGERS_MISMATCH');
+    await writeFile(join(root, 'package.json'), JSON.stringify({ type: 'module', cossack: { runtime: 'cloudflare' }, dependencies: { '@cossackframework/cms': 'workspace:*' } }));
+    expect((await inspectSchedules(root)).diagnostics).toEqual([]);
+    await writeFile(join(root, 'src/schedules.json'), JSON.stringify([{ ...definition, cron: '30 * * * *' }]));
+    expect((await inspectSchedules(root)).diagnostics[0]?.code).toBe('COSSACK_SCHEDULE_TRIGGERS_MISMATCH');
+});

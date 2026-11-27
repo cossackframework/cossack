@@ -12,7 +12,7 @@ These load automatically when you work on Cossack files. You do not invoke them.
 
 | Skill | What it does |
 |---|---|
-| [`cossack-best-practices`](./cossack-best-practices/SKILL.md) | Guardrails that direct the assistant to framework built-in features instead of custom code. It includes references for reactive `server$` resources, server/client RPC, directives, decorators, tasks, validation, stores, UI, forms, loading, database, cache, realtime, auth, Electron Desktop, and errors. |
+| [`cossack-best-practices`](./cossack-best-practices/SKILL.md) | Guardrails that direct the assistant to framework built-in features instead of custom code. It includes references for reactive `server$` resources, server/client RPC, directives, decorators, tasks, validation, stores, UI, forms, loading, database, cache, realtime, auth, dashboard/CMS/tenants, project upkeep, Electron Desktop, and errors. |
 
 ### Slash commands
 
@@ -20,7 +20,7 @@ Invoke explicitly for multi-step workflows.
 
 | Command | What it generates |
 |---|---|
-| [`/setup-auth`](./setup-auth/SKILL.md) | Full auth setup: install `@cossackframework/auth`, types, `createAuth()` configuration, middleware wiring, a login route, and protected pages. |
+| [`/setup-auth`](./setup-auth/SKILL.md) | Sign-in with `cossack add auth`: mounts the dashboard package's served pages, sets `src/dashboard.config.ts` (methods, OAuth), migrations, and verification. |
 | [`/create-desktop-app`](./create-desktop-app/SKILL.md) | Add an Electron Desktop side target without changing the web adapter. Configure secure local RPC, native shell lifecycle, icons, and Forge packaging. |
 | [`/setup-websocket`](./setup-websocket/SKILL.md) | Real-time setup: pick SSE or Durable Object transport, wire channels/scope, configure the DO binding. |
 | [`/setup-ui`](./setup-ui/SKILL.md) | UI package setup: `cossack add ui`, theme selection, component usage with `component()`, ejecting components, focus helpers, the global Toaster. |

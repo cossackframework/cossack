@@ -612,7 +612,7 @@ async function sendVerification(user: { id: string; email: string; name: string 
   if (!mail || !origin) return;
   const token = await createLink('verify', user.id, VERIFICATION_TTL_MS);
   const title = await siteName().catch(() => '');
-  await mail.send({ to: user.email, subject: `Confirm your email for ${title || 'the site'}`,
+  await mail.send({ kind: 'verification', to: user.email, subject: `Confirm your email for ${title || 'the site'}`,
     text: `Hello ${user.name || user.email},\n\nConfirm your email address to finish creating your account on ${title || origin}:\n${origin}/auth/verify?token=${token}\n\nThe link works for two days. If you did not register, ignore this email.` });
 }
 
@@ -1160,7 +1160,7 @@ export async function requestPasswordReset(email: string, resetBaseUrl: string):
   const mail = mailer();
   if (!mail) return; // send_email not configured: graceful no-op
   const resetUrl = `${resetBaseUrl.replace(/\/$/, '')}/auth/reset-password?token=${token}`;
-  await mail.send({ to: email, subject: 'Reset your password',
+  await mail.send({ kind: 'reset', to: email, subject: 'Reset your password',
     text: `We received a request to reset your password. Choose a new one here; the link works for one hour:\n${resetUrl}\n\nIf you did not ask for it, ignore this email.` });
   }), undefined);
 }
@@ -1377,7 +1377,7 @@ export async function requestMagicLink(email: string, _requestOrigin?: string): 
   if (!account || account.status !== 'active') return;
   const token = await createLink('magic', account.id, MAGIC_LINK_TTL_MS);
   const title = await siteName().catch(() => '');
-  await mail.send({ to: account.email, subject: `Sign in to ${title || 'the site'}`,
+  await mail.send({ kind: 'magic-link', to: account.email, subject: `Sign in to ${title || 'the site'}`,
     text: `Open this link to sign in; it works once, for fifteen minutes:\n${origin}/auth/magic?token=${token}\n\nIf you did not ask for it, ignore this email.` });
   }), undefined);
 }
@@ -1691,7 +1691,7 @@ export async function sendInvitation(userId: string): Promise<boolean> {
   const token = await createPasswordResetToken(user.email, 7 * 24 * 60 * 60 * 1000);
   if (!token) return false;
   const title = currentTenant()?.name ?? await siteName().catch(() => '');
-  await mail.send({ to: user.email, subject: `You are invited to ${title || 'the site'}`,
+  await mail.send({ kind: 'invitation', to: user.email, subject: `You are invited to ${title || 'the site'}`,
     text: `Hello ${user.name || user.email},\n\nAn account was made for you on ${title || origin}. Set your password here within seven days:\n${origin}/auth/reset-password?token=${token}\n\nIf you were not expecting this, ignore this email.` });
   return true;
   });

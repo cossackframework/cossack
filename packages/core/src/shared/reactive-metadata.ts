@@ -12,6 +12,8 @@ export interface ReactiveMetadata {
     readonly clientStore: ReadonlySet<string>;
     /** Every reactive field name: @State, @ClientState, @Store, then @ClientStore. */
     readonly keys: readonly string[];
+    /** The @State and @Store fields declared `send: false`: server method calls do not send them. */
+    readonly unsent: ReadonlySet<string>;
 }
 
 /** Task declarations of one class, merged across inheritance, per side. */
@@ -28,7 +30,7 @@ const taskCache = new WeakMap<Function, TaskMetadata>();
 
 const emptyReactive: ReactiveMetadata = Object.freeze({
     state: Object.freeze(Object.create(null)), store: Object.freeze(Object.create(null)),
-    clientState: new Set<string>(), clientStore: new Set<string>(), keys: Object.freeze([]),
+    clientState: new Set<string>(), clientStore: new Set<string>(), keys: Object.freeze([]), unsent: new Set<string>(),
 });
 
 /** One inherited field contract, with child declarations replacing the field kind. */
@@ -66,8 +68,10 @@ function buildReactiveMetadata(constructor: Function): ReactiveMetadata {
         else if (field.kind === 'client-state') clientState.add(key);
         else clientStore.add(key);
     }
+    const unsent = new Set([...Object.keys(state), ...Object.keys(store)]
+        .filter(key => (state[key] ?? store[key])?.send === false));
     return Object.freeze({ state: Object.freeze(state), store: Object.freeze(store), clientState, clientStore,
-        keys: Object.freeze([...Object.keys(state), ...clientState, ...Object.keys(store), ...clientStore]) });
+        keys: Object.freeze([...Object.keys(state), ...clientState, ...Object.keys(store), ...clientStore]), unsent });
 }
 
 /**

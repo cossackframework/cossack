@@ -8,6 +8,7 @@ import { RESERVED_STATE_KEYS } from './component-types';
 import { isSharedMethod } from './shared-method';
 import { TRANSPORT_ROUTES } from './transport-routes';
 import { createStoreProxy, isPlainObjectOrArray } from './store';
+import { noteInjectedUnsentKey, noteStateWrite, recordStateWrites } from './call-state';
 
 type ServiceRuntime = {
     values: Map<string, unknown>;
@@ -74,6 +75,7 @@ export function bootstrapService(
                         value as Record<PropertyKey, unknown>,
                         key,
                         () => {
+                            noteStateWrite(instance, key);
                             noteOptimisticWrite(instance, key);
                             const current = runtime.values.get(key);
                             for (const listener of runtime.listeners) listener(key, current);
@@ -84,6 +86,7 @@ export function bootstrapService(
                 return proxy;
             },
             set(newValue: any) {
+                noteStateWrite(instance, key);
                 const oldValue = runtime.values.get(key);
                 if (oldValue === newValue) return;
                 runtime.values.set(key, newValue);
@@ -197,15 +200,19 @@ function assertNoSingletonState(serviceClass: any): void {
 export function registerServiceState(component: any, serviceInstance: any): void {
     const serviceStateMeta = getServiceState(serviceInstance);
     const stateContainer = component._stateContainer;
+    const { unsent } = collectReactiveMetadata(serviceInstance.constructor);
 
     for (const key of Object.keys(serviceStateMeta)) {
         // Register in component's state container so getPublicState() includes it
         stateContainer.setPublic(key, serviceInstance[key]);
+        // The component's calls leave the service's `send: false` fields out too.
+        if (unsent.has(key)) noteInjectedUnsentKey(component, key);
 
         // Create pass-through property: component.key ↔ service.key
         Object.defineProperty(component, key, {
             get: () => serviceInstance[key],
             set: (newValue: any) => {
+                noteStateWrite(component, key);
                 serviceInstance[key] = newValue;
                 // Keep state container in sync for getPublicState()
                 stateContainer.setPublic(key, newValue);
@@ -243,7 +250,14 @@ export function forwardServiceMethods(component: any, serviceInstance: any): voi
         const original = serviceInstance[methodName];
         if (typeof original === 'function') {
             component[methodName] = async (...args: any[]) => {
-                const result = await original.apply(serviceInstance, args);
+                // The service's assignments are the component's: its reply carries them.
+                const writes = recordStateWrites(serviceInstance);
+                let result: unknown;
+                try { result = await original.apply(serviceInstance, args); }
+                finally {
+                    writes.stop();
+                    for (const key of writes.keys) noteStateWrite(component, key);
+                }
                 // Sync service state back to component's state container
                 // so getPublicState() returns updated values
                 for (const key of serviceStateKeys) {
@@ -287,10 +301,11 @@ export function proxyServiceMethods(component: any, serviceInstance: any): void 
 
     for (const methodName of serverOnlyMethods) {
         const proxy = async (...args: any[]) => {
-            // Build state from the service's @State properties
+            // Build state from the service's @State properties, without its `send: false` fields
             const state: Record<string, any> = {};
+            const unsent = collectReactiveMetadata(serviceInstance.constructor).unsent;
             for (const key of serviceStateKeys) {
-                state[key] = serviceInstance[key];
+                if (!unsent.has(key)) state[key] = serviceInstance[key];
             }
 
             component.loading[methodName] = (component.loading[methodName] || 0) + 1;

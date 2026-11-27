@@ -15,7 +15,9 @@ import { ormPeople } from './people';
 import { tenantSites } from './sites';
 import { accounts, asMainAccount, withTenant } from '../tenants';
 import { TenantMember } from '@/models/TenantMember';
-import registry from 'virtual:cossack-pages';
+// The page files' names only. The pages registry imports every layout on the server, and the
+// layouts import this module: through the registry it would import itself (requests.md C8).
+import pageFiles from 'virtual:cossack-page-files';
 
 /**
  * The environment bindings the CMS application reads. The project's storage (`storage` in
@@ -156,7 +158,7 @@ export function networkFor(env: CmsBindings): CmsNetwork {
                 ...(siteMail ? { mail: siteMail } : {}),
                 // An entry's slug cannot take the address of a page: the CMS's routes, every page file of the
                 // application (the project's, the CMS's and plugins'), and what the project names itself.
-                reservedPaths: [...new Set([...DEFAULT_RESERVED_PATHS, ...reservedRouteSegments(Object.keys(registry.pages)), ...(project.reservedPaths ?? [])])],
+                reservedPaths: [...new Set([...DEFAULT_RESERVED_PATHS, ...reservedRouteSegments(pageFiles), ...(project.reservedPaths ?? [])])],
               }));
             },
         });

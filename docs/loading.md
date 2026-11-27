@@ -38,7 +38,7 @@ export default class DashboardSkeleton extends Cossack {
 
 ## Initialization Loading (`init` / `get`)
 
-When the framework initializes a component through `init()` or `get()`, it sets `this.loading.init` to `1`.
+While `init()`, `get()` or `clientInit()` runs, `this.loading.init` is a count of the calls in progress (`1` for one call). The key is deleted when the last call settles.
 
 ### The `loadingTemplate()` Convention
 
@@ -71,9 +71,10 @@ export default class UserProfile extends Cossack {
 
 ## Action Loading (`@Server`)
 
-When a method decorated with `@Server` is called on the client, Cossack tracks its progress in the `this.loading` object under the method name.
+When a method decorated with `@Server` is called on the client, Cossack tracks its progress in the `this.loading` object under the method name, as a count of calls in progress.
 
 ```typescript
+@Server()
 async save() {
     await this.performSave();
 }
@@ -121,10 +122,8 @@ export default class DataPage extends Cossack {
         `;
     }
 
+    // While this.loading.init is set, Cossack renders loadingTemplate() instead.
     render() {
-        if (this.loading.init) {
-            return this.loadingTemplate();
-        }
         return html`
             <ul>
                 ${this.data.map(item => html`<li>${item}</li>`)}
@@ -139,14 +138,3 @@ The flow:
 2. Client hydration: the client hydrates with the loading UI visible.
 3. `clientInit()`: it calls `init()` through RPC. The RPC call fetches data from the server.
 4. Data loaded: the loading state clears and the component re-renders with the actual content.
-
-## Dev-Mode State Logging
-
-In development mode, Cossack automatically logs state changes to the browser console:
-
-```
-[Cossack] State change: count 0 -> 5
-[Cossack] State change suppressed (same value): theme light
-```
-
-This helps debug reactivity issues. These logs are stripped from production builds.

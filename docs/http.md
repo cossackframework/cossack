@@ -27,10 +27,12 @@ export default class extends Cossack {
     @State()
     private count: number = 0;
 
+    @Server()
     private increment() {
         this.count++;
     }
 
+    @Server()
     private decrement() {
         this.count--;
     }
@@ -456,8 +458,8 @@ cookies. WebSocket action results cannot carry native HTTP responses.
 
 For data that outlives a single redirect, use `session()`. Examples are shopping
 carts, wizard state, and per-user preferences. Flash is cookie-backed, holds
-about 4 KB, and is read-once. Sessions are database-backed (D1/Turso via the
-`sessions` table), long-lived, and keyed off a session ID cookie.
+about 4 KB, and is read-once. Sessions are database-backed (the ORM database,
+through the `sessions` table), long-lived, and keyed off a session ID cookie.
 
 ```typescript
 import { session } from '@cossackframework/framework/session';
@@ -475,23 +477,25 @@ async post() {
 
 ### Setup
 
-Sessions use the database (included by default). Register the session middleware
-in `src/bootstrap/middlewares.ts` and apply the `sessions` table migration
-(`cossack migration up`):
+Sessions use the ORM database. With the `database` feature,
+`src/middlewares/orm.ts` already exports the middleware with the database store:
 
 ```typescript
-// src/middlewares/session.ts
+// src/middlewares/orm.ts (generated)
+import { createDatabaseSessionStore } from '@cossackframework/database/cossack';
 import { createSessionMiddleware } from '@cossackframework/framework/session';
-export const sessionMiddleware = createSessionMiddleware();
 
-// src/bootstrap/middlewares.ts
-import { sessionMiddleware } from '../middlewares/session';
-export const middlewares = [sessionMiddleware];
+export const sessionMiddleware = createSessionMiddleware({
+  store: createDatabaseSessionStore(),
+});
 ```
 
-The migration shipped by `cossack add database` creates the `sessions` table
-(`id`, nullable `user_id`, JSON `data`, `expires_at`). No extra schema work is
-needed.
+List it after `ormRequestMiddleware` in `src/bootstrap/middlewares.ts` and apply
+migrations (`cossack migration up`). The `sessions` table (`id`, nullable
+`user_id`, JSON `data`, `expires_at`, plus the auth columns) comes with the
+account migrations of `auth` (`0002_create_sessions`). A project without `auth`
+adds a migration for that table. Without `store`, the middleware reads a
+`sessionStore` value that an earlier middleware set on the Hono context.
 
 ### Anonymous vs. authenticated sessions
 
@@ -526,7 +530,7 @@ export const sessionMiddleware = createSessionMiddleware({
 | Lifetime | One redirect (read-once) | Long-lived (until logout/expiry) |
 | Storage | Signed cookie (~4KB limit) | Database (`sessions.data` JSON) |
 | Best for | Success/error messages, old form input | Carts, wizards, prefs, A/B |
-| Requires | `APP_SECRET` | Database (included by default) |
+| Requires | `APP_SECRET` | Database and the session middleware |
 
 ## Sending Responses
 
@@ -576,30 +580,16 @@ async get() {
 
 ### Middleware
 
-Apply Hono middleware to your routes by exporting a `middleware` array from the page.
+Apply Hono middleware to a route with the `middlewares` option of `@Page()`.
+See [Middleware](./middlewares.md).
 
 File: `src/pages/api/me.ts`
 
 ```typescript
 import { Page, Cossack } from '@cossackframework/core';
-import { authMiddleware } from '@/middleware/auth'; // Your custom auth middleware
+import { authMiddleware } from '@/middlewares/auth'; // Your custom auth middleware
 
-export const middleware = [authMiddleware];
-
-@Page()
-export default class extends Cossack {
-    async get() {
-        // The authMiddleware has already run and attached the user
-        const user = this.c.get('user');
-        return this.c.json({ user });
-    }
-}
-```
-
-You can also implicitly apply middleware into the page with the `middleware` property on the `@Page()` decorator:
-
-```typescript
-@Page({ middleware: [authMiddleware] })
+@Page({ middlewares: [authMiddleware] })
 export default class extends Cossack {
     async get() {
         // The authMiddleware has already run and attached the user

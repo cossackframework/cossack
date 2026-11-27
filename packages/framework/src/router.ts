@@ -21,10 +21,15 @@ import {
   isRpcCallableAction,
   sanitizeClientState,
   sanitizeServiceState,
+  recordStateWrites,
+  replyState,
+  unsentStateKeys,
+  measureCallState,
+  collectServerMethodMetadata,
 } from '@cossackframework/core';
 import { enforceMethodRateLimit } from '@cossackframework/core';
 import { enforceActionInput, enforceActionAuthorization, getAuthorizationFailure, isActionValidationError, isClientVisibleError } from '@cossackframework/core';
-import { RPC_JSON_RESPONSE_MAX_BYTES, RPC_RESPONSE_LIMIT_HEADER, serverMethodResponseLimit, validateRpcResponseLimit } from '@cossackframework/core';
+import { RPC_JSON_RESPONSE_MAX_BYTES, RPC_RESPONSE_LIMIT_HEADER, serverMethodResponseLimit, validateRpcByteLimit } from '@cossackframework/core';
 
 /**
  * RPC allowlist that also accepts @Server methods on injected @Service
@@ -96,6 +101,31 @@ function rpcJsonResponse(c: Context, data: Record<string, unknown>, limit: numbe
   return c.body(body, 200);
 }
 
+const callStateWarnings = new Set<string>();
+
+/**
+ * Development: at SSR, warn about a component whose state is over half the request limit.
+ * Each call to its server methods sends that state back (without its `send: false` fields),
+ * so its calls would fail with `COSSACK_RPC_REQUEST_TOO_LARGE` before anything says why.
+ */
+function warnLargeCallState(components: readonly (readonly [string, Cossack])[], limit: number): void {
+  const inherited = new Set(Object.keys(collectServerMethodMetadata(Cossack)));
+  for (const [path, instance] of components) {
+    const key = `${path}#${limit}`;
+    if (callStateWarnings.has(key)) continue;
+    // A component without server methods of its own never sends its state.
+    if (!Object.keys(collectServerMethodMetadata(instance.constructor)).some(name => !inherited.has(name))) continue;
+    const measured = measureCallState(instance, instance.getPublicState());
+    if (!measured || measured.bytes <= limit / 2) continue;
+    callStateWarnings.add(key);
+    const over = measured.bytes > limit
+      ? `over the ${limit}-byte request limit: its server method calls fail with COSSACK_RPC_REQUEST_TOO_LARGE`
+      : `over half of the ${limit}-byte request limit, and each call to its server methods sends it back`;
+    console.warn(`[cossack] ${path} renders ${measured.size} of state, ${over}. Largest fields: ${measured.largest}. ` +
+      'Keep a field out of calls with @State({ send: false }), or raise rpc.maxRequestBytes.');
+  }
+}
+
 function serializeRpcResult(value: unknown, state: unknown) {
   return { value: snapshotRpcValue(value, 'value'), state: snapshotRpcValue(state, 'state') };
 }
@@ -145,7 +175,7 @@ import {
   attachCoordinatorRuntime,
 } from './transports/sse.js';
 import { handleWebSocketProxy } from './transports/websocket.js';
-import { readRpcRequest, RPC_UPLOAD_REQUEST_MAX_BYTES } from './transports/http.js';
+import { readRpcRequest, RPC_JSON_REQUEST_MAX_BYTES, RPC_UPLOAD_REQUEST_MAX_BYTES } from './transports/http.js';
 import { discardRequestBody } from './request-body.js';
 import { protectTransport } from './transports/security.js';
 import { TRANSPORT_ROUTES } from './transport-routes.js';
@@ -428,12 +458,17 @@ export interface CreateAppOptions {
    */
   allowedOrigins?: string[];
   /**
-   * Request-body limits for RPC transports. Larger requests get 413
-   * `COSSACK_RPC_REQUEST_TOO_LARGE`. Defaults: 1 MiB JSON (`/crpc`) and
-   * 32 MiB multipart (`/upload`, files included).
+   * Byte limits of server method calls. A larger request gets 413
+   * `COSSACK_RPC_REQUEST_TOO_LARGE` and a `cossack.rpc.failure` log line.
    */
   rpc?: {
-    maxJsonBytes?: number;
+    /**
+     * The largest JSON request of a call (`/crpc`): its arguments and the component's state,
+     * without its `send: false` fields. Default 1 MiB, at most 16 MiB. In development, SSR
+     * warns about a page whose state is over half of it.
+     */
+    maxRequestBytes?: number;
+    /** The largest multipart call (`/upload`), files included. Default 32 MiB. */
     maxUploadBytes?: number;
     /**
      * The largest JSON response of a server method call: its value and the state it
@@ -597,8 +632,8 @@ export function createApp(options: CreateAppOptions = {}) {
     layouts,
     owners,
     allowedOrigins: options.allowedOrigins,
-    rpcBodyLimits: { jsonBytes: options.rpc?.maxJsonBytes, uploadBytes: options.rpc?.maxUploadBytes },
-    rpcResponseLimit: validateRpcResponseLimit(options.rpc?.maxResponseBytes, 'rpc.maxResponseBytes') ?? RPC_JSON_RESPONSE_MAX_BYTES,
+    rpcBodyLimits: { jsonBytes: validateRpcByteLimit(options.rpc?.maxRequestBytes, 'rpc.maxRequestBytes'), uploadBytes: options.rpc?.maxUploadBytes },
+    rpcResponseLimit: validateRpcByteLimit(options.rpc?.maxResponseBytes, 'rpc.maxResponseBytes') ?? RPC_JSON_RESPONSE_MAX_BYTES,
     runtimeInfo: resolveRuntimeInfo,
     getMiddlewares,
     realtimeComponents,
@@ -901,6 +936,10 @@ export function createApp(options: CreateAppOptions = {}) {
         const headTags = Cossack.composeHead(pageInstance, layoutInstances, appInstance);
 
         const pageInitialState = pageInstance.getInitialState();
+        if (import.meta.env.DEV) {
+          warnLargeCallState([[path, pageInstance], ...layoutPaths.map((layoutPath, index) => [layoutPath, layoutInstances[index]] as const),
+            ['/src/App', appInstance]], routerContext.rpcBodyLimits?.jsonBytes ?? RPC_JSON_REQUEST_MAX_BYTES);
+        }
 
         // For durable-object transport, emit the page's one realtime target
         // (the WebSocket proxy recomputes and compares it) and the routePath
@@ -1260,8 +1299,13 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
         const owned = ownerScope.getOwnedService(slot);
         if (!owned) return c.json({ error: `Unknown service slot '${slot}'` }, 404);
 
-        const safeState = sanitizeServiceState(owned.serviceClass, state);
+        // A `send: false` field keeps its initial value, whatever the request sent.
+        const unsent = unsentStateKeys(owned.instance);
+        const safeState = Object.fromEntries(Object.entries(sanitizeServiceState(owned.serviceClass, state))
+          .filter(([key]) => !unsent.has(key)));
         ownerScope.hydrateOwnedService(slot, safeState);
+        const serviceWrites = recordStateWrites(owned.instance);
+        const serviceReplyState = () => replyState(owned.instance, getServiceState(owned.instance), serviceWrites.keys);
         if (!isRpcCallableAction(owned.serviceClass, action)) {
           return c.json({ error: `Action '${String(action)}' is not a callable service method`, code: 'COSSACK_RPC_FORBIDDEN', requestId }, 403);
         }
@@ -1300,7 +1344,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
           const response = createRpcStreamResponse({
             ...(import.meta.env.DEV ? { developmentTrace: developmentRpcStream(c, requestId) } : {}),
             result: actionResult, requestId, signal: c.req.raw.signal, logContext,
-            getState: () => getServiceState(owned.instance),
+            getState: serviceReplyState,
             cleanup: async () => {
               try { await requestScope.disposeAsync(); }
               finally { await finishResponseLifetime?.(); }
@@ -1322,8 +1366,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
             finally { await finishResponseLifetime?.(); }
           }, import.meta.env.DEV ? developmentRpcNative(c, requestId) : undefined, logContext);
         }
-        const serviceState = getServiceState(owned.instance);
-        const serialized = serializeRpcResult(actionResult, serviceState);
+        const serialized = serializeRpcResult(actionResult, serviceReplyState());
         return send({
           _cossack_service_state: serialized.state,
           ...(serialized.value !== undefined ? { _cossack_return: serialized.value } : {}),
@@ -1406,15 +1449,18 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
     // actual public state — covers @State from injected @Service dependencies
     // (synced into the container) which must round-trip or per-action service
     // state would reset on every call.
+    // A `send: false` field keeps its initial value, whatever the request (or an SSE
+    // snapshot) holds: the reply carries it only when the method assigns it.
     const applyReceivedState = (instance: any, source: Record<string, unknown> | undefined) => {
+      const unsent = unsentStateKeys(instance);
       const safeState = sanitizeClientState(instance.constructor, source);
       for (const key in safeState) {
-        instance[key] = safeState[key];
+        if (!unsent.has(key)) instance[key] = safeState[key];
       }
       const publicStateKeys = new Set(Object.keys(instance.getPublicState()));
       if (source && typeof source === 'object') {
         for (const key of Object.keys(source)) {
-          if (key in safeState) continue;
+          if (key in safeState || unsent.has(key)) continue;
           if (key === '__proto__' || key === 'prototype' || key === 'constructor') continue;
           if (publicStateKeys.has(key)) instance[key] = (source as Record<string, unknown>)[key];
         }
@@ -1504,6 +1550,13 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
 
         if (componentContext.req.raw.signal.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
 
+        // The `send: false` fields the method assigns come back; the others stay out of the
+        // reply and of SSE publications, which would otherwise carry their initial values.
+        const targetWrites = recordStateWrites(targetInstance);
+        const pageWrites = targetInstance === componentInstance ? targetWrites : recordStateWrites(componentInstance);
+        const targetState = () => replyState(targetInstance, targetInstance.getPublicState(), targetWrites.keys);
+        const pageState = () => replyState(componentInstance!, componentInstance!.getPublicState(), pageWrites.keys);
+
         // Await promises before inspecting the result. Awaiting an async generator
         // does not pull it; its response owns iteration and request-context lifetime.
         let actionResult: unknown;
@@ -1535,9 +1588,8 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
           const response = createRpcStreamResponse({
             ...(import.meta.env.DEV ? { developmentTrace: developmentRpcStream(c, requestId) } : {}),
             result: actionResult, requestId, signal: componentContext.req.raw.signal, logContext,
-            getState: () => targetInstance.getPublicState(),
-            getScopeState: sseStub && targetInstance !== componentInstance
-              ? () => componentInstance!.getPublicState() : undefined,
+            getState: targetState,
+            getScopeState: sseStub && targetInstance !== componentInstance ? pageState : undefined,
             getStateCursor: !sseStub && targetPageOptions?.transport === 'sse' && targetInstance === componentInstance
               ? () => localSseCursor : undefined,
             // The coordinator publishes every frame's state itself; only the
@@ -1545,7 +1597,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
             onState: coordinatorRuntime
               ? () => coordinatorRuntime.flush()
               : targetPageOptions?.transport === 'sse'
-                ? () => { localSseCursor = syncSseState(`${componentRouteId}:${effectiveScopeKey}`, componentInstance!.getPublicState(), requestId); } : undefined,
+                ? () => { localSseCursor = syncSseState(`${componentRouteId}:${effectiveScopeKey}`, pageState(), requestId); } : undefined,
             cleanup,
           });
           responseOwnsCleanup = true;
@@ -1559,12 +1611,12 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
         const publishScopeState = async () => {
           await coordinatorRuntime?.flush();
           if (sseStub) {
-            const snapshot = await sseStub.publish(JSON.stringify(componentInstance!.getPublicState()), requestId);
+            const snapshot = await sseStub.publish(JSON.stringify(pageState()), requestId);
             if (targetInstance === componentInstance) c.header('X-Cossack-SSE-Cursor', String(snapshot.cursor));
             return;
           }
           if (targetPageOptions?.transport === 'sse') {
-            const cursor = syncSseState(`${componentRouteId}:${effectiveScopeKey}`, componentInstance!.getPublicState(), requestId);
+            const cursor = syncSseState(`${componentRouteId}:${effectiveScopeKey}`, pageState(), requestId);
             if (targetInstance === componentInstance && cursor !== undefined) c.header('X-Cossack-SSE-Cursor', String(cursor));
           }
           return Promise.resolve();
@@ -1586,8 +1638,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
         }
 
         // Get the state of the component that was actually modified
-        const responseData = targetInstance.getPublicState();
-        const serialized = serializeRpcResult(actionResult, responseData);
+        const serialized = serializeRpcResult(actionResult, targetState());
         await publishScopeState();
 
         // Non-streaming path: regular method return

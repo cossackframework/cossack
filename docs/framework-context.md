@@ -34,16 +34,17 @@ On the server, these are the values from the current request. On the client, the
 Read Cloudflare bindings from any component.
 
 ```typescript
-import { Cossack, Component } from "@cossackframework/core";
+import { Cossack, Component, Server, State } from "@cossackframework/core";
 import { html } from "@cossackframework/renderer";
 
 @Component()
-export class DatabaseViewer extends Cossack {
+export class DatabaseViewer extends Cossack<CloudflareBindings> {
     @State()
     users: any[] = [];
 
+    @Server()
     async loadUsers() {
-        // Access D1 database directly
+        // Bindings exist only on the server: access D1 directly
         const stmt = this.env.DB.prepare("SELECT * FROM users");
         const result = await stmt.all();
         this.users = result.results;
@@ -62,20 +63,22 @@ export class DatabaseViewer extends Cossack {
 
 ### Available Bindings
 
-Define the `Env` interface in your project's type declarations:
+`this.env` has the type of the component's first type parameter,
+`Cossack<Env>`, and is `any` without one. On Cloudflare, `pnpm cf-typegen`
+runs `wrangler types --env-interface CloudflareBindings` and writes the global
+`CloudflareBindings` interface to `worker-configuration.d.ts` from
+`wrangler.jsonc` (`cossack typecheck` writes it too):
 
 ```typescript
-// src/env.d.ts
+// worker-configuration.d.ts (generated)
 interface CloudflareBindings {
     DB: D1Database;
-    BUCKET: R2Bucket;
-    KV: KVNamespace;
-    SESSION_DO: DurableObjectNamespace;
+    COSSACK_OBJECT: DurableObjectNamespace;
     // ... other bindings
 }
-
-interface Env extends CloudflareBindings {}
 ```
+
+Pass it to the component: `class DatabaseViewer extends Cossack<CloudflareBindings>`.
 
 ---
 
@@ -126,16 +129,31 @@ declare module '@cossackframework/core' {
 
 ### Setting the User
 
-Middleware in your router sets the user:
+A global middleware sets the user on the Hono context. The generated auth
+middleware does this. A custom one looks like this:
 
 ```typescript
-// packages/framework/src/router.ts
-app.use('*', (c, next) => {
+// src/middlewares/user.ts, listed in src/bootstrap/middlewares.ts
+import { defineServerMiddleware } from '@cossackframework/core';
+
+export const userMiddleware = defineServerMiddleware(async (c, next) => {
     // Set user from session/JWT/etc.
     c.set('user', { id: 'user-123', name: 'Alice' });
-    return next();
+    await next();
 });
 ```
+
+### The User in the Browser
+
+The browser receives only `{ id }` by default, so `this.user.name` is
+`undefined` in client code. Opt fields in with `createApp({ publicUser })` in
+`src/index.ts`. `id` always comes from the real user:
+
+```typescript
+createApp({ AppComponent: App, publicUser: (user) => ({ name: user.name }) });
+```
+
+`toPublicUser(user)` from `@cossackframework/core` returns that projection.
 
 ---
 
@@ -148,7 +166,7 @@ import { Cossack, Page, State } from "@cossackframework/core";
 import { html } from "@cossackframework/renderer";
 
 @Page()
-export class UserProfilePage extends Cossack {
+export default class UserProfilePage extends Cossack {
     @State()
     profile: any = null;
 
@@ -182,6 +200,9 @@ export class UserProfilePage extends Cossack {
 | `this.c.req.path` | Get current path |
 | `this.c.redirect(url, status)` | Redirect to URL |
 
+On the client, `this.c` holds only `req.param()`, `req.query()`, `req.path` and
+`req.url` from the initial render. Headers and response helpers are server-only.
+
 > See [Request Context](./context.md) for more details on Hono's context object.
 
 ---
@@ -191,8 +212,8 @@ export class UserProfilePage extends Cossack {
 | Context | Server | Client | Notes |
 |---------|--------|--------|-------|
 | `this.env` | ✅ | ❌ | Bindings only exist on server |
-| `this.user` | ✅ | ✅ | Hydrated from initial state |
-| `this.c` | ✅ | ✅ | Lightweight hydration on client |
+| `this.user` | ✅ | ✅ | Hydrated from initial state: `{ id }` plus `publicUser` fields |
+| `this.c` | ✅ | ✅ | Lightweight hydration on client: params, query, path, URL |
 
 ### Server vs Client Behavior
 
@@ -215,7 +236,7 @@ On the client, `this.env` is `undefined`. `this.user` and `this.c` use values re
 async clientMethod() {
     // this.env is undefined on client
     // this.user and this.c work with hydrated values
-    const userId = this.user?.id;  // ✅ Works
+    const userId = this.user?.id;  // ✅ Works (other fields need publicUser)
     const path = this.c.req.path;  // ✅ Works
     const db = this.env.DB;        // ❌ Undefined
 }
@@ -227,16 +248,10 @@ async clientMethod() {
 
 ### 1. Type Safety
 
-Define your `Env` interface globally for type safety:
+Pass the bindings type to the component so `this.env` is typed:
 
 ```typescript
-// src/env.d.ts
-interface CloudflareBindings {
-    DB: D1Database;
-    // ...
-}
-
-interface Env extends CloudflareBindings {}
+export class Reports extends Cossack<CloudflareBindings> {}
 ```
 
 ### 2. No Prop Drilling
@@ -265,7 +280,7 @@ interface ThemeContext {
     mode: 'light' | 'dark';
 }
 
-const ThemeContext = createContext<ThemeContext>('theme');
+const ThemeContext = createContext<ThemeContext>({ mode: 'light' }); // the default value
 
 // Provide it in a parent
 class App extends Cossack {

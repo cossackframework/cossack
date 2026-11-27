@@ -98,6 +98,11 @@ The CMS's side (user, 2026-11-22: "use a port"). The CMS library drops its accou
 and takes users through `PeoplePort` (`packages/cms/src/server/people.ts`), which the
 application fills from the dashboard's services. Slugs and field values stay CMS documents.
 
+As built: `cms.users` is still the API the application calls (`getMany`, `get`, `roles`, ...),
+but `CmsUsers` (`packages/cms/src/server/users.ts`) no longer stores accounts. It is a facade
+that reads people, roles and sign-in state from `PeoplePort` and adds only the CMS's own data
+(`cms_authors` slugs, `cms/user_fields` values). The inventory below is the pre-change state.
+
 What the rest of the CMS calls on the stores today (inventory of 2026-11-22):
 
 - Library: `users.get/roles/role/resolve/principal/findByEmail/list/create/update/setSystemMeta/

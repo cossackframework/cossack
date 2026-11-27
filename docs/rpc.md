@@ -151,8 +151,16 @@ JSON or markers and invalid envelope shapes reject before action dispatch with
 Request bodies are bounded before parsing. JSON calls (`/crpc`) accept up to
 1 MiB and multipart calls (`/upload`, files included) up to 32 MiB. Larger
 requests, by `Content-Length` or by streamed size, get HTTP 413 with
-`COSSACK_RPC_REQUEST_TOO_LARGE`. Change the limits with
-`createApp({ rpc: { maxJsonBytes, maxUploadBytes } })`.
+`COSSACK_RPC_REQUEST_TOO_LARGE`. The server logs `cossack.rpc.failure` with
+`limitBytes`, and with `bytes` when the request declared its length. In the
+browser, the error also gives the bytes the call sent and the component's
+largest state fields. A call sends its arguments and the component's public
+state, so one large field fails every call of the component. Keep it out of
+calls with `@State({ send: false })`, described in
+[State Management](./states.md#keep-large-fields-out-of-calls). In development,
+SSR warns about a component whose state is over half the limit. Change the
+limits with `createApp({ rpc: { maxRequestBytes, maxUploadBytes } })`.
+`maxRequestBytes` is at most 16 MiB.
 
 Component uploads use Fetch by default and preserve native response streaming.
 To observe upload progress, declare a numeric client state field named after the

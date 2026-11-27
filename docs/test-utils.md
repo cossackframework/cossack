@@ -88,6 +88,9 @@ options such as context, user and environment retain their production meaning.
 In the browser, `this.user` comes from the `user` option. Without it, it comes
 from `state.user`, where the page hydration payload keeps the user.
 
+The result also has `instance` (the component), `container` (its element) and `html()`,
+which returns the container's current markup.
+
 `click(selector)` activates the element like a user click. A disabled form
 control, or a control inside a disabled `<fieldset>`, ignores the click, so its
 handlers do not run. `type(selector, text)` sets the value of an input or
@@ -104,8 +107,10 @@ an abort signal and a settlement flag. An optional finite nonnegative
 `timeoutMs` bounds the wait. Use gates to exercise concurrent requests and late
 results without fixed sleeps.
 
-`withRequestScope()` scopes core request-context getters and service facilities
-using AsyncLocalStorage and awaits cleanup. It does not supply framework
+`withRequestScope(options, fn)` from `@cossackframework/test-utils/server` runs
+`fn({ serviceScope })` with core request-context getters and a root service scope bound to
+`options` (`context`, `user`, `env`), using AsyncLocalStorage, and awaits the scope's
+cleanup. It does not supply framework
 configuration, router middleware, authentication or policy checks. Use
 `createServerApp` with the production handler to test those features.
 

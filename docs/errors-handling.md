@@ -88,6 +88,30 @@ export default class ErrorPage extends Cossack {
 }
 ```
 
+## Errors in Server Methods
+
+Errors thrown by a `@Server()` method do not render the `error` page. The caller's
+proxy rejects with an `RpcError` instead:
+
+| Thrown error | Response | `RpcError.code` |
+| :--- | :--- | :--- |
+| `new ClientVisibleError(message)` | 400, message forwarded | `COSSACK_RPC_CLIENT_ERROR` |
+| `new ActionValidationError(fieldErrors, message?)` | 400, message and `fieldErrors` forwarded | `COSSACK_VALIDATION_FAILED` |
+| Any other error | 500, message replaced with `Internal Server Error` and logged on the server | `COSSACK_RPC_INTERNAL_ERROR` |
+
+```typescript
+import { ClientVisibleError, Server } from '@cossackframework/core';
+
+@Server()
+async register(email: string) {
+    if (await emailTaken(email)) throw new ClientVisibleError('An account with this email already exists.');
+}
+```
+
+`isClientVisibleError(value)` and `isActionValidationError(value)` also match
+errors from another copy of the package. See [RPC](./rpc.md) for timeouts,
+cancellation and request IDs, and [Validation](./validation.md) for field errors.
+
 ## Layout & Shell Integration
 
 The `404` and `error` pages use the normal component stack:

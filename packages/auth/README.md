@@ -87,7 +87,7 @@ import { createOAuth } from '@cossackframework/auth';
 
 export const oauth = createOAuth({
     stateStore: oauthStateStore, // application-owned atomic create/consume callbacks
-    secret: env.OAUTH_STATE_SECRET, // at least 16 chars; use a 32+ byte random value
+    secret: env.OAUTH_SECRET, // at least 16 chars; use a 32+ byte random value
     providers: {
         github: {
             clientId: env.GITHUB_CLIENT_ID,
@@ -200,7 +200,7 @@ const discord = defineOAuthProvider({
 
 export const oauth = createOAuth({
     stateStore: oauthStateStore, // application-owned atomic create/consume callbacks
-    secret: env.OAUTH_STATE_SECRET,
+    secret: env.OAUTH_SECRET,
     providers: { discord: { clientId: '...', clientSecret: '...', redirectUrl: '/auth/discord/callback' } },
     customProviders: { discord },
 });

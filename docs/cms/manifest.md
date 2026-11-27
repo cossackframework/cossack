@@ -35,7 +35,7 @@ A field the host does not know is a problem, so a typo in a field name fails lou
 | Field | Rule |
 | --- | --- |
 | `schemaVersion` | Always `1`. |
-| `name` | 1 to 64 lowercase letters, digits and single hyphens. Not `cms`, `cossack`, `core`, `framework` or `app`. It is the directory under `src/plugins/`, the owner of the plugin's resources (`<name>/<resource>`), the prefix of its blocks (`<name>/<block>`), its permissions (`<name>:<permission>`), its extension points (`<name>.<point>`) and its translation and configuration namespace (`<name>::`). |
+| `name` | 1 to 64 lowercase letters, digits and single hyphens. Not `cms`, `app`, `core`, `system`, `form`, `editor`, `cossack` or `framework`, and not starting with `cms-`. It is the directory under `src/plugins/`, the owner of the plugin's resources (`<name>/<resource>`), the prefix of its blocks (`<name>/<block>`), its permissions (`<name>:<permission>`), its extension points (`<name>.<point>`) and its translation and configuration namespace (`<name>::`). |
 | `version` | A semantic version. Must equal the package version. |
 | `description` | At most 500 characters, shown on the plugin's card. |
 | `author` | `{ name, url?, email? }`: a name of at most 120 characters, an `http(s)://` address and an email address, shown on the card. |
@@ -140,9 +140,9 @@ with the owner set to the plugin name by the host, stored in `r__<plugin>__<name
 ```
 
 - `fields`: `string`, `text`, `enum` (`values`), `integer`, `bigint`, `number`, `boolean`,
-  `datetime` (Unix milliseconds), `reference`, `json`, `list`, `vector`, `blocks`,
-  `richtext` and `rows`; options `required`, `nullable`, `default`, `label`, `max`, `min`,
-  `pattern`, `unique`, `index` and `search` (full text). `slugFrom`, `taxonomy` and `media`
+  `datetime` (Unix milliseconds), `reference`, `json`, `vector`, `blocks`, `richtext` and
+  `rows`; options `required`, `nullable`, `default`, `label`, `max`, `min`, `pattern`,
+  `unique`, `index`, `search` (full text) and `multiple` (a list of values of the kind). `slugFrom`, `taxonomy` and `media`
   derive a slug, index term IDs and hold a media file ID.
 - `access` per action (`read`, `create`, `update`, `delete`): `public`, `authenticated`,
   `owner` (needs `ownership: true`), `none`, `{ permission }`, `{ where: { field: value } }`,
@@ -174,10 +174,11 @@ resources, such as the branches a member is assigned to:
   delete outside them changes nothing. It reads the memberships as they are at that moment.
 - A create, or an update that changes the `match` field, must name a value the user is a
   member of; this is checked in the same write.
-- `await repository.canRead(record, { principal })` and `canUpdate` apply the rule to a
-  record you already hold: owner and `where` rules on the record, a membership on the stored
-  record, in one read. For a list, `readable(records, context)` and
-  `editable(records, context)` answer with the IDs allowed, in one read for all of them.
+- In application code, the host's repository (`cms.resource(id)`) applies the rule to a record
+  you already hold with `await repository.canRead(record, { principal })` and `canUpdate`
+  (a plugin's `context.cms` repositories do not offer these): owner and `where` rules on the
+  record, a membership on the stored record, in one read. For a list, `readable(records, context)`
+  and `editable(records, context)` answer with the IDs allowed, in one read for all of them.
 - `indexes`: `{ name, fields, unique? }`.
 - `revisions` (default true) keeps a snapshot of every write. `schemaless: true` types only
   the host fields in the database.
@@ -280,6 +281,7 @@ placed, so moving a plugin's tab holds.
 | `parent` | Types the block goes inside only, as a column goes inside columns. |
 | `supports` | `color`, `spacing`, `typography`, `background`: what the Style tab offers, over the category's defaults. `background: true` adds the advanced background (gradient, image, overlay, video) a container gets; see [Backgrounds](/docs/cms/themes.md#backgrounds). |
 | `variations` | Up to 12 preset shapes offered in the inserter as entries of their own: `{ name, label, description?, icon?, keywords?, data }`, each starting the block with its `data` over the defaults. |
+| `inline`, `body` | The block can be written inside text as `{{ block <name> … }}`; `body` names the string or text field a reference's body fills. See [Block references](/docs/cms/block-references.md). |
 | `input` | `{ kind }`: the block is a form input collecting one value under its `name` field. |
 | `field` | `{ kind }`: the block is a field of a field group. |
 
@@ -348,7 +350,7 @@ payload changes; `timeoutMs` (1 to 600,000, default 5,000) is the per-handler de
 | `payments` | Checkouts with the application's payments provider (Stripe built in) through `context.payments.checkout()`; the results arrive as `cms.payment.event`, which the plugin lists in `hooks`. Grant `capability:payments`. |
 | `users` | The site's members through `context.users`: `read` lists them with their emails and roles; `write` creates members and keeps the plugin's own meta on them. Grants `users:read`, `users:write`. |
 | `unrestricted` | Everything, with no limits: `context.unrestricted()` gives the database, the host and every binding, and the policy lints step aside. Grant `capability:unrestricted`, which installing and granting each warn about and only a network admin can give. See [Unrestricted access](/docs/cms/plugins.md#unrestricted-access). |
-| `secrets` | Names of the application's bindings the plugin reads through `context.secrets`, such as `STRIPE_SECRET_KEY`: upper-case names outside the host's own (`ROMEDB_*`, `APP_*`, `CMS_*`, `CLOUDFLARE_*`, `SMTP_*`, `S3_*`, `TURNSTILE_*`, `OAUTH_*`, `COSSACK_*`, `MAIL_FROM`, `EMAIL`, `AI`). Grant `secret:<NAME>` each. |
+| `secrets` | Names of the application's bindings the plugin reads through `context.secrets`, such as `STRIPE_SECRET_KEY`: upper-case names outside the host's own (`ROMEDB_*`, `APP_*`, `CMS_*`, `CLOUDFLARE_*`, `SMTP_*`, `S3_*`, `TURNSTILE_*`, `OAUTH_*`, `COSSACK_*`, `MAIL_FROM`, `EMAIL`, `AI`, `DB`, `KV`, `R2`, `STORAGE`). Grant `secret:<NAME>` each. |
 
 See [Capabilities](/docs/cms/plugins.md#capabilities) for what each member of the context does.
 
@@ -438,8 +440,8 @@ only a plugin's files can make it isolated. See
 
 ## What a manifest asks the administrator for
 
-`requestedGrants(manifest)` from `@cossackframework/cms` lists them: `plugin:enabled` for
-every plugin, then `resource:<id>:<action>` for `permissions.resources`, `network:<host>`
+The host asks for `plugin:enabled` for every plugin, then what `requestedGrants(manifest)`
+from `@cossackframework/cms` lists: `resource:<id>:<action>` for `permissions.resources`, `network:<host>`
 for `permissions.network`, `hook:<point>` for `hooks`, `capability:<name>` for `files`, `mail`,
 `jobs`, `cache`, `ai`, `payments` and `unrestricted`, `users:<action>` for `users` and
 `secret:<NAME>` for `secrets`. A manifest

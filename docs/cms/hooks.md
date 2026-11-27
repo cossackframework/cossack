@@ -205,7 +205,7 @@ plugin too, since it registers them in `server.ts`.
 
 | Point | Kind | Deadline | Value and input |
 | --- | --- | --- | --- |
-| `cms.site.entry-view` (`siteEntryView`) | filter | 1 s | Value: `{ title, excerpt, before, after }` of an entry's full view on the site, after it is rendered and before the theme draws it, as WordPress's `the_title` and `the_content`. `before` and `after` are blocks in the stored shape (`{ _id, type, data }`), rendered around the content as the entry's own are. Input: `collection`, `id`, `url`, the `record` without its password, `signedIn`. The host keeps at most ten valid blocks each side of known types and refuses `core/html` anywhere in them, so no filter, an isolated plugin's included, puts markup or script of its own on the site. Not run for a locked entry. |
+| `cms.site.entry-view` (`siteEntryView`) | filter | 1 s | Value: `{ title, excerpt, before, after }` of an entry's full view on the site, after it is rendered and before the theme draws it, as WordPress's `the_title` and `the_content`. `before` and `after` are blocks in the stored shape (`{ _id, type, data }`), rendered around the content as the entry's own are. Input: `collection`, `id`, `url` (or null), the `record` without its password, `signedIn`. The host keeps at most ten valid blocks each side of known types and refuses `core/html` anywhere in them, so no filter, an isolated plugin's included, puts markup or script of its own on the site. Not run for a locked entry. |
 | `cms.site.markdown` (`siteMarkdown`) | filter | 1 s | Value: an entry as machines read it (`Accept: text/markdown` or `?format=md`), the Markdown document with its front matter. Input: `collection`, `id`, the absolute `url`, the `record` without its password. Return it with your text added, such as a licence or a source note; a failing handler leaves it as it was. |
 
 A theme or an in-app plugin changes what visitors see with templates, blocks and the `ui.ts`
@@ -266,10 +266,10 @@ import type { PluginContext } from '@cossackframework/cms/server';
 export function register({ hooks }: PluginContext) {
     hooks.addFilter(userBeforeRegister, draft => draft.email.endsWith('@example.com')
         ? draft
-        : { ...draft, refused: 'Register with your example.com address.' }, { plugin: 'allowlist' });
+        : { ...draft, refused: 'Register with your example.com address.' });
     hooks.addAction(userRegistered, async ({ user, state }) => {
         if (state === 'active') await welcome(user.email);
-    }, { plugin: 'allowlist' });
+    });
 }
 ```
 
@@ -280,8 +280,8 @@ export function register({ hooks }: PluginContext) {
 | `cms.site.created` (`siteCreated`) | action, outbox | 30 s | `{ eventId, topic, at, site: { id, name, host }, admin: { id, email, name } }` once a site of the network is created, by a network admin or a person registering it. It runs on the new site, for the plugins active there: those the network enables and those new sites start with. Their manifest `roles` exist already. It is delivered before the site is shown to its administrator, and retried by maintenance if a handler fails. Deliveries can repeat: use `eventId`. |
 
 ```ts
-import { siteCreated } from '@cossackframework/cms';
-import { systemPrincipal, type PluginContext } from '@cossackframework/cms/server';
+import { siteCreated, systemPrincipal } from '@cossackframework/cms';
+import type { PluginContext } from '@cossackframework/cms/server';
 
 export function register({ hooks, cms }: PluginContext) {
     hooks.addAction(siteCreated, async ({ site }) => {

@@ -2,7 +2,7 @@
 import './metadata';
 import type { MiddlewareHandler, Context } from 'hono';
 import { isServer } from './environment';
-import { validateRpcResponseLimit, validateServerMethodTimeout } from './server-method-metadata';
+import { validateRpcByteLimit, validateServerMethodTimeout } from './server-method-metadata';
 import { CossackOptions } from './cossack';
 import { createRef } from './ref';
 import { ValidationRule, ValidationConfig, ValidationRulesStore, StoreRuleMap, setValidationRules, flattenRuleTree } from './validation';
@@ -198,7 +198,7 @@ export function Server(options: ServerOptions = {}): any {
 
 function registerServer(options: ServerOptions): any {
   const timeout = validateServerMethodTimeout(options.timeout);
-  const maxResponseBytes = validateRpcResponseLimit(options.maxResponseBytes, 'Server method maxResponseBytes');
+  const maxResponseBytes = validateRpcByteLimit(options.maxResponseBytes, 'Server method maxResponseBytes');
   return (target: any, propertyKey: string | symbol, descriptor?: PropertyDescriptor) => {
     // Only methods (and function-valued fields, whose value is unknown at
     // decoration time) are RPC actions. Accessors and internal server-only
@@ -273,6 +273,13 @@ export interface StateOptions {
    * `flash` takes precedence if both are set.
    */
   old?: boolean | string;
+  /**
+   * `false` keeps the field out of server method calls. The server renders it and the
+   * browser keeps it, but calls do not send it back, so a large value cannot push a call
+   * over the request limit (`rpc.maxRequestBytes`). In a server method the field holds
+   * its initial value; a value the method assigns comes back with the reply.
+   */
+  send?: boolean;
 }
 
 export function State(options: StateOptions = {}): PropertyDecorator {
@@ -285,6 +292,7 @@ export function State(options: StateOptions = {}): PropertyDecorator {
       channel: options.channel || 'global',
       flash: options.flash,
       old: options.old,
+      ...(options.send === false ? { send: false } : {}),
     };
     Reflect.defineMetadata('cossack:state', stateProperties, target.constructor);
   };
@@ -317,6 +325,8 @@ export interface StoreOptions {
   flash?: boolean | string;
   /** Auto-bind from old input. `true` = property name; string = explicit key (dot-paths ok). */
   old?: boolean | string;
+  /** `false` keeps the store out of server method calls, as `@State({ send: false })` does. */
+  send?: boolean;
 }
 
 /**
@@ -342,6 +352,7 @@ export function Store(options: StoreOptions = {}): PropertyDecorator {
       channel: options.channel || 'global',
       flash: options.flash,
       old: options.old,
+      ...(options.send === false ? { send: false } : {}),
     };
     Reflect.defineMetadata('cossack:store', storeProperties, target.constructor);
   };

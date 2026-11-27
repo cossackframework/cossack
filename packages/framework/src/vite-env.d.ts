@@ -86,6 +86,15 @@ declare module 'virtual:cossack-config' {
   export default configs;
 }
 
+declare module 'virtual:cossack-page-files' {
+  /**
+   * The route keys of the application's page files (`/src/pages/(site)/search/index.ts`), the
+   * mounted packages' and the plugins' included, sorted. Names only: it imports no page.
+   */
+  const files: readonly string[];
+  export default files;
+}
+
 declare module 'virtual:cossack-plugins' {
   /** Rendered plugins from `src/plugins/<name>/plugin.json`, sorted by name. */
   const plugins: readonly import('./plugin-registry').PluginRegistration[];

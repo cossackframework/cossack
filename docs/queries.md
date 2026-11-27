@@ -17,6 +17,7 @@ const users = await User.find({
 });
 
 const user = await User.findOne({ where: { id } });
+const admins = await User.findBy({ role: 'admin' });
 const exists = await User.exists({ email });
 const total = await User.count();
 ```
@@ -57,8 +58,14 @@ const page = await User.query()
   .getMany();
 ```
 
-`Equal`, `Not`, `MoreThan`, `MoreThanOrEqual`, `LessThan`, `Like`, `In`,
-`NotIn`, and `IsNull` are available for object predicates.
+The builder also has `andWhere`, `orWhere`, `innerJoin`, `leftJoin`,
+`groupBy`, `select`, `distinct` and `withDeleted`. Besides `getMany()`, it ends
+with `getOne()`, `getRawMany()`, `count()`, `exists()`, `sum()`, `average()`,
+`minimum()` and `maximum()`.
+
+`Equal`, `Not`, `MoreThan`, `MoreThanOrEqual`, `LessThan`, `LessThanOrEqual`,
+`Like`, `In`, `NotIn`, `IsNull`, and `IsNotNull` are available for object
+predicates.
 
 ## Parameterized SQL
 
@@ -77,6 +84,13 @@ const result = await sql<{ id: string; role: string }>`
 `;
 ```
 
+The tag also builds pieces: `sql.fragment` (a statement that is not run yet),
+`sql.id('table', 'column')` (a quoted identifier), `sql.join(values)`,
+`sql.values(rows)`, `sql.json(value)` (a value for a `json` column),
+`sql.type('json')` (a column type per dialect, for DDL) and `sql.unsafe(text)`
+(trusted, static text only). `currentDialect()` returns `'sqlite'`,
+`'postgres'` or `'mysql'` for the few statements that differ.
+
 Arbitrary SQL in Studio is an explicitly trusted local developer operation.
 Studio still binds parameters and uses safe row locators for edits.
 
@@ -91,9 +105,24 @@ await sql.transaction(async () => {
 });
 ```
 
-D1 does not emulate interactive transactions. Use the D1 native `batch()` for
-multi-statement atomic work. The batch is transactional and rolls back when a
-statement fails. Prefer a single idempotent statement when possible.
+D1 and RomeDB do not emulate interactive transactions: `sql.transaction()`
+throws `UnsupportedCapabilityError` there. For multi-statement atomic work on
+any provider, pass fragments to `atomic()`. It runs them in one transaction, or
+in one native batch on D1 and RomeDB, and returns each statement's result:
+
+```ts
+import { atomic, sql } from '@cossackframework/database';
+
+const [created] = await atomic([
+  sql.fragment`INSERT INTO posts (id, title) VALUES (${id}, ${title})`,
+  sql.fragment`UPDATE authors SET post_count = post_count + 1 WHERE id = ${authorId}`,
+]);
+```
+
+A batch rolls back when a statement fails, but it cannot branch on a result:
+guard a write in its own `WHERE` and read its `meta.rowsAffected`. Prefer a single
+idempotent statement when possible. `isWriteConflict(error)` tells whether a
+write lost to a concurrent write of the same rows and may be retried.
 
 Calling a model or the global `sql` tag outside an ORM scope throws a clear
 scope error. Run standalone jobs inside `orm.run(() => ...)`.

@@ -158,10 +158,13 @@ By default a caller is bucketed by the authenticated user id, falling back to th
 - Node.js: the TCP peer address. A custom Node entry records it with `setClientAddress(request, incoming.socket.remoteAddress)`, or passes `@hono/node-server`'s `{ incoming }` bindings through as `env`.
 - Behind a reverse proxy: set `RATE_LIMIT_TRUST_PROXY` (or `rateLimitTrustProxy`) in the environment to the one header your proxy overwrites, for example `x-real-ip` or `x-forwarded-for`. For `x-forwarded-for` the right-most entry (appended by your proxy) is used. Only enable this when the app is reachable exclusively through that proxy.
 
-Without any of these, anonymous callers share one `ip:anonymous` bucket. Bucket by anything else with `key`:
+Without any of these, anonymous callers share one `ip:anonymous` bucket. Bucket by anything else with `key`. `getClientIp(c)` returns the address the default key uses, and `defaultRateLimitKey(c)` returns the default key itself (`user:<id>` or `ip:<address>`):
 
 ```typescript
+import { getClientIp, RateLimit } from '@cossackframework/core';
+
 RateLimit({ window: 60_000, max: 100, key: (c) => `tenant:${c.get('user').tenantId}` }, handler);
+RateLimit({ max: 5, key: (c) => `ip:${getClientIp(c)}` }, handler); // by address even when signed in
 ```
 
 ## Storage backends
@@ -176,7 +179,7 @@ The default store is in-memory and per-process. It is exact for a single instanc
 
 ### Zero-code configuration (recommended)
 
-You do not need to change `index.ts`. Set the `rateLimit` var in `wrangler.jsonc` plus the relevant binding/credentials, and the framework resolves the store from each request's environment. On other runtimes, or for full control, use the manual `setRateLimitStore()` calls shown under each store below.
+You do not need to change `index.ts`. Set the `rateLimit` var (or `RATE_LIMIT`) in `wrangler.jsonc` plus the relevant binding/credentials, and the framework resolves the store from each request's environment. On other runtimes, or for full control, use the manual `setRateLimitStore()` calls shown under each store below.
 
 | `rateLimit` value | What you also need |
 | --- | --- |
@@ -304,6 +307,7 @@ KV is a shared approximate store. Its storage TTL is at least 60 seconds, while
 the record's millisecond deadline controls the logical fixed window. Shorter
 windows reset at that deadline even while the old record remains in storage.
 Corrupt records reject without overwriting them or restoring a caller's budget.
+`new KvRateLimitStore(binding, { namespace })` prefixes its keys (default `'cossack:rl:'`).
 
 ```ts
 import { setRateLimitStore, KvRateLimitStore, type RateLimitKvNamespace } from '@cossackframework/core';

@@ -243,6 +243,14 @@ describe('themes', () => {
         expect(siteThemeProblems({ layout: noopTemplate, entry: noopTemplate, archive: noopTemplate, head: 'x' })).toEqual(['theme.head must be a function.']);
     });
 
+    it('takes the password and members templates from their files', () => {
+        const password = noopTemplate, members = noopTemplate;
+        const theme = assembleSiteTheme({ templates: { layout: { default: noopTemplate }, entry: { default: noopTemplate }, archive: { default: noopTemplate }, password: { default: password }, members: { default: members } } });
+        expect(theme).toMatchObject({ password, members });
+        expect(siteThemeProblems(theme)).toEqual([]);
+        expect(siteThemeProblems({ layout: noopTemplate, entry: noopTemplate, archive: noopTemplate, members: 'x' })).toEqual(['theme.members must be a function.']);
+    });
+
     it('checks the assembled theme', () => {
         const noop = () => null;
         expect(siteThemeProblems({ layout: noop, entry: noop, archive: noop })).toEqual([]);

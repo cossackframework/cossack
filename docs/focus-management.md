@@ -27,7 +27,7 @@ import {
 ## `getTabbable(root)`
 
 Returns all keyboard-focusable (`tabbable`) elements within `root`, in DOM
-order. Hidden, disabled, and `tabindex="-1"` elements are excluded.
+order. Hidden, disabled, `aria-hidden="true"` and `tabindex="-1"` elements are excluded.
 
 ```typescript
 const buttons = getTabbable(menuElement);
@@ -50,18 +50,22 @@ Move focus to the next or previous tabbable element within `root`. Focus wraps
 around at the boundaries. Use this for roving-tabindex or arrow-key navigation.
 
 ```typescript
-// Arrow Down → next item
+// Arrow Down → next item. `listRef` is a `@Ref()` on the list element.
 @On('keydown')
 handleKeydown(e: KeyboardEvent) {
+    const list = this.listRef.value;
+    if (!list) return;
     if (e.key === 'ArrowDown') {
         e.preventDefault();
-        focusNext(this.container);
+        focusNext(list);
     } else if (e.key === 'ArrowUp') {
         e.preventDefault();
-        focusNext(this.container, { reverse: true });
+        focusNext(list, { reverse: true });
     }
 }
 ```
+
+Pass the element through a [`@Ref`](./refs.md). `this.container` is not set for `component()` children or for pages rendered inside the App.
 
 Options:
 
@@ -77,14 +81,15 @@ function that removes the trap and restores focus to the previously-focused
 element.
 
 ```typescript
-import { focusTrap, OnDocument } from '@cossackframework/core';
+import { Cossack, Ref, focusTrap, type RefObject } from '@cossackframework/core';
 
 class MyDialog extends Cossack {
+    @Ref() declare panelRef: RefObject<HTMLDivElement>;
     private releaseTrap?: () => void;
 
     onMount() {
         // Trap focus when the dialog opens.
-        this.releaseTrap = focusTrap(this.container);
+        if (this.panelRef.value) this.releaseTrap = focusTrap(this.panelRef.value);
     }
 
     onCleanup() {
@@ -105,13 +110,16 @@ How it works:
 ## Practical example: Dropdown Menu
 
 ```typescript
-import { Cossack, Component, Client, focusFirst, focusNext } from '@cossackframework/core';
+import { Cossack, Component, Client, On, Ref, focusFirst, focusNext, type RefObject } from '@cossackframework/core';
 
 @Component()
 export class DropdownMenu extends Cossack {
+    @Ref() declare menuRef: RefObject<HTMLElement>;
+
     @Client()
     openMenu() {
-        const menu = this.container.querySelector('[role="menu"]');
+        const menu = this.menuRef.value;
+        if (!menu) return;
         menu.showPopover();
         // Focus the first item for keyboard users.
         focusFirst(menu);
@@ -119,8 +127,8 @@ export class DropdownMenu extends Cossack {
 
     @On('keydown')
     onKeydown(e: KeyboardEvent) {
-        const menu = this.container.querySelector('[role="menu"]');
-        if (!menu.matches(':popover-open')) return;
+        const menu = this.menuRef.value;
+        if (!menu || !menu.matches(':popover-open')) return;
 
         if (e.key === 'ArrowDown') {
             e.preventDefault();

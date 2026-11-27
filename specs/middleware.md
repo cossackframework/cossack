@@ -109,6 +109,8 @@ Client environment (name === 'client'):
 
 Why layouts are always eager: Layouts are small and shared. They are needed immediately on both server and client to wrap page content.
 
+`virtual:cossack-page-files` holds the route keys of the pages alone, sorted, and imports nothing. Code that a layout reaches reads the page names from it, not from `virtual:cossack-pages`: through the registry it would import itself. In development, Vite evaluates such a cycle one import at a time, so a module can read an import that has not run yet and get `undefined`.
+
 Why pages are lazy on the client: Only the active page's code is loaded in the browser. This enables code splitting.
 
 Impact on middleware: When a page module is loaded (eager on SSR, lazy on client), its imports are resolved. If a page imports a middleware from `src/middlewares/`, that module is loaded too. On the SSR side, the `@Page` decorator runs immediately and stores the middleware references in metadata. On the client side, the decorator also runs (storing metadata), but that metadata is never read for Hono route registration.

@@ -1,6 +1,6 @@
 // src/index.ts
 export { RPC_JSON_RESPONSE_MAX_BYTES, RPC_RESPONSE_LIMIT_HEADER } from './shared/rpc-json';
-export { RPC_JSON_RESPONSE_LIMIT_MAX_BYTES, serverMethodResponseLimit, validateRpcResponseLimit } from './shared/server-method-metadata';
+export { RPC_JSON_RESPONSE_LIMIT_MAX_BYTES, collectServerMethodMetadata, serverMethodResponseLimit, validateRpcByteLimit } from './shared/server-method-metadata';
 export * from './shared/cossack';
 export * from './shared/decorators';
 export * from './shared/environment';
@@ -39,6 +39,7 @@ export * from './shared/service-scope';
 export * from './shared/cossack-service';
 export * from './shared/middleware';
 export { isRpcCallableAction, sanitizeClientState } from './shared/method-proxy';
+export { measureCallState, recordStateWrites, replyState, unsentStateKeys, type StateWriteRecord } from './shared/call-state';
 export { isOriginAllowed } from './shared/origin-security';
 export * from './shared/rate-limit';
 export * from './shared/i18n';

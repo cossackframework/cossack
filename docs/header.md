@@ -64,6 +64,8 @@ your `App` automatically. See [Static Site Generation](./static-site-generation.
 `HeadContext` contains the metadata that nested components added:
 
 - `title`: The current accumulated title string.
+- `description`: The accumulated `<meta name="description">` content.
+- `image`: The accumulated `og:image` content.
 - `meta`: Array of accumulated meta tags.
 - `links`: Array of accumulated link tags.
 - `scripts`: Array of accumulated script tags.
@@ -74,10 +76,14 @@ your `App` automatically. See [Static Site Generation](./static-site-generation.
 Return a `HeadValue` object from `head()`:
 
 - `title`: Optional. Sets a new title.
-- `meta`: Optional. Overrides or adds meta tags.
-- `links`: Optional. Overrides or adds link tags.
-- `scripts`: Optional. Overrides or adds script tags.
-- `tags`: Optional. Overrides or adds other tags.
+- `description`: Optional. Adds `<meta name="description">` and `og:description` tags.
+- `image`: Optional. Adds `og:image` and `twitter:image` tags.
+- `meta`: Optional. Adds meta tags after the nested components' tags.
+- `links`: Optional. Adds link tags after the nested components' tags.
+- `scripts`: Optional. Adds script tags after the nested components' tags.
+- `tags`: Optional. Adds other tags, such as `<style>` and `<base>`.
+
+Each tag is a `HeadTag`: `{ tag, attributes?, children? }`. In development, a tag in the wrong array (for example a `link` in `meta`) logs a warning.
 
 ## Client-Side Synchronization
 

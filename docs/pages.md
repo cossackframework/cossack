@@ -21,6 +21,8 @@ export default class MyPage extends Cossack {
 }
 ```
 
+The page class must be the file's default export. There is no `route` option: `@Page({ route })` throws `COSSACK_ROUTE_ALIAS_UNSUPPORTED`, because the file path defines the URL.
+
 ## Options
 The `@Page` decorator accepts an optional object with these properties:
 
@@ -28,8 +30,11 @@ The `@Page` decorator accepts an optional object with these properties:
 | :--- | :--- | :--- |
 | `transport` | `'durable-object' \| 'http' \| 'websocket' \| 'sse'` | The transport mechanism for server communication. Default is `'http'`. |
 | `middlewares` | `MiddlewareHandler[]` | An array of Hono middleware handlers to apply to this page's route. |
-| `channels` | `string[]` | A list of state synchronization channels this page belongs to. Default is `['global']`. |
+| `channels` | `string[]` | A list of state synchronization channels this page belongs to. `'global'` is always added. Default is `['global']`. |
 | `stateful` | `boolean` | When using `transport: 'durable-object'`, set to `true` to persist state in DO storage. Default is `false` (stateless). |
+| `services` | `ServiceClass[]` | Services a layout owns and shares with its active subtree. See [Services](./services.md). |
+| `ssg` | `boolean \| { enabled?: boolean; generateStaticParams?: () => Promise<Record<string, string>[]> }` | Pre-render this page at build time. See [Static Site Generation](./static-site-generation.md). |
+| `allowCrossSiteForms` | `boolean` | Let forms on other sites post to this page's `post()`, for example an OAuth `form_post` callback. Default is `false`: a cross-site form post gets 403 `COSSACK_CROSS_SITE_REQUEST`. |
 | `scope` | `(c: Context) => string \| Promise<string>` | Determines which state backend (SSE store entry, or Durable Object or Node instance) a request connects to. Default is per-user for SSE, per page instance (component + route params) for `durable-object`. A `durable-object` instance is always named by its page (or layout) plus the key, and the key must be a non-empty string. |
 
 ## Scope
@@ -62,9 +67,10 @@ All users with the same `teamId` share the same state.
 ### Per-Room
 
 ```typescript
+// src/pages/rooms/[room]/index.ts
 @Page({
     transport: 'sse',
-    scope: (c) => `room:${c.req.query('room') || 'lobby'}`
+    scope: (c) => `room:${c.req.param('room')}`
 })
 ```
 
@@ -81,7 +87,7 @@ Every user on this page shares the same state.
 
 ### How scope works
 
-The scope function is evaluated once during SSR with the full page request context (including query params). The computed `scopeKey` is embedded in the page's initial state and passed by the client to the SSE endpoint and `/crpc` handler. This gives all three contexts the same scope, even when scope depends on query params that are not present in SSE or `/crpc` requests.
+The server evaluates the scope function during SSR and embeds the computed `scopeKey` in the page's initial state. The client sends it back to the SSE endpoint and `/crpc`. The scope key is an identifier, not a credential: both endpoints evaluate the scope function again with the live authenticated user and the page's route params, and reject a different key with 403. The client forwards the page's query string to both, so a scope may read query params as well; a visitor who changes them only reaches another scope's state, so do not treat a query param as access control.
 
 ## Layouts and Nested Pages
 
@@ -115,10 +121,10 @@ This mode uses a Cloudflare Durable Object as a WebSocket hub. By default, the D
 ```
 
 ### `websocket`
-Uses standard WebSockets. On Node.js, this uses an in-memory runtime. On Cloudflare, it also typically points to a Durable Object but is a more generic flag.
+Uses standard WebSockets. On Node.js, this uses an in-memory runtime. On Cloudflare, it also points to a Durable Object. Only pages treat it as realtime: a realtime layout or component must use `transport: 'durable-object'`.
 
 ### `sse`
-Uses Server-Sent Events for real-time server-to-client pushes without Durable Objects. Client actions are sent via HTTP POST (`/crpc`), and state updates are pushed to all connected clients via an SSE stream. It works on plain Workers. No DO binding is required. Multi-tab sync works through SSE broadcast. Note: connection tracking is in-memory (single Worker instance only).
+Uses Server-Sent Events for real-time server-to-client pushes. Client actions are sent via HTTP POST (`/crpc`), and state updates are pushed to all connected clients via an SSE stream. Multi-tab sync works through SSE broadcast. On Cloudflare, a SQLite-backed `SseDurableObject` (binding `COSSACK_SSE`) coordinates each scope; on Node, state lives in a process-local store. See [SSE](./sse.md).
 
 ```typescript
 @Page({ transport: 'sse' })
