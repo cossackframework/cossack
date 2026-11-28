@@ -14,6 +14,7 @@ export default class ErrorPage extends Cossack {
                 <p class="text-xl mb-8">An unexpected error occurred while rendering this page.</p>
                 <div class="text-left bg-red-50 p-4 rounded inline-block max-w-full overflow-auto">
                     <p>Please try again later or contact support if the problem persists.</p>
+                    ${this.boundary?.requestId ? html`<p>Reference: <code data-reference>${this.boundary.requestId}</code> (status <span data-status>${this.boundary.status}</span>)</p>` : ''}
                 </div>
                 <div class="mt-8">
                     <a href="/" class="text-red-700 underline">Return Home</a>

@@ -11,7 +11,7 @@ import { getForwardedServerMethodClass } from '@cossackframework/core';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { Hono, type Context, type Handler, type Next } from 'hono';
 import { renderRoot, TemplateHelpers } from './root.js';
-import { Page, PageOptions, Cossack, User, setPublicUserProjection, toPublicUser, type CossackRuntimeInfo, type Middleware, type PublicUserProjection } from '@cossackframework/core';
+import { Page, PageOptions, Cossack, User, setPublicUserProjection, toPublicUser, BOUNDARY_CONTEXT_KEY, type CossackBoundaryInfo, type CossackRuntimeInfo, type Middleware, type PublicUserProjection } from '@cossackframework/core';
 import {
   createInstance,
   createRootServiceScope,
@@ -562,6 +562,11 @@ export function createApp(options: CreateAppOptions = {}) {
       return c.json({ error: denial.message, code: denial.code, requestId: context.requestId }, denial.status);
     }
     logServerFailure(context, 'request', 'middleware', 'COSSACK_REQUEST_INTERNAL', error);
+    // A browser that asked for a page gets the nearest error page, as for a failed render.
+    if (wantsHtmlDocument(c) && !(await matchedEndpoint(c))) {
+      const anchor = (ran ? pagePathByRoute.get(ran) : undefined) ?? (await resolveActiveNotFound(c))?.path;
+      return renderFailureDocument(c, anchor, context);
+    }
     return c.json({ error: 'Internal Server Error', code: 'COSSACK_REQUEST_INTERNAL', requestId: context.requestId }, 500);
   });
   const resolveNotFound = createNotFoundResolver(Object.keys(pages));
@@ -1029,15 +1034,9 @@ export function createApp(options: CreateAppOptions = {}) {
         const errorPage = findNearestSpecialPage(path, 'error');
         if (errorPage && path !== errorPage.path) {
           c.status(500);
-          return renderBoundary(errorPage.component, errorPage.path, c);
+          return renderBoundary(errorPage.component, errorPage.path, c, { type: 'error', status: 500, requestId: failureContext.requestId });
         }
-        // Development diagnostics retain correlation without publishing application exceptions.
-        const body = import.meta.env.DEV
-          ? `<h1>Internal Server Error</h1><pre>COSSACK_SSR_INTERNAL
-Request ID: ${escapeHtml(failureContext.requestId)}
-Route: ${escapeHtml(failureContext.route)}</pre>`
-          : '<h1>Internal Server Error</h1>';
-        return c.html(body, 500);
+        return c.html(plainFailure('COSSACK_SSR_INTERNAL', failureContext), 500);
       } finally {
         for (const instance of requestComponents.reverse()) {
           try { await instance.destroyAsync(); }
@@ -1049,7 +1048,16 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
     };
   };
 
-  const renderBoundary = async (component: new () => Cossack, path: string, c: Context) => {
+  /** Development diagnostics retain correlation without publishing application exceptions. */
+  const plainFailure = (code: string, context: { requestId: string; route: string }) => import.meta.env.DEV
+    ? `<h1>Internal Server Error</h1><pre>${code}
+Request ID: ${escapeHtml(context.requestId)}
+Route: ${escapeHtml(context.route)}</pre>`
+    : '<h1>Internal Server Error</h1>';
+
+  /** `info` is what the boundary page reads as `this.boundary`, on the server and after hydration. */
+  const renderBoundary = async (component: new () => Cossack, path: string, c: Context, info: CossackBoundaryInfo) => {
+    c.set(BOUNDARY_CONTEXT_KEY as never, info as never);
     const middlewares = getMiddlewares(path);
     const handler = createSsrHandler(component, path, Reflect.getMetadata('page:options', component));
     // Preserve Hono's original route index and the selected parameter proxy.
@@ -1149,7 +1157,10 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       const component = getModuleDefault(pages[chosen.path] as object) as new () => Cossack;
       const context = withRuntimeRouteParams(c, chosen.params);
       c.status(404);
-      return runWithContext(context, () => renderBoundary(component, chosen.path, context));
+      // The id the page's response carries, made now so the page can show it.
+      const { requestId } = createServerFailureContext(c, { route: filePathToHttpRoute(chosen.path), action: 'render',
+        runtime: options.runtimeAdapter?.name ?? 'cloudflare' });
+      return runWithContext(context, () => renderBoundary(component, chosen.path, context, { type: '404', status: 404, requestId }));
     }
     return c.text('404 Not Found', 404);
   };
@@ -1170,13 +1181,38 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
     if (errorPage && anchorPath !== errorPage.path) {
       try {
         c.status(denial.status);
-        return await renderBoundary(errorPage.component, errorPage.path, c);
+        return await renderBoundary(errorPage.component, errorPage.path, c, { type: 'error', status: denial.status, requestId });
       } catch (error) {
         logServerFailure(createServerFailureContext(c, { route: filePathToHttpRoute(errorPage.path), action: 'render',
           runtime: options.runtimeAdapter?.name ?? 'cloudflare' }), 'ssr', 'render', 'COSSACK_SSR_INTERNAL', error);
       }
     }
     return c.html(`<h1>${escapeHtml(denial.message)}</h1>`, denial.status);
+  };
+
+  /**
+   * A browser navigation whose middleware failed renders the nearest error page with
+   * status 500, like a page that fails while it renders. The middleware that failed does
+   * not run again; the error page's own middleware that has not run yet does. Without a
+   * usable error page, a minimal HTML document carries the status.
+   */
+  const renderFailureDocument = async (
+    c: Context, anchorPath: string | undefined, failure: { requestId: string; route: string },
+  ): Promise<Response> => {
+    c.header('X-Cossack-Request-Id', failure.requestId);
+    // A failure is never cached, whatever an earlier middleware set.
+    c.header('Cache-Control', 'private, no-store');
+    const errorPage = anchorPath ? findNearestSpecialPage(anchorPath, 'error') : null;
+    if (errorPage && anchorPath !== errorPage.path) {
+      try {
+        c.status(500);
+        return await renderBoundary(errorPage.component, errorPage.path, c, { type: 'error', status: 500, requestId: failure.requestId });
+      } catch (error) {
+        logServerFailure(createServerFailureContext(c, { route: filePathToHttpRoute(errorPage.path), action: 'render',
+          runtime: options.runtimeAdapter?.name ?? 'cloudflare' }), 'ssr', 'render', 'COSSACK_SSR_INTERNAL', error);
+      }
+    }
+    return c.html(plainFailure('COSSACK_REQUEST_INTERNAL', failure), 500);
   };
 
   // Transport routes, registered before application routes. The build rejects

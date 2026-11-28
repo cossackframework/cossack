@@ -56,6 +56,12 @@ const middlewares: MiddlewareHandler[] = [ormRequestMiddleware, auth.middleware]
 export default middlewares;
 ```
 
+When `validateSessionId` or `resolveUserById` throws (the session store is down), the
+middleware logs a warning and continues **as a guest** by default. For an application whose
+pages are all behind sign-in, add `sessionFailure: 'fail'` to the provider: the request then
+fails with status 500 and the `error` page, instead of a redirect to a sign-in page that
+cannot work either.
+
 Guard routes with `createAuthorizer()` from `@cossackframework/auth` or a
 `defineServerMiddleware` that checks `c.get('user')`, applied per layout or page with
 `@Page({ middlewares: [guard] })`.

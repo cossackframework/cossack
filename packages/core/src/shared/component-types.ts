@@ -38,6 +38,29 @@ export interface ComponentState {
 }
 
 /**
+ * What a `404` or `error` page is answering: `this.boundary` on the page, its layouts and
+ * the App, on the server and in the browser.
+ */
+export interface CossackBoundaryInfo {
+    type: '404' | 'error';
+    /** The response status: 404, 500, or the 401 or 403 of a denial. */
+    status: number;
+    /** The id in the response's `X-Cossack-Request-Id` and in the failure record, when the request has one. */
+    requestId?: string;
+}
+
+/** The request variable the router sets before it renders a boundary page. */
+export const BOUNDARY_CONTEXT_KEY = 'cossack.boundary';
+
+/** A boundary record from a request variable or from hydration state: only the known fields, or nothing. */
+export function readBoundaryInfo(value: unknown): CossackBoundaryInfo | undefined {
+    if (!value || typeof value !== 'object') return undefined;
+    const { type, status, requestId } = value as Record<string, unknown>;
+    if ((type !== '404' && type !== 'error') || typeof status !== 'number' || !Number.isInteger(status)) return undefined;
+    return { type, status, ...(typeof requestId === 'string' && requestId ? { requestId } : {}) };
+}
+
+/**
  * Serialized state format for transmission between server and client.
  * Contains both the state values and metadata needed for hydration.
  */
@@ -59,6 +82,8 @@ export interface SerializedComponentState {
         /** Public path and query for destination-owned hydration. */
         url?: string;
         params?: Record<string, string>;
+        /** Set while a 404 or error page answers the request. */
+        boundary?: CossackBoundaryInfo;
     };
     /**
      * Browser-visible user (`{ id }` plus `publicUser` fields). Set once, at

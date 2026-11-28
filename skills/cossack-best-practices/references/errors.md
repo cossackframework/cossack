@@ -54,6 +54,24 @@ export default class ErrorPage extends Cossack {
 }
 ```
 
+A middleware that throws renders the same page with status 500 for a browser navigation; other clients get JSON with the code `COSSACK_REQUEST_INTERNAL`.
+
+## What the page is told: `this.boundary`
+
+A `404` or `error` page (and its layouts and the App) reads `this.boundary`: `{ type: '404' | 'error', status, requestId? }`. `status` is 404, 500, or the 401/403 of a denial. `requestId` is the response's `X-Cossack-Request-Id`. It is the same on the server and after hydration, and `undefined` on every other page. **Do not read the response header or invent an ID** to show a reference:
+
+```typescript
+render() {
+    const failure = this.boundary;
+    return html`
+        <h1>${failure?.status === 403 ? 'No access' : 'Something went wrong'}</h1>
+        ${failure?.requestId ? html`<p>Reference: <code>${failure.requestId}</code></p>` : ''}
+    `;
+}
+```
+
+The error itself never reaches the page. To log it, give `createApp` an `onServerFailure(failure, error, c)` function.
+
 ## Hierarchical boundaries
 
 The router searches for the **nearest** `error/index.ts` or `404/index.ts` **up the directory tree** relative to the current route. This means you can place scoped error pages:
@@ -79,4 +97,4 @@ Both the 404 and error pages are integrated into the normal component stack:
 
 If these files are absent:
 - **404** → plain text `404 Not Found` response.
-- **Error** → basic HTML response with the error stack trace (useful in development; replace with a custom page for production).
+- **Error** → `<h1>Internal Server Error</h1>` with status 500. In development it also shows a fixed code, the request ID and the route, never the error message or the stack.
