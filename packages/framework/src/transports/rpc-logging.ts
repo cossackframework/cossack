@@ -27,16 +27,33 @@ function boundedLabel(value: string, maxLength: number): string {
   return value.replace(/[^a-zA-Z0-9_.$/\[\]-]/g, '_').slice(0, maxLength) || 'unknown';
 }
 
-/** Emit searchable RPC failure metadata without retaining application error data. */
+/** What a `cossack.rpc.failure` line says. */
+export interface RpcFailure {
+  event: 'cossack.rpc.failure';
+  requestId: string;
+  route: string;
+  action: string;
+  runtime: string;
+  durationMs: number;
+  stage: RpcFailureStage;
+  code: RpcFailureCode;
+  bytes?: number;
+  limitBytes?: number;
+}
+
+/**
+ * Emit searchable RPC failure metadata without retaining application error data. Returns
+ * the line, for the application's failure handler.
+ */
 export function logRpcFailure(
   context: RpcFailureContext | undefined,
   stage: RpcFailureStage,
   code: RpcFailureCode = 'COSSACK_RPC_INTERNAL_ERROR',
   /** Sizes of a request or response over its limit; a request's `bytes` is known when it declared its length. */
   size?: { bytes?: number; limitBytes: number },
-): void {
+): RpcFailure {
   const elapsed = context ? performance.now() - context.startedAt : 0;
-  console.error({
+  const failure: RpcFailure = {
     event: 'cossack.rpc.failure',
     requestId: context && requestIdPattern.test(context.requestId) ? context.requestId : 'unavailable',
     route: boundedLabel(context?.route ?? 'unknown', 160),
@@ -47,5 +64,7 @@ export function logRpcFailure(
     code,
     ...(size?.bytes !== undefined ? { bytes: Math.max(0, Math.round(size.bytes)) } : {}),
     ...(size ? { limitBytes: Math.max(0, Math.round(size.limitBytes)) } : {}),
-  });
+  };
+  console.error(failure);
+  return failure;
 }

@@ -8,6 +8,51 @@ export interface ServerFailureContext {
   action: string;
   runtime: string;
   startedAt: number;
+  /** The request the failure belongs to, for the application's failure handler. Never logged. */
+  c?: Context;
+}
+/**
+ * What the framework's log line says about a failure it answered itself: the same fields,
+ * and nothing of the error.
+ */
+export interface ServerFailure {
+  event: 'cossack.api.failure' | 'cossack.ssr.failure' | 'cossack.request.failure' | 'cossack.rpc.failure';
+  /** The id in the response's `X-Cossack-Request-Id`, or `unavailable`. */
+  requestId: string;
+  /** The authored route template, never the address. */
+  route: string;
+  action: string;
+  runtime: string;
+  durationMs: number;
+  stage: string;
+  code: string;
+}
+/**
+ * The application's function for failures (`createApp({ onServerFailure })`). It gets the
+ * line, the thrown error, and the request when the framework has it. What it does with the
+ * error is the application's choice: the framework logs none of it in production.
+ */
+export type ServerFailureHandler = (failure: ServerFailure, error: unknown, c?: Context) => unknown;
+let failureHandler: ServerFailureHandler | undefined;
+/** Set by `createApp`; `undefined` removes it. One application runs in a process. */
+export function setServerFailureHandler(handler: ServerFailureHandler | undefined): void {
+  failureHandler = typeof handler === 'function' ? handler : undefined;
+}
+/**
+ * Gives a failure to development's log and to the application's handler. A handler that
+ * throws or rejects changes nothing: the answer was decided before it ran. A promise it
+ * returns is kept alive past the response where the runtime has `waitUntil`.
+ */
+export function reportServerFailure(failure: ServerFailure, error: unknown, c?: Context): void {
+  logDevelopmentCause(error);
+  if (!failureHandler || error === undefined) return;
+  try {
+    const result = failureHandler(failure, error, c);
+    if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
+      const settled = Promise.resolve(result).catch(() => {});
+      try { c?.executionCtx.waitUntil(settled); } catch { /* no execution context on this runtime */ }
+    }
+  } catch { /* the handler's own failure is not the request's */ }
 }
 export type ServerFailureKind = 'api' | 'ssr' | 'request';
 export type ServerFailureStage = 'input' | 'authorize' | 'handler' | 'output' | 'render' | 'component-cleanup' | 'service-cleanup' | 'middleware';
@@ -26,18 +71,20 @@ export function createServerFailureContext(c: Context, options: { route?: string
   const startedAt = c.get(REQUEST_STARTED_AT_KEY);
   return { requestId, route: label(options.route ?? c.req.routePath ?? 'unknown', 160),
     action: label(options.action ?? 'unknown', 80), runtime: label(runtime, 40),
-    startedAt: typeof startedAt === 'number' && Number.isFinite(startedAt) ? startedAt : performance.now() };
+    startedAt: typeof startedAt === 'number' && Number.isFinite(startedAt) ? startedAt : performance.now(), c };
 }
 /**
  * In production the line carries no exception: arbitrary messages, stacks, causes and
  * properties stay private. In development, the thrown error (message and stack) follows it.
+ * The application's failure handler gets the line and the error.
  */
 export function logServerFailure(context: ServerFailureContext, kind: ServerFailureKind, stage: ServerFailureStage, code: ServerFailureCode, error?: unknown): void {
   const elapsed = performance.now() - context.startedAt;
-  console.error({ event: `cossack.${kind}.failure`, requestId: uuid.test(context.requestId) ? context.requestId : 'unavailable',
+  const failure: ServerFailure = { event: `cossack.${kind}.failure`, requestId: uuid.test(context.requestId) ? context.requestId : 'unavailable',
     route: label(context.route, 160), action: label(context.action, 80), runtime: label(context.runtime, 40),
-    durationMs: Number.isFinite(elapsed) ? Math.max(0, Math.round(elapsed)) : 0, stage, code });
-  logDevelopmentCause(error);
+    durationMs: Number.isFinite(elapsed) ? Math.max(0, Math.round(elapsed)) : 0, stage, code };
+  console.error(failure);
+  reportServerFailure(failure, error, context.c);
 }
 
 /** Development only: the error behind a failure line, with its stack. */

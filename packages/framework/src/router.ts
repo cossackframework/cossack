@@ -1,6 +1,7 @@
 import { logConfigRequirementFailure } from './config-diagnostics.js';
 import { logRuntimeFailure } from '@cossackframework/core/server-diagnostics';
-import { createServerFailureContext, logDevelopmentCause, logServerFailure } from './server-logging.js';
+import { createServerFailureContext, logServerFailure, reportServerFailure, setServerFailureHandler, type ServerFailureHandler } from './server-logging.js';
+export type { ServerFailure, ServerFailureHandler } from './server-logging.js';
 import { refuseCrossSiteForms } from './form-origin.js';
 import { HTTPException } from 'hono/http-exception';
 import { developmentRpcEvidence, developmentRpcInvoked, developmentRpcReturned, developmentRpcStream, developmentRpcNative } from './transports/development-trace.js';
@@ -490,6 +491,14 @@ export interface CreateAppOptions {
   /** Optional process runtime integration (for example the Node adapter). */
   runtimeAdapter?: CossackRuntimeAdapter;
   /**
+   * Called for every failure the framework answers itself, with its log line and the thrown
+   * error: a page that fails while it loads or draws, a server method, an API handler and a
+   * middleware. The framework's production log holds nothing of the error, because it cannot
+   * know what an application may log; this function decides that for the application. It
+   * cannot change the answer, and what it throws is dropped (`docs/server-logging.md`).
+   */
+  onServerFailure?: ServerFailureHandler;
+  /**
    * Extra user fields to expose in the browser hydration payload
    * (`this.user` on the client). By default only `{ id }` is serialized; `id`
    * always comes from the authenticated user. Return only non-sensitive data.
@@ -517,6 +526,7 @@ class RouterFallbackApp extends Cossack {
 
 export function createApp(options: CreateAppOptions = {}) {
   setPublicUserProjection(options.publicUser);
+  setServerFailureHandler(options.onServerFailure);
   // strict:false so trailing slashes match (e.g. /dashboard/ -> /dashboard).
   // Hono's getPathNoStrict strips a single trailing slash before route matching,
   // so users get the same page whether or not they type the slash.
@@ -1031,10 +1041,10 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       } finally {
         for (const instance of requestComponents.reverse()) {
           try { await instance.destroyAsync(); }
-          catch { logServerFailure(failureContext, 'ssr', 'component-cleanup', 'COSSACK_SSR_CLEANUP_FAILED'); }
+          catch (error) { logServerFailure(failureContext, 'ssr', 'component-cleanup', 'COSSACK_SSR_CLEANUP_FAILED', error); }
         }
         try { await requestServiceScope.disposeAsync(); }
-        catch { logServerFailure(failureContext, 'ssr', 'service-cleanup', 'COSSACK_SSR_CLEANUP_FAILED'); }
+        catch (error) { logServerFailure(failureContext, 'ssr', 'service-cleanup', 'COSSACK_SSR_CLEANUP_FAILED', error); }
       }
     };
   };
@@ -1161,9 +1171,9 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       try {
         c.status(denial.status);
         return await renderBoundary(errorPage.component, errorPage.path, c);
-      } catch {
+      } catch (error) {
         logServerFailure(createServerFailureContext(c, { route: filePathToHttpRoute(errorPage.path), action: 'render',
-          runtime: options.runtimeAdapter?.name ?? 'cloudflare' }), 'ssr', 'render', 'COSSACK_SSR_INTERNAL');
+          runtime: options.runtimeAdapter?.name ?? 'cloudflare' }), 'ssr', 'render', 'COSSACK_SSR_INTERNAL', error);
       }
     }
     return c.html(`<h1>${escapeHtml(denial.message)}</h1>`, denial.status);
@@ -1333,8 +1343,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
           if (isClientVisibleError(e)) {
             return c.json({ error: e.message, code: 'COSSACK_RPC_CLIENT_ERROR', requestId }, 400);
           }
-          logRpcFailure(logContext, 'action');
-          logDevelopmentCause(e);
+          reportServerFailure(logRpcFailure(logContext, 'action'), e, c);
           return c.json({ error: 'Internal Server Error', code: 'COSSACK_RPC_INTERNAL_ERROR', requestId }, 500);
         }
         // Generator results stream through the same response-local protocol as
@@ -1376,8 +1385,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
         if (denial) return c.json({ error: denial.message, code: denial.code, requestId }, denial.status);
         if (!isActionValidationError(error) && !isClientVisibleError(error) &&
             !(error instanceof RpcError && error.code === 'COSSACK_RPC_CANCELLED')) {
-          logRpcFailure(logContext, 'request');
-          logDevelopmentCause(error);
+          reportServerFailure(logRpcFailure(logContext, 'request'), error, c);
         }
         return c.json({ error: error instanceof RpcError ? error.message : 'Internal Server Error',
           code: error instanceof RpcError ? error.code : 'COSSACK_RPC_INTERNAL_ERROR', requestId }, 500);
@@ -1574,8 +1582,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
           if (isClientVisibleError(e)) {
             return c.json({ error: e.message, code: 'COSSACK_RPC_CLIENT_ERROR', requestId }, 400);
           }
-          logRpcFailure(logContext, 'action');
-          logDevelopmentCause(e);
+          reportServerFailure(logRpcFailure(logContext, 'action'), e, c);
           return c.json({ error: 'Internal Server Error', code: 'COSSACK_RPC_INTERNAL_ERROR', requestId }, 500);
         }
         if (componentContext.req.raw.signal.aborted) {
@@ -1654,8 +1661,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
         if (denial) return c.json({ error: denial.message, code: denial.code, requestId }, denial.status);
         if (!isActionValidationError(error) && !isClientVisibleError(error) &&
             !(error instanceof RpcError && error.code === 'COSSACK_RPC_CANCELLED')) {
-          logRpcFailure(logContext, 'request');
-          logDevelopmentCause(error);
+          reportServerFailure(logRpcFailure(logContext, 'request'), error, c);
         }
         return c.json({ error: error instanceof RpcError ? error.message : 'Internal Server Error',
           code: error instanceof RpcError ? error.code : 'COSSACK_RPC_INTERNAL_ERROR', requestId }, 500);

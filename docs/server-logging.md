@@ -14,6 +14,40 @@ In development (`import.meta.env.DEV`), the request, SSR, API and RPC failure
 lines are followed by a second line, `[cossack] caused by:`, with the thrown
 error, its message and its stack. Production logs never carry it.
 
+## A function for failures
+
+The framework cannot know what an application may log, so its production lines hold
+nothing of the error. An application can decide that for itself. Give `createApp` a
+function, and the framework calls it for every failure it answers itself:
+
+```ts
+import { createApp, type ServerFailure } from '@cossackframework/framework/router';
+
+const app = createApp({
+  onServerFailure(failure: ServerFailure, error: unknown, c) {
+    // `failure` is the framework's own line. Log what your rules allow of `error`.
+    console.error(JSON.stringify({ event: 'app.failure', requestId: failure.requestId, route: failure.route,
+      name: error instanceof Error ? error.name : 'unknown' }));
+  },
+});
+```
+
+- **When it runs.** For a page that fails while it loads or draws (`cossack.ssr.failure`),
+  a server method (`cossack.rpc.failure`), a `defineApi` handler or class API method
+  (`cossack.api.failure`), a middleware (`cossack.request.failure`), and a cleanup that fails
+  after the response. It does not run for answers that are not failures of the server: a
+  denial, a validation error, a client-visible error, a cancelled call, an `HTTPException`.
+- **What it gets.** The line the framework logged (`event`, `requestId`, `route`, `action`,
+  `runtime`, `durationMs`, `stage`, `code`), the thrown value as it was thrown, and the Hono
+  context of the request. The context is absent only where the framework has none.
+- **What it cannot do.** It cannot change the answer: the framework decided it before the
+  function ran. What it throws is dropped, and a promise it returns that rejects is too.
+- **Async work.** Return a promise to send the failure somewhere. On Cloudflare the
+  framework gives it to `waitUntil`, so it finishes after the response.
+
+The framework's own lines stay as they are, with or without the function. One application
+runs in a process: the function of the last `createApp` is the one in use.
+
 Use the response's `X-Cossack-Request-Id` to find the event. Internal API/request
 JSON failures include the same `requestId` and a generic error code. The framework
 replaces invalid existing response IDs with UUIDs and restores its managed ID
