@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/romedb",
-  "version": "0.9.4",
+  "version": "0.9.5",
   "type": "module",
   "description": "RomeDB request bindings for Cossack on Workers and Node.js, on RomeDB's own client",
   "license": "MIT",

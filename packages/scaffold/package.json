@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/scaffold",
-  "version": "0.9.4",
+  "version": "0.9.5",
   "type": "module",
   "description": "Recipe-driven scaffolding engine for Cossack applications",
   "license": "MIT",
@@ -38,7 +38,7 @@
       "@aws-sdk/client-s3": "^3.1156.0",
       "@cloudflare/vite-plugin": "^1.48.0",
       "@cossackframework/solar-icons": "0.7.1",
-      "@cossackframework/studio": "^0.9.4",
+      "@cossackframework/studio": "^0.9.5",
       "@electron-forge/cli": "^8.0.1",
       "@electron-forge/maker-deb": "^8.0.1",
       "@electron-forge/maker-dmg": "^8.0.1",
