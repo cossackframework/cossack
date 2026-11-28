@@ -10,20 +10,27 @@ const diagnostics = {
     COSSACK_AUTH_SESSION_READ_FAILED: ['session-read', 'Session lookup failed. Check application session storage.'],
     COSSACK_AUTH_SESSION_ROTATE_FAILED: ['session-rotate', 'Session rotation failed. Check the atomic session replacement.'],
     COSSACK_AUTH_SESSION_REVOKE_FAILED: ['session-revoke', 'Session revocation failed. Check application session storage.'],
+    COSSACK_AUTH_SESSION_EXTRACTION_FAILED: ['session-extract', 'Session extraction failed. Check session extraction.'],
+    COSSACK_AUTH_SESSION_VALIDATION_FAILED: ['session-validate', 'Session validation failed. Check session storage and validation.'],
+    COSSACK_AUTH_USER_RESOLUTION_FAILED: ['user-resolve', 'User lookup failed. Check user lookup.'],
 } as const;
 
 export type AuthErrorCode = keyof typeof diagnostics;
 export type AuthErrorStage = typeof diagnostics[AuthErrorCode][0];
 
-/** Fixed diagnostics without credential values, storage errors or exception causes. */
+/**
+ * Fixed diagnostics without credential values or storage errors. The message and `toJSON()`
+ * never hold the exception that caused it. The session middleware's `sessionFailure: 'fail'`
+ * keeps that exception as `cause`, for the application's failure handler alone.
+ */
 export class AuthError extends Error {
     readonly code: AuthErrorCode;
     readonly stage: AuthErrorStage;
 
-    constructor(code: AuthErrorCode) {
+    constructor(code: AuthErrorCode, options?: { cause?: unknown }) {
         if (!Object.hasOwn(diagnostics, code)) throw new TypeError('Invalid authentication diagnostic code.');
         const [stage, message] = diagnostics[code];
-        super(message);
+        super(message, options && 'cause' in options ? { cause: options.cause } : undefined);
         this.name = 'AuthError';
         this.code = code;
         this.stage = stage;

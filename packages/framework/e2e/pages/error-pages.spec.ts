@@ -22,6 +22,36 @@ test.describe('Error Pages', () => {
     });
   });
 
+  test.describe('What the page is told', () => {
+    test('shows the request id of its response, before and after hydration', async ({ page }) => {
+      const response = await page.goto('/non-existent-route-xyz');
+      const id = response?.headers()['x-cossack-request-id'];
+      expect(id).toMatch(/^[0-9a-f-]{36}$/);
+      await expect(page.locator('[data-reference]')).toHaveText(id!);
+      await waitForHydration(page);
+      await expect(page.locator('[data-reference]')).toHaveText(id!);
+    });
+
+    test('shows the id of the fetched page after a navigation in the browser', async ({ page }) => {
+      await page.goto('/');
+      await waitForHydration(page);
+      const answered = page.waitForResponse(response => new URL(response.url()).pathname === '/another-missing-page-xyz');
+      await page.evaluate(() => {
+        const link = document.createElement('a');
+        link.href = '/another-missing-page-xyz';
+        link.textContent = 'missing';
+        link.id = 'missing-link';
+        // Above the layout, so nothing takes the click.
+        link.style.cssText = 'position:fixed;top:0;left:0;z-index:2147483647';
+        document.body.append(link);
+      });
+      await page.click('#missing-link');
+      const id = (await answered).headers()['x-cossack-request-id'];
+      expect(id).toMatch(/^[0-9a-f-]{36}$/);
+      await expect(page.locator('[data-reference]')).toHaveText(id);
+    });
+  });
+
   test.describe('Error Page', () => {
     // Note: The /error route only renders when there's an actual server error.
     // Direct navigation to /error shows 404 because it's not a valid route.

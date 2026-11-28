@@ -1,4 +1,5 @@
 import type { Context, MiddlewareHandler } from 'hono';
+import { AuthError, type AuthErrorCode } from './errors';
 
 /** Server-only, JSON descriptor. Never put a bearer credential in data. */
 export interface AuthRealtimeIdentity {
@@ -26,6 +27,14 @@ export interface AuthProvider<User> {
      */
     createSession?: (user: User, c: Context) => Promise<{ headers: Headers }>;
     realtime?: AuthRealtimeProvider;
+    /**
+     * What the middleware does when `extractSessionId`, `validateSessionId` or
+     * `resolveUserById` throws. `'guest'` (the default) continues the request without a
+     * user. `'fail'` throws an {@link AuthError} whose `cause` is the thrown error, so the
+     * request fails with status 500 and a signed-in person is not sent to sign in while
+     * the session store is down. A realtime call continues without a user either way.
+     */
+    sessionFailure?: 'guest' | 'fail';
 }
 
 export type SessionCreator<User> = (user: User, c: Context) => Promise<{ headers: Headers }>;
@@ -163,6 +172,14 @@ export function createAuth<User>(provider: AuthProvider<User>): AuthKit<User> {
     if (provider.realtime && (typeof provider.realtime.key !== 'string' || !/^[a-z][a-z0-9._-]{0,63}$/.test(provider.realtime.key))) {
         throw new TypeError('Realtime auth needs a stable provider key.');
     }
+    if (provider.sessionFailure !== undefined && provider.sessionFailure !== 'guest' && provider.sessionFailure !== 'fail') {
+        throw new TypeError("sessionFailure must be 'guest' or 'fail'.");
+    }
+    /** A failed session read: fail the request when the application asked for that, or say why it continues as a guest. */
+    const sessionReadFailed = (code: AuthErrorCode, hint: string, cause: unknown): void => {
+        if (provider.sessionFailure === 'fail') throw new AuthError(code, { cause });
+        console.warn(`[Cossack Auth] ${code}: continuing as guest. ${hint}`);
+    };
     const middleware: AuthKit<User>['middleware'] = async (c, next) => {
         // A reused context must not retain an earlier identity after failure.
         c.set('user', undefined);
@@ -183,26 +200,27 @@ export function createAuth<User>(provider: AuthProvider<User>): AuthKit<User> {
         }
         let sessionId: string | undefined;
         try { sessionId = await provider.extractSessionId(c); }
-        catch {
-            console.warn('[Cossack Auth] COSSACK_AUTH_SESSION_EXTRACTION_FAILED: continuing as guest. Check session extraction.');
+        catch (error) {
+            sessionReadFailed('COSSACK_AUTH_SESSION_EXTRACTION_FAILED', 'Check session extraction.', error);
             return await next();
         }
         if (!sessionId) {
             return await next();
         }
 
-        // Degrade to guest on any provider error rather than surfacing a 500.
-        // The provider's validateSessionId/resolveUserById typically query the
-        // database (e.g. a `sessions` table); if the DB is unreachable or the
-        // schema is not yet migrated, the request must still render. A stale or
-        // corrupt session cookie should never take down every route — the user
-        // is simply treated as logged out, and the cookie will be ignored until
-        // it expires or is overwritten on the next successful login.
+        // By default, degrade to guest on any provider error rather than
+        // surfacing a 500. The provider's validateSessionId/resolveUserById
+        // typically query the database (e.g. a `sessions` table); if the DB is
+        // unreachable or the schema is not yet migrated, the request still
+        // renders and the user is treated as logged out. An application whose
+        // pages are all behind sign-in asks for `sessionFailure: 'fail'`
+        // instead: a guest there is redirected to a sign-in page that cannot
+        // work either, and an error page says what is true.
         let userId: string | null;
         try {
             userId = await provider.validateSessionId(sessionId, c);
-        } catch {
-            console.warn('[Cossack Auth] COSSACK_AUTH_SESSION_VALIDATION_FAILED: continuing as guest. Check session storage and validation.');
+        } catch (error) {
+            sessionReadFailed('COSSACK_AUTH_SESSION_VALIDATION_FAILED', 'Check session storage and validation.', error);
             return await next();
         }
         if (!userId) {
@@ -212,8 +230,8 @@ export function createAuth<User>(provider: AuthProvider<User>): AuthKit<User> {
         let user: User | null;
         try {
             user = await provider.resolveUserById(userId, c);
-        } catch {
-            console.warn('[Cossack Auth] COSSACK_AUTH_USER_RESOLUTION_FAILED: continuing as guest. Check user lookup.');
+        } catch (error) {
+            sessionReadFailed('COSSACK_AUTH_USER_RESOLUTION_FAILED', 'Check user lookup.', error);
             return await next();
         }
         if (user) {

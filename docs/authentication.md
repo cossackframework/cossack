@@ -148,6 +148,35 @@ const middlewares: MiddlewareHandler[] = [
 export default middlewares;
 ```
 
+#### When the session read fails
+
+`extractSessionId`, `validateSessionId` and `resolveUserById` can throw, for
+example while the session store is down. By default the middleware then logs a
+warning (`COSSACK_AUTH_SESSION_VALIDATION_FAILED: continuing as guest`) and the
+request continues without a user. That suits a site with public pages: they
+still render.
+
+An application whose pages are all behind sign-in is served badly by that. Its
+guard sends a signed-in person to the sign-in page, where signing in fails too.
+Set `sessionFailure: 'fail'` to fail the request instead:
+
+```typescript
+export const auth = createAuth<User>({
+    extractSessionId, validateSessionId, resolveUserById,
+    sessionFailure: 'fail',
+});
+```
+
+The middleware then throws an `AuthError` with the code
+`COSSACK_AUTH_SESSION_EXTRACTION_FAILED`, `COSSACK_AUTH_SESSION_VALIDATION_FAILED`
+or `COSSACK_AUTH_USER_RESOLUTION_FAILED`. The response has status 500, and a
+browser gets the nearest [`error` page](./errors-handling.md#global-error-handler-500).
+The error your function threw is the `cause` of the `AuthError`; only
+[`onServerFailure`](./server-logging.md#a-function-for-failures) receives it. A
+missing, unknown or expired session is not a failure: that request continues
+without a user with either setting. A call over a realtime connection also
+continues without a user when its identity check throws.
+
 ### 4. Login via a `@Server` Method (Recommended)
 
 The generated login page keeps its draft in `ClientStore`. Client validation gives

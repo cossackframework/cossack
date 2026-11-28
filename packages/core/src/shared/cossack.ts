@@ -77,7 +77,7 @@ import { noteOptimisticWrite } from './optimistic-state';
 import { createStoreProxy, isPlainObjectOrArray, matchesTrackedPath, toRawStoreValue } from './store';
 import { snapshotNavigationDraft } from './navigation-draft';
 import { flashed, old } from './flash';
-import { LifecyclePhase } from './component-types';
+import { LifecyclePhase, BOUNDARY_CONTEXT_KEY, readBoundaryInfo } from './component-types';
 import { supportsViewTransitions, supportsViewTransitionTypes, type NavigateOptions, type NavigateResult } from '../client/navigation';
 import type {
     ComponentState,
@@ -88,6 +88,7 @@ import type {
     CossackElementInternal,
     CossackInternalState,
     CossackRuntimeInfo,
+    CossackBoundaryInfo,
 } from './component-types';
 import type { User } from './user';
 import type { RedirectStatusCode } from 'hono/utils/http-status';
@@ -114,13 +115,14 @@ const ignoreTaskSettlement = () => {};
 // Re-export public types so `export * from './shared/cossack'` in index.ts
 // continues to surface them to consumers. Split runtime vs type-only so
 // bundlers with isolatedModules don't try to resolve types as values.
-export { LifecyclePhase };
+export { LifecyclePhase, BOUNDARY_CONTEXT_KEY };
 export type {
     ComponentState,
     SerializedComponentState,
     CossackOptions,
     BootstrapOptions,
     CossackRuntimeInfo,
+    CossackBoundaryInfo,
 };
 
 export const RootContext = createContext<Cossack | null>(null);
@@ -554,6 +556,20 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         return this._runtimeInfo || this.consume(RuntimeContext) || { platform: 'web' };
     }
     protected set runtime(val: CossackRuntimeInfo) { this._runtimeInfo = val; }
+
+    /**
+     * Set while a `404` or `error` page answers the request: the kind of page, the response
+     * status and the request id of the failure record. `undefined` on every other page.
+     */
+    protected get boundary(): CossackBoundaryInfo | undefined {
+        if (this.isServer) {
+            const context = this._ambientContext() as { get?: (key: string) => unknown } | undefined;
+            return readBoundaryInfo(typeof context?.get === 'function' ? context.get(BOUNDARY_CONTEXT_KEY) : undefined);
+        }
+        if (this._frameworkBootstrapped) return this._cossack_boundary;
+        const root = this.consume(RootContext) as Cossack | undefined;
+        return root && root !== this ? root.boundary : undefined;
+    }
 
     /** True when this component is executing in a local Cossack Desktop target. */
     protected get isDesktop(): boolean { return this.runtime.platform === 'desktop'; }
@@ -1193,6 +1209,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             this.user = user ?? clientInitialState?.user;
             const metadata = clientInitialState?.metadata || {};
             this._cossack_params = metadata.params || {};
+            this._cossack_boundary = readBoundaryInfo(metadata.boundary);
             this._cossack_path = metadata.pathname || window.location.pathname;
             this._cossack_url = new URL(metadata.url ?? window.location.href, window.location.href).href;
 
@@ -1391,6 +1408,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     private _cossack_url?: string;
     private _cossack_params: Record<string, string> = {};
+    private _cossack_boundary?: CossackBoundaryInfo;
     private _navigationClientDraft?: Map<string, unknown>;
 
     /** @internal Fork an unconsumed capability without reading its former owner. */
@@ -1504,6 +1522,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         const path = this._cossack_path;
         const url = this._cossack_url;
         const params = this._cossack_params;
+        const boundary = this._cossack_boundary;
         const user = this._ambientUser();
         const children = this._childrenStateRegistry;
         const scope = this._serviceScope;
@@ -1517,6 +1536,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             this._cossack_path = path;
             this._cossack_url = url;
             this._cossack_params = params;
+            this._cossack_boundary = boundary;
             this.user = user;
             this.provide(UserContext, user);
             this._childrenStateRegistry = children;
@@ -1543,6 +1563,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         this._serverResources = resources;
         this.updatePath(pathname, destination);
         this._cossack_params = { ...state.metadata?.params };
+        this._cossack_boundary = readBoundaryInfo(state.metadata?.boundary);
         this.user = user;
         this.provide(UserContext, user);
         this._serviceScope?.bindRequest({ context: this._ambientContext(), user: this._ambientUser(), env: this.env });
@@ -3291,6 +3312,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         const params = ambient?.req.param() || {};
         const requestUrl = ambient?.req.url;
         const destination = typeof requestUrl === 'string' ? new URL(requestUrl, 'https://cossack.invalid') : undefined;
+        const boundary = this.isServer ? this.boundary : this._cossack_boundary;
 
         // Build the serialized state object
         const serializedState: SerializedComponentState = {
@@ -3300,6 +3322,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 pathname: ambient?.req.path,
                 url: destination ? destination.pathname + destination.search : undefined,
                 params,
+                ...(boundary ? { boundary } : {}),
             },
         };
         if (this._ownsServiceScope) {

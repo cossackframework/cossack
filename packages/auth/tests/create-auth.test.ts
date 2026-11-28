@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { Context, Hono } from 'hono';
 import { createAuth } from '../src/session';
+import { AuthError } from '../src/errors';
 
 interface User {
     id: string;
@@ -39,6 +40,58 @@ describe('createAuth — middleware', () => {
             expect(JSON.stringify(warning.mock.calls)).not.toContain(privateValue);
             expect(warning.mock.calls[0][0]).toMatch(/COSSACK_AUTH_.*_FAILED: continuing as guest/);
         } finally { warning.mockRestore(); }
+    });
+    it.each([
+        ['extractSessionId', 'COSSACK_AUTH_SESSION_EXTRACTION_FAILED', 'session-extract'],
+        ['validateSessionId', 'COSSACK_AUTH_SESSION_VALIDATION_FAILED', 'session-validate'],
+        ['resolveUserById', 'COSSACK_AUTH_USER_RESOLUTION_FAILED', 'user-resolve'],
+    ] as const)("fails the request when %s throws and sessionFailure is 'fail'", async (stage, code, name) => {
+        const privateValue = 'PRIVATE_SESSION_PASSWORD_TOKEN';
+        const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        try {
+            const cause = new Error(privateValue);
+            const kit = createAuth<User>({
+                extractSessionId: () => privateValue,
+                validateSessionId: async () => 'fixture-user',
+                resolveUserById: async () => ({ id: 'fixture-user', email: 'fixture@example.invalid', name: 'Fixture' }),
+                [stage]: async () => { throw cause; },
+                sessionFailure: 'fail',
+            });
+            const app = buildApp(kit);
+            let reached = false;
+            app.get('/page', (c) => { reached = true; return c.text('page'); });
+            let thrown: unknown;
+            app.onError((error, c) => { thrown = error; return c.text('failed', 500); });
+            const response = await app.request('/page');
+            expect(response.status).toBe(500);
+            expect(reached).toBe(false);
+            expect(thrown).toBeInstanceOf(AuthError);
+            expect(thrown).toMatchObject({ code, stage: name });
+            // The application's failure handler can read the cause; the diagnostic itself never holds it.
+            expect((thrown as Error).cause).toBe(cause);
+            expect((thrown as Error).message).not.toContain(privateValue);
+            expect(JSON.stringify(thrown)).not.toContain(privateValue);
+            expect(warning).not.toHaveBeenCalled();
+        } finally { warning.mockRestore(); }
+    });
+    it("serves a guest and a signed-in person as before with sessionFailure 'fail'", async () => {
+        const user: User = { id: 'u1', email: 'a@b.io', name: 'Tan' };
+        const kit = createAuth<User>({
+            extractSessionId: (c) => c.req.header('x-session'),
+            validateSessionId: async (sid) => (sid === 'valid' ? 'u1' : null),
+            resolveUserById: async () => user,
+            sessionFailure: 'fail',
+        });
+        const app = buildApp(kit);
+        expect(await (await app.request('/me')).json()).toEqual({ user: null });
+        expect(await (await app.request('/me', { headers: { 'x-session': 'expired' } })).json()).toEqual({ user: null });
+        expect(await (await app.request('/me', { headers: { 'x-session': 'valid' } })).json()).toEqual({ user });
+    });
+    it('refuses an unknown sessionFailure value', () => {
+        expect(() => createAuth<User>({
+            extractSessionId: () => undefined, validateSessionId: async () => null, resolveUserById: async () => null,
+            sessionFailure: 'throw' as never,
+        })).toThrow(TypeError);
     });
     it('passes through when no session id is present', async () => {
         let extracted = false;

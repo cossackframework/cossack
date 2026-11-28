@@ -58,10 +58,15 @@ When Cossack catches an error, it:
 Browser navigations that middleware or a guard deny with 401 or 403 also render
 the nearest `error` page, with the denial status.
 
-An error that application middleware throws before the page renders does not
-render the `error` page. The response is
+An error that application middleware throws before the page renders also renders
+the nearest `error` page with status 500, when a browser asked for a page (a
+`GET` or `HEAD` that accepts `text/html`). The failure record uses the code
+`COSSACK_REQUEST_INTERNAL`, and the response is never cached. The middleware
+that failed does not run again for the `error` page, so that page must not need
+what the middleware would have set, such as the user. Every other request (an
+API route, a form post, a client that did not ask for HTML) receives
 `{ "error": "Internal Server Error", "code": "COSSACK_REQUEST_INTERNAL", "requestId": "..." }`
-with status 500, and the failure record uses the code `COSSACK_REQUEST_INTERNAL`.
+with status 500.
 
 To see the error itself, catch it in your own code (for example in `init()`)
 and log it, or use the request ID to find the failure record.
@@ -87,6 +92,32 @@ export default class ErrorPage extends Cossack {
     }
 }
 ```
+
+## What the Page Is Told
+
+A `404` or `error` page reads `this.boundary` to learn what it answers:
+
+| Field | Value |
+| :--- | :--- |
+| `type` | `'404'` or `'error'` |
+| `status` | The response status: 404, 500, or the 401 or 403 of a denial |
+| `requestId` | The ID in the `X-Cossack-Request-Id` response header and in the failure record |
+
+```typescript
+render() {
+    const failure = this.boundary;
+    return html`
+        <h1>${failure?.status === 403 ? 'You do not have access to this page' : 'Something went wrong'}</h1>
+        ${failure?.requestId ? html`<p>Reference: <code>${failure.requestId}</code></p>` : ''}
+    `;
+}
+```
+
+The value is the same on the server and in the browser after hydration. The
+layouts of the page and the App can read it too, for example to hide navigation
+on an error page. On every other page it is `undefined`. It never holds the
+error: use [`onServerFailure`](./server-logging.md#a-function-for-failures) to
+log that.
 
 ## Errors in Server Methods
 
@@ -125,6 +156,7 @@ If your project does not include these components, or the `error` page itself
 fails:
 * 404: The framework returns a plain-text `404 Not Found` response.
 * Error: The framework returns `<h1>Internal Server Error</h1>` with status 500.
-  In Vite development it also shows the code `COSSACK_SSR_INTERNAL`, the request
-  ID and the route template. It never shows the error message or the stack
-  trace, in development or in production.
+  In Vite development it also shows the code (`COSSACK_SSR_INTERNAL`, or
+  `COSSACK_REQUEST_INTERNAL` for a middleware), the request ID and the route
+  template. It never shows the error message or the stack trace, in development
+  or in production.

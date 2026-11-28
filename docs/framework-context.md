@@ -18,6 +18,7 @@ The Framework Context API gives every component access to `env` (environment bin
 | `this.env` | `Env` | Cloudflare environment bindings (for example D1, R2, KV, and DOs) |
 | `this.user` | `User \| undefined` | Currently authenticated user (if any) |
 | `this.c` | `Context` | Hono request context (params, queries, and headers) |
+| `this.boundary` | `CossackBoundaryInfo \| undefined` | On a `404` or `error` page: the kind, the response status and the request ID ([Error Handling](./errors-handling.md#what-the-page-is-told)) |
 
 ---
 
