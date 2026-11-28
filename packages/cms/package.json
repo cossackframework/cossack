@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/cms",
-  "version": "0.9.4",
+  "version": "0.9.5",
   "type": "module",
   "description": "Cossack CMS: resources, schema planning, repositories, auth and stores on RomeDB",
   "license": "MIT",

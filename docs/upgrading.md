@@ -197,6 +197,19 @@ The browser entry of the renderer no longer has `renderToString`: import it from
 typed `(event: InputEvent) => void` no longer checks: type it `(event: Event)` and read
 the value from `event.currentTarget` or `event.target`.
 
+### Changes in 0.9.5
+
+Nothing to change in a project.
+
+- `createApp({ onServerFailure })` gives the application the error of every failure the
+  framework answers itself: a page that fails while it loads or draws, a server method, an
+  API handler and a middleware. The framework's production log lines still hold nothing of
+  the error; the function decides what the application logs
+  ([Server failure events](./server-logging.md#a-function-for-failures)).
+- In development, a cleanup that fails after the response logs its cause after the failure
+  line, as other failures do.
+- `Command`: Ctrl+K (Cmd+K) opens the palette again right after Esc closed it.
+
 ### Changes in 0.9.4
 
 - `createApp({ rpc: { maxJsonBytes } })` is `rpc.maxRequestBytes`, an integer from 1 byte to
